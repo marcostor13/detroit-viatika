@@ -11,6 +11,10 @@ export function authModuleGuard(module: string, bypassForAdmin = false): CanActi
       return router.createUrlTree(['/login']);
     }
 
+    if (userState.needsCompanySelection()) {
+      return router.createUrlTree(['/hub']);
+    }
+
     if (userState.hasModulePermission(module)) {
       return true;
     }

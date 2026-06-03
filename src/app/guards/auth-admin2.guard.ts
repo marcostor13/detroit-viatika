@@ -12,6 +12,11 @@ export class AuthAdmin2Guard implements CanActivate {
       return false;
     }
 
+    if (this.userState.needsCompanySelection()) {
+      this.router.navigate(['/hub']);
+      return false;
+    }
+
     if (this.userState.isAdmin() || this.userState.isContabilidad()) return true;
 
     this.router.navigate(['/inicio']);

@@ -11,6 +11,10 @@ export class AuthViaticosGuard implements CanActivate {
       this.router.navigate(['/login']);
       return false;
     }
+    if (this.userState.needsCompanySelection()) {
+      this.router.navigate(['/hub']);
+      return false;
+    }
     const allowed =
       this.userState.isSuperAdmin() ||
       this.userState.canApproveL1() ||
