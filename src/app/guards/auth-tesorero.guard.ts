@@ -11,6 +11,10 @@ export class AuthTesoreroGuard implements CanActivate {
       this.router.navigate(['/login']);
       return false;
     }
+    if (this.userState.needsCompanySelection()) {
+      this.router.navigate(['/hub']);
+      return false;
+    }
     if (!this.userState.canAccessTesoreria()) {
       const role = this.userState.getRole();
       const fallback = (role === 'Colaborador') ? '/inicio'
