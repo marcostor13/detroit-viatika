@@ -1,0 +1,49 @@
+.loader-image {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.loader-image-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 10px;
+}
+
+.loader-image-content-spinner {
+  border: 4px solid #f3f3f3;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+// Ocultar icono nativo del select en todos los navegadores
+select {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
+  
+  // Ocultar icono en IE/Edge
+  &::-ms-expand {
+    display: none !important;
+  }
+  
+  // Ocultar icono en Safari
+  &::-webkit-appearance {
+    -webkit-appearance: none;
+  }
+}

@@ -1,0 +1,32 @@
+<div class="show-container flex flex-col justify-center items-center p-5">
+  <div class="close-button flex justify-end w-full py-4">
+    <button
+      class="close-button-button text-white cursor-pointer"
+      (click)="close()"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+        class="size-6 w-10 h-10"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M6 18 18 6M6 6l12 12"
+        />
+      </svg>
+    </button>
+  </div>
+  @if (message.fileType === 'image') {
+  <img class="show-image" [src]="message.file" alt="show-image" />
+  } @if (message.fileType === 'video') {
+  <video class="show-video" [src]="message.file" controls></video>
+  } @if (message.fileType === 'audio') {
+  <audio class="show-audio" [src]="message.file" controls></audio>
+  } @if (message.fileType === 'pdf') {
+  <embed class="show-pdf" [src]="message.file" type="application/pdf" />
+  }
+</div>

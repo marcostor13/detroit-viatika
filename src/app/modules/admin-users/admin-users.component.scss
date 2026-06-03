@@ -1,0 +1,56 @@
+.admin-users {
+  min-height: 100vh;
+  background-color: #F5F7FA;
+
+  button {
+    transition: all 0.2s ease;
+
+    &:hover {
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      transform: translateY(1px);
+    }
+  }
+
+  input, select {
+    transition: all 0.2s ease;
+
+    &:focus {
+      border-color: #D31212;
+      box-shadow: 0 0 0 2px rgba(211, 18, 18, 0.1);
+    }
+  }
+
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  h1 {
+    margin-bottom: 1rem;
+  }
+  .btn {
+    margin-bottom: 1rem;
+  }
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    th, td {
+      border: 1px solid #E0E0E0;
+      padding: 8px;
+    }
+    th {
+      background: #F5F7FA;
+    }
+  }
+}

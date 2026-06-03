@@ -1,0 +1,797 @@
+<div class="flex min-h-screen">
+  <!-- Desktop Sidebar -->
+  <div class="hidden lg:flex lg:w-[240px] bg-quaternary flex-col shadow-soft">
+    <!-- Logo Section -->
+    <div class="p-6 border-b border-tertiary/20">
+      <div class="flex items-center justify-center">
+        @if (companyConfig?.logo) {
+          <img [src]="companyConfig!.logo" alt="Logo" width="110" class="max-h-16 object-contain" />
+        }
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 p-4 space-y-1">
+
+      <!-- Colaborador: páginas fijas -->
+      @if (isColaborador()) {
+      <a
+        [routerLink]="['/inicio']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/inicio')"
+        [class.text-white]="isSelected('/inicio')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Inicio</span>
+      </a>
+      <a
+        [routerLink]="['/mis-rendiciones']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/mis-rendiciones')"
+        [class.text-white]="isSelected('/mis-rendiciones')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Mis Rendiciones</span>
+      </a>
+      <a
+        [routerLink]="['/mis-documentos']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/mis-documentos')"
+        [class.text-white]="isSelected('/mis-documentos')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Mis Documentos</span>
+      </a>
+      <a
+        [routerLink]="['/mi-perfil']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/mi-perfil')"
+        [class.text-white]="isSelected('/mi-perfil')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Mi Perfil</span>
+      </a>
+      }
+
+      <!-- Admin / Contabilidad (dentro de empresa): páginas fijas -->
+      @if (isAdminInCompany() || isContabilidadInCompany()) {
+      <button
+        (click)="goBackToHub()"
+        class="flex items-center gap-2 w-full px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 text-left"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 flex-shrink-0">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+        </svg>
+        <span class="font-medium text-sm">Volver al Hub</span>
+      </button>
+      <div class="border-t border-tertiary/20 my-1"></div>
+      @if (isContabilidadInCompany()) {
+      <a
+        [routerLink]="['/consolidated-invoices']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/consolidated-invoices')"
+        [class.text-quaternary]="isSelected('/consolidated-invoices')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Inicio</span>
+      </a>
+      }
+      @if ((isAdmin() && hasModulePermission('colaboradores')) || isContabilidadInCompany()) {
+      <a
+        [routerLink]="['/admin-users']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/admin-users')"
+        [class.text-quaternary]="isSelected('/admin-users')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Colaboradores</span>
+      </a>
+      }
+      @if ((isAdmin() || isContabilidadInCompany()) && hasModulePermission('rendiciones')) {
+      <a
+        [routerLink]="['/rendiciones']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/rendiciones')"
+        [class.text-quaternary]="isSelected('/rendiciones')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Rendiciones</span>
+      </a>
+      }
+      }
+
+      <!-- Superadministrador: páginas fijas -->
+      @if (isSuper()) {
+      <a
+        [routerLink]="['/clients-admin']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/clients-admin')"
+        [class.text-quaternary]="isSelected('/clients-admin')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Clientes</span>
+      </a>
+      <a
+        [routerLink]="['/admin-users']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/admin-users')"
+        [class.text-quaternary]="isSelected('/admin-users')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Colaboradores</span>
+      </a>
+      <a
+        [routerLink]="['/rendiciones']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/rendiciones')"
+        [class.text-quaternary]="isSelected('/rendiciones')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Rendiciones</span>
+      </a>
+      }
+
+      <!-- Coordinador: nav fijo -->
+      @if (isCoordinador()) {
+      <a
+        [routerLink]="['/viaticos']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/viaticos')"
+        [class.text-quaternary]="isSelected('/viaticos')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Viáticos</span>
+      </a>
+      }
+
+      <!-- Contabilidad: nav fijo -->
+      @if (isContabilidad()) {
+      <a
+        [routerLink]="['/tesoreria']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/tesoreria')"
+        [class.text-quaternary]="isSelected('/tesoreria')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Pagos</span>
+      </a>
+      }
+      @if (isContabilidadInCompany()) {
+      <a
+        [routerLink]="['/rendiciones-directas']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/rendiciones-directas')"
+        [class.text-quaternary]="isSelected('/rendiciones-directas')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Rendiciones Directas</span>
+      </a>
+      }
+
+      <!-- Módulos opcionales: controlados 100% por permisos configurados -->
+      @if (!isColaborador() && !isContabilidadInCompany() && hasModulePermission('mis-rendiciones')) {
+      <a
+        [routerLink]="['/mis-rendiciones']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/mis-rendiciones')"
+        [class.text-quaternary]="isSelected('/mis-rendiciones')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Mis Rendiciones</span>
+      </a>
+      }
+      @if ((isColaborador() || isCoordinador()) && hasModulePermission('colaboradores')) {
+      <a
+        [routerLink]="['/admin-users']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/admin-users')"
+        [class.text-quaternary]="isSelected('/admin-users')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Colaboradores</span>
+      </a>
+      }
+      @if ((isColaborador() || isCoordinador()) && hasModulePermission('rendiciones')) {
+      <a
+        [routerLink]="['/rendiciones']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/rendiciones')"
+        [class.text-quaternary]="isSelected('/rendiciones')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Rendiciones</span>
+      </a>
+      }
+      @if (!isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
+      <a
+        [routerLink]="['/consolidated-invoices']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/consolidated-invoices')"
+        [class.text-quaternary]="isSelected('/consolidated-invoices')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Consolidado</span>
+      </a>
+      }
+      @if (!isSuper() && !isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('configuracion')) {
+      <a
+        [routerLink]="['/configuracion']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/configuracion')"
+        [class.text-quaternary]="isSelected('/configuracion')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Configuración</span>
+      </a>
+      }
+      @if (!isContabilidadInCompany() && !hasModulePermission('configuracion') && hasModulePermission('audit-log')) {
+      <a
+        [routerLink]="['/audit-log']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/audit-log')"
+        [class.text-quaternary]="isSelected('/audit-log')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Actividad</span>
+      </a>
+      }
+      @if (canAccessViaticos() && !isCoordinador()) {
+      <a
+        [routerLink]="['/viaticos']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/viaticos')"
+        [class.text-quaternary]="isSelected('/viaticos')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Viáticos</span>
+      </a>
+      }
+      @if (!isContabilidad() && canAccessTesoreria()) {
+      <a
+        [routerLink]="['/tesoreria']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/tesoreria')"
+        [class.text-quaternary]="isSelected('/tesoreria')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Pagos</span>
+      </a>
+      }
+      @if ((isAdminInCompany() && hasModulePermission('configuracion')) || isContabilidadInCompany() || isSuper()) {
+      <!-- Configuración (grupo colapsable) -->
+      <div>
+        <button
+          (click)="toggleConfig()"
+          class="flex items-center justify-between w-full px-4 py-3 rounded-xl transition-all duration-200"
+          [class.bg-primary]="isConfigSection() && !configOpen"
+          [class.text-quaternary]="isConfigSection() && !configOpen"
+          [class.text-secondary]="!(isConfigSection() && !configOpen)"
+          [class.hover:bg-background]="true"
+          [class.hover:text-primary]="true"
+        >
+          <span class="font-medium">Configuración</span>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+            class="w-4 h-4 transition-transform duration-200"
+            [class.rotate-180]="configOpen || isConfigSection()">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+        @if (configOpen || isConfigSection()) {
+        <div class="ml-2 mt-0.5 pl-3 border-l-2 border-primary/20 space-y-0.5">
+          <a
+            [routerLink]="['/mi-perfil']"
+            [class.text-primary]="isSelected('/mi-perfil')"
+            [class.font-semibold]="isSelected('/mi-perfil')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Mi Perfil</a>
+          <a
+            [routerLink]="['/configuracion']"
+            [class.text-primary]="isSelected('/configuracion')"
+            [class.font-semibold]="isSelected('/configuracion')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Empresa</a>
+          <a
+            [routerLink]="['/mi-firma']"
+            [class.text-primary]="isSelected('/mi-firma')"
+            [class.font-semibold]="isSelected('/mi-firma')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Mi Firma Digital</a>
+          <a
+            [routerLink]="['/categorias']"
+            [class.text-primary]="isSelected('/categorias')"
+            [class.font-semibold]="isSelected('/categorias')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Categorías</a>
+          <a
+            [routerLink]="['/centros-de-costo']"
+            [class.text-primary]="isSelected('/centros-de-costo')"
+            [class.font-semibold]="isSelected('/centros-de-costo')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Centros de Costo</a>
+          <a
+            [routerLink]="['/audit-log']"
+            [class.text-primary]="isSelected('/audit-log')"
+            [class.font-semibold]="isSelected('/audit-log')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Actividad</a>
+        </div>
+        }
+      </div>
+      }
+      @if (!isAdminInCompany() && !isSuper() && !isContabilidadInCompany()) {
+      <a
+        [routerLink]="['/mi-firma']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/mi-firma')"
+        [class.text-white]="isSelected('/mi-firma')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Mi Firma Digital</span>
+      </a>
+      }
+    </nav>
+
+    <!-- User Section -->
+    <div class="p-4 border-t border-tertiary/20">
+      <div class="flex items-center px-4 py-2 text-secondary mb-3">
+        <div class="w-8 h-8 rounded-full mr-3 flex-shrink-0 flex items-center justify-center bg-background overflow-hidden">
+          @if (user?.profilePic) {
+            <img class="w-8 h-8 rounded-full object-cover" [src]="user!.profilePic" [alt]="user?.name || ''" />
+          } @else {
+            <span class="text-xs font-bold text-primary">{{ (user?.name || '?')[0].toUpperCase() }}</span>
+          }
+        </div>
+        <div class="text-sm">
+          <div class="font-medium text-secondary">
+            {{ user?.name || "Usuario" }}
+          </div>
+          <div class="text-xs text-tertiary">
+            {{ user?.role?.name }}
+          </div>
+        </div>
+      </div>
+      <button
+        (click)="confirmation()"
+        class="flex items-center w-full px-4 py-2 text-tertiary rounded-xl hover:text-error hover:bg-background transition-all duration-200 group"
+      >
+        <span class="mr-3">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="size-5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"
+            />
+          </svg>
+        </span>
+        <span class="font-medium">Cerrar Sesión</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Sidebar (Drawer) -->
+  @if (sidebarVisible) {
+  <div class="lg:hidden fixed inset-0 z-50 flex" (click)="toggleSidebar()">
+    <div
+      class="fixed inset-0 bg-secondary/50 backdrop-blur-sm transition-all duration-300"
+    ></div>
+
+    <div
+      class="relative flex flex-col w-80 max-w-[85vw] bg-quaternary shadow-2xl"
+      (click)="$event.stopPropagation()"
+    >
+      <!-- Mobile Header -->
+      <div class="p-6 border-b border-tertiary/20">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center justify-center flex-1">
+            @if (companyConfig?.logo) {
+              <img [src]="companyConfig!.logo" alt="Logo" width="110" class="max-h-16 object-contain" />
+            } @else {
+              <span class="text-sm font-semibold text-secondary truncate">{{ companyConfig?.name || '' }}</span>
+            }
+          </div>
+          <button
+            (click)="toggleSidebar()"
+            class="p-2 text-tertiary hover:text-secondary hover:bg-background rounded-xl transition-all duration-200 group"
+          >
+            <svg
+              class="w-6 h-6 transform group-hover:rotate-90 transition-transform duration-200"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              ></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile Navigation -->
+      <nav class="flex-1 p-6 space-y-2 overflow-y-auto">
+
+        <!-- Colaborador: páginas fijas -->
+        @if (isColaborador()) {
+        <a
+          [routerLink]="['/inicio']"
+          (click)="toggleSidebar()"
+          routerLinkActive="bg-primary text-white"
+          [class.bg-primary]="isSelected('/inicio')"
+          [class.text-white]="isSelected('/inicio')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Inicio</span>
+        </a>
+        <a
+          [routerLink]="['/mis-rendiciones']"
+          (click)="toggleSidebar()"
+          routerLinkActive="bg-primary text-white"
+          [class.bg-primary]="isSelected('/mis-rendiciones')"
+          [class.text-white]="isSelected('/mis-rendiciones')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Mis Rendiciones</span>
+        </a>
+        <a
+          [routerLink]="['/mis-documentos']"
+          (click)="toggleSidebar()"
+          routerLinkActive="bg-primary text-white"
+          [class.bg-primary]="isSelected('/mis-documentos')"
+          [class.text-white]="isSelected('/mis-documentos')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Mis Documentos</span>
+        </a>
+        <a
+          [routerLink]="['/mi-perfil']"
+          (click)="toggleSidebar()"
+          routerLinkActive="bg-primary text-white"
+          [class.bg-primary]="isSelected('/mi-perfil')"
+          [class.text-white]="isSelected('/mi-perfil')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Mi Perfil</span>
+        </a>
+        }
+
+        <!-- Admin / Contabilidad (dentro de empresa): páginas fijas -->
+        @if (isAdminInCompany() || isContabilidadInCompany()) {
+        <button
+          (click)="goBackToHub(); toggleSidebar()"
+          class="flex items-center gap-2 w-full px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 text-left"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 flex-shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+          </svg>
+          <span class="font-medium text-lg">Volver al Hub</span>
+        </button>
+        <div class="border-t border-tertiary/20 my-1"></div>
+        @if (isContabilidadInCompany()) {
+        <a
+          [routerLink]="['/consolidated-invoices']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/consolidated-invoices')"
+          [class.text-quaternary]="isSelected('/consolidated-invoices')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Inicio</span>
+        </a>
+        }
+        @if ((isAdmin() && hasModulePermission('colaboradores')) || isContabilidadInCompany()) {
+        <a
+          [routerLink]="['/admin-users']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/admin-users')"
+          [class.text-quaternary]="isSelected('/admin-users')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Colaboradores</span>
+        </a>
+        }
+        @if ((isAdmin() || isContabilidadInCompany()) && hasModulePermission('rendiciones')) {
+        <a
+          [routerLink]="['/rendiciones']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/rendiciones')"
+          [class.text-quaternary]="isSelected('/rendiciones')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Rendiciones</span>
+        </a>
+        }
+        }
+
+        <!-- Superadministrador: páginas fijas -->
+        @if (isSuper()) {
+        <a
+          [routerLink]="['/clients-admin']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/clients-admin')"
+          [class.text-quaternary]="isSelected('/clients-admin')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Clientes</span>
+        </a>
+        <a
+          [routerLink]="['/admin-users']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/admin-users')"
+          [class.text-quaternary]="isSelected('/admin-users')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Colaboradores</span>
+        </a>
+        <a
+          [routerLink]="['/rendiciones']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/rendiciones')"
+          [class.text-quaternary]="isSelected('/rendiciones')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Rendiciones</span>
+        </a>
+        }
+
+        <!-- Coordinador: nav fijo -->
+        @if (isCoordinador()) {
+        <a
+          [routerLink]="['/viaticos']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/viaticos')"
+          [class.text-quaternary]="isSelected('/viaticos')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Viáticos</span>
+        </a>
+        }
+
+        <!-- Contabilidad: nav fijo -->
+        @if (isContabilidad()) {
+        <a
+          [routerLink]="['/tesoreria']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/tesoreria')"
+          [class.text-quaternary]="isSelected('/tesoreria')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Pagos</span>
+        </a>
+        }
+        @if (isContabilidadInCompany()) {
+        <a
+          [routerLink]="['/rendiciones-directas']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/rendiciones-directas')"
+          [class.text-quaternary]="isSelected('/rendiciones-directas')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Rendiciones Directas</span>
+        </a>
+        }
+
+        <!-- Módulos opcionales: controlados 100% por permisos configurados -->
+        @if (!isColaborador() && !isContabilidadInCompany() && hasModulePermission('mis-rendiciones')) {
+        <a
+          [routerLink]="['/mis-rendiciones']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/mis-rendiciones')"
+          [class.text-quaternary]="isSelected('/mis-rendiciones')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Mis Rendiciones</span>
+        </a>
+        }
+        @if ((isColaborador() || isCoordinador()) && hasModulePermission('colaboradores')) {
+        <a
+          [routerLink]="['/admin-users']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/admin-users')"
+          [class.text-quaternary]="isSelected('/admin-users')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Colaboradores</span>
+        </a>
+        }
+        @if ((isColaborador() || isCoordinador()) && hasModulePermission('rendiciones')) {
+        <a
+          [routerLink]="['/rendiciones']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/rendiciones')"
+          [class.text-quaternary]="isSelected('/rendiciones')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Rendiciones</span>
+        </a>
+        }
+        @if (!isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
+        <a
+          [routerLink]="['/consolidated-invoices']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/consolidated-invoices')"
+          [class.text-quaternary]="isSelected('/consolidated-invoices')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Consolidado</span>
+        </a>
+        }
+        @if (!isSuper() && !isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('configuracion')) {
+        <a
+          [routerLink]="['/configuracion']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/configuracion')"
+          [class.text-quaternary]="isSelected('/configuracion')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Configuración</span>
+        </a>
+        }
+        @if (!isContabilidadInCompany() && !hasModulePermission('configuracion') && hasModulePermission('audit-log')) {
+        <a
+          [routerLink]="['/audit-log']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/audit-log')"
+          [class.text-quaternary]="isSelected('/audit-log')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Actividad</span>
+        </a>
+        }
+        @if (canAccessViaticos() && !isCoordinador()) {
+        <a
+          [routerLink]="['/viaticos']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/viaticos')"
+          [class.text-quaternary]="isSelected('/viaticos')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Viáticos</span>
+        </a>
+        }
+        @if (!isContabilidad() && canAccessTesoreria()) {
+        <a
+          [routerLink]="['/tesoreria']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/tesoreria')"
+          [class.text-quaternary]="isSelected('/tesoreria')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Pagos</span>
+        </a>
+        }
+        @if ((isAdminInCompany() && hasModulePermission('configuracion')) || isContabilidadInCompany() || isSuper()) {
+        <!-- Configuración (grupo colapsable) -->
+        <div>
+          <button
+            (click)="toggleConfig()"
+            class="flex items-center justify-between w-full px-4 py-4 rounded-xl transition-all duration-200"
+            [class.bg-primary]="isConfigSection() && !configOpen"
+            [class.text-quaternary]="isConfigSection() && !configOpen"
+            [class.text-secondary]="!(isConfigSection() && !configOpen)"
+          >
+            <span class="font-medium text-lg">Configuración</span>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+              class="w-5 h-5 transition-transform duration-200"
+              [class.rotate-180]="configOpen || isConfigSection()">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+          @if (configOpen || isConfigSection()) {
+          <div class="ml-2 mt-0.5 pl-3 border-l-2 border-primary/20 space-y-0.5">
+            <a
+              [routerLink]="['/mi-perfil']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/mi-perfil')"
+              [class.font-semibold]="isSelected('/mi-perfil')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Mi Perfil</a>
+            <a
+              [routerLink]="['/configuracion']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/configuracion')"
+              [class.font-semibold]="isSelected('/configuracion')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Empresa</a>
+            <a
+              [routerLink]="['/mi-firma']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/mi-firma')"
+              [class.font-semibold]="isSelected('/mi-firma')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Mi Firma Digital</a>
+            <a
+              [routerLink]="['/categorias']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/categorias')"
+              [class.font-semibold]="isSelected('/categorias')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Categorías</a>
+            <a
+              [routerLink]="['/centros-de-costo']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/centros-de-costo')"
+              [class.font-semibold]="isSelected('/centros-de-costo')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Centros de Costo</a>
+            <a
+              [routerLink]="['/audit-log']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/audit-log')"
+              [class.font-semibold]="isSelected('/audit-log')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Actividad</a>
+          </div>
+          }
+        </div>
+        }
+        @if (!isAdminInCompany() && !isSuper() && !isContabilidadInCompany()) {
+        <a
+          [routerLink]="['/mi-firma']"
+          (click)="toggleSidebar()"
+          routerLinkActive="bg-primary text-white"
+          [class.bg-primary]="isSelected('/mi-firma')"
+          [class.text-white]="isSelected('/mi-firma')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Mi Firma Digital</span>
+        </a>
+        }
+      </nav>
+
+      <!-- Mobile User Section -->
+      <div class="p-6 border-t border-tertiary/20">
+        <div
+          class="flex items-center px-4 py-3 text-secondary mb-4 bg-background rounded-xl"
+        >
+          <div class="w-10 h-10 rounded-full mr-3 flex-shrink-0 flex items-center justify-center bg-quaternary overflow-hidden">
+            @if (user?.profilePic) {
+              <img class="w-10 h-10 rounded-full object-cover" [src]="user!.profilePic" [alt]="user?.name || ''" />
+            } @else {
+              <span class="text-sm font-bold text-primary">{{ (user?.name || '?')[0].toUpperCase() }}</span>
+            }
+          </div>
+          <div class="text-sm">
+            <div class="font-semibold text-secondary">
+              {{ user?.name || "Usuario" }}
+            </div>
+            <div class="text-xs text-tertiary">
+              {{ user?.role?.name }}
+            </div>
+          </div>
+        </div>
+        <button
+          (click)="confirmation()"
+          class="flex items-center w-full px-4 py-3 text-tertiary rounded-xl hover:text-error hover:bg-background transition-all duration-200 group"
+        >
+          <span class="mr-3 text-xl">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="size-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"
+              />
+            </svg>
+          </span>
+          <span class="font-medium">Cerrar Sesión</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  }
+</div>

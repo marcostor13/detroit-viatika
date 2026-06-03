@@ -1,0 +1,181 @@
+@if (isOpen) {
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="viaticos-modal-title"
+  (click)="overlayClick()"
+>
+  <div class="fixed inset-0 bg-secondary/50 backdrop-blur-sm"></div>
+  <div
+    class="relative w-full max-w-4xl bg-quaternary rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[90vh]"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="flex items-center justify-between px-6 py-5 border-b border-tertiary/20">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-secondary" id="viaticos-modal-title">
+            {{ advanceToResubmit ? 'Corregir y reenviar solicitud' : 'Solicitud de viáticos' }}
+          </h3>
+          <p class="text-xs text-tertiary mt-0.5">
+            {{ advanceToResubmit ? 'Versión ' + (advanceToResubmit.solicitudVersion ?? 1) + ' · Historial conservado' : 'Flujo solicitud' }}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="p-1.5 rounded-xl text-tertiary hover:bg-background hover:text-secondary transition-colors shrink-0"
+        (click)="dismiss(false)"
+        aria-label="Cerrar"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <form [formGroup]="form" class="px-6 py-5 flex flex-col gap-5 overflow-y-auto">
+      <div class="rounded-xl border border-tertiary/10 bg-background/60 p-3">
+        <p class="text-xs text-tertiary">
+          Complete lugar, fechas, centro de costo y el detalle por categoría. Con GLP/día: Importe × GLP/día × Días (Personas opcional). Sin GLP: Importe × Personas × Días (GLP/día opcional).
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="flex flex-col gap-1 md:col-span-2">
+          <label class="text-sm font-medium text-secondary">Lugar <span class="text-error">*</span></label>
+          <input
+            type="text"
+            formControlName="place"
+            appPlacesAutocomplete
+            country="pe"
+            (placeSelected)="onPlaceSelected($event)"
+            placeholder="Buscar dirección o lugar…"
+            class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+          />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-secondary">Fecha inicio <span class="text-error">*</span></label>
+          <input type="date" formControlName="startDate"
+            class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow appearance-none" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-sm font-medium text-secondary">Fecha fin <span class="text-error">*</span></label>
+          <input type="date" formControlName="endDate"
+            class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow appearance-none" />
+        </div>
+        <div class="flex flex-col gap-1 md:col-span-2">
+          <label class="text-sm font-medium text-secondary">Centro de costo <span class="text-error">*</span></label>
+          <select formControlName="projectId"
+            class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow appearance-none">
+            <option value="">Seleccione proyecto…</option>
+            @for (p of projects(); track p._id) {
+            <option [value]="p._id">{{ projectLabel(p) }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-sm font-medium text-secondary">Observaciones <span class="text-tertiary text-xs font-normal">(opcional)</span></label>
+        <textarea formControlName="observations" rows="2" placeholder="Justificación si corresponde (obligatorio si la fecha de inicio es pasada, mín. 10 caracteres)."
+          class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow resize-none"></textarea>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-sm font-semibold text-secondary uppercase tracking-wider">Detalle por categoría</label>
+          <button type="button" (click)="addLine()"
+            class="text-sm font-semibold text-primary hover:underline">
+            + Agregar fila
+          </button>
+        </div>
+        <div class="overflow-x-auto rounded-xl border border-tertiary/10 bg-gray-50/50">
+          <table class="min-w-full text-sm">
+            <thead class="bg-gray-100/80 text-secondary">
+              <tr>
+                <th class="text-left px-3 py-2 font-medium">Categoría</th>
+                <th class="text-left px-3 py-2 font-medium">Detalle</th>
+                <th class="text-right px-3 py-2 font-medium">Importe (S/)</th>
+                <th class="text-right px-3 py-2 font-medium">Personas</th>
+                <th class="text-right px-3 py-2 font-medium">GLP/día</th>
+                <th class="text-right px-3 py-2 font-medium">Días</th>
+                <th class="text-right px-3 py-2 font-medium">Total fila</th>
+                <th class="w-10 px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody formArrayName="lines">
+              @for (lineCtrl of lines.controls; track lineCtrl; let i = $index) {
+              <tr [formGroupName]="i" class="border-t border-tertiary/5 hover:bg-white transition-colors">
+                <td class="px-3 py-2 align-middle">
+                  <select formControlName="categoryId" class="w-full max-w-[200px] h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-secondary text-xs md:text-sm">
+                    <option value="">—</option>
+                    @for (c of categories(); track c._id) {
+                    <option [value]="c._id">{{ c.name }}</option>
+                    }
+                  </select>
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <input type="text" formControlName="detalle" placeholder="Descripción opcional…"
+                    class="w-full min-w-[10rem] h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-left text-sm text-secondary placeholder:text-tertiary/50" />
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <input type="number" formControlName="importe" min="0" step="0.01"
+                    class="w-full h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-right text-sm text-secondary" />
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <input type="number" formControlName="peopleCount" min="0" step="1" placeholder="—"
+                    class="w-full min-w-[4rem] h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-right text-sm text-secondary placeholder:text-tertiary/50" />
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <input type="number" formControlName="glpPerDay" min="0" step="0.01" placeholder="—"
+                    class="w-full h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-right text-sm text-secondary placeholder:text-tertiary/50" />
+                </td>
+                <td class="px-3 py-2 align-middle">
+                  <input type="number" formControlName="days" min="0" step="1"
+                    class="w-full min-w-[4rem] h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-right text-sm text-secondary" />
+                </td>
+                <td class="px-3 py-2 align-middle text-right font-semibold text-secondary whitespace-nowrap">
+                  S/ {{ lineTotal($any(lineCtrl)) | number:'1.2-2' }}
+                </td>
+                <td class="px-2 py-2 align-middle">
+                  @if (lines.length > 1) {
+                  <button type="button" (click)="removeLine(i)" class="text-error hover:text-error/80 p-1 text-xs" title="Quitar fila">✕</button>
+                  }
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </form>
+
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-6 py-4 border-t border-tertiary/10">
+      <div>
+        <p class="text-sm text-tertiary">Total general</p>
+        <p class="text-xl font-bold text-secondary">S/ {{ totalGeneral() | number:'1.2-2' }}</p>
+        @if (totalGeneral() > 500) {
+        <p class="text-xs text-warning mt-1">Montos mayores a S/ 500 requieren segunda aprobación de tesorería.</p>
+        }
+      </div>
+      <div class="flex gap-3 justify-end">
+        <button type="button" (click)="dismiss(false)" [disabled]="submitting()"
+          class="px-4 py-2 text-sm font-medium text-tertiary rounded-xl hover:bg-background hover:text-secondary transition-colors disabled:opacity-50">
+          Cancelar
+        </button>
+        <button type="button" (click)="submit()" [disabled]="submitting()"
+          class="px-5 py-2 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+          {{ submitting() ? 'Enviando…' : 'Enviar solicitud' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+}

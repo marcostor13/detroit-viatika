@@ -1,0 +1,59 @@
+<div
+  class="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
+>
+  <h1 class="text-2xl font-bold">Facturas</h1>
+  <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+    <app-export-button
+      (exportClicked)="exportInvoices($event)"
+      class="sm:w-auto"
+    ></app-export-button>
+    <app-button
+      label="Nueva Factura"
+      variant="primary"
+      size="md"
+      [fullWidth]="true"
+      class="sm:w-auto"
+      [title]="!hasRendiciones ? 'Necesitas una rendición asignada para subir facturas' : ''"
+      (clicked)="gotToAddInvoice()"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+        class="size-5 sm:size-6 mr-2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 4.5v15m7.5-7.5h-15"
+        />
+      </svg>
+    </app-button>
+  </div>
+</div>
+
+<app-data
+  [headers]="headers"
+  [data]="invoices"
+  (clickOptionsEvent)="clickOptions($event)"
+></app-data>
+<app-paginator
+  [total]="result().total"
+  [page]="result().page"
+  [pages]="result().pages"
+  [limit]="result().limit"
+  (pageChange)="onPageChange($event)"
+  (limitChange)="onLimitChange($event)"
+/>
+
+<div class="hidden">
+  <app-file-download
+    id="export-invoices"
+    [data]="invoices"
+    [columns]="exportColumns"
+    [fileType]="exportFileType"
+    fileName="facturas"
+  ></app-file-download>
+</div>

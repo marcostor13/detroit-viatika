@@ -1,0 +1,31 @@
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.file-upload-area {
+  transition: all 0.2s ease-in-out;
+}
+
+.file-upload-area:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.mobile-upload-option {
+  transition: all 0.2s ease-in-out;
+}
+
+.mobile-upload-option:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.preview-image {
+  border: 2px dashed #e5e7eb;
+  background-color: #f9fafb;
+}
+
+.progress-bar {
+  transition: width 0.3s ease-in-out;
+}

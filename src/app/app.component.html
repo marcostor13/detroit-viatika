@@ -1,0 +1,9 @@
+<app-loader />
+<router-outlet />
+@if (isNotificationVisible | async) {
+<app-notification />
+} @if (isConfirmationVisible.visible()) {
+<app-confirmation />
+} @if (isShow | async) {
+<app-show />
+}

@@ -1,0 +1,23 @@
+<div
+  class="fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 flex justify-center items-center z-50"
+  *ngIf="confirmationService.visible()"
+>
+  <div class="bg-white p-6 rounded-xl shadow-lg max-w-md w-full">
+    <h3 class="text-lg font-bold mb-2">{{ confirmationService.title() }}</h3>
+    <p class="text-gray-700 mb-4">{{ confirmationService.message() }}</p>
+    <div class="flex gap-2 justify-end">
+      <button
+        class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded"
+        (click)="confirmationService.cancel()"
+      >
+        Cancelar
+      </button>
+      <button
+        class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
+        (click)="confirmationService.accept()"
+      >
+        Confirmar
+      </button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,77 @@
+<div class="p-5 flex flex-col gap-6">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <button
+      (click)="back()"
+      class="p-2 rounded-xl hover:bg-background transition-colors text-tertiary"
+      title="Volver"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+      </svg>
+    </button>
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">
+        {{ isEditing ? 'Editar Centro de Costo' : 'Nuevo Centro de Costo' }}
+      </h1>
+      <p class="text-sm text-tertiary mt-0.5">
+        {{ isEditing ? 'Modifica los datos del centro de costo' : 'Completa los campos para crear un nuevo centro de costo' }}
+      </p>
+    </div>
+  </div>
+
+  <!-- Form card -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-xl">
+    <div class="flex flex-col gap-5">
+
+      <!-- Nombre -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Nombre *</label>
+        <input
+          type="text"
+          [(ngModel)]="form.name"
+          placeholder="Nombre del centro de costo"
+          class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+        />
+      </div>
+
+      <!-- Código -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">
+          Código <span class="text-tertiary/60 font-normal normal-case">(auto-generado si se deja vacío)</span>
+        </label>
+        <input
+          type="text"
+          [(ngModel)]="form.code"
+          placeholder="Ej: CC-LIMA-01"
+          class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all uppercase"
+        />
+      </div>
+
+      <!-- Estado -->
+      <div class="flex items-center gap-3">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" [(ngModel)]="form.isActive" class="sr-only peer" />
+          <div class="w-10 h-5 bg-tertiary/30 peer-focus:outline-none rounded-full peer peer-checked:bg-primary transition-colors"></div>
+          <div class="absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5 shadow-sm"></div>
+        </label>
+        <span class="text-sm text-secondary">Activo</span>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex gap-3 pt-1">
+        <app-button
+          [label]="saving ? 'Guardando...' : (isEditing ? 'Actualizar' : 'Guardar')"
+          variant="primary"
+          size="md"
+          [disabled]="saving"
+          (clicked)="save()"
+        />
+        <app-button label="Cancelar" variant="secondary" size="md" (clicked)="back()" />
+      </div>
+
+    </div>
+  </div>
+
+</div>

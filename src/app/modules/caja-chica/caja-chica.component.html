@@ -1,0 +1,303 @@
+<div class="px-5 py-6 max-w-7xl mx-auto">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Caja Chica</h1>
+      <p class="text-sm text-gray-500 mt-1">Gestion de fondos fijos por periodo y responsable</p>
+    </div>
+    @if (isAdmin) {
+    <button type="button" (click)="openCreateModal()"
+      class="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">
+      Nueva caja chica
+    </button>
+    }
+  </div>
+
+  <!-- Tabs -->
+  @if (isAdmin) {
+  <div class="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">
+    <button type="button" (click)="activeTab.set('mis')"
+      [class]="activeTab() === 'mis' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+      class="px-4 py-2 rounded-lg text-sm font-medium transition-all">
+      Mis cajas
+    </button>
+    <button type="button" (click)="activeTab.set('todos')"
+      [class]="activeTab() === 'todos' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+      class="px-4 py-2 rounded-lg text-sm font-medium transition-all">
+      Todas
+    </button>
+  </div>
+  }
+
+  <!-- Grid de cajas -->
+  @if (isLoading()) {
+  <div class="flex justify-center p-12">
+    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  </div>
+  } @else if (displayedList.length === 0) {
+  <div class="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400 text-sm">
+    No hay cajas chicas en esta seccion.
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    @for (caja of displayedList; track caja._id) {
+    <div class="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <p class="font-mono text-xs text-gray-500">{{ caja.code }}</p>
+          <p class="font-semibold text-gray-900 text-sm mt-0.5">{{ getName(caja.responsibleId) }}</p>
+          <p class="text-xs text-gray-500">Periodo: {{ formatPeriod(caja.period) }}</p>
+        </div>
+        <span [class]="STATUS_COLORS[caja.status]" class="inline-flex px-2 py-0.5 rounded text-xs font-medium shrink-0">
+          {{ STATUS_LABELS[caja.status] }}
+        </span>
+      </div>
+
+      <!-- Balance bar -->
+      <div>
+        <div class="flex justify-between text-xs text-gray-600 mb-1">
+          <span>Fondo: S/ {{ caja.fundAmount | number:'1.2-2' }}</span>
+          <span>Saldo: <strong class="text-gray-900">S/ {{ availableBalance(caja) | number:'1.2-2' }}</strong></span>
+        </div>
+        <div class="w-full bg-gray-100 rounded-full h-2">
+          <div class="h-2 rounded-full transition-all"
+            [class]="spentPercent(caja) > 85 ? 'bg-red-500' : spentPercent(caja) > 60 ? 'bg-yellow-500' : 'bg-emerald-500'"
+            [style.width.%]="spentPercent(caja)">
+          </div>
+        </div>
+        <p class="text-xs text-gray-400 mt-0.5">{{ spentPercent(caja) | number:'1.0-0' }}% utilizado</p>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex gap-2 mt-auto">
+        <button type="button" (click)="openDetail(caja)"
+          class="flex-1 text-xs py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium">
+          Ver detalle
+        </button>
+        @if (caja.status === 'pending_funding' && canFund) {
+        <button type="button" (click)="openFundModal(caja)" [disabled]="isActing()"
+          class="flex-1 text-xs py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
+          Fondear
+        </button>
+        }
+        @if (caja.status === 'active' && isAdmin) {
+        <button type="button" (click)="closeCaja(caja)" [disabled]="isActing()"
+          class="flex-1 text-xs py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 font-medium">
+          Cerrar
+        </button>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  }
+</div>
+
+<!-- Modal: Nueva caja chica -->
+@if (showCreateModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showCreateModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-4">Nueva caja chica</h3>
+    <form [formGroup]="createForm" class="space-y-3">
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Responsable <span class="text-red-500">*</span></label>
+        <select formControlName="responsibleId"
+          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm bg-white">
+          <option value="">Seleccionar colaborador...</option>
+          @for (u of users; track u._id) {
+          <option [value]="u._id">{{ u.name }}</option>
+          }
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Periodo AAAAMM <span class="text-red-500">*</span></label>
+          <input type="text" formControlName="period" placeholder="202605"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm font-mono" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Monto fondo S/ <span class="text-red-500">*</span></label>
+          <input type="number" formControlName="fundAmount" min="0.01" step="0.01"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Tope por comprobante S/</label>
+          <input type="number" formControlName="maxPerExpense" min="0" step="0.01"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Tope diario S/</label>
+          <input type="number" formControlName="maxPerDay" min="0" step="0.01"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Categorias permitidas (separadas por coma)</label>
+        <input type="text" formControlName="allowedCategories" placeholder="alimentacion, combustible, papeleria"
+          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        <p class="text-xs text-gray-400">Dejar vacio para permitir cualquier categoria.</p>
+      </div>
+    </form>
+    <div class="flex gap-3 mt-5">
+      <button type="button" (click)="showCreateModal.set(false)" [disabled]="isActing()"
+        class="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+        Cancelar
+      </button>
+      <button type="button" (click)="submitCreate()" [disabled]="createForm.invalid || isActing()"
+        class="flex-1 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+        {{ isActing() ? 'Creando...' : 'Crear caja chica' }}
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Detalle caja chica -->
+@if (showDetailModal() && selectedCaja) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showDetailModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto" (click)="$event.stopPropagation()">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-bold text-gray-900">{{ selectedCaja.code }}</h3>
+      <span [class]="STATUS_COLORS[selectedCaja.status]" class="inline-flex px-2 py-0.5 rounded text-xs font-medium">
+        {{ STATUS_LABELS[selectedCaja.status] }}
+      </span>
+    </div>
+    <div class="space-y-3 text-sm">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <p class="text-xs text-gray-500">Responsable</p>
+          <p class="font-medium text-gray-900">{{ getName(selectedCaja.responsibleId) }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">Periodo</p>
+          <p class="font-medium text-gray-900">{{ formatPeriod(selectedCaja.period) }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">Fondo asignado</p>
+          <p class="font-bold text-gray-900">S/ {{ selectedCaja.fundAmount | number:'1.2-2' }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">Saldo disponible</p>
+          <p class="font-bold text-emerald-700">S/ {{ availableBalance(selectedCaja) | number:'1.2-2' }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">Total gastado</p>
+          <p class="font-bold text-red-700">S/ {{ selectedCaja.spentAmount | number:'1.2-2' }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-500">Comprobantes</p>
+          <p class="font-bold text-gray-900">{{ selectedCaja.expenses.length }}</p>
+        </div>
+      </div>
+      @if (selectedCaja.maxPerExpense) {
+      <p class="text-xs text-gray-600">Tope por comprobante: S/ {{ selectedCaja.maxPerExpense | number:'1.2-2' }}</p>
+      }
+      @if (selectedCaja.maxPerDay) {
+      <p class="text-xs text-gray-600">Tope diario: S/ {{ selectedCaja.maxPerDay | number:'1.2-2' }}</p>
+      }
+      @if (selectedCaja.allowedCategories.length > 0) {
+      <p class="text-xs text-gray-600">Categorias: {{ selectedCaja.allowedCategories.join(', ') }}</p>
+      }
+      @if (selectedCaja.funding) {
+      <div class="rounded-lg border border-blue-200 bg-blue-50/80 p-3">
+        <p class="text-xs font-semibold text-blue-800 mb-1">Fondeo registrado</p>
+        <p class="text-xs text-gray-700">Fecha: {{ formatDate(selectedCaja.funding.transferDate) }}</p>
+        <p class="text-xs text-gray-700">N° operacion: {{ selectedCaja.funding.operationNumber }}</p>
+        <a [href]="selectedCaja.funding.receiptUrl" target="_blank"
+          class="text-xs text-primary font-semibold hover:underline">Ver comprobante</a>
+      </div>
+      }
+      @if (selectedCaja.expenses.length > 0) {
+      <div>
+        <p class="text-xs font-semibold text-gray-700 mb-2">Gastos registrados</p>
+        <div class="space-y-1 max-h-40 overflow-y-auto">
+          @for (exp of selectedCaja.expenses; track $index) {
+          <div class="flex justify-between text-xs bg-gray-50 rounded px-2 py-1">
+            <span class="text-gray-600">{{ exp.category || '—' }}</span>
+            <span class="font-medium text-gray-900">S/ {{ exp.amount | number:'1.2-2' }}</span>
+            <span class="text-gray-400">{{ formatDate(exp.registeredAt) }}</span>
+          </div>
+          }
+        </div>
+      </div>
+      }
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button type="button" (click)="showDetailModal.set(false)"
+        class="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
+        Cerrar
+      </button>
+      @if (selectedCaja.status === 'pending_funding' && canFund) {
+      <button type="button" (click)="openFundModal(selectedCaja)"
+        class="flex-1 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700">
+        Fondear caja
+      </button>
+      }
+      @if (selectedCaja.status === 'active' && isAdmin) {
+      <button type="button" (click)="closeCaja(selectedCaja)" [disabled]="isActing()"
+        class="flex-1 py-2 bg-gray-700 text-white rounded-xl text-sm font-medium hover:bg-gray-800 disabled:opacity-50">
+        {{ isActing() ? 'Cerrando...' : 'Cerrar caja' }}
+      </button>
+      }
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Fondear -->
+@if (showFundModal() && selectedCaja) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showFundModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">Registrar fondeo</h3>
+    <p class="text-sm text-gray-500 mb-4">
+      Caja: <strong>{{ selectedCaja.code }}</strong> — Monto requerido: <strong>S/ {{ selectedCaja.fundAmount | number:'1.2-2' }}</strong>
+    </p>
+    <form [formGroup]="fundForm" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Fecha transferencia <span class="text-red-500">*</span></label>
+          <input type="date" formControlName="transferDate"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Monto S/ <span class="text-red-500">*</span></label>
+          <input type="number" formControlName="amount" min="0.01" step="0.01"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">N° operacion <span class="text-red-500">*</span></label>
+        <input type="text" formControlName="operationNumber"
+          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Comprobante <span class="text-red-500">*</span></label>
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFundReceiptSelected($event)"
+          class="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700" />
+        @if (isUploadingFundReceipt()) {
+        <p class="text-xs text-blue-600">Subiendo...</p>
+        } @else if (fundReceiptName) {
+        <p class="text-xs text-green-700">Adjunto: {{ fundReceiptName }}</p>
+        }
+      </div>
+    </form>
+    <div class="flex gap-3 mt-5">
+      <button type="button" (click)="showFundModal.set(false)" [disabled]="isActing()"
+        class="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+        Cancelar
+      </button>
+      <button type="button" (click)="confirmFund()"
+        [disabled]="fundForm.invalid || isActing() || isUploadingFundReceipt() || !fundReceiptUrl"
+        class="flex-1 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+        {{ isActing() ? 'Registrando...' : 'Confirmar fondeo' }}
+      </button>
+    </div>
+  </div>
+</div>
+}

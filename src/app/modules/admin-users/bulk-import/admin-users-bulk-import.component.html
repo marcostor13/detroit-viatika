@@ -1,0 +1,117 @@
+<div class="p-5 flex flex-col gap-6">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <button
+      (click)="back()"
+      class="p-2 rounded-xl hover:bg-background transition-colors text-tertiary"
+      title="Volver"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+      </svg>
+    </button>
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">Carga masiva de Colaboradores</h1>
+      <p class="text-sm text-tertiary mt-0.5">Importa usuarios desde un archivo Excel</p>
+    </div>
+  </div>
+
+  <!-- Content card -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-2xl flex flex-col gap-6">
+
+    <!-- Step 1 -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
+        <h3 class="text-sm font-semibold text-secondary">Descarga la plantilla</h3>
+      </div>
+      <p class="text-xs text-tertiary pl-8">
+        El archivo debe contener las columnas: <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">name</span>,
+        <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">email</span>,
+        <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">password</span>,
+        <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">roleId</span>
+      </p>
+      <div class="pl-8">
+        <button
+          type="button"
+          (click)="downloadTemplate()"
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-xl border border-tertiary/30 text-secondary hover:bg-background transition-colors"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Descargar plantilla
+        </button>
+      </div>
+    </div>
+
+    <div class="border-t border-tertiary/10"></div>
+
+    <!-- Step 2 -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
+        <h3 class="text-sm font-semibold text-secondary">Sube el archivo completado</h3>
+      </div>
+      <div class="pl-8">
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          (change)="onFileChange($event)"
+          class="block w-full text-sm text-tertiary file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+        />
+        @if (file) {
+          <p class="text-xs text-tertiary mt-2">Archivo seleccionado: <span class="font-medium text-secondary">{{ file.name }}</span></p>
+        }
+      </div>
+    </div>
+
+    <div class="border-t border-tertiary/10"></div>
+
+    <!-- Step 3 -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">3</span>
+        <h3 class="text-sm font-semibold text-secondary">Ejecuta la importación</h3>
+      </div>
+      <div class="pl-8">
+        <app-button
+          [label]="loading ? 'Importando...' : 'Importar colaboradores'"
+          variant="primary"
+          size="md"
+          [disabled]="!file || loading"
+          (clicked)="import()"
+        />
+      </div>
+    </div>
+
+    <!-- Result -->
+    @if (result) {
+      <div class="rounded-xl bg-background border border-tertiary/20 p-4 flex flex-col gap-1.5">
+        <p class="text-sm font-semibold text-secondary">Resultado de la importación</p>
+        <p class="text-sm text-green-700">Creados: <span class="font-bold">{{ result.created }}</span></p>
+        @if (result.skipped.length) {
+          <p class="text-sm text-amber-700">Omitidos (ya existen): {{ result.skipped.join(', ') }}</p>
+        }
+        @if (result.errors.length) {
+          <div class="text-sm text-red-700">
+            <p class="font-medium">Errores:</p>
+            <ul class="list-disc list-inside mt-1 space-y-0.5">
+              @for (err of result.errors; track $index) {
+                <li class="text-xs">{{ err }}</li>
+              }
+            </ul>
+          </div>
+        }
+        @if (result.created > 0 && !result.errors.length) {
+          <button type="button" (click)="back()" class="mt-2 text-sm text-primary font-medium hover:underline w-fit">
+            Volver al listado
+          </button>
+        }
+      </div>
+    }
+
+  </div>
+
+</div>

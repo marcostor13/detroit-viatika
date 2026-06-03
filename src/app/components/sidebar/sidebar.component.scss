@@ -1,0 +1,120 @@
+@use "../../../styles/variables" as *;
+
+.selected {
+  background-color: $color1;
+  color: white;
+  transform: scale(1.1);
+}
+
+// Estilo para hover en iconos
+.cursor-pointer:hover {
+  transform: scale(1.1);
+}
+
+// Asegurar que el sidebar tenga altura completa
+.h-screen {
+  height: 100vh;
+  min-height: 100vh;
+}
+
+// Estilo para la sombra del menú móvil
+.shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+    0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+// Animaciones para el sidebar móvil
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+// Clases de animación personalizadas
+.animate-in {
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.slide-in-from-left {
+  animation-name: slideInFromLeft;
+}
+
+.duration-300 {
+  animation-duration: 300ms;
+}
+
+// Mejoras para el botón hamburguesa
+.hamburger-line {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center;
+}
+
+// Efectos de hover mejorados
+.group:hover .group-hover\:scale-110 {
+  transform: scale(1.1);
+}
+
+.group:hover .group-hover\:rotate-90 {
+  transform: rotate(90deg);
+}
+
+// Backdrop blur personalizado
+.backdrop-blur-sm {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+// Sombras mejoradas
+.shadow-2xl {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+// Efectos de translación suave
+.hover\:translate-x-1:hover {
+  transform: translateX(0.25rem);
+}
+
+// Anillo para el avatar
+.ring-2 {
+  box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+
+.ring-gray-600 {
+  --tw-ring-color: rgb(75 85 99);
+}
+
+// Responsive: ocultar en pantallas grandes
+@media (min-width: 1024px) {
+  .lg\:hidden {
+    display: none !important;
+  }
+}
+
+// Responsive: mostrar solo en pantallas grandes
+@media (min-width: 1024px) {
+  .lg\:flex {
+    display: flex !important;
+  }
+
+  .lg\:w-64 {
+    width: 16rem !important;
+  }
+}

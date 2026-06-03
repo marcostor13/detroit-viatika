@@ -1,0 +1,747 @@
+<div class="px-5 py-6 max-w-7xl mx-auto">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Mis Rendiciones</h1>
+      <p class="text-sm text-gray-500 mt-1">Gestiona tus viáticos y documentos de gastos.</p>
+    </div>
+    <button
+      type="button"
+      (click)="toggleGuidelines()"
+      class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-600 bg-white text-sm font-semibold rounded-lg hover:bg-gray-50 transition-all"
+      title="Procedimientos y Consideraciones"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+      </svg>
+      Guía
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 border-b border-gray-200 mb-6">
+    <button
+      type="button"
+      (click)="setTab('viaticos')"
+      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      [class.border-primary]="activeTab() === 'viaticos'"
+      [class.text-primary]="activeTab() === 'viaticos'"
+      [class.border-transparent]="activeTab() !== 'viaticos'"
+      [class.text-gray-500]="activeTab() !== 'viaticos'"
+    >
+      Mis viáticos
+      @if (pendingAdvances.length > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ pendingAdvances.length }}</span>
+      }
+    </button>
+    @if (canCreateRendicion) {
+    <button
+      type="button"
+      (click)="setTab('directas')"
+      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      [class.border-primary]="activeTab() === 'directas'"
+      [class.text-primary]="activeTab() === 'directas'"
+      [class.border-transparent]="activeTab() !== 'directas'"
+      [class.text-gray-500]="activeTab() !== 'directas'"
+    >
+      Rendiciones Directas
+      @if (loosePendingCount > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ loosePendingCount }}</span>
+      }
+    </button>
+    }
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- TAB 1: MIS VIÁTICOS -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'viaticos') {
+
+  <!-- Botón solicitar viáticos -->
+  <div class="flex justify-end mb-5">
+    <button
+      type="button"
+      (click)="openViaticosModal()"
+      class="inline-flex items-center gap-2 px-4 py-2.5 border border-primary text-primary bg-white text-sm font-semibold rounded-lg hover:bg-primary/5 active:scale-[0.98] transition-all"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75a3.375 3.375 0 0 0-3.375 3.375v8.25a3.375 3.375 0 0 0 3.375 3.375h5.25a3.375 3.375 0 0 0 3.375-3.375v-2.625Z" />
+      </svg>
+      Solicitud de viáticos
+    </button>
+  </div>
+
+  @if (pendingAdvances.length > 0) {
+  <div class="mb-8">
+    <h2 class="text-lg font-bold text-gray-900 mb-3">Mis solicitudes de viáticos</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      @for (adv of pendingAdvances; track adv._id) {
+      <div
+        class="rounded-xl border shadow-sm p-5 flex flex-col gap-3 transition-all"
+        [class]="adv.status === 'paid' && hasExpenseReportLink(adv)
+          ? 'bg-emerald-50 border-emerald-300 cursor-pointer hover:border-emerald-500 hover:shadow-md'
+          : 'bg-white border-gray-200'"
+        (click)="adv.status === 'paid' && hasExpenseReportLink(adv) ? navigateToAdvanceReport(adv) : null"
+      >
+        <div class="flex justify-between items-start gap-2">
+          <span [class]="ADVANCE_STATUS_COLORS[adv.status]" class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold">
+            {{ advanceStatusText(adv) }}
+          </span>
+          @if (adv.solicitudVersion && adv.solicitudVersion > 1) {
+          <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">v{{ adv.solicitudVersion }}</span>
+          }
+        </div>
+
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Centro de costo</p>
+          <p class="text-sm font-semibold text-gray-900 line-clamp-2">{{ advanceProjectLabel(adv) }}</p>
+        </div>
+
+        @if (adv.description) {
+        <div>
+          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Descripcion</p>
+          <p class="text-sm text-gray-700 line-clamp-2">{{ adv.description }}</p>
+        </div>
+        }
+
+        <dl class="flex flex-col gap-1.5 text-sm">
+          @if (adv.place) {
+          <div class="flex items-start gap-1.5">
+            <dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-0.5">Destino</dt>
+            <dd class="text-gray-700 line-clamp-1">{{ adv.place }}</dd>
+          </div>
+          }
+          @if (advanceDateRange(adv)) {
+          <div class="flex items-start gap-1.5">
+            <dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-0.5">Fechas</dt>
+            <dd class="text-gray-700">{{ advanceDateRange(adv) }}</dd>
+          </div>
+          }
+        </dl>
+
+        <div class="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
+          <span class="text-xs text-gray-400">Monto solicitado</span>
+          <span class="text-base font-bold text-gray-900">S/ {{ adv.amount | number:'1.2-2' }}</span>
+        </div>
+        @if (adv.status === 'rejected' && adv.rejectionReason) {
+        <div class="rounded-lg border border-red-100 bg-red-50/80 px-3 py-2 text-xs text-red-900">
+          <span class="font-semibold">Motivo del rechazo:</span>
+          <p class="mt-1 whitespace-pre-wrap break-words">{{ adv.rejectionReason }}</p>
+        </div>
+        }
+        @if (adv.status === 'pending_l1') {
+        <div class="flex gap-2 pt-1">
+          <button
+            type="button"
+            (click)="openResubmitAdvance(adv)"
+            class="flex-1 py-2 text-xs font-semibold rounded-lg border border-primary bg-white text-primary hover:bg-primary/5 transition-colors"
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            (click)="openCancelAdvanceModal(adv)"
+            class="flex-1 py-2 text-xs font-semibold rounded-lg border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+        }
+        @if (adv.status === 'rejected') {
+        <button
+          type="button"
+          (click)="openResubmitAdvance(adv)"
+          class="w-full py-2.5 text-sm font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+        >
+          Corregir y reenviar
+        </button>
+        }
+        @if (adv.status === 'paid' && hasExpenseReportLink(adv)) {
+        <div class="flex items-center justify-between rounded-lg bg-emerald-100 border border-emerald-300 px-3 py-2 mt-auto">
+          <span class="text-xs font-semibold text-emerald-800">Toca para registrar tus gastos</span>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 text-emerald-700 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+          </svg>
+        </div>
+        }
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  @if (isLoading) {
+    <div class="flex justify-center p-12">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  } @else {
+    @if (viaticosReports.length === 0) {
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-16 h-16 mx-auto text-gray-300 mb-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+        </svg>
+        <h3 class="text-lg font-medium text-gray-900">No tienes rendiciones aún</h3>
+        @if (true) {
+          <p class="text-gray-500 mt-1">Crea una solicitud de viaticos o espera que un administrador te asigne una rendicion.</p>
+          <button type="button" (click)="openViaticosModal()"
+            class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75a3.375 3.375 0 0 0-3.375 3.375v8.25a3.375 3.375 0 0 0 3.375 3.375h5.25a3.375 3.375 0 0 0 3.375-3.375v-2.625Z" />
+            </svg>
+            Solicitud de viaticos
+          </button>
+        }
+      </div>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <a *ngFor="let report of viaticosReports" [routerLink]="report.status !== 'cancelled' ? ['/mis-rendiciones', report._id, 'detalle'] : null" [class.cursor-pointer]="report.status !== 'cancelled'" [class.cursor-default]="report.status === 'cancelled'" class="bg-white rounded-xl shadow-soft border border-gray-100 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col hover:shadow-md no-underline text-inherit block">
+          <div class="p-6 flex-1 text-left">
+            <div class="flex justify-between items-start mb-4">
+              <span class="px-2.5 py-1 text-xs font-medium rounded-full"
+                [ngClass]="{
+                  'bg-purple-100 text-purple-800': report.status === 'solicited',
+                  'bg-green-100 text-green-800': report.status === 'open',
+                  'bg-yellow-100 text-yellow-800': report.status === 'submitted',
+                  'bg-blue-100 text-blue-800': report.status === 'approved',
+                  'bg-red-100 text-red-800': report.status === 'rejected',
+                  'bg-gray-100 text-gray-800': report.status === 'closed',
+                  'bg-orange-100 text-orange-800': report.status === 'cancelled',
+                  'bg-emerald-100 text-emerald-800': isReportInProgress(report)
+                }"
+              >
+                {{ panelStatusText(report) }}
+              </span>
+              <span class="text-xs text-gray-400">{{ report.createdAt | date:'dd/MM/yyyy' }}</span>
+            </div>
+
+            <div class="flex items-start gap-2 mb-2">
+              @if (report.isDirecta) {
+                <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 uppercase tracking-wide mt-0.5">Directa</span>
+              }
+              <h3 class="text-base font-bold text-gray-900 line-clamp-2 leading-snug" [title]="reportDisplayTitle(report)">
+                {{ reportDisplayTitle(report) }}
+              </h3>
+            </div>
+            @if (report.location || report.startDate) {
+            <dl class="mb-3 flex flex-col gap-1 text-xs">
+              @if (report.location) {
+              <div class="flex items-start gap-1.5">
+                <dt class="font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-px">Destino</dt>
+                <dd class="text-gray-600 line-clamp-1">{{ report.location }}</dd>
+              </div>
+              }
+              @if (reportDateRange(report)) {
+              <div class="flex items-start gap-1.5">
+                <dt class="font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-px">Fechas</dt>
+                <dd class="text-gray-600">{{ reportDateRange(report) }}</dd>
+              </div>
+              }
+            </dl>
+            } @else {
+            <div class="mb-3 min-h-[2.5rem]"></div>
+            }
+
+            @if (report.status === 'solicited') {
+              <div class="mb-4 rounded-lg border border-purple-200 bg-purple-50/90 p-3 text-left">
+                <p class="text-xs font-semibold text-purple-900 uppercase tracking-wide">Pendiente de aprobación</p>
+                <p class="text-sm text-purple-800 mt-1">Tu solicitud está siendo revisada por el administrador.</p>
+              </div>
+            }
+
+            @if (report.status === 'rejected') {
+              <div class="mb-4 rounded-lg border border-red-200 bg-red-50/90 p-3 text-left">
+                <p class="text-xs font-semibold text-red-900 uppercase tracking-wide">Motivo de rechazo</p>
+                @if (report.rejectionReason) {
+                  <p class="text-sm text-red-950 mt-1 line-clamp-4 whitespace-pre-wrap break-words">{{ report.rejectionReason }}</p>
+                } @else {
+                  <p class="text-xs text-red-800/90 mt-1">Sin motivo registrado. Revisa el detalle o consulta a administración.</p>
+                }
+              </div>
+            }
+
+            <div class="bg-gray-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-sm border border-gray-100">
+              <div>
+                <p class="text-gray-500 text-xs">Presupuesto</p>
+                <p class="font-semibold text-gray-900">S/ {{ report.budget | number:'1.2-2' }}</p>
+              </div>
+              <div class="text-right">
+                <p class="text-gray-500 text-xs">Saldo Libre</p>
+                <p class="font-bold text-green-600">S/ {{ getSaldoLibre(report) | number:'1.2-2' }}</p>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+                <div class="flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                  </svg>
+                  <span>{{ report.expenseIds.length }} comprobantes</span>
+                </div>
+            </div>
+          </div>
+
+          @if (report.status === 'solicited') {
+          <div class="bg-gray-50 px-4 py-3 border-t border-gray-100 flex gap-2 mt-auto" (click)="$event.preventDefault(); $event.stopPropagation()">
+            <button
+              type="button"
+              (click)="goToReportDetail(report, $event)"
+              class="flex-1 py-2 text-xs font-semibold rounded-lg border border-primary bg-white text-primary hover:bg-primary/5 transition-colors"
+            >
+              Ver / Editar
+            </button>
+            <button
+              type="button"
+              (click)="openCancelReportModal(report, $event)"
+              class="flex-1 py-2 text-xs font-semibold rounded-lg border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+          } @else if (report.isDirecta && report.status === 'open' && canCreateRendicion) {
+          <!-- Rendición directa abierta: accesos rápidos -->
+          <div class="bg-gray-50 px-4 py-3 border-t border-gray-100 flex gap-2 mt-auto" (click)="$event.preventDefault(); $event.stopPropagation()">
+            <button
+              type="button"
+              (click)="goToReportDetail(report, $event)"
+              class="flex-1 py-2 text-xs font-semibold rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Ver detalle
+            </button>
+            <button
+              type="button"
+              (click)="selectGastoType('factura'); $event.preventDefault(); $event.stopPropagation()"
+              [disabled]="isCreatingGasto()"
+              class="flex-1 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              + Añadir gasto
+            </button>
+          </div>
+          } @else if (isReportInProgress(report)) {
+          <div class="bg-emerald-600 px-6 py-3 border-t border-emerald-700 font-semibold text-white text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors mt-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Registrar Gastos
+          </div>
+          } @else {
+          <div class="bg-gray-50 px-6 py-3 border-t border-gray-100 font-medium text-primary text-sm flex justify-center hover:bg-primary hover:text-white transition-colors mt-auto">
+            Ver Detalles
+          </div>
+          }
+        </a>
+      </div>
+    }
+  }
+
+  } <!-- fin @if activeTab === 'viaticos' -->
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- TAB 2: GASTOS DIRECTOS -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'directas') {
+
+  <!-- Barra de acciones -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
+    <div class="flex items-center gap-3 flex-wrap">
+      @if (loosePendingCount > 0) {
+        <div class="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+          <span class="font-semibold">{{ loosePendingCount }}</span> doc. sin enviar
+          <span class="text-amber-400">·</span>
+          <span class="font-semibold">S/ {{ loosePendingTotal | number:'1.2-2' }}</span>
+        </div>
+        <button
+          type="button"
+          (click)="submitDirectas()"
+          [disabled]="isSubmittingDirectas()"
+          class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-all"
+        >
+          @if (isSubmittingDirectas()) {
+            <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+            Enviando...
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+            </svg>
+            Enviar a Contabilidad
+          }
+        </button>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Filtro tipo -->
+      <select [(ngModel)]="directaFilterTipo" (change)="directaLoaded=false; loadDirectaExpenses()"
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
+        <option value="">Todos los tipos</option>
+        <option value="factura">Factura</option>
+        <option value="planilla_movilidad">Planilla Movilidad</option>
+        <option value="otros_gastos">Otros Gastos</option>
+        <option value="recibo_caja">Recibo de Caja</option>
+        <option value="comprobante_caja">Comprobante Caja</option>
+      </select>
+      <button
+        type="button"
+        (click)="openAddGasto()"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Añadir gasto
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabla de documentos -->
+  @if (directaLoading()) {
+    <div class="flex justify-center py-16">
+      <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
+    </div>
+  } @else if (directaExpenses().length === 0) {
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-12 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-14 h-14 mx-auto text-gray-300 mb-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+      </svg>
+      <p class="text-gray-900 font-semibold mb-1">No tienes gastos directos aún</p>
+      <p class="text-sm text-gray-500 mb-4">Sube tus documentos de gastos con el botón "Añadir gasto".</p>
+      <button type="button" (click)="openAddGasto()"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Añadir primer gasto
+      </button>
+    </div>
+  } @else {
+
+    <!-- Desktop: tabla -->
+    <div class="hidden md:block bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <table class="w-full text-sm divide-y divide-gray-100">
+        <thead class="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left">
+          <tr>
+            <th class="px-4 py-3">Fecha</th>
+            <th class="px-4 py-3">Tipo</th>
+            <th class="px-4 py-3 whitespace-nowrap">N° Doc</th>
+            <th class="px-4 py-3">Proveedor / Concepto</th>
+            <th class="px-4 py-3 text-right whitespace-nowrap">Monto S/</th>
+            <th class="px-4 py-3 text-center">Estado</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          @for (e of directaExpenses(); track e._id) {
+          <tr class="hover:bg-gray-50 transition-colors cursor-pointer group" (click)="goToDirectaReport(e)">
+            <!-- Fecha -->
+            <td class="px-4 py-3 text-gray-700 whitespace-nowrap text-xs">{{ getDirectaFecha(e) }}</td>
+            <!-- Tipo badge -->
+            <td class="px-4 py-3">
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold tabular-nums" [ngClass]="getDirectaTipoBadgeClass(e)">
+                {{ getDirectaTipoCode(e) }}
+              </span>
+            </td>
+            <!-- N° documento -->
+            <td class="px-4 py-3 font-mono text-xs text-gray-700 whitespace-nowrap">{{ getDirectaDocNumber(e) }}</td>
+            <!-- Proveedor / Concepto -->
+            <td class="px-4 py-3 max-w-[220px]">
+              <p class="text-xs font-medium text-gray-800 truncate" [title]="getDirectaProveedor(e)">{{ getDirectaProveedor(e) }}</p>
+              <p class="text-xs text-gray-400 truncate" [title]="getDirectaConcepto(e)">{{ getDirectaConcepto(e) }}</p>
+            </td>
+            <!-- Monto -->
+            <td class="px-4 py-3 text-right font-semibold tabular-nums whitespace-nowrap">S/ {{ e.total | number:'1.2-2' }}</td>
+            <!-- Estado -->
+            <td class="px-4 py-3 text-center">
+              <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" [ngClass]="getDirectaEstado(e).cls">
+                {{ getDirectaEstado(e).label }}
+              </span>
+            </td>
+          </tr>
+          }
+        </tbody>
+        <tfoot class="bg-gray-50 border-t border-gray-200">
+          <tr>
+            <td colspan="4" class="px-4 py-3 text-xs text-gray-500">{{ directaTotal() }} documento(s)</td>
+            <td class="px-4 py-3 text-right font-bold text-gray-900">
+              S/ {{ directaTotalMonto | number:'1.2-2' }}
+            </td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Mobile: tarjetas -->
+    <div class="md:hidden flex flex-col gap-3">
+      @for (e of directaExpenses(); track e._id) {
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer" (click)="goToDirectaReport(e)">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2 py-0.5 rounded text-xs font-bold tabular-nums" [ngClass]="getDirectaTipoBadgeClass(e)">{{ getDirectaTipoCode(e) }}</span>
+            <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" [ngClass]="getDirectaEstado(e).cls">{{ getDirectaEstado(e).label }}</span>
+          </div>
+          <span class="text-base font-bold text-gray-900 whitespace-nowrap">S/ {{ e.total | number:'1.2-2' }}</span>
+        </div>
+        <p class="text-sm font-medium text-gray-800 truncate">{{ getDirectaProveedor(e) }}</p>
+        <p class="text-xs text-gray-500 truncate mt-0.5">{{ getDirectaConcepto(e) }}</p>
+        <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-xs text-gray-400">
+          <span>{{ getDirectaFecha(e) }}</span>
+          <span class="font-mono">{{ getDirectaDocNumber(e) }}</span>
+        </div>
+      </div>
+      }
+    </div>
+
+  } <!-- fin @else directaExpenses -->
+
+  } <!-- fin @if activeTab === 'directas' -->
+
+</div>
+
+<app-create-rendicion-modal
+  [isOpen]="showCreateModal"
+  [collaboratorId]="currentUserId"
+  (close)="onModalClose($event)"
+/>
+
+
+<!-- Modal: Procedimientos y Consideraciones -->
+@if (showGuidelines()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" (click)="toggleGuidelines()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" (click)="$event.stopPropagation()">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="p-2 bg-primary/10 text-primary rounded-lg shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-gray-900">Procedimientos y Consideraciones</h2>
+          <p class="text-xs text-gray-500 mt-0.5">Normas importantes para la rendición de viáticos</p>
+        </div>
+      </div>
+      <button type="button" (click)="toggleGuidelines()" class="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+    <!-- Content -->
+    <div class="overflow-y-auto px-6 py-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+        <!-- Procedimiento -->
+        <div>
+          <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
+            Procedimiento General
+          </h3>
+          <ol class="space-y-4 text-sm text-gray-700 list-decimal list-outside ml-4">
+            <li class="pl-2">
+              <span class="font-medium text-gray-900">Entrega de rendición:</span> Entrega el formato Excel y la rendición física a los <strong class="text-primary">02 días hábiles</strong> de retorno de campo.
+            </li>
+            <li class="pl-2">
+              <span class="font-medium text-gray-900">Validación (Administración):</span> Se realiza la validación de la entrega al día siguiente de recibido.
+            </li>
+            <li class="pl-2">
+              <span class="font-medium text-gray-900">Conformidad:</span> Remisión al Director de Proyectos para su conformidad.
+            </li>
+            <li class="pl-2">
+              <span class="font-medium text-red-700">Penalidad:</span> En caso excepcional, de no rendir hasta el cierre de mes, automáticamente se considerará como <strong class="text-red-700">adelanto de sueldo</strong>.
+            </li>
+          </ol>
+        </div>
+
+        <!-- Consideraciones -->
+        <div>
+          <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold">2</span>
+            Consideraciones Clave
+          </h3>
+          <ul class="space-y-3 text-sm text-gray-700 list-disc list-outside ml-4">
+            <li class="pl-1">La <strong class="text-gray-900">boleta de venta</strong> debe estar afecta al Nuevo RUS.</li>
+            <li class="pl-1">La boleta de venta <strong>nunca debe iniciar su RUC con dígito 20</strong>; de ser así, solicita factura. Caso contrario será <strong class="text-red-700">ND (No Deducible)</strong>.</li>
+            <li class="pl-1">Importes mayores a <strong>S/ 500</strong>: Efectuar consulta RUC para validar condición de activo y habido en SUNAT.</li>
+            <li class="pl-1">Documentos obligatorios: <strong class="text-gray-900">Factura PDF</strong> y <strong class="text-gray-900">Archivo XML</strong>.</li>
+            <li class="pl-1">Movilidad local diaria <strong class="text-primary">&lt; S/ 37.20 x día</strong> (solo en Lima). En provincia debe ser factura o comprobante de caja.</li>
+            <li class="pl-1">Comprobante por alimentación <strong>detallada</strong> (NO por "Consumo").</li>
+            <li class="pl-1 font-medium text-gray-900">Todo gasto de vehículo debe consignar obligatoriamente la Placa (peaje, combustible, lubricante, repuestos, mantenimiento, etc).</li>
+            <li class="pl-1">Alojamiento: Detallar personas y días.</li>
+            <li class="pl-1">Al contratar proveedores debe ceñirse al procedimiento de contratación.</li>
+            <li class="pl-1">El <strong>comprobante de caja</strong> debe estar firmado por quien recibe el efectivo y detallar bien el servicio prestado (Obligatorio).</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-gray-100 flex justify-end shrink-0">
+      <button type="button" (click)="toggleGuidelines()"
+        class="px-5 py-2 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors">
+        Cerrar
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Cancelar rendición solicitada -->
+@if (showCancelReportModal()) {
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelReportModal.set(false)">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
+      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Cancelar solicitud</h3>
+        <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">{{ cancellingReport()?.title }}</p>
+      </div>
+    </div>
+    <div class="px-6 py-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Motivo (opcional)</label>
+      <textarea
+        rows="3"
+        [value]="cancelReportReason()"
+        (input)="cancelReportReason.set($any($event.target).value)"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 resize-none"
+        placeholder="Ej: Ya no realizare el viaje..."
+      ></textarea>
+    </div>
+    <div class="px-6 pb-6 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        [disabled]="isCancellingReport()"
+        (click)="showCancelReportModal.set(false)"
+      >
+        Volver
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+        [disabled]="isCancellingReport()"
+        (click)="confirmCancelReport()"
+      >
+        @if (isCancellingReport()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Cancelando...
+        } @else {
+          Confirmar
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Cancelar solicitud de viáticos -->
+@if (showCancelAdvanceModal()) {
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelAdvanceModal.set(false)">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
+      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Cancelar solicitud de viaticos</h3>
+        <p class="text-xs text-gray-500">La solicitud quedara como cancelada</p>
+      </div>
+    </div>
+    <div class="px-6 py-4">
+      <p class="text-sm text-gray-600">¿Estas seguro de que deseas cancelar esta solicitud? Esta accion no se puede deshacer.</p>
+    </div>
+    <div class="px-6 pb-6 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        [disabled]="isCancellingAdvance()"
+        (click)="showCancelAdvanceModal.set(false)"
+      >
+        Volver
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+        [disabled]="isCancellingAdvance()"
+        (click)="confirmCancelAdvance()"
+      >
+        @if (isCancellingAdvance()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Cancelando...
+        } @else {
+          Confirmar
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Seleccion de tipo de gasto -->
+@if (showTypeModal) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="closeTypeModal()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">¿Qué tipo de gasto deseas agregar?</h3>
+    <p class="text-sm text-gray-500 mb-5">Selecciona el tipo de comprobante</p>
+    <div class="flex flex-col gap-3">
+      <button type="button" (click)="selectGastoType('factura')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Factura</p>
+          <p class="text-xs text-gray-500">Sube un PDF o imagen de la factura</p>
+        </div>
+      </button>
+      <button type="button" (click)="selectGastoType('planilla_movilidad')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-yellow-50 text-yellow-600 group-hover:bg-yellow-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Planilla de Movilidad</p>
+          <p class="text-xs text-gray-500">Fecha, Concepto, Total, Lugar, Gestion</p>
+        </div>
+      </button>
+      <button type="button" (click)="selectGastoType('otros_gastos')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Otros Gastos</p>
+          <p class="text-xs text-gray-500">Ticket, recibos, DJ u otros</p>
+        </div>
+      </button>
+      <button type="button" (click)="selectGastoType('comprobante_caja')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.25h6m-7.5 3h9A2.25 2.25 0 0 0 18.75 16.5v-9A2.25 2.25 0 0 0 16.5 5.25h-9A2.25 2.25 0 0 0 5.25 7.5v9A2.25 2.25 0 0 0 7.5 18.75Z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Comprobante de Caja</p>
+          <p class="text-xs text-gray-500">Formulario interno con correlativo</p>
+        </div>
+      </button>
+    </div>
+    <button type="button" (click)="closeTypeModal()"
+      class="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+      Cancelar
+    </button>
+  </div>
+</div>
+}

@@ -1,0 +1,623 @@
+<div class="min-h-screen bg-background flex flex-col">
+
+  <header class="bg-quaternary border-b border-tertiary/20 shadow-soft px-6 py-4 flex items-center gap-4">
+    <button
+      (click)="goBack()"
+      class="flex items-center gap-2 text-sm font-medium text-tertiary hover:text-secondary transition-colors"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+      </svg>
+      Volver al hub
+    </button>
+    <div class="h-5 w-px bg-tertiary/30"></div>
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-bold text-secondary leading-none">Administrar Empresas</h1>
+      <p class="text-xs text-tertiary mt-0.5">Gestiona los datos y configuración SUNAT de cada empresa.</p>
+    </div>
+    <button
+      type="button"
+      (click)="openCreateForm()"
+      class="ml-auto flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors shrink-0"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      Nueva empresa
+    </button>
+  </header>
+
+<div class="flex flex-col gap-4 p-5">
+
+  @if (creationResult) {
+    <div class="bg-quaternary rounded-2xl border border-success/30 p-5 flex flex-col gap-4">
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full bg-success/10 flex items-center justify-center flex-shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 text-success">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-secondary">Empresa creada correctamente</p>
+            <p class="text-xs text-tertiary mt-0.5">{{ creationResult.companyName }}</p>
+          </div>
+        </div>
+        <button (click)="dismissCreationResult()" class="text-tertiary hover:text-secondary transition-colors flex-shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="border-t border-tertiary/10 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        <div>
+          <p class="text-xs text-tertiary mb-1">Email del administrador</p>
+          <p class="font-medium text-secondary">{{ creationResult.adminEmail }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-tertiary mb-1">Contraseña temporal</p>
+          <div class="flex items-center gap-2">
+            <p class="font-mono font-semibold text-primary tracking-wide">{{ creationResult.temporaryPassword }}</p>
+            <button
+              (click)="copyPassword(creationResult.temporaryPassword)"
+              class="text-xs text-tertiary hover:text-primary transition-colors px-2 py-0.5 border border-tertiary/20 rounded"
+            >Copiar</button>
+          </div>
+        </div>
+      </div>
+      <p class="text-xs text-tertiary">El usuario recibirá sus credenciales por email. Guarda esta contraseña temporal, no se volverá a mostrar.</p>
+    </div>
+  }
+
+  @if (showCreateForm) {
+    <div class="bg-quaternary rounded-2xl shadow-sm border border-primary/20 p-5">
+      <h2 class="text-sm font-semibold text-secondary uppercase tracking-wide mb-4">Nueva empresa</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-tertiary mb-1">Código *</label>
+          <input
+            [(ngModel)]="createForm.codigo"
+            type="text"
+            placeholder="Ej: EMP-001"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary uppercase"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-tertiary mb-1">Nombre comercial *</label>
+          <input
+            [(ngModel)]="createForm.comercialName"
+            type="text"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-tertiary mb-1">Razón social *</label>
+          <input
+            [(ngModel)]="createForm.businessName"
+            type="text"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-tertiary mb-1">RUC *</label>
+          <input
+            [(ngModel)]="createForm.businessId"
+            type="text"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-tertiary mb-1">Email</label>
+          <input
+            [(ngModel)]="createForm.email"
+            type="email"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-tertiary mb-1">Teléfono</label>
+          <input
+            [(ngModel)]="createForm.phone"
+            type="text"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-tertiary mb-1">Dirección</label>
+          <input
+            [(ngModel)]="createForm.address"
+            type="text"
+            class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-medium text-tertiary mb-1">Logo</label>
+          <div class="flex items-center gap-3">
+            @if (createLogoPreview) {
+              <img [src]="createLogoPreview" alt="Logo preview" class="w-14 h-14 rounded-xl object-contain border border-tertiary/20 bg-background p-1 flex-shrink-0" />
+            } @else {
+              <div class="w-14 h-14 rounded-xl border border-dashed border-tertiary/30 bg-background flex items-center justify-center flex-shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-tertiary/50">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                </svg>
+              </div>
+            }
+            <label class="cursor-pointer px-3 py-1.5 text-xs font-medium border border-tertiary/30 rounded-lg text-secondary hover:border-primary hover:text-primary transition-colors">
+              Seleccionar imagen
+              <input type="file" accept="image/*" class="hidden" (change)="onCreateLogoSelected($event)" />
+            </label>
+            @if (createLogoFile) {
+              <span class="text-xs text-tertiary truncate max-w-40">{{ createLogoFile.name }}</span>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Primer Administrador -->
+      <div class="border-t border-tertiary/10 pt-4 mt-2">
+        <div class="flex items-center gap-2 mb-3">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-primary flex-shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
+          </svg>
+          <p class="text-sm font-semibold text-secondary">Primer Administrador <span class="text-error">*</span></p>
+        </div>
+        <p class="text-xs text-tertiary mb-3">Se creará automáticamente una cuenta con rol Administrador para esta empresa. Recibirá sus credenciales por email.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-tertiary mb-1">Nombre completo *</label>
+            <input
+              [(ngModel)]="createAdminUser.name"
+              type="text"
+              placeholder="Ej: Juan García"
+              class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-tertiary mb-1">Email *</label>
+            <input
+              [(ngModel)]="createAdminUser.email"
+              type="email"
+              placeholder="admin@empresa.com"
+              class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- SUNAT section -->
+      <div class="border-t border-tertiary/10 pt-4 mt-2">
+        <div class="flex items-center gap-2 mb-3">
+          <input [(ngModel)]="createSunatForm.enabled" type="checkbox" id="create-sunat-toggle" class="w-4 h-4 accent-primary cursor-pointer" />
+          <label for="create-sunat-toggle" class="text-sm font-medium text-secondary cursor-pointer select-none">Configurar SUNAT ahora</label>
+        </div>
+        @if (createSunatForm.enabled) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-tertiary mb-1">RUC</label>
+              <input
+                [(ngModel)]="createSunatForm.ruc"
+                type="text"
+                class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-tertiary mb-1">Client ID SUNAT *</label>
+              <input
+                [(ngModel)]="createSunatForm.clientIdSunat"
+                type="text"
+                class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="block text-xs font-medium text-tertiary mb-1">Client Secret SUNAT *</label>
+              <input
+                [(ngModel)]="createSunatForm.clientSecret"
+                type="password"
+                class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div class="sm:col-span-2 flex items-center gap-2">
+              <input [(ngModel)]="createSunatForm.isActive" type="checkbox" id="create-sunat-active" class="w-4 h-4 accent-primary" />
+              <label for="create-sunat-active" class="text-sm text-secondary cursor-pointer select-none">Activo</label>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="flex gap-3 mt-4">
+        <button
+          (click)="createClient()"
+          [disabled]="creating"
+          class="px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          @if (creating) { Creando... } @else { Crear empresa }
+        </button>
+        <button
+          (click)="cancelCreate()"
+          [disabled]="creating"
+          class="px-4 py-2 text-sm font-medium text-tertiary hover:text-secondary rounded-lg hover:bg-background"
+        >Cancelar</button>
+      </div>
+    </div>
+  }
+
+  @if (loading) {
+    <div class="flex justify-center py-16">
+      <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+    </div>
+  }
+
+  @if (!loading && clients.length === 0 && !showCreateForm) {
+    <div class="text-center py-16 text-tertiary">
+      <p class="font-medium">No hay empresas registradas</p>
+      <button
+        (click)="openCreateForm()"
+        class="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90"
+      >Crear primera empresa</button>
+    </div>
+  }
+
+  <div class="flex flex-col gap-3">
+    @for (row of clients; track row._id) {
+      <div class="bg-quaternary rounded-2xl shadow-sm border border-tertiary/10 overflow-hidden">
+
+        <!-- Row header -->
+        <button
+          (click)="toggleExpand(row)"
+          class="w-full flex items-center gap-4 px-5 py-4 hover:bg-background transition-colors text-left"
+        >
+          <div class="w-12 h-12 rounded-xl bg-background flex items-center justify-center flex-shrink-0 overflow-hidden">
+            @if (row.logo) {
+              <img [src]="row.logo" [alt]="row.comercialName" class="w-full h-full object-contain p-1" />
+            } @else {
+              <span class="text-lg font-bold text-primary">{{ row.comercialName.charAt(0).toUpperCase() }}</span>
+            }
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-secondary truncate">{{ row.comercialName }}</p>
+            <p class="text-sm text-tertiary truncate">
+              @if (row.codigo) {
+                <span class="font-mono text-primary">{{ row.codigo }}</span>
+                <span> · </span>
+              }
+              {{ row.businessName }} · RUC {{ row.businessId }}
+            </p>
+          </div>
+          <svg
+            xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
+            class="w-5 h-5 text-tertiary flex-shrink-0 transition-transform duration-200"
+            [class.rotate-180]="row.expanded"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+        </button>
+
+        <!-- Expanded content -->
+        @if (row.expanded) {
+          <div class="border-t border-tertiary/10 px-5 py-5 flex flex-col gap-6">
+
+            <!-- Company data section -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-secondary uppercase tracking-wide">Datos de la empresa</h2>
+                @if (!row.editing && !row.showDeleteConfirm) {
+                  <div class="flex items-center gap-4">
+                    <button
+                      (click)="startEdit(row)"
+                      class="text-sm text-primary font-medium hover:underline"
+                    >Editar</button>
+                    <button
+                      (click)="openDeleteConfirm(row)"
+                      class="text-sm text-error font-medium hover:underline"
+                    >Eliminar empresa</button>
+                  </div>
+                }
+              </div>
+
+              @if (!row.editing) {
+                <!-- View mode -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">Código</span><span class="text-secondary font-medium font-mono">{{ row.codigo || '—' }}</span></div>
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">Nombre comercial</span><span class="text-secondary font-medium">{{ row.comercialName || '—' }}</span></div>
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">Razón social</span><span class="text-secondary font-medium">{{ row.businessName || '—' }}</span></div>
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">RUC</span><span class="text-secondary font-medium">{{ row.businessId || '—' }}</span></div>
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">Email</span><span [class]="row.email ? 'text-secondary font-medium' : 'text-tertiary italic'">{{ row.email || 'Sin email' }}</span></div>
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">Teléfono</span><span [class]="row.phone ? 'text-secondary font-medium' : 'text-tertiary italic'">{{ row.phone || 'Sin teléfono' }}</span></div>
+                  <div class="flex gap-2"><span class="text-tertiary w-36 flex-shrink-0">Dirección</span><span [class]="row.address ? 'text-secondary font-medium' : 'text-tertiary italic'">{{ row.address || 'Sin dirección' }}</span></div>
+                </div>
+              } @else {
+                <!-- Edit mode -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Código *</label>
+                    <input
+                      [(ngModel)]="row.editForm.codigo"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Nombre comercial *</label>
+                    <input
+                      [(ngModel)]="row.editForm.comercialName"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Razón social</label>
+                    <input
+                      [(ngModel)]="row.editForm.businessName"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">RUC</label>
+                    <input
+                      [(ngModel)]="row.editForm.businessId"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Email</label>
+                    <input
+                      [(ngModel)]="row.editForm.email"
+                      type="email"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Teléfono</label>
+                    <input
+                      [(ngModel)]="row.editForm.phone"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Dirección</label>
+                    <input
+                      [(ngModel)]="row.editForm.address"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-tertiary mb-1">Logo</label>
+                    <div class="flex items-center gap-3">
+                      @if (row.logoPreview || row.logo) {
+                        <img [src]="row.logoPreview || row.logo" alt="Logo" class="w-14 h-14 rounded-xl object-contain border border-tertiary/20 bg-background p-1" />
+                      }
+                      <input type="file" accept="image/*" (change)="onLogoSelected(row, $event)" class="text-sm text-tertiary" />
+                    </div>
+                  </div>
+                </div>
+                <div class="flex gap-3 mt-4">
+                  <button
+                    (click)="saveEdit(row)"
+                    [disabled]="row.saving || row.uploadingLogo"
+                    class="px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    @if (row.saving || row.uploadingLogo) { Guardando... } @else { Guardar }
+                  </button>
+                  <button
+                    (click)="cancelEdit(row)"
+                    [disabled]="row.saving || row.uploadingLogo"
+                    class="px-4 py-2 text-sm font-medium text-tertiary hover:text-secondary rounded-lg hover:bg-background"
+                  >Cancelar</button>
+                </div>
+              }
+            </div>
+
+            <!-- Delete confirmation panel -->
+            @if (row.showDeleteConfirm) {
+              <div class="rounded-xl border border-error/30 bg-error/5 p-4 flex flex-col gap-3">
+                <div class="flex items-start gap-3">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-error flex-shrink-0 mt-0.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                  </svg>
+                  <div>
+                    <p class="text-sm font-semibold text-error">Eliminar empresa definitivamente</p>
+                    <p class="text-xs text-tertiary mt-0.5">
+                      Se eliminara <span class="font-semibold text-secondary">{{ row.comercialName }}</span> junto con todos sus usuarios. Esta accion no se puede deshacer.
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-tertiary mb-1">
+                    Escribe <span class="font-mono font-semibold text-secondary">eliminar empresa definitivamente</span> para confirmar
+                  </label>
+                  <input
+                    [(ngModel)]="row.deleteConfirmText"
+                    type="text"
+                    placeholder="eliminar empresa definitivamente"
+                    [disabled]="row.deleting"
+                    class="w-full px-3 py-2 text-sm border border-error/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-error disabled:opacity-60"
+                  />
+                </div>
+                <div class="flex gap-3">
+                  <button
+                    (click)="confirmDeleteClient(row)"
+                    [disabled]="row.deleteConfirmText !== 'eliminar empresa definitivamente' || row.deleting"
+                    class="px-4 py-2 text-sm font-semibold bg-error text-white rounded-lg hover:bg-error/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    @if (row.deleting) { Eliminando... } @else { Eliminar empresa }
+                  </button>
+                  <button
+                    (click)="cancelDeleteConfirm(row)"
+                    [disabled]="row.deleting"
+                    class="px-4 py-2 text-sm font-medium text-tertiary hover:text-secondary rounded-lg hover:bg-background"
+                  >Cancelar</button>
+                </div>
+              </div>
+            }
+
+            <!-- SUNAT config section -->
+            <div class="border-t border-tertiary/10 pt-5">
+              <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold text-secondary uppercase tracking-wide">Configuración SUNAT</h2>
+                @if (!row.showSunatForm) {
+                  <div class="flex gap-2">
+                    @if (row.sunatConfig) {
+                      <button
+                        (click)="testSunat(row)"
+                        [disabled]="row.testingConnection"
+                        class="text-sm text-primary font-medium hover:underline disabled:opacity-60"
+                      >{{ row.testingConnection ? 'Probando...' : 'Probar' }}</button>
+                      <button (click)="openSunatForm(row)" class="text-sm text-primary font-medium hover:underline">Editar</button>
+                      <button (click)="deleteSunat(row)" class="text-sm text-error font-medium hover:underline">Eliminar</button>
+                    } @else if (row.sunatLoaded) {
+                      <button (click)="openSunatForm(row)" class="text-sm text-primary font-medium hover:underline">Configurar</button>
+                    }
+                  </div>
+                }
+              </div>
+
+              @if (row.sunatLoading) {
+                <div class="flex items-center gap-2 text-sm text-tertiary">
+                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                  Cargando...
+                </div>
+              }
+
+              @if (!row.sunatLoading && row.sunatLoaded && !row.showSunatForm) {
+                @if (row.sunatConfig) {
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div class="flex gap-2"><span class="text-tertiary w-28 flex-shrink-0">RUC</span><span class="text-secondary font-medium">{{ row.sunatConfig.ruc }}</span></div>
+                    <div class="flex gap-2"><span class="text-tertiary w-28 flex-shrink-0">Client ID</span><span class="text-secondary font-medium font-mono text-xs">{{ row.sunatConfig.clientIdSunat }}</span></div>
+                    <div class="flex gap-2"><span class="text-tertiary w-28 flex-shrink-0">Client Secret</span><span class="text-secondary font-medium font-mono text-xs">••••••••</span></div>
+                    <div class="flex gap-2"><span class="text-tertiary w-28 flex-shrink-0">Estado</span>
+                      <span [class]="row.sunatConfig.isActive ? 'text-success font-medium' : 'text-error font-medium'">
+                        {{ row.sunatConfig.isActive ? 'Activo' : 'Inactivo' }}
+                      </span>
+                    </div>
+                  </div>
+                } @else {
+                  <p class="text-sm text-tertiary">No hay configuración SUNAT registrada para esta empresa.</p>
+                }
+              }
+
+              @if (row.showSunatForm) {
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">RUC</label>
+                    <input
+                      [(ngModel)]="row.sunatForm.ruc"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-tertiary mb-1">Client ID SUNAT *</label>
+                    <input
+                      [(ngModel)]="row.sunatForm.clientIdSunat"
+                      type="text"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div class="sm:col-span-2">
+                    <label class="block text-xs font-medium text-tertiary mb-1">Client Secret SUNAT *</label>
+                    <input
+                      [(ngModel)]="row.sunatForm.clientSecret"
+                      type="password"
+                      class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div class="sm:col-span-2 flex items-center gap-2">
+                    <input [(ngModel)]="row.sunatForm.isActive" type="checkbox" id="sunat-active-{{ row._id }}" class="w-4 h-4 accent-primary" />
+                    <label [for]="'sunat-active-' + row._id" class="text-sm text-secondary">Activo</label>
+                  </div>
+                </div>
+                <div class="flex gap-3 mt-4">
+                  <button
+                    (click)="saveSunat(row)"
+                    [disabled]="row.savingSunat"
+                    class="px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {{ row.savingSunat ? 'Guardando...' : 'Guardar' }}
+                  </button>
+                  <button
+                    (click)="cancelSunatForm(row)"
+                    [disabled]="row.savingSunat"
+                    class="px-4 py-2 text-sm font-medium text-tertiary hover:text-secondary rounded-lg hover:bg-background"
+                  >Cancelar</button>
+                </div>
+              }
+            </div>
+
+            <!-- Users section -->
+            <div class="border-t border-tertiary/10 pt-5">
+              <h2 class="text-sm font-semibold text-secondary uppercase tracking-wide mb-3">Usuario Administrador</h2>
+
+              @if (row.usersLoading) {
+                <div class="flex items-center gap-2 text-sm text-tertiary">
+                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                  Cargando...
+                </div>
+              }
+
+              @if (!row.usersLoading && row.usersLoaded && row.users.length === 0) {
+                <p class="text-sm text-tertiary">No hay usuarios registrados para esta empresa.</p>
+              }
+
+              @if (!row.usersLoading && row.users.length > 0) {
+                <div class="flex flex-col gap-3">
+                  @for (user of row.users; track user._id) {
+                    <div class="rounded-xl border border-tertiary/10 bg-background p-4 flex flex-col gap-3">
+                      <div class="flex items-start justify-between gap-4">
+                        <div class="flex flex-col gap-1">
+                          <p class="text-sm font-semibold text-secondary">{{ user.name }}</p>
+                          <p class="text-xs text-tertiary">{{ user.email }}</p>
+                          <div class="flex items-center gap-2 mt-1">
+                            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">Usuario Administrador</span>
+                            <span [class]="user.isActive ? 'text-xs font-medium px-2 py-0.5 rounded-full bg-success/10 text-success' : 'text-xs font-medium px-2 py-0.5 rounded-full bg-error/10 text-error'">
+                              {{ user.isActive ? 'Activo' : 'Inactivo' }}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          (click)="resetUserPassword(user)"
+                          [disabled]="user.resetting"
+                          class="flex-shrink-0 px-3 py-1.5 text-xs font-medium border border-tertiary/30 rounded-lg text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          {{ user.resetting ? 'Reseteando...' : 'Resetear contraseña' }}
+                        </button>
+                      </div>
+
+                      @if (user.resetResult) {
+                        <div class="rounded-lg border border-success/30 bg-success/5 p-3 flex flex-col gap-2">
+                          <div class="flex items-center justify-between gap-4">
+                            <p class="text-xs font-semibold text-success">Contraseña reseteada</p>
+                            <button (click)="dismissResetResult(user)" class="text-tertiary hover:text-secondary transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <p class="font-mono font-semibold text-primary tracking-wide text-sm">{{ user.resetResult }}</p>
+                            <button
+                              (click)="copyPassword(user.resetResult)"
+                              class="text-xs text-tertiary hover:text-primary transition-colors px-2 py-0.5 border border-tertiary/20 rounded"
+                            >Copiar</button>
+                          </div>
+                          <p class="text-xs text-tertiary">Guarda esta contraseña, no se volverá a mostrar.</p>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+</div>
+
+</div>

@@ -1,0 +1,142 @@
+<div class="min-h-screen w-full flex items-center justify-center bg-background p-4 md:p-8">
+  <div class="w-full max-w-[1200px] h-[800px] bg-quaternary rounded-3xl shadow-2xl overflow-hidden flex relative">
+    
+    <!-- Left Side - Form -->
+    <div class="w-full lg:w-5/12 p-8 md:p-12 lg:p-16 flex flex-col justify-center relative z-10">
+      <!-- Logo -->
+      <div class="mb-12 flex justify-center lg:justify-start">
+        <img src="/logo_header.png" alt="TEMA" width="120" />
+      </div>
+
+      <!-- Header -->
+      <div class="mb-8">
+        <h1 class="text-4xl font-bold text-secondary mb-3">Ingresar</h1>
+        <p class="text-tertiary text-base">Ingresa tus credenciales para acceder</p>
+      </div>
+
+      <!-- Form -->
+      <form (ngSubmit)="login()" autocomplete="off" class="space-y-6">
+        <div>
+          <app-input
+            label="Email"
+            type="email"
+            placeholder="ejemplo@correo.com"
+            [(ngModel)]="email"
+            name="email"
+            [required]="true"
+            class="p-0 border-0"
+          ></app-input>
+        </div>
+
+        <div>
+           <app-input
+            label="Contraseña"
+            [type]="showPassword() ? 'text' : 'password'"
+            placeholder="••••••••"
+            [(ngModel)]="password"
+            name="password"
+            [required]="true"
+          ></app-input>
+        </div>
+
+        <div class="pt-4">
+           <app-button 
+            [label]="loading() ? 'Entrando...' : 'Entrar'" 
+            variant="primary" 
+            [fullWidth]="true" 
+            type="submit"
+            [disabled]="loading()"
+           >
+           </app-button>
+        </div>
+
+         @if (error()) {
+            <div class="p-4 rounded-xl bg-error/10 border border-error/20 text-error text-sm text-center">
+              {{ error() }}
+            </div>
+         }
+      </form>
+
+      <!-- Footer Links -->
+       <div class="mt-auto pt-8 flex justify-between text-xs text-tertiary">
+          <a href="#" class="hover:text-primary transition-colors">¿No tienes cuenta? Regístrate</a>
+          <a href="#" class="hover:text-primary transition-colors">Términos y condiciones</a>
+       </div>
+    </div>
+
+    <!-- Right Side - Visual -->
+    <div class="hidden lg:block w-7/12 relative bg-gray-100">
+      <video 
+        src="/viatika.mp4" 
+        [autoplay]="true" 
+        [loop]="true" 
+        [muted]="true"
+        class="absolute inset-0 w-full h-full object-cover"
+      ></video>
+      
+      <!-- Overlay Gradient -->
+      <div class="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+
+      <!-- Glassmorphism Cards (Decorative) -->
+      <div class="absolute top-12 left-12">
+        <div class="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/50 w-64 animate-fade-in-up">
+           <div class="flex items-center gap-3 mb-2">
+             <div class="w-2 h-2 rounded-full bg-warning"></div>
+             <span class="text-xs font-bold text-secondary">Revisión de Gastos</span>
+           </div>
+           <p class="text-xs text-tertiary">10:00 AM - 11:30 AM</p>
+        </div>
+      </div>
+
+       <div class="absolute bottom-24 left-12">
+        <div class="bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-lg border border-white/50 w-72 animate-fade-in-up animation-delay-300">
+           <div class="flex items-center gap-3 mb-3">
+             <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd" />
+                </svg>
+             </div>
+             <div>
+               <h4 class="text-sm font-bold text-secondary">Reunión Diaria</h4>
+               <p class="text-xs text-tertiary">12:30 PM - 01:30 PM</p>
+             </div>
+           </div>
+           <div class="flex -space-x-2">
+              <div class="w-8 h-8 rounded-full bg-blue-400 border-2 border-white"></div>
+              <div class="w-8 h-8 rounded-full bg-green-400 border-2 border-white"></div>
+              <div class="w-8 h-8 rounded-full bg-purple-400 border-2 border-white"></div>
+           </div>
+        </div>
+      </div>
+
+      <!-- Calendar Widget (Decorative) -->
+       <div class="absolute top-1/2 right-12 transform -translate-y-1/2">
+        <div class="bg-white/60 backdrop-blur-md p-6 rounded-3xl shadow-xl border border-white/40 w-auto animate-fade-in-up animation-delay-500">
+           <div class="flex gap-4 text-center">
+              <div class="flex flex-col">
+                <span class="text-xs text-secondary/60 font-medium">Sun</span>
+                <span class="text-lg font-bold text-secondary">22</span>
+              </div>
+               <div class="flex flex-col">
+                <span class="text-xs text-secondary/60 font-medium">Mon</span>
+                <span class="text-lg font-bold text-secondary">23</span>
+              </div>
+               <div class="flex flex-col p-2 bg-gradient-to-br from-primary to-accent rounded-xl shadow-lg -mt-2 -mb-2">
+                <span class="text-xs text-white/80 font-medium">Tue</span>
+                <span class="text-lg font-bold text-white">24</span>
+              </div>
+               <div class="flex flex-col">
+                <span class="text-xs text-secondary/60 font-medium">Wed</span>
+                <span class="text-lg font-bold text-secondary">25</span>
+              </div>
+               <div class="flex flex-col">
+                <span class="text-xs text-secondary/60 font-medium">Thu</span>
+                <span class="text-lg font-bold text-secondary">26</span>
+              </div>
+           </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

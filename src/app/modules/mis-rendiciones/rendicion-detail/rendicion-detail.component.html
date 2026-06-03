@@ -1,0 +1,2783 @@
+<div class="px-4 sm:px-5 py-4 sm:py-6" [ngClass]="collaboratorCanEdit ? 'pb-24 sm:pb-8' : 'pb-8'">
+  <!-- ── PAGE HEADER ──────────────────────────────────────────────── -->
+  <div class="mb-5 sm:mb-7">
+
+    <!-- Fila 1: botón volver + título + badge -->
+    <div class="flex items-start gap-3">
+      <button
+        type="button"
+        (click)="goBack()"
+        class="shrink-0 mt-1 p-1.5 -ml-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 active:scale-95 transition-all"
+        aria-label="Volver"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+        </svg>
+      </button>
+      <div class="min-w-0 flex-1">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-900 leading-tight">
+          {{ report?.description || 'Rendición de viáticos' }}
+        </h1>
+        @if (report) {
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+            <span class="px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [ngClass]="{
+              'bg-purple-100 text-purple-700': report.status === 'solicited',
+              'bg-blue-100 text-blue-700': report.status === 'open',
+              'bg-yellow-100 text-yellow-700': report.status === 'submitted',
+              'bg-indigo-100 text-indigo-700': report.status === 'pending_accounting',
+              'bg-green-100 text-green-700': report.status === 'approved',
+              'bg-emerald-100 text-emerald-800': report.status === 'reimbursed',
+              'bg-red-100 text-red-700': report.status === 'rejected',
+              'bg-gray-100 text-gray-700': report.status === 'closed',
+              'bg-orange-100 text-orange-700': report.status === 'cancelled'
+            }">{{ getReportStatusLabel() }}</span>
+            @if (report.isDirecta) {
+              <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 text-teal-700 shrink-0">Rendicion Directa</span>
+            }
+            @if (report.approvedBy) {
+              <p class="text-xs text-gray-500">
+                Aprobado por: <span class="font-medium text-gray-700">{{ getApprovedByName() }}</span>
+              </p>
+            }
+          </div>
+          @if (report.motivo) {
+          <div class="mt-3">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Motivo</p>
+            <p class="text-sm text-gray-800 font-medium mt-0.5">{{ report.motivo }}</p>
+          </div>
+          }
+          @if (report.location || report.startDate) {
+          <dl class="mt-3 flex flex-col gap-2 text-sm">
+            @if (report.location) {
+            <div>
+              <dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Destino</dt>
+              <dd class="text-gray-800 font-medium mt-0.5">{{ report.location }}</dd>
+            </div>
+            }
+            @if (reportDateRange) {
+            <div>
+              <dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Fechas</dt>
+              <dd class="text-gray-800 font-medium mt-0.5">{{ reportDateRange }}</dd>
+            </div>
+            }
+          </dl>
+          }
+        }
+      </div>
+    </div>
+
+    <!-- Fila 2: barra de herramientas (exportar izq. | acciones contextuales der.) -->
+    @if (report && !isLoading) {
+    <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+
+      <!-- Exportar -->
+      <div class="flex items-center gap-2 flex-wrap shrink-0" role="group" aria-label="Exportar">
+        <app-button
+          label="Excel"
+          variant="secondary"
+          size="sm"
+          [fullWidth]="false"
+          [loading]="isExportingExcel()"
+          loadingLabel="Generando…"
+          [disabled]="isExportingExcel()"
+          (clicked)="exportRendicionExcel()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+        </app-button>
+        <app-button
+          label="PDF"
+          variant="secondary"
+          size="sm"
+          [fullWidth]="false"
+          [loading]="isExportingPdf()"
+          loadingLabel="Generando…"
+          [disabled]="isExportingPdf()"
+          (clicked)="exportRendicionPdf()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+        </app-button>
+      </div>
+
+      <!-- Acciones contextuales (derecha en desktop) -->
+      <div class="flex flex-col gap-2 sm:items-end sm:shrink-0">
+
+        <!-- Admin: acciones de ciclo de vida -->
+        @if (isAdminView) {
+        <div class="flex flex-row flex-wrap gap-2 justify-end">
+          <app-button
+            label="Declaración Jurada"
+            variant="secondary"
+            size="sm"
+            [fullWidth]="false"
+            [loading]="isGeneratingAffidavit()"
+            loadingLabel="Generando…"
+            [disabled]="!canGenerateAffidavit() || isGeneratingAffidavit()"
+            (clicked)="openAffidavitModal()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+            </svg>
+          </app-button>
+          @if (canClose) {
+          <app-button
+            label="Cerrar Definitivamente"
+            variant="danger"
+            size="sm"
+            [fullWidth]="false"
+            [loading]="isValidatingClosure()"
+            loadingLabel="Validando…"
+            [disabled]="isValidatingClosure()"
+            (clicked)="openCloseModal()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </app-button>
+          }
+          @if (canRequestReopen) {
+          <app-button
+            label="Solicitar Reapertura"
+            variant="secondary"
+            size="sm"
+            [fullWidth]="false"
+            (clicked)="openReopenRequestModal()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 0 1 9 0v3.75M3.75 21.75h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H3.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+            </svg>
+          </app-button>
+          }
+          @if (canApproveReopen) {
+          <app-button
+            label="Revisar Reapertura"
+            variant="secondary"
+            size="sm"
+            [fullWidth]="false"
+            (clicked)="showReopenApproveModal.set(true)"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+            </svg>
+          </app-button>
+          }
+          @if (canReopen && report && !['open', 'solicited', 'cancelled'].includes(report.status)) {
+          <app-button
+            label="Reabrir"
+            variant="secondary"
+            size="sm"
+            [fullWidth]="false"
+            [loading]="isReopening()"
+            loadingLabel="Reabriendo..."
+            (clicked)="openReopenModal()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+          </app-button>
+          }
+        </div>
+        }
+
+        <!-- Colaborador: solicitada — pendiente de aprobación -->
+        @if (report.status === 'solicited' && !isAdminView) {
+        <div class="flex flex-row flex-wrap gap-2">
+          <div class="flex items-center gap-2 px-3 py-2 rounded bg-purple-50 border border-purple-200 text-purple-800 text-sm font-medium">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0 text-purple-500">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+            Pendiente de aprobación
+          </div>
+          <app-button label="Cancelar solicitud" variant="danger" size="sm" [fullWidth]="false" (clicked)="openCancelModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          </app-button>
+        </div>
+        }
+
+        <!-- Colaborador: rechazada en fase de solicitud -->
+        @if (canResendSolicitud) {
+        <div class="flex flex-row flex-wrap gap-2">
+          <app-button
+            label="Volver a enviar solicitud"
+            variant="secondary"
+            size="sm"
+            [fullWidth]="false"
+            [loading]="isResendingSolicitud()"
+            loadingLabel="Enviando…"
+            (clicked)="reenviarSolicitudDirecto()"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+            </svg>
+          </app-button>
+        </div>
+        }
+
+
+        <!-- Colaborador: cancelada -->
+        @if (report.status === 'cancelled' && !isAdminView) {
+        <div class="flex items-center gap-2 px-3 py-2 rounded bg-orange-50 border border-orange-200 text-orange-800 text-sm font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0 text-orange-500">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+          Solicitud cancelada
+        </div>
+        }
+
+        <!-- Colaborador: abierta / rechazada con gastos — hidden en mobile (sticky bar) -->
+        @if (collaboratorCanEdit) {
+        <div class="hidden sm:flex flex-wrap items-center gap-2 justify-end">
+          @if (canAddExpenses && !report.isDirecta) {
+          <app-button label="Solicitar mas viaticos" variant="secondary" size="sm" [fullWidth]="false" (clicked)="openAdvanceModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+          </app-button>
+          }
+          <app-button label="Añadir Gasto" variant="primary" size="sm" [fullWidth]="false" (clicked)="openAddExpenseModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </app-button>
+          <div class="relative group/submit">
+            <app-button
+              [label]="report.status === 'rejected' ? 'Volver a enviar rendicion' : (report.isDirecta ? 'Enviar a Contabilidad' : 'Enviar Rendicion')"
+              variant="secondary"
+              size="sm"
+              [fullWidth]="false"
+              [disabled]="!canSubmitReport"
+              (clicked)="openSubmitModal()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+              </svg>
+            </app-button>
+            @if (!canSubmitReport) {
+            <div class="absolute bottom-full right-0 mb-2 w-64 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 shadow-sm opacity-0 group-hover/submit:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
+              Agrega al menos un gasto para poder enviar la rendición.
+            </div>
+            }
+          </div>
+        </div>
+        }
+
+        <!-- Colaborador: abierta sin pago registrado (solo aplica a rendiciones con anticipo) -->
+        @if (!isAdminView && report.status === 'open' && !hasPaidAdvanceForReport && !report.isDirecta) {
+        <p class="max-w-xs text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Debes esperar que Contabilidad registre el pago del viatico para habilitar el registro de gastos.
+        </p>
+        }
+
+        <!-- Admin: solicitud inicial -->
+        @if (report.status === 'solicited' && isAdminView) {
+        <div class="flex flex-row flex-wrap gap-2 justify-end">
+          <app-button label="Aprobar solicitud" variant="primary" size="sm" [fullWidth]="false" (clicked)="openAdminApproveModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+          </app-button>
+          <app-button label="Rechazar solicitud" variant="secondary" size="sm" [fullWidth]="false" (clicked)="openAdminRejectModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+            </svg>
+          </app-button>
+        </div>
+        }
+
+        <!-- Admin/Coordinador: rendición enviada — revisar comprobantes y aprobar (paso 1) -->
+        @if (report.status === 'submitted' && isAdminView && !isPendingCoordinador) {
+        <div class="flex flex-col gap-2 items-end">
+          @if (!allDocumentsApproved()) {
+            <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
+              Aprueba todos los comprobantes antes de poder aprobar la rendición.
+              <span class="font-semibold block mt-0.5">{{ approvedDocCount() }} / {{ totalDocCount() }} aprobados.</span>
+            </p>
+          }
+          <div class="flex flex-row flex-wrap gap-2 justify-end">
+            <app-button
+              [label]="canCoordinadorApprove ? 'Aprobar Rendición' : 'Pendiente de revisión'"
+              variant="primary"
+              size="sm"
+              [fullWidth]="false"
+              [disabled]="!canCoordinadorApprove"
+              (clicked)="openAdminApproveModal()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </app-button>
+            <app-button label="Rechazar rendición" variant="danger" size="sm" [fullWidth]="false" (clicked)="openAdminRejectModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </app-button>
+          </div>
+        </div>
+        }
+
+        <!-- Contabilidad: rendición enviada — bloqueada hasta que coordinador apruebe -->
+        @if (isPendingCoordinador) {
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-sm font-medium max-w-xs">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0 text-indigo-500">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+          Pendiente de aprobación del coordinador
+        </div>
+        }
+
+        <!-- Contabilidad/Admin: rendición aprobada por coordinador — aprobacion final (paso 2) -->
+        @if (report.status === 'pending_accounting' && isAdminView) {
+        <div class="flex flex-col gap-2 items-end">
+          @if (!canContabilidadApprove) {
+            <p class="text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
+              Esta rendicion fue aprobada por el coordinador y esta en espera de aprobacion de contabilidad.
+            </p>
+          }
+          @if (canContabilidadApprove) {
+          <div class="flex flex-row flex-wrap gap-2 justify-end">
+            <app-button
+              label="Aprobar Rendición"
+              variant="primary"
+              size="sm"
+              [fullWidth]="false"
+              (clicked)="openAdminApproveModal()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </app-button>
+            <app-button label="Rechazar rendición" variant="danger" size="sm" [fullWidth]="false" (clicked)="openAdminRejectModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </app-button>
+          </div>
+          }
+        </div>
+        }
+
+      </div>
+    </div>
+    }
+  </div>
+  <!-- ── END PAGE HEADER ──────────────────────────────────────────── -->
+
+  @if(isLoading) {
+    <div class="flex justify-center p-12">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  } @else {
+    @if(report) {
+      @if (report.status === 'rejected') {
+      <div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 sm:p-5 text-sm" role="status" aria-labelledby="rejection-heading">
+        <div class="flex items-start gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 shrink-0 text-red-600 mt-0.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+          </svg>
+          <div class="min-w-0">
+            <p id="rejection-heading" class="font-semibold text-red-900">
+              {{
+                (isSolicitudPhase ? 'Solicitud rechazada por ' : 'Rendición rechazada por ') +
+                (report.rejectedByRole === 'contabilidad' ? 'Contabilidad' : 'el Coordinador')
+              }}
+            </p>
+            @if (report.rejectionReason) {
+              <p class="mt-2 text-base text-red-950 whitespace-pre-wrap break-words font-medium">{{ report.rejectionReason }}</p>
+            } @else {
+              <p class="mt-2 text-red-900/90">No se registró un motivo en el sistema. Contacta a tu administrador si necesitas más detalle.</p>
+            }
+            @if (canResendSolicitud) {
+              <p class="mt-3 text-xs font-medium text-red-800/90">Puedes volver a enviar la solicitud para que sea revisada nuevamente.</p>
+            }
+            @if (canResubmitReport) {
+              <p class="mt-3 text-xs font-medium text-red-800/90">Puedes añadir gastos o solicitar viático y luego volver a enviar la rendición.</p>
+            }
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- Solicited: pending approval banner (for collaborator) -->
+      @if (report.status === 'solicited' && !isAdminView) {
+      <div class="mb-6 rounded-xl border border-purple-200 bg-purple-50 p-4 sm:p-5 text-sm" role="status">
+        <div class="flex items-start gap-3">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 shrink-0 text-purple-600 mt-0.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+          <div>
+            <p class="font-semibold text-purple-900">Solicitud pendiente de aprobación</p>
+            <p class="mt-1 text-purple-800">Tu rendición está siendo revisada por el administrador. Podrás agregar gastos una vez que sea aprobada.</p>
+          </div>
+        </div>
+      </div>
+      }
+
+
+      <!-- Progress and Summary Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
+        <!-- Budget assigned -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Presupuesto</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalAnticipado | number:'1.2-2' }}</p>
+          @if (paidAdvances.length > 0) {
+            <ul class="mt-3 space-y-1 border-t border-gray-100 pt-2">
+              @for (adv of paidAdvances; track adv._id) {
+                <li class="flex items-center justify-between gap-2 text-xs">
+                  <span class="text-gray-500 truncate">{{ adv.place || adv.description }}</span>
+                  <span class="tabular-nums font-medium text-gray-700 shrink-0">S/ {{ adv.amount | number:'1.2-2' }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+
+        <!-- Total spent -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-red-50 text-red-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Gastado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+        </div>
+
+        <!-- Remaining balance -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-green-50 text-green-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Saldo Disponible</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-green-600': saldoLibre >= 0, 'text-red-600': saldoLibre < 0}">
+            S/ {{ saldoLibre | number:'1.2-2' }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Datos de Solicitud -->
+      @if (report.accountNumber || report.location || (report.items && report.items.length > 0)) {
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 md:mb-8 overflow-hidden">
+          <div class="px-4 sm:px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+            <h2 class="text-base font-bold text-gray-900 uppercase tracking-wide">Detalles de la Solicitud</h2>
+          </div>
+
+          <div class="p-4 sm:p-6">
+            <!-- Grid de info básica -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              @if (report.accountNumber) {
+                <div>
+                  <p class="text-xs font-semibold text-gray-400 uppercase mb-1">Cuenta / CCI</p>
+                  <p class="text-sm text-gray-900 font-medium">{{ report.accountNumber }}</p>
+                  @if (report.idDocument) {
+                    <p class="text-xs text-gray-500 mt-0.5">ID: {{ report.idDocument }}</p>
+                  }
+                </div>
+              }
+              @if (report.location) {
+                <div>
+                  <p class="text-xs font-semibold text-gray-400 uppercase mb-1">Lugar</p>
+                  <p class="text-sm text-gray-900 font-medium">{{ report.location }}</p>
+                </div>
+              }
+              @if (report.peopleNames && report.peopleNames.length > 0) {
+                <div>
+                  <p class="text-xs font-semibold text-gray-400 uppercase mb-1">Personas</p>
+                  <p class="text-sm text-gray-900 font-medium">{{ report.peopleNames.join(', ') }}</p>
+                </div>
+              }
+              @if (report.startDate || report.endDate) {
+                <div>
+                  <p class="text-xs font-semibold text-gray-400 uppercase mb-1">Periodo</p>
+                  <p class="text-sm text-gray-900 font-medium">
+                    {{ formatShortDate(report.startDate) }} — {{ formatShortDate(report.endDate) }}
+                  </p>
+                </div>
+              }
+            </div>
+
+            <!-- Tabla de Items del Presupuesto -->
+            @if (report.items && report.items.length > 0) {
+              <div class="mt-4">
+                <p class="text-xs font-semibold text-gray-400 uppercase mb-3">Presupuesto Detallado</p>
+                <div class="overflow-x-auto rounded-xl border border-gray-100">
+                  <table class="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr class="bg-gray-50 text-gray-600 font-semibold border-b border-gray-100">
+                        <th class="px-4 py-3">Viáticos</th>
+                        <th class="px-4 py-3 text-center">Importe</th>
+                        <th class="px-4 py-3 text-center">Personas</th>
+                        <th class="px-4 py-3 text-center">GLP / dia</th>
+                        <th class="px-4 py-3 text-center">Dias</th>
+                        <th class="px-4 py-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-50">
+                      @for (item of report.items; track $index) {
+                        <tr class="hover:bg-gray-50/50 transition-colors">
+                          <td class="px-4 py-3 font-medium text-gray-900">{{ item.description }}</td>
+                          <td class="px-4 py-3 text-center text-gray-600">S/ {{ item.amount | number:'1.2-2' }}</td>
+                          <td class="px-4 py-3 text-center text-gray-600">{{ item.peopleCount }}</td>
+                          <td class="px-4 py-3 text-center text-gray-600">S/ {{ item.fuelAmount | number:'1.2-2' }}</td>
+                          <td class="px-4 py-3 text-center text-gray-600">{{ item.daysCount }}</td>
+                          <td class="px-4 py-3 text-right font-bold text-gray-900">S/ {{ item.total | number:'1.2-2' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr class="bg-gray-50/80 font-bold border-t border-gray-200">
+                        <td colspan="5" class="px-4 py-3 text-right text-gray-600 uppercase">Total Presupuestado</td>
+                        <td class="px-4 py-3 text-right text-primary">S/ {{ report.budget | number:'1.2-2' }}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Anticipos -->
+      @if(advances.length > 0) {
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <div class="px-4 sm:px-6 py-4 border-b border-gray-200 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <h2 class="text-base font-bold text-gray-900">Viáticos Solicitados</h2>
+          <span class="text-sm font-semibold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-full w-fit">
+            Total aprobado: S/ {{ totalAnticipado | number:'1.2-2' }}
+          </span>
+        </div>
+        <div class="divide-y divide-gray-100">
+          @for(adv of advances; track adv._id) {
+          <div class="px-4 sm:px-6 py-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-semibold text-gray-900">{{ adv.place || adv.description }}</p>
+              @if (adv.startDate || adv.endDate) {
+              <p class="text-xs text-gray-500 mt-0.5">
+                {{ adv.startDate | date:'dd/MM/yyyy' }}
+                @if (adv.endDate) { &mdash; {{ adv.endDate | date:'dd/MM/yyyy' }} }
+              </p>
+              }
+              @if (adv.observations) {
+              <p class="text-xs text-gray-400 mt-0.5 italic">{{ adv.observations }}</p>
+              }
+              <p class="text-xs text-gray-400 mt-1">Solicitado el {{ adv.createdAt | date:'dd/MM/yyyy' }}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end">
+              <span class="text-sm font-bold text-gray-900">S/ {{ adv.amount | number:'1.2-2' }}</span>
+              <span [class]="ADVANCE_STATUS_COLORS[adv.status]" class="inline-flex px-2 py-0.5 rounded text-xs font-medium">
+                {{ ADVANCE_STATUS_LABELS[adv.status] }}
+              </span>
+              @if (!isAdminView && adv.status === 'pending_l1') {
+              <button
+                type="button"
+                title="Editar solicitud"
+                (click)="openEditAdvanceModal(adv)"
+                class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-primary bg-white text-primary hover:bg-primary/5 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                </svg>
+                Editar
+              </button>
+              <button
+                type="button"
+                title="Cancelar solicitud"
+                (click)="openCancelAdvanceModal(adv)"
+                class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                Cancelar
+              </button>
+              }
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      }
+
+      <!-- Devoluciones pendientes (Fase 7) -->
+      @for (adv of advancesWithPendingReturn; track adv._id) {
+      <div class="rounded-xl border border-red-200 bg-red-50/80 p-4 mb-4">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold text-red-800 text-sm">Devolucion de saldo pendiente</h3>
+          <span [class]="returnRecordStatusColor(adv.returnRecord?.status || '')"
+            class="text-xs px-2 py-0.5 rounded font-medium">
+            {{ returnRecordStatusLabel(adv.returnRecord?.status || '') }}
+          </span>
+        </div>
+        <p class="text-xs text-gray-700 mb-1">
+          Viático: <strong>{{ adv.description }}</strong> — Monto a devolver:
+          <strong class="text-red-700">S/ {{ adv.returnRecord?.amountDue | number:'1.2-2' }}</strong>
+        </p>
+        <p class="text-xs text-gray-600">
+          Vencimiento: {{ adv.returnRecord?.dueDate | date:'dd/MM/yyyy' }}
+          @if (adv.returnRecord?.isOverdue) {
+          <span class="ml-1 font-semibold text-red-600">VENCIDO</span>
+          }
+        </p>
+        @if (adv.returnRecord?.status === 'rejected' && adv.returnRecord?.validation?.rejectionReason) {
+        <p class="text-xs text-red-700 mt-1">
+          Rechazo: {{ adv.returnRecord?.validation?.rejectionReason }}
+        </p>
+        }
+        @if (!isAdminView && (adv.returnRecord?.status === 'pending' || adv.returnRecord?.status === 'rejected')) {
+        <button type="button"
+          (click)="openReturnProofModal(adv._id, adv.returnRecord?.amountDue || 0)"
+          class="mt-2 text-xs px-3 py-1.5 bg-red-700 text-white rounded-lg hover:bg-red-800 font-medium">
+          Cargar comprobante de deposito
+        </button>
+        }
+      </div>
+      }
+
+      <!-- Liquidación -->
+
+      @if (report.reimbursementPaymentInfo) {
+      <div class="rounded-xl border border-emerald-200 bg-emerald-50/90 p-5 mb-6">
+        <h3 class="font-bold text-gray-900 mb-2 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-emerald-700">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 0 1-1.043 3.296 3.745 3.745 0 0 1-3.296 1.043A3.745 3.745 0 0 1 12 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 0 1-3.296-1.043 3.745 3.745 0 0 1-1.043-3.296A3.745 3.745 0 0 1 3 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 0 1 1.043-3.296 3.746 3.746 0 0 1 3.296-1.043A3.746 3.746 0 0 1 12 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 0 1 3.296 1.043 3.746 3.746 0 0 1 1.043 3.296A3.745 3.745 0 0 1 21 12Z" />
+          </svg>
+          Reembolso registrado
+        </h3>
+        <p class="text-sm text-gray-700 mb-3">
+          El pago al colaborador fue registrado por tesorería. Podés descargar el comprobante también desde <a routerLink="/mis-documentos" class="text-primary font-semibold underline-offset-2 hover:underline">Mis documentos</a>.
+        </p>
+        <div class="flex flex-wrap gap-3 text-sm">
+          <a [href]="report.reimbursementPaymentInfo.paymentReceiptUrl" target="_blank" rel="noopener noreferrer"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-700 text-white font-semibold hover:bg-emerald-800">
+            Ver comprobante de reembolso
+          </a>
+          @if (report.reimbursedAt) {
+          <span class="text-gray-600 self-center">
+            Fecha registro: {{ report.reimbursedAt | date:'dd/MM/yyyy' }}
+          </span>
+          }
+        </div>
+      </div>
+      }
+
+      <!-- Devolución: comprobante ya cargado por el colaborador -->
+      @if (report.returnVoucher) {
+      <div class="rounded-xl border border-amber-200 bg-amber-50/80 p-5 mb-6">
+        <h3 class="font-bold text-gray-900 mb-2 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+          Comprobante de devolución cargado
+        </h3>
+        <div class="text-sm text-gray-700 space-y-1 mb-3">
+          <p><span class="text-gray-500">Fecha de depósito:</span> {{ formatShortDate(report.returnVoucher.depositDate) }}</p>
+          @if (report.returnVoucher.bankOrigin) {
+            <p><span class="text-gray-500">Banco origen:</span> {{ report.returnVoucher.bankOrigin }}</p>
+          }
+          @if (report.returnVoucher.operationNumber) {
+            <p><span class="text-gray-500">N° Operación:</span> {{ report.returnVoucher.operationNumber }}</p>
+          }
+          <p><span class="text-gray-500">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
+        </div>
+        <a [href]="report.returnVoucher.url" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center px-4 py-2 rounded-lg bg-amber-600 text-white font-semibold text-sm hover:bg-amber-700">
+          Ver comprobante
+        </a>
+      </div>
+      }
+
+      <!-- Colaborador: cargar comprobante de devolución (disponible desde estado aprobado) -->
+      @if (canUploadReturnVoucher) {
+      <div class="rounded-xl border border-red-200 bg-red-50/80 p-5 mb-6">
+        <h3 class="font-bold text-red-800 mb-1 text-sm">Devolución de saldo pendiente</h3>
+        <p class="text-sm text-gray-700 mb-4">
+          Tienes un saldo a devolver a la empresa de
+          <strong class="text-red-700">S/ {{ saldoLibre | number:'1.2-2' }}</strong>.
+          Realiza el depósito a la cuenta de la empresa y adjunta el comprobante, o usa ese saldo para iniciar una nueva solicitud.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <button (click)="openReturnVoucherModal()"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-red-600 text-white font-semibold text-sm hover:bg-red-700">
+            Adjuntar comprobante de devolución
+          </button>
+          <button (click)="openNuevaSolicitudConSaldo()"
+            class="inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700">
+            Usar saldo en nueva solicitud
+          </button>
+        </div>
+      </div>
+      }
+
+      <!-- Contabilidad: información cuando está esperando el comprobante del colaborador -->
+      @if (approvedPendingVoucher) {
+      <div class="rounded-xl border border-amber-200 bg-amber-50/80 p-5 mb-6">
+        <h3 class="font-bold text-amber-800 mb-1 text-sm">Esperando comprobante de devolución</h3>
+        <p class="text-sm text-gray-700">
+          Esta rendición tiene un saldo a devolver de
+          <strong class="text-amber-700">S/ {{ saldoLibre | number:'1.2-2' }}</strong>.
+          El colaborador debe adjuntar el comprobante de depósito antes de que sea posible cerrar la rendición definitivamente.
+        </p>
+      </div>
+      }
+
+      <!-- Admin: registrar reembolso al colaborador -->
+      @if (canAdminRegisterReembolso) {
+      <div class="rounded-xl border border-emerald-200 bg-emerald-50/80 p-5 mb-6">
+        <h3 class="font-bold text-emerald-800 mb-1 text-sm">Reembolso al colaborador pendiente</h3>
+        <p class="text-sm text-gray-700 mb-4">
+          La rendición tiene un saldo a favor del colaborador de
+          <strong class="text-emerald-700">S/ {{ (saldoLibre < 0 ? saldoLibre * -1 : saldoLibre) | number:'1.2-2' }}</strong>.
+          Adjunta el comprobante de pago antes de cerrar la rendición definitivamente.
+        </p>
+        <button (click)="openAdminReembolsoModal()"
+          class="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-700 text-white font-semibold text-sm hover:bg-emerald-800">
+          Registrar comprobante de reembolso
+        </button>
+      </div>
+      }
+
+      <!-- Expenses: lista en mobile, tabla en md+ -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-200">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <h2 class="text-base sm:text-lg font-bold text-gray-900">Comprobantes Asociados</h2>
+            <div class="flex items-center gap-2 flex-wrap">
+              @if (expensesPage()) {
+                <span class="text-xs text-gray-500">{{ expensesPage()!.total }} comprobante(s)</span>
+              }
+              @if (canApproveExpenseAsCoord && batchApproveCount > 0) {
+                <button
+                  type="button"
+                  [disabled]="isBatchApproving()"
+                  (click)="batchApproveByCoord()"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-green-300 bg-green-50 text-green-800 hover:bg-green-100 disabled:opacity-50 transition-all"
+                >
+                  @if (isBatchApproving()) {
+                    <span class="w-3 h-3 border-2 border-green-400 border-t-green-700 rounded-full animate-spin"></span>
+                  } @else {
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                  }
+                  Aprobar validados por Cont. ({{ batchApproveCount }})
+                </button>
+              }
+            </div>
+          </div>
+          <!-- Filtros -->
+          <div class="mt-3 flex flex-wrap gap-2 items-end">
+            <select
+              [value]="expFilterType()"
+              (change)="expFilterType.set($any($event.target).value); applyExpenseFilters()"
+              class="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="all">Todos los tipos</option>
+              <option value="factura">Factura</option>
+              <option value="planilla_movilidad">Planilla movilidad</option>
+              <option value="comprobante_caja">Comprobante de caja</option>
+              <option value="otros_gastos">Otros gastos</option>
+            </select>
+            <select
+              [value]="expFilterStatus()"
+              (change)="expFilterStatus.set($any($event.target).value); applyExpenseFilters()"
+              class="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="all">Todos los estados</option>
+              <option value="pending">Pendiente</option>
+              <option value="approved">Aprobado</option>
+              <option value="rejected">Rechazado</option>
+            </select>
+            <input
+              type="text"
+              [value]="expFilterSearch()"
+              (input)="expFilterSearch.set($any($event.target).value)"
+              (keyup.enter)="applyExpenseFilters()"
+              placeholder="Buscar concepto..."
+              class="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[140px]"
+            />
+            <button
+              type="button"
+              (click)="applyExpenseFilters()"
+              class="h-8 px-3 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors"
+            >Buscar</button>
+            @if (expFilterType() !== 'all' || expFilterStatus() !== 'all' || expFilterSearch()) {
+              <button
+                type="button"
+                (click)="clearExpenseFilters()"
+                class="h-8 px-3 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+              >Limpiar</button>
+            }
+          </div>
+          @if (isAdminView && (report.status === 'submitted' || report.status === 'open') && totalDocCount() > 0) {
+            <div class="mt-3 flex items-center gap-3">
+              <div class="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div class="h-full bg-green-500 rounded-full transition-all duration-500"
+                     [style.width.%]="(approvedDocCount() / totalDocCount()) * 100">
+                </div>
+              </div>
+              <span class="text-xs font-semibold whitespace-nowrap" [ngClass]="{
+                'text-green-600': allDocumentsApproved(),
+                'text-amber-600': !allDocumentsApproved()
+              }">
+                {{ approvedDocCount() }}/{{ totalDocCount() }} aprobados
+              </span>
+            </div>
+          }
+        </div>
+
+        @if(!expensesPage() && isLoadingExpenses()) {
+          <div class="flex justify-center py-12">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+          </div>
+        } @else if(!expensesPage() || expensesPage()!.total === 0) {
+          <div class="p-8 sm:p-12 text-center text-gray-500 flex flex-col items-center gap-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 text-gray-300">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m9 13.5 3 2.25 3-2.25m0-6v6h-6v-6h6Z" />
+            </svg>
+            @if (expFilterType() !== 'all' || expFilterStatus() !== 'all' || expFilterSearch()) {
+              <p class="text-sm">No se encontraron comprobantes con los filtros aplicados.</p>
+            } @else {
+              <p class="text-sm">No has subido ningún comprobante para esta rendición aún.</p>
+            }
+            @if (canAddExpenses) {
+            <button
+              type="button"
+              (click)="openAddExpenseModal()"
+              class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary/90 active:scale-[0.98] transition-all touch-manipulation"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Añadir primer comprobante
+            </button>
+            }
+          </div>
+        } @else {
+          <!-- Mobile: tarjetas -->
+          <ul class="md:hidden divide-y divide-gray-100 list-none m-0 p-0" role="list">
+            @for (expense of (expensesPage()?.data ?? []); track trackByExpenseId($index, expense)) {
+            <li class="px-4 py-4 active:bg-gray-50 transition-colors">
+              <!-- Row 1: tipo badge + fecha + monto -->
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <span [ngClass]="getExpenseTypeCodeBadgeClass(expense)"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold shrink-0 tabular-nums">
+                    {{ getExpenseTypeCode(expense) }}
+                  </span>
+                  <span class="text-xs text-gray-500 truncate">{{ getExpenseDate(expense) }}</span>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <p class="text-sm font-semibold text-gray-900 tabular-nums">S/ {{ expense.total | number:'1.2-2' }}</p>
+                  @if (getExpenseAmountEdited(expense)) {
+                  <div class="relative">
+                    <button type="button"
+                      (click)="toggleAmountEditedTooltip(expense._id, $event)"
+                      class="flex items-center justify-center w-5 h-5 text-amber-500 hover:text-amber-700 transition-colors"
+                      aria-label="Monto editado">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                        <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                      </svg>
+                    </button>
+                    @if (amountEditedTooltipId() === expense._id) {
+                    <div class="absolute top-full right-0 mt-1.5 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 whitespace-nowrap"
+                      (click)="$event.stopPropagation()">
+                      <p class="font-semibold">Monto editado</p>
+                      @if (getExpenseOriginalOcrTotal(expense) !== null) {
+                        <p class="text-gray-400 mt-0.5">OCR: S/ {{ getExpenseOriginalOcrTotal(expense)! | number:'1.2-2' }}</p>
+                      }
+                    </div>
+                    }
+                  </div>
+                  }
+                </div>
+              </div>
+              <!-- Row 2: N° doc + proveedor -->
+              <div class="mt-1.5 flex items-center gap-2 text-xs text-gray-500">
+                <span class="font-medium text-gray-700">{{ getExpenseDocumentNumber(expense) }}</span>
+                @if (getExpenseProveedor(expense) !== '-') {
+                  <span class="text-gray-400">·</span>
+                  <span class="truncate">{{ getExpenseProveedor(expense) }}</span>
+                }
+              </div>
+              <!-- Row 3: concepto -->
+              <p class="text-xs text-gray-600 mt-1 leading-snug line-clamp-2">{{ getExpenseConcepto(expense) }}</p>
+              <!-- Row 4: estado cont (+ coord en flujo normal) -->
+              <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                <!-- Est. Cont.: "Revisado" en directa, "Aprobado/Rechazado" en normal -->
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-gray-400 font-medium">{{ report.isDirecta ? 'Rev.' : 'Cont.' }}</span>
+                  @switch (getExpenseApprovalCont(expense).status) {
+                    @case ('approved') {
+                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                        {{ report.isDirecta ? 'Revisado' : 'Aprobado' }}
+                      </span>
+                    }
+                    @case ('rejected') {
+                      @if (!report.isDirecta) {
+                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                        Rechazado
+                      </span>
+                      }
+                    }
+                    @default {
+                      <span class="inline-flex px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">Pendiente</span>
+                    }
+                  }
+                </div>
+                @if (!report.isDirecta) {
+                <div class="flex items-center gap-1">
+                  <span class="text-xs text-gray-400 font-medium">Coord.</span>
+                  @switch (getExpenseApprovalCoord(expense).status) {
+                    @case ('approved') {
+                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                        Aprobado
+                      </span>
+                    }
+                    @case ('rejected') {
+                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                        Rechazado
+                      </span>
+                    }
+                    @default {
+                      <span class="inline-flex px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">Pendiente</span>
+                    }
+                  }
+                </div>
+                }
+              </div>
+              <!-- Row 5: acciones -->
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button type="button" (click)="openExpenseDetail(expense)"
+                  class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors touch-manipulation">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                  </svg>
+                  Detalle
+                </button>
+                @if (hasExpenseFile(expense)) {
+                <button type="button" (click)="openExpenseFile(expense)"
+                  class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors touch-manipulation">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                  </svg>
+                  Doc.
+                </button>
+                }
+                @if (expense['expenseType'] === 'planilla_movilidad') {
+                  <button type="button" (click)="exportMobilitySheet(expense)"
+                    class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors touch-manipulation">
+                    PDF
+                  </button>
+                  <button type="button" (click)="exportMobilitySheetExcel(expense)"
+                    class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors touch-manipulation">
+                    Excel
+                  </button>
+                }
+                @if (expense['expenseType'] === 'comprobante_caja') {
+                  <button type="button" (click)="exportCashVoucher(expense)"
+                    class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors touch-manipulation">
+                    PDF
+                  </button>
+                }
+                @if (canMutateExpense(expense)) {
+                  <button type="button" (click)="goEditExpense(expense._id)"
+                    class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 active:scale-[0.98] transition-all touch-manipulation">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                    </svg>
+                    Editar
+                  </button>
+                  <button type="button" [disabled]="deletingExpenseId() === expense._id" (click)="confirmDeleteExpense(expense)"
+                    class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-800 hover:bg-red-100 disabled:opacity-50 active:scale-[0.98] transition-all touch-manipulation">
+                    @if (deletingExpenseId() === expense._id) {
+                      <span class="w-3.5 h-3.5 border-2 border-red-300 border-t-red-700 rounded-full animate-spin"></span>
+                      Eliminando...
+                    } @else {
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                      </svg>
+                      Eliminar
+                    }
+                  </button>
+                }
+                <!-- Approval actions (mobile, oculto en rendicion directa) -->
+                @if (!report.isDirecta && canApproveExpenseAsCoord && getExpenseApprovalCoord(expense).status !== 'approved') {
+                  <button type="button"
+                    [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
+                    (click)="approveExpenseByRole(expense._id, 'coord')"
+                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 touch-manipulation">
+                    @if (approvingExpenseRoleId() === 'coord:' + expense._id) {
+                      <span class="w-3 h-3 border border-indigo-400 border-t-indigo-700 rounded-full animate-spin"></span>
+                    } @else { Aprobar Coord. }
+                  </button>
+                  <button type="button" (click)="openRejectRoleModal(expense._id, 'coord')"
+                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 touch-manipulation">
+                    Rechazar Coord.
+                  </button>
+                }
+                @if (canApproveExpenseAsCont && getExpenseApprovalCont(expense).status !== 'approved') {
+                  <button type="button"
+                    [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
+                    (click)="approveExpenseByRole(expense._id, 'cont')"
+                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50 touch-manipulation">
+                    @if (approvingExpenseRoleId() === 'cont:' + expense._id) {
+                      <span class="w-3 h-3 border border-teal-400 border-t-teal-700 rounded-full animate-spin"></span>
+                    } @else { {{ report.isDirecta ? 'Marcar revisado' : 'Aprobar Cont.' }} }
+                  </button>
+                  @if (!report.isDirecta) {
+                  <button type="button" (click)="openRejectRoleModal(expense._id, 'cont')"
+                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 touch-manipulation">
+                    Rechazar Cont.
+                  </button>
+                  }
+                }
+              </div>
+              <!-- Planilla movilidad: filas accordion (mobile) -->
+              @if (expense['expenseType'] === 'planilla_movilidad' && mobilityRows(expense).length > 0) {
+              <div class="mt-2">
+                <button type="button" (click)="toggleMobilityAccordion(expense._id)"
+                  class="flex w-full items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors">
+                  <span class="flex items-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5 shrink-0">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0c0 .621.504 1.125 1.125 1.125h15c.621 0 1.125-.504 1.125-1.125m-17.25 0v1.5c0 .621.504 1.125 1.125 1.125m15 0c.621 0 1.125-.504 1.125-1.125m0 0v1.5c0 .621-.504 1.125-1.125 1.125m-15 0h15m-15 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h15c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125" />
+                    </svg>
+                    {{ mobilityRows(expense).length }} fila{{ mobilityRows(expense).length !== 1 ? 's' : '' }} de movilidad
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"
+                    class="w-3.5 h-3.5 transition-transform duration-200"
+                    [class.-rotate-180]="!isMobilityExpanded(expense._id)">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                @if (isMobilityExpanded(expense._id)) {
+                <div class="mt-1.5 rounded-lg border border-amber-200 overflow-hidden">
+                  @for (row of mobilityRows(expense); track trackMobilityRow($index, row)) {
+                  <div class="px-3 py-2.5 bg-white border-b border-amber-100 last:border-0">
+                    <div class="flex items-start justify-between gap-2">
+                      <div class="flex-1 min-w-0">
+                        <p class="text-xs font-medium text-gray-800 leading-snug">{{ row['concepto'] || '—' }}</p>
+                        <p class="text-xs text-gray-500 mt-0.5">{{ formatEmissionDate($any(row['fecha'])) }}
+                          @if (row['gestion']) { <span class="text-gray-400"> · </span>{{ row['gestion'] }} }
+                        </p>
+                        @if (row['clienteProveedor']) {
+                        <p class="text-xs text-gray-400 truncate mt-0.5">{{ row['clienteProveedor'] }}</p>
+                        }
+                        @if (row['origen'] || row['destino']) {
+                        <p class="text-xs text-gray-400 truncate mt-0.5">{{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}</p>
+                        }
+                      </div>
+                      <p class="text-xs font-semibold text-gray-900 tabular-nums shrink-0">S/ {{ mobilityRowTotal(row) | number:'1.2-2' }}</p>
+                    </div>
+                  </div>
+                  }
+                </div>
+                }
+              </div>
+              }
+            </li>
+            }
+          </ul>
+
+          <!-- Desktop: tabla -->
+          <div class="hidden md:block overflow-x-auto">
+            <table class="w-full divide-y divide-gray-200 text-sm">
+              <thead class="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <tr>
+                  <th class="px-3 py-3 whitespace-nowrap">Fecha Emisión</th>
+                  <th class="px-3 py-3 whitespace-nowrap">Tipo</th>
+                  <th class="px-3 py-3 whitespace-nowrap">N° Documento</th>
+                  <th class="px-3 py-3 whitespace-nowrap">Proveedor</th>
+                  <th class="px-3 py-3">Concepto</th>
+                  <th class="px-3 py-3 text-right whitespace-nowrap">Monto</th>
+                  <th class="px-3 py-3 text-center whitespace-nowrap text-teal-600">{{ report.isDirecta ? 'Revisado Cont.' : 'Est. Cont.' }}</th>
+                  @if (!report.isDirecta) {
+                  <th class="px-3 py-3 text-center whitespace-nowrap text-indigo-600">Est. Coord.</th>
+                  }
+                  <th class="px-3 py-3 text-center whitespace-nowrap">Opciones</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 bg-white">
+                @for (expense of (expensesPage()?.data ?? []); track trackByExpenseId($index, expense)) {
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <!-- Fecha Emisión -->
+                  <td class="px-3 py-3 text-gray-700 whitespace-nowrap">{{ getExpenseDate(expense) }}</td>
+                  <!-- Tipo -->
+                  <td class="px-3 py-3">
+                    <div class="flex items-center gap-1.5">
+                      <span [ngClass]="getExpenseTypeCodeBadgeClass(expense)"
+                        class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold tabular-nums">
+                        {{ getExpenseTypeCode(expense) }}
+                      </span>
+                      @if (expense['expenseType'] === 'planilla_movilidad') {
+                      <button type="button" (click)="toggleMobilityAccordion(expense._id)"
+                        class="flex items-center justify-center w-5 h-5 rounded text-yellow-600 hover:bg-yellow-100 transition-colors"
+                        [title]="isMobilityExpanded(expense._id) ? 'Ocultar filas' : 'Ver filas'">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"
+                          class="w-3.5 h-3.5 transition-transform duration-200"
+                          [class.-rotate-180]="!isMobilityExpanded(expense._id)">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </button>
+                      }
+                    </div>
+                  </td>
+                  <!-- N° Documento -->
+                  <td class="px-3 py-3 text-gray-700 whitespace-nowrap font-mono text-xs">{{ getExpenseDocumentNumber(expense) }}</td>
+                  <!-- Proveedor -->
+                  <td class="px-3 py-3 text-gray-700 max-w-[160px]">
+                    <span class="block truncate" [title]="getExpenseProveedor(expense)">{{ getExpenseProveedor(expense) }}</span>
+                  </td>
+                  <!-- Concepto -->
+                  <td class="px-3 py-3 text-gray-700 max-w-[200px]">
+                    <span class="block truncate" [title]="getExpenseConcepto(expense)">{{ getExpenseConcepto(expense) }}</span>
+                  </td>
+                  <!-- Monto -->
+                  <td class="px-3 py-3 text-right whitespace-nowrap font-medium tabular-nums">
+                    <div class="flex items-center justify-end gap-1">
+                      S/ {{ expense.total | number:'1.2-2' }}
+                      @if (getExpenseAmountEdited(expense)) {
+                      <div class="relative">
+                        <button type="button"
+                          (click)="toggleAmountEditedTooltip(expense._id, $event)"
+                          class="flex items-center justify-center w-5 h-5 text-amber-500 hover:text-amber-700 transition-colors"
+                          aria-label="Monto editado">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+                          </svg>
+                        </button>
+                        @if (amountEditedTooltipId() === expense._id) {
+                        <div class="absolute top-full right-0 mt-1.5 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-xl z-50 whitespace-nowrap"
+                          (click)="$event.stopPropagation()">
+                          <p class="font-semibold">Monto editado</p>
+                          @if (getExpenseOriginalOcrTotal(expense) !== null) {
+                            <p class="text-gray-400 mt-0.5">OCR: S/ {{ getExpenseOriginalOcrTotal(expense)! | number:'1.2-2' }}</p>
+                          }
+                        </div>
+                        }
+                      </div>
+                      }
+                    </div>
+                  </td>
+                  <!-- Estado Contabilidad -->
+                  <td class="px-3 py-3 text-center">
+                    <div class="flex flex-col items-center gap-1">
+                      @switch (getExpenseApprovalCont(expense).status) {
+                        @case ('approved') {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 whitespace-nowrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            {{ report.isDirecta ? 'Revisado' : 'Aprobado' }}
+                          </span>
+                        }
+                        @case ('rejected') {
+                          @if (!report.isDirecta) {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 whitespace-nowrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                            Rechazado
+                          </span>
+                          }
+                        }
+                        @default {
+                          @if (canApproveExpenseAsCont) {
+                            <div class="flex items-center gap-0.5">
+                              <button type="button"
+                                [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
+                                (click)="approveExpenseByRole(expense._id, 'cont')"
+                                class="p-1.5 rounded-lg text-teal-600 hover:bg-teal-50 disabled:opacity-50 transition-colors"
+                                [title]="report.isDirecta ? 'Marcar como revisado' : 'Aprobar como Contabilidad'">
+                                @if (approvingExpenseRoleId() === 'cont:' + expense._id) {
+                                  <span class="inline-block w-4 h-4 border-2 border-teal-200 border-t-teal-600 rounded-full animate-spin"></span>
+                                } @else {
+                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                                }
+                              </button>
+                              @if (!report.isDirecta) {
+                              <button type="button"
+                                (click)="openRejectRoleModal(expense._id, 'cont')"
+                                class="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                                title="Rechazar como Contabilidad">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                              </button>
+                              }
+                            </div>
+                          } @else {
+                            <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700 whitespace-nowrap">Pendiente</span>
+                          }
+                        }
+                      }
+                    </div>
+                  </td>
+                  <!-- Estado Coordinador (oculto en rendicion directa) -->
+                  @if (!report.isDirecta) {
+                  <td class="px-3 py-3 text-center">
+                    <div class="flex flex-col items-center gap-1">
+                      @switch (getExpenseApprovalCoord(expense).status) {
+                        @case ('approved') {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700 whitespace-nowrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            Aprobado
+                          </span>
+                        }
+                        @case ('rejected') {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700 whitespace-nowrap">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                            Rechazado
+                          </span>
+                        }
+                        @default {
+                          @if (canApproveExpenseAsCoord) {
+                            <div class="flex items-center gap-0.5">
+                              <button type="button"
+                                [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
+                                (click)="approveExpenseByRole(expense._id, 'coord')"
+                                class="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+                                title="Aprobar como Coordinador">
+                                @if (approvingExpenseRoleId() === 'coord:' + expense._id) {
+                                  <span class="inline-block w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></span>
+                                } @else {
+                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                                }
+                              </button>
+                              <button type="button"
+                                (click)="openRejectRoleModal(expense._id, 'coord')"
+                                class="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
+                                title="Rechazar como Coordinador">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                              </button>
+                            </div>
+                          } @else {
+                            <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700 whitespace-nowrap">Pendiente</span>
+                          }
+                        }
+                      }
+                    </div>
+                  </td>
+                  }
+                  <!-- Opciones -->
+                  <td class="px-3 py-3">
+                    <div class="flex items-center justify-center gap-0.5">
+                      <!-- Detalle -->
+                      <div class="relative group/det">
+                        <button type="button" (click)="openExpenseDetail(expense)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                          </svg>
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/det:opacity-100 pointer-events-none transition-opacity z-10">Detalle</div>
+                      </div>
+                      <!-- Editar -->
+                      @if (canMutateExpense(expense)) {
+                      <div class="relative group/edit">
+                        <button type="button" (click)="goEditExpense(expense._id)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
+                          </svg>
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/edit:opacity-100 pointer-events-none transition-opacity z-10">Editar</div>
+                      </div>
+                      <!-- Eliminar -->
+                      <div class="relative group/del">
+                        <button type="button"
+                          [disabled]="deletingExpenseId() === expense._id"
+                          (click)="confirmDeleteExpense(expense)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-red-500 hover:bg-red-50 disabled:opacity-50 transition-colors">
+                          @if (deletingExpenseId() === expense._id) {
+                            <span class="inline-block w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full animate-spin"></span>
+                          } @else {
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                            </svg>
+                          }
+                        </button>
+                        <div class="absolute bottom-full right-0 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/del:opacity-100 pointer-events-none transition-opacity z-10">Eliminar</div>
+                      </div>
+                      }
+                      <!-- Adjunto -->
+                      @if (hasExpenseFile(expense)) {
+                      <div class="relative group/attach">
+                        <button type="button" (click)="openExpenseFile(expense)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-primary hover:bg-primary/10 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                          </svg>
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/attach:opacity-100 pointer-events-none transition-opacity z-10">Ver adjunto</div>
+                      </div>
+                      }
+                      <!-- PDF: planilla de movilidad -->
+                      @if (expense['expenseType'] === 'planilla_movilidad') {
+                      <div class="relative group/pmob-pdf">
+                        <button type="button" (click)="exportMobilitySheet(expense)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                          </svg>
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/pmob-pdf:opacity-100 pointer-events-none transition-opacity z-10">PDF</div>
+                      </div>
+                      <div class="relative group/pmob-xls">
+                        <button type="button" (click)="exportMobilitySheetExcel(expense)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0c0 .621.504 1.125 1.125 1.125h15c.621 0 1.125-.504 1.125-1.125m-17.25 0v1.5c0 .621.504 1.125 1.125 1.125m15 0c.621 0 1.125-.504 1.125-1.125m0 0v1.5c0 .621-.504 1.125-1.125 1.125m-15 0h15m-15 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h15c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125" />
+                          </svg>
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/pmob-xls:opacity-100 pointer-events-none transition-opacity z-10">Excel</div>
+                      </div>
+                      }
+                      <!-- PDF: comprobante de caja -->
+                      @if (expense['expenseType'] === 'comprobante_caja') {
+                      <div class="relative group/ccaja-pdf">
+                        <button type="button" (click)="exportCashVoucher(expense)"
+                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                          </svg>
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/ccaja-pdf:opacity-100 pointer-events-none transition-opacity z-10">PDF</div>
+                      </div>
+                      }
+                    </div>
+                  </td>
+                </tr>
+                @if (expense['expenseType'] === 'planilla_movilidad' && isMobilityExpanded(expense._id)) {
+                <tr class="border-t-0">
+                  <td colspan="9" class="p-0">
+                    <div class="bg-amber-50/40 border-b border-amber-100 px-6 py-3">
+                      <table class="w-full text-xs">
+                        <thead class="text-left">
+                          <tr class="text-gray-500">
+                            <th class="px-2 py-1.5 font-medium whitespace-nowrap">Fecha</th>
+                            <th class="px-2 py-1.5 font-medium">Concepto</th>
+                            <th class="px-2 py-1.5 font-medium hidden md:table-cell">Gestión</th>
+                            <th class="px-2 py-1.5 font-medium hidden lg:table-cell">Cliente / Prov.</th>
+                            <th class="px-2 py-1.5 font-medium hidden xl:table-cell whitespace-nowrap">Origen → Destino</th>
+                            <th class="px-2 py-1.5 font-medium text-right whitespace-nowrap">Total (S/)</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-amber-100/80">
+                          @for (row of mobilityRows(expense); track trackMobilityRow($index, row)) {
+                          <tr class="hover:bg-amber-50/60">
+                            <td class="px-2 py-1.5 whitespace-nowrap text-gray-600">{{ formatEmissionDate($any(row['fecha'])) }}</td>
+                            <td class="px-2 py-1.5 text-gray-700 max-w-[180px] break-words">{{ row['concepto'] || '—' }}</td>
+                            <td class="px-2 py-1.5 hidden md:table-cell text-gray-600">{{ row['gestion'] || '—' }}</td>
+                            <td class="px-2 py-1.5 hidden lg:table-cell text-gray-600 max-w-[140px] break-words">{{ row['clienteProveedor'] || '—' }}</td>
+                            <td class="px-2 py-1.5 hidden xl:table-cell text-gray-500 whitespace-nowrap">{{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}</td>
+                            <td class="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-800">{{ mobilityRowTotal(row) | number:'1.2-2' }}</td>
+                          </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+                }
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Paginación -->
+          @if (expensesPage() && (expensesPage()!.pages > 1 || isLoadingExpenses())) {
+            <div class="px-4 sm:px-6 py-3 border-t border-gray-100 flex items-center justify-between gap-4">
+              <span class="text-xs text-gray-500">
+                @if (!isLoadingExpenses()) {
+                  Pág. {{ expensesPage()!.page }} de {{ expensesPage()!.pages }} &middot; {{ expensesPage()!.total }} comprobante(s)
+                }
+              </span>
+              <div class="flex items-center gap-1.5">
+                @if (isLoadingExpenses()) {
+                  <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                }
+                <button
+                  type="button"
+                  [disabled]="(expensesPage()?.page ?? 1) <= 1 || isLoadingExpenses()"
+                  (click)="loadExpensesPage(expensesPage()!.page - 1)"
+                  class="h-7 w-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  [disabled]="(expensesPage()?.page ?? 1) >= (expensesPage()?.pages ?? 1) || isLoadingExpenses()"
+                  (click)="loadExpensesPage(expensesPage()!.page + 1)"
+                  class="h-7 w-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          }
+        }
+      </div>
+
+    } @else {
+      <div class="text-center p-12 bg-white rounded-xl shadow-sm border border-gray-200 text-gray-500">
+        Rendición no encontrada.
+      </div>
+    }
+  }
+</div>
+
+<!-- Sticky bottom bar (mobile only) — colaborador con rendición editable -->
+@if (report && collaboratorCanEdit) {
+<div class="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-white border-t border-gray-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex gap-3">
+  <button
+    type="button"
+    (click)="openAddExpenseModal()"
+    class="flex-1 inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl text-sm font-bold bg-primary text-white hover:bg-primary/90 active:scale-[0.98] transition-all touch-manipulation"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 shrink-0">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    </svg>
+    Añadir Gasto
+  </button>
+  <div class="relative group/submit flex-1">
+    <button
+      type="button"
+      (click)="openSubmitModal()"
+      [disabled]="!canSubmitReport"
+      class="w-full inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl text-sm font-bold border-2 border-primary text-primary bg-white hover:bg-primary/5 disabled:opacity-40 active:scale-[0.98] transition-all touch-manipulation"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+      </svg>
+      {{ report.status === 'rejected' ? 'Reenviar' : (report.isDirecta ? 'Enviar a Contabilidad' : 'Enviar') }}
+    </button>
+    @if (!canSubmitReport) {
+    <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 shadow-sm opacity-0 group-hover/submit:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
+      Agrega al menos un gasto para poder enviar la rendición.
+    </div>
+    }
+  </div>
+</div>
+}
+
+<!-- Modal: Ficha completa del comprobante (documento + datos) -->
+@if (showExpenseDetailModal() && selectedExpense(); as exp) {
+<div
+  class="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4"
+  (click)="closeExpenseDetail()"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="expense-detail-title"
+>
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+  <div
+    class="relative bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-gray-100"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="px-4 sm:px-6 py-4 border-b border-gray-200 flex items-start justify-between gap-3 shrink-0 bg-gray-50/80">
+      <div class="min-w-0">
+        <h3 id="expense-detail-title" class="text-lg font-bold text-gray-900 truncate">{{ getExpenseTypeLabel(exp) }}</h3>
+        <p class="text-sm text-gray-500 mt-0.5">Documento adjunto e información del comprobante</p>
+      </div>
+      <button
+        type="button"
+        (click)="closeExpenseDetail()"
+        class="p-2 rounded-xl text-gray-500 hover:bg-gray-200/80 transition-colors shrink-0"
+        aria-label="Cerrar"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="overflow-y-auto flex-1 px-4 sm:px-6 py-5 space-y-5">
+      <!-- Documento -->
+      <section class="rounded-xl border border-gray-200 bg-slate-50 p-4">
+        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Documento / archivo</h4>
+
+        <div class="flex flex-wrap gap-2 mb-3">
+          @if (hasExpenseFile(exp)) {
+          <button
+            type="button"
+            (click)="openExpenseFile(exp)"
+            class="inline-flex items-center gap-2 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v11.5A2.25 2.25 0 0 0 5.25 22h13.5A2.25 2.25 0 0 0 21 19.75V8.25L13.5 6Z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6V3.75A2.25 2.25 0 0 1 15.75 1.5H21v4.5" />
+            </svg>
+            Abrir documento
+          </button>
+          }
+
+          @if (getExpenseTypeKey(exp) === 'planilla_movilidad') {
+          <button type="button" (click)="exportMobilitySheet(exp)"
+            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Descargar PDF
+          </button>
+          <button type="button" (click)="exportMobilitySheetExcel(exp)"
+            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Descargar Excel
+          </button>
+          }
+
+          @if (getExpenseTypeKey(exp) === 'comprobante_caja') {
+          <button type="button" (click)="exportCashVoucher(exp)"
+            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+            PDF comprobante
+          </button>
+          <button type="button" (click)="exportCashVoucherAffidavit(exp)"
+            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors">
+            Declaración jurada
+          </button>
+          }
+
+          @if (exp['expenseType'] === 'recibo_caja') {
+          <button type="button" (click)="exportReceiptPdf(exp)"
+            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+            PDF recibo
+          </button>
+          <button type="button" (click)="exportReceiptAffidavit(exp)"
+            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors">
+            Declaración jurada
+          </button>
+          }
+
+        </div>
+
+        @if (hasExpenseFile(exp)) {
+          @if (isPreviewableImage(exp)) {
+          <div class="rounded-lg border border-gray-200 bg-white p-2 flex justify-center">
+            <img
+              [src]="getExpenseFileUrl(exp)!"
+              alt="Vista previa del comprobante"
+              class="max-h-72 w-full max-w-full object-contain rounded-md"
+              loading="lazy"
+            />
+          </div>
+          }
+          <p class="text-xs text-gray-500 mt-2">PDF u otros formatos: usa el botón para abrirlos en el navegador o descargarlos.</p>
+        } @else if (getExpenseTypeKey(exp) !== 'otros_gastos') {
+          <p class="text-sm text-gray-600">No hay archivo digital asociado (p. ej. solo registro manual).</p>
+        }
+      </section>
+
+      <!-- Resumen común -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+        <div>
+          <p class="text-xs text-gray-400">Monto (S/)</p>
+          <p class="font-semibold text-gray-900 tabular-nums text-base">S/ {{ getExpenseTotal(exp) | number:'1.2-2' }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400">Estado del comprobante</p>
+          <p class="font-medium text-gray-900">{{ getExpenseStatusForUi(exp) }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400">Categoría</p>
+          <p class="font-medium text-gray-900">{{ getPopulatedName(exp['categoryId']) }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-gray-400">Proyecto</p>
+          <p class="font-medium text-gray-900">{{ getExpenseProjectName(exp) }}</p>
+        </div>
+        <div class="sm:col-span-2">
+          <p class="text-xs text-gray-400">Fecha (resumen en listado)</p>
+          <p class="font-medium text-gray-900">{{ getExpenseDate(exp) }}</p>
+        </div>
+      </section>
+
+      @if (exp['rejectionReason']) {
+      <div class="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-900">
+        <span class="font-semibold">Motivo de rechazo: </span>
+        <span class="whitespace-pre-wrap break-words">{{ exp['rejectionReason'] }}</span>
+      </div>
+      }
+
+      @if (exp['observado']) {
+      <div class="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
+        <span class="font-semibold">Comprobante observado por plazo: </span>
+        <span class="whitespace-pre-wrap break-words">{{ exp['observacionPlazo'] || 'Se registró fuera del plazo permitido.' }}</span>
+      </div>
+      }
+
+      @if (exp['categoryLimitWarning']) {
+      <div class="rounded-xl bg-yellow-50 border border-yellow-200 p-4 text-sm text-yellow-900">
+        <span class="font-semibold">Alerta de límite por categoría: </span>
+        <span class="whitespace-pre-wrap break-words">
+          {{ exp['categoryLimitWarning'] }}
+          @if (exp['categoryLimitPercent']) {
+            ({{ exp['categoryLimitPercent'] }}%)
+          }
+        </span>
+      </div>
+      }
+
+      @switch (getExpenseTypeKey(exp)) {
+        @case ('planilla_movilidad') {
+        <section class="rounded-xl border border-gray-200 overflow-hidden">
+          <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-3 bg-amber-50 border-b border-amber-100">Detalle</h4>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-xs sm:text-sm">
+              <thead class="bg-gray-50 text-left text-gray-500">
+                <tr>
+                  <th class="px-3 py-2 font-medium">Fecha</th>
+                  <th class="px-3 py-2 font-medium">Concepto</th>
+                  <th class="px-3 py-2 font-medium text-right">Total</th>
+                  <th class="px-3 py-2 font-medium hidden lg:table-cell">Cliente / Prov.</th>
+                  <th class="px-3 py-2 font-medium hidden xl:table-cell">Origen → Destino</th>
+                  <th class="px-3 py-2 font-medium hidden xl:table-cell">Km</th>
+                  <th class="px-3 py-2 font-medium hidden md:table-cell">Gestión</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                @for (row of mobilityRows(exp); track trackMobilityRow($index, row)) {
+                <tr class="hover:bg-gray-50/80">
+                  <td class="px-3 py-2 whitespace-nowrap">{{ formatEmissionDate($any(row['fecha'])) }}</td>
+                  <td class="px-3 py-2 max-w-[200px] break-words">{{ row['concepto'] || '—' }}</td>
+                  <td class="px-3 py-2 text-right tabular-nums font-medium">{{ mobilityRowTotal(row) | number:'1.2-2' }}</td>
+                  <td class="px-3 py-2 hidden lg:table-cell break-words">{{ row['clienteProveedor'] || '—' }}</td>
+                  <td class="px-3 py-2 hidden xl:table-cell text-gray-600">
+                    {{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}
+                  </td>
+                  <td class="px-3 py-2 hidden xl:table-cell tabular-nums">{{ row['distanciaKm'] ?? '—' }}</td>
+                  <td class="px-3 py-2 hidden md:table-cell">{{ row['gestion'] || '—' }}</td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+        }
+        @case ('comprobante_caja') {
+        <section class="rounded-xl border border-gray-200 p-4 space-y-3">
+          <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Comprobante de caja</h4>
+          <div class="grid sm:grid-cols-2 gap-3 text-sm">
+            <div class="sm:col-span-2">
+              <p class="text-xs text-gray-400">Entregado a</p>
+              <p class="font-medium text-gray-900">{{ cashVoucherText(exp, 'entregadoA') }}</p>
+            </div>
+            <div class="sm:col-span-2">
+              <p class="text-xs text-gray-400">Dirección</p>
+              <p class="font-medium text-gray-900 whitespace-pre-wrap break-words">{{ cashVoucherText(exp, 'direccion') }}</p>
+            </div>
+            <div class="sm:col-span-2">
+              <p class="text-xs text-gray-400">Por concepto de</p>
+              <p class="font-medium text-gray-900 whitespace-pre-wrap break-words">{{ cashVoucherText(exp, 'concepto') }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">N° interno</p>
+              <p class="font-medium text-gray-900">{{ exp['internalCode'] || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Fecha emisión</p>
+              <p class="font-medium text-gray-900">{{ emissionDateText(exp) }}</p>
+            </div>
+          </div>
+        </section>
+        }
+        @case ('otros_gastos') {
+        <section class="rounded-xl border border-gray-200 p-4 space-y-3">
+          <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Otros gastos / declaración jurada</h4>
+          <div class="grid sm:grid-cols-2 gap-3 text-sm">
+            <div class="sm:col-span-2">
+              <p class="text-xs text-gray-400">Descripción</p>
+              <p class="font-medium text-gray-900 whitespace-pre-wrap">{{ exp['description'] || '—' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Declaración jurada</p>
+              <p class="font-medium text-gray-900">{{ exp['declaracionJurada'] ? 'Sí' : 'No' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Firmante</p>
+              <p class="font-medium text-gray-900">{{ exp['declaracionJuradaFirmante'] || '—' }}</p>
+            </div>
+          </div>
+        </section>
+        }
+        @default {
+        <section class="space-y-4">
+          <div class="rounded-xl border border-gray-200 p-4">
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Emisor</h4>
+            <div class="grid sm:grid-cols-2 gap-3 text-sm">
+              <div class="sm:col-span-2">
+                <p class="text-xs text-gray-400">Razón social</p>
+                <p class="font-medium text-gray-900">{{ dataText(exp, 'razonSocial') }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">RUC</p>
+                <p class="font-medium text-gray-900">{{ dataText(exp, 'rucEmisor') }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">Tipo comprobante</p>
+                <p class="font-medium text-gray-900">{{ dataText(exp, 'tipoComprobante') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <p class="text-xs text-gray-400">Dirección</p>
+                <p class="font-medium text-gray-900">{{ dataText(exp, 'direccionEmisor') }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4">
+            <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Comprobante</h4>
+            <div class="grid sm:grid-cols-2 gap-3 text-sm">
+              <div>
+                <p class="text-xs text-gray-400">Serie – Correlativo</p>
+                <p class="font-medium text-gray-900">{{ dataText(exp, 'serie') }} — {{ dataText(exp, 'correlativo') }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">Fecha emisión</p>
+                <p class="font-medium text-gray-900">{{ emissionDateText(exp) }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">Moneda</p>
+                <p class="font-medium text-gray-900">{{ dataText(exp, 'moneda') }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-gray-400">Monto total (extraído)</p>
+                <p class="font-medium text-gray-900 tabular-nums">{{ dataText(exp, 'montoTotal') }}</p>
+              </div>
+              <div class="sm:col-span-2">
+                <p class="text-xs text-gray-400">Comentario</p>
+                <p class="font-medium text-gray-900 whitespace-pre-wrap break-words">{{ getExpenseComentario(exp) || '—' }}</p>
+              </div>
+              @if (getExpensePlaca(exp)) {
+              <div>
+                <p class="text-xs text-gray-400">Placa de vehículo</p>
+                <p class="font-medium text-gray-900">{{ getExpensePlaca(exp) }}</p>
+              </div>
+              }
+            </div>
+          </div>
+        </section>
+        }
+      }
+
+      @if (sunatBlock(exp); as sunat) {
+      <section class="rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-sm">
+        <h4 class="font-semibold text-blue-900 mb-2">Validación SUNAT</h4>
+        @if (sunat['message']) {
+        <p class="text-blue-950 mb-1">{{ sunat['message'] }}</p>
+        }
+        @if (sunat['status']) {
+        <p class="text-xs text-blue-800">Estado: <span class="font-medium">{{ sunat['status'] }}</span></p>
+        }
+        <details class="mt-3 group">
+          <summary class="cursor-pointer text-xs font-medium text-blue-800 hover:underline">Ver detalle técnico (JSON)</summary>
+          <pre class="mt-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all bg-white/80 border border-blue-100 rounded-lg p-3 overflow-x-auto">{{ sunat | json }}</pre>
+        </details>
+      </section>
+      }
+
+      @if (reviewHistory(exp).length > 0) {
+      <section class="rounded-xl border border-gray-200 bg-gray-50/70 p-4 text-sm">
+        <h4 class="font-semibold text-gray-900 mb-3">Historial de revisiones</h4>
+        <div class="space-y-2">
+          @for (entry of reviewHistory(exp); track $index) {
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <p class="text-xs text-gray-500">
+              {{ reviewDateText(entry['reviewedAt']) }}
+            </p>
+            <p class="text-sm font-medium text-gray-900">
+              {{ reviewActionLabel(entry['action']) }}
+            </p>
+            @if (entry['reason']) {
+            <p class="text-xs text-gray-700 mt-1 whitespace-pre-wrap break-words">
+              Motivo: {{ entry['reason'] }}
+            </p>
+            }
+          </div>
+          }
+        </div>
+      </section>
+      }
+
+    </div>
+
+    <div class="px-4 sm:px-6 py-3 border-t border-gray-200 bg-gray-50 flex justify-end shrink-0">
+      <button
+        type="button"
+        (click)="closeExpenseDetail()"
+        class="min-h-[40px] px-4 rounded-xl text-sm font-semibold border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 transition-colors"
+      >
+        Cerrar
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<app-solicitud-viaticos-modal
+  [isOpen]="showAdvanceModal"
+  [expenseReportId]="id"
+  [initialProjectId]="reportProjectId"
+  (closed)="onSolicitudViaticosClosed($event)"
+/>
+
+<!-- Modal: Confirmación de envío de rendición -->
+@if(showSubmitModal && report) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="closeSubmitModal()">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col" (click)="$event.stopPropagation()">
+
+    <!-- Header -->
+    <div class="relative px-6 pt-6 pb-5 border-b border-gray-100">
+      <button type="button" (click)="closeSubmitModal()"
+        class="absolute top-4 right-4 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+
+      <div class="flex items-start gap-4">
+        <div class="shrink-0 w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-blue-600">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+          </svg>
+        </div>
+        <div class="min-w-0 flex-1 pr-6">
+          <p class="text-xs font-semibold text-blue-500 uppercase tracking-wider mb-0.5">
+            {{ report.status === 'rejected' ? 'Reenviar rendición' : 'Enviar rendición' }}
+          </p>
+          <h3 class="text-xl font-bold text-gray-900 leading-tight truncate">{{ getProjectName() }}</h3>
+          <p class="text-sm text-gray-500 mt-0.5 truncate">{{ report.title }}</p>
+          @if (reportDateRange) {
+            <p class="text-xs text-gray-400 mt-1">{{ reportDateRange }}</p>
+          }
+        </div>
+      </div>
+
+      <p class="text-sm text-gray-400 mt-4 pl-16">
+        @if (report.status === 'rejected') {
+          Tu rendición quedará en revisión. No podrás editarla hasta que el administrador la apruebe o rechace.
+        } @else {
+          Una vez enviada, no podrás editar ni agregar gastos hasta que sea revisada.
+        }
+      </p>
+    </div>
+
+    <!-- Resumen -->
+    <div class="px-6 py-4 overflow-y-auto flex-1">
+
+      <div class="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
+        <div class="flex justify-between text-sm">
+          <span class="text-gray-500">Presupuesto asignado</span>
+          <span class="font-semibold text-gray-900">S/ {{ totalAnticipado | number:'1.2-2' }}</span>
+        </div>
+        <div class="flex justify-between text-sm">
+          <span class="text-gray-500">Total gastado</span>
+          <span class="font-semibold" [class.text-red-600]="totalGastado > totalAnticipado" [class.text-gray-900]="totalGastado <= totalAnticipado">
+            S/ {{ totalGastado | number:'1.2-2' }}
+          </span>
+        </div>
+        <div class="flex justify-between text-sm border-t border-gray-200 pt-2 mt-2">
+          <span class="text-gray-500">Saldo</span>
+          <span class="font-bold" [class.text-green-600]="saldoLibre >= 0" [class.text-red-600]="saldoLibre < 0">
+            S/ {{ saldoLibre | number:'1.2-2' }}
+          </span>
+        </div>
+      </div>
+
+      @if(report.expenseIds && report.expenseIds.length > 0) {
+      <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+        Comprobantes ({{ report.expenseIds.length }})
+      </p>
+      <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+        @for(expense of report.expenseIds; track trackByExpenseId($index, expense)) {
+        <div class="bg-white border border-gray-100 rounded-lg px-3 py-2">
+          <div class="flex items-start justify-between gap-2">
+            <span [ngClass]="{
+              'bg-blue-100 text-blue-700': expense['expenseType'] === 'factura' || !expense['expenseType'],
+              'bg-yellow-100 text-yellow-700': expense['expenseType'] === 'planilla_movilidad',
+              'bg-purple-100 text-purple-700': expense['expenseType'] === 'otros_gastos'
+            }" class="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 mt-0.5">
+              {{ getExpenseTypeLabel(expense) }}
+            </span>
+            <span class="text-xs font-semibold text-gray-900 shrink-0">S/ {{ getExpenseTotal(expense) | number:'1.2-2' }}</span>
+          </div>
+          <p class="text-xs text-gray-500 mt-1 leading-relaxed">{{ getExpenseDescription(expense) }}</p>
+        </div>
+        }
+      </div>
+      } @else {
+      <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
+        <p class="text-xs text-yellow-700">No hay comprobantes adjuntos a esta rendición.</p>
+      </div>
+      }
+    </div>
+
+    <!-- Actions -->
+    <div class="px-6 pb-6 pt-4 border-t border-gray-100 flex gap-3">
+      <button type="button" (click)="closeSubmitModal()"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+        Cancelar
+      </button>
+      <button type="button" (click)="confirmSubmitReport()" [disabled]="isSubmitting()"
+        class="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+        @if(isSubmitting()) {
+          <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+          Enviando...
+        } @else {
+          {{ report.status === 'rejected' ? 'Confirmar reenvío' : 'Confirmar envío' }}
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Confirmar aprobación (admin) -->
+@if(showAdminApproveModal() && report) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="closeAdminApproveModal()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden" (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100">
+      <div class="flex items-center gap-3 mb-1">
+        <div class="p-2 bg-green-50 rounded-xl">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-600" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        </div>
+        <h3 class="text-lg font-bold text-gray-900">{{ report.status === 'solicited' ? '¿Aprobar esta solicitud?' : '¿Aprobar esta rendición?' }}</h3>
+      </div>
+      <p class="text-sm text-gray-500 ml-11">
+        {{ report.status === 'solicited' ? 'El colaborador podrá agregar sus gastos una vez aprobada la solicitud.' : 'El colaborador verá la rendición como aprobada. Confirma que los comprobantes y montos son correctos.' }}
+      </p>
+    </div>
+    <div class="px-6 py-4 space-y-2 text-sm">
+      <div class="flex justify-between gap-4">
+        <span class="text-gray-500">Título</span>
+        <span class="font-semibold text-gray-900 text-right truncate max-w-[60%]">{{ report.title }}</span>
+      </div>
+      <div class="flex justify-between gap-4">
+        <span class="text-gray-500">Presupuesto</span>
+        <span class="font-semibold text-gray-900 tabular-nums">S/ {{ totalAnticipado | number:'1.2-2' }}</span>
+      </div>
+      <div class="flex justify-between gap-4">
+        <span class="text-gray-500">Total gastado</span>
+        <span class="font-semibold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</span>
+      </div>
+      <div class="flex justify-between gap-4">
+        <span class="text-gray-500">Comprobantes</span>
+        <span class="font-semibold text-gray-900">{{ report.expenseIds.length }}</span>
+      </div>
+    </div>
+    <div class="px-6 pb-6 pt-2 flex gap-3 border-t border-gray-100">
+      <button
+        type="button"
+        (click)="closeAdminApproveModal()"
+        [disabled]="isApprovingReport()"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+        Cancelar
+      </button>
+      <button
+        type="button"
+        (click)="confirmApproveReport()"
+        [disabled]="isApprovingReport()"
+        class="flex-1 py-2.5 bg-green-600 text-white rounded-xl text-sm font-medium hover:bg-green-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+        @if (isApprovingReport()) {
+          <span class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true"></span>
+          Aprobando...
+        } @else {
+          Sí, aprobar
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Admin rejection reason -->
+@if(showAdminRejectModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showAdminRejectModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">Rechazar Rendición</h3>
+    <p class="text-sm text-gray-500 mb-4">Indica el motivo del rechazo para notificar al colaborador.</p>
+    <textarea
+      class="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-900 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+      placeholder="Motivo del rechazo..."
+      [ngModel]="adminRejectionReason()"
+      (ngModelChange)="adminRejectionReason.set($event)"
+    ></textarea>
+    <div class="flex gap-3 mt-4">
+      <button type="button" (click)="showAdminRejectModal.set(false)"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+        Cancelar
+      </button>
+      <button type="button" (click)="submitAdminRejection()"
+        class="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-colors">
+        Rechazar
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Selección de tipo de gasto -->
+@if(showTypeModal) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="closeTypeModal()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">¿Qué tipo de gasto deseas agregar?</h3>
+    <p class="text-sm text-gray-500 mb-5">Selecciona el tipo de comprobante</p>
+
+    <div class="flex flex-col gap-3">
+      <button type="button" (click)="selectExpenseType('factura')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Factura</p>
+          <p class="text-xs text-gray-500">Sube un PDF o imagen de la factura</p>
+        </div>
+      </button>
+
+      <button type="button" (click)="selectExpenseType('planilla_movilidad')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-yellow-50 text-yellow-600 group-hover:bg-yellow-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Planilla de Movilidad</p>
+          <p class="text-xs text-gray-500">Fecha, Concepto, Total, Lugar, Gestión</p>
+        </div>
+      </button>
+
+      <button type="button" (click)="selectExpenseType('otros_gastos')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Otros Gastos</p>
+          <p class="text-xs text-gray-500">Ticket, recibos, DJ u otros</p>
+        </div>
+      </button>
+      <button type="button" (click)="selectExpenseType('comprobante_caja')"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.25h6m-7.5 3h9A2.25 2.25 0 0 0 18.75 16.5v-9A2.25 2.25 0 0 0 16.5 5.25h-9A2.25 2.25 0 0 0 5.25 7.5v9A2.25 2.25 0 0 0 7.5 18.75Z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Comprobante de Caja</p>
+          <p class="text-xs text-gray-500">Formulario interno con correlativo</p>
+        </div>
+      </button>
+    </div>
+
+    <button type="button" (click)="closeTypeModal()"
+      class="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
+      Cancelar
+    </button>
+  </div>
+</div>
+}
+
+<!-- Modal: Rechazar comprobante individual -->
+@if (showExpenseRejectModal()) {
+<div class="fixed inset-0 z-[60] flex items-center justify-center p-4"
+     (click)="closeExpenseRejectModal()" role="dialog" aria-modal="true">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+       (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-2">Rechazar comprobante</h3>
+    <p class="text-sm text-gray-500 mb-4">Indica el motivo del rechazo. El colaborador verá esta nota.</p>
+    <textarea
+      class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+      rows="3"
+      placeholder="Motivo del rechazo..."
+      [ngModel]="expenseRejectReason()"
+      (ngModelChange)="expenseRejectReason.set($event)"
+    ></textarea>
+    <div class="flex gap-3 mt-4 justify-end">
+      <button type="button"
+        class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 drop-shadow-sm active:scale-95 transition-all"
+        (click)="closeExpenseRejectModal()">
+        Cancelar
+      </button>
+      <button type="button"
+        [disabled]="rejectingExpenseId() !== null"
+        class="px-4 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 drop-shadow-sm active:scale-95 transition-all"
+        (click)="confirmRejectExpense()">
+        @if (rejectingExpenseId()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1"></span>
+        }
+        Rechazar
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Rechazar comprobante por rol (Coord. o Cont.) -->
+@if (showRejectRoleModal()) {
+<div class="fixed inset-0 z-[60] flex items-center justify-center p-4"
+     (click)="closeRejectRoleModal()" role="dialog" aria-modal="true">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+       (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-2">
+      Rechazar como {{ pendingRejectRole() === 'coord' ? 'Coordinador' : 'Contabilidad' }}
+    </h3>
+    <p class="text-sm text-gray-500 mb-4">Indica el motivo del rechazo.</p>
+    <textarea
+      class="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
+      rows="3"
+      placeholder="Motivo del rechazo..."
+      [ngModel]="rejectRoleReason()"
+      (ngModelChange)="rejectRoleReason.set($event)"
+    ></textarea>
+    <div class="flex gap-3 mt-4 justify-end">
+      <button type="button"
+        class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 active:scale-95 transition-all"
+        (click)="closeRejectRoleModal()">
+        Cancelar
+      </button>
+      <button type="button"
+        [disabled]="!rejectRoleReason().trim() || rejectingExpenseRoleId() !== null"
+        class="px-4 py-2 rounded-lg bg-red-600 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 active:scale-95 transition-all"
+        (click)="confirmRejectExpenseByRole()">
+        @if (rejectingExpenseRoleId()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-1"></span>
+        }
+        Rechazar
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Reabrir rendición directamente (Contabilidad/SuperAdmin) -->
+@if (showReopenModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+     (click)="closeReopenModal()">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+       (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100">
+      <h3 class="text-lg font-semibold text-gray-900">Reabrir Rendición</h3>
+      <p class="text-sm text-gray-500 mt-1">Indica el motivo por el que se reabre esta rendición.</p>
+    </div>
+    <div class="px-6 py-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">Motivo</label>
+      <textarea
+        rows="4"
+        class="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+        placeholder="Describe el motivo de la reapertura..."
+        [value]="reopenReason()"
+        (input)="reopenReason.set($any($event.target).value)"
+      ></textarea>
+    </div>
+    <div class="px-6 pb-6 pt-2 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+        [disabled]="isReopening()"
+        (click)="closeReopenModal()"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+        [disabled]="isReopening() || !reopenReason().trim()"
+        (click)="confirmReopen()"
+      >
+        @if (isReopening()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+          Reabriendo...
+        } @else {
+          Confirmar Reapertura
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Declaración jurada -->
+@if(showAffidavitModal()) {
+<div class="fixed inset-0 z-[70] flex items-center justify-center p-4" (click)="closeAffidavitModal()">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col" (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100">
+      <h3 class="text-lg font-bold text-gray-900">Generar Declaración Jurada</h3>
+      <p class="text-sm text-gray-500 mt-1">Selecciona tipo y comprobantes de caja para registrar y descargar el PDF.</p>
+    </div>
+
+    <div class="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+      <div>
+        <label class="text-sm font-medium text-gray-700 block mb-2">Tipo</label>
+        <select
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+          [ngModel]="affidavitType()"
+          (ngModelChange)="affidavitType.set($event)"
+        >
+          <option value="viaticos_nacionales">Viáticos Nacionales</option>
+          <option value="viajes_exterior">Viajes al Exterior</option>
+        </select>
+      </div>
+
+      <div>
+        <p class="text-sm font-medium text-gray-700 mb-2">Comprobantes de caja (otros gastos)</p>
+        @if (affidavitCandidates().length === 0) {
+          <p class="text-sm text-gray-500">No hay comprobantes elegibles en esta rendición.</p>
+        } @else {
+          <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
+            @for (exp of affidavitCandidates(); track exp._id) {
+            <label class="flex items-start gap-2 p-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                class="mt-0.5"
+                [checked]="isAffidavitExpenseSelected(exp._id)"
+                (change)="toggleAffidavitExpense(exp._id)"
+              />
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900">{{ getExpenseDescription(exp) }}</p>
+                <p class="text-xs text-gray-500">
+                  {{ getExpenseDate(exp) }} · {{ getPopulatedName(exp['categoryId']) }} · S/ {{ getExpenseTotal(exp) | number:'1.2-2' }}
+                </p>
+              </div>
+            </label>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="px-6 pb-6 pt-3 border-t border-gray-100 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+        [disabled]="isGeneratingAffidavit()"
+        (click)="closeAffidavitModal()"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+        [disabled]="isGeneratingAffidavit() || affidavitCandidates().length === 0"
+        (click)="generateAffidavit()"
+      >
+        Generar
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Confirmar cierre definitivo -->
+@if (showCloseModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100">
+      <h3 class="text-lg font-semibold text-gray-900">Cerrar Rendicion Definitivamente</h3>
+      <p class="text-sm text-gray-500 mt-1">Esta accion bloquea toda edicion posterior.</p>
+    </div>
+
+    <div class="px-6 py-4 space-y-3">
+      @if (closureErrors().length > 0) {
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+          <p class="text-sm font-semibold text-red-800 mb-2">No se puede cerrar por las siguientes razones:</p>
+          <ul class="list-disc list-inside space-y-1">
+            @for (err of closureErrors(); track err) {
+              <li class="text-sm text-red-700">{{ err }}</li>
+            }
+          </ul>
+        </div>
+      } @else {
+        <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <p class="text-sm text-gray-700">Todas las condiciones se cumplen. Al confirmar:</p>
+          <ul class="list-disc list-inside mt-2 space-y-1 text-sm text-gray-600">
+            <li>La rendicion quedara en estado <strong>Cerrada</strong></li>
+            <li>No podra agregar, editar ni eliminar comprobantes</li>
+            <li>Se notificara al colaborador por correo</li>
+          </ul>
+        </div>
+      }
+    </div>
+
+    <div class="px-6 pb-6 pt-2 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+        [disabled]="isClosing()"
+        (click)="closeCloseModal()"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-gray-800 text-white rounded-xl text-sm font-medium hover:bg-gray-900 disabled:opacity-50 transition-colors"
+        [disabled]="isClosing() || closureErrors().length > 0"
+        (click)="confirmClose()"
+      >
+        @if (isClosing()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Cerrando...
+        } @else {
+          Confirmar Cierre
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Solicitar reapertura -->
+@if (showReopenRequestModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100">
+      <h3 class="text-lg font-semibold text-gray-900">Solicitar Reapertura</h3>
+      <p class="text-sm text-gray-500 mt-1">El motivo debe ser detallado (minimo 200 caracteres).</p>
+    </div>
+
+    <div class="px-6 py-4">
+      <label class="block text-sm font-medium text-gray-700 mb-1">
+        Motivo de reapertura
+        <span class="ml-1 text-xs font-normal text-gray-400">({{ reopenReason().length }}/200 min)</span>
+      </label>
+      <textarea
+        rows="5"
+        class="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+        placeholder="Describe el motivo por el que se requiere reabrir esta rendicion..."
+        [value]="reopenReason()"
+        (input)="reopenReason.set($any($event.target).value)"
+      ></textarea>
+    </div>
+
+    <div class="px-6 pb-6 pt-2 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+        [disabled]="isRequestingReopen()"
+        (click)="showReopenRequestModal.set(false)"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-orange-600 text-white rounded-xl text-sm font-medium hover:bg-orange-700 disabled:opacity-50 transition-colors"
+        [disabled]="isRequestingReopen() || reopenReason().trim().length < 200"
+        (click)="submitReopenRequest()"
+      >
+        @if (isRequestingReopen()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Enviando...
+        } @else {
+          Enviar Solicitud
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Aprobar/rechazar reapertura -->
+@if (showReopenApproveModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100">
+      <h3 class="text-lg font-semibold text-gray-900">Solicitud de Reapertura</h3>
+    </div>
+
+    <div class="px-6 py-4 space-y-3">
+      <div class="rounded-xl border border-blue-200 bg-blue-50 p-4">
+        <p class="text-sm font-semibold text-blue-800 mb-1">Motivo indicado:</p>
+        <p class="text-sm text-blue-700 whitespace-pre-wrap">{{ closureRecord?.reopeningReason || 'Sin motivo indicado' }}</p>
+      </div>
+      <p class="text-sm text-gray-600">Aprueba para devolver la rendicion al estado <strong>Aprobada</strong> y permitir edicion.</p>
+    </div>
+
+    <div class="px-6 pb-6 pt-2 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-red-200 bg-red-50 text-red-700 rounded-xl text-sm font-medium hover:bg-red-100 disabled:opacity-50 transition-colors"
+        [disabled]="isApprovingReopen()"
+        (click)="confirmReopenApproval(false)"
+      >
+        Rechazar
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        [disabled]="isApprovingReopen()"
+        (click)="confirmReopenApproval(true)"
+      >
+        @if (isApprovingReopen()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Procesando...
+        } @else {
+          Aprobar Reapertura
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+  <!-- Modal: Editar solicitud de viaticos -->
+  @if (showEditAdvanceModal() && editingAdvance()) {
+  <app-solicitud-viaticos-modal
+    [isOpen]="showEditAdvanceModal()"
+    [expenseReportId]="id"
+    [advanceToResubmit]="editingAdvance()"
+    (closed)="onEditAdvanceClosed($event)"
+  ></app-solicitud-viaticos-modal>
+  }
+
+  <!-- Modal: Cancelar solicitud de viaticos -->
+  @if (showCancelAdvanceModal()) {
+  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelAdvanceModal.set(false)">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
+      <div class="px-6 pt-6 pb-2 flex items-center gap-3">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-gray-900">Cancelar solicitud de viaticos</h3>
+          <p class="text-xs text-gray-500">La solicitud quedara como cancelada</p>
+        </div>
+      </div>
+      <div class="px-6 py-4">
+        <p class="text-sm text-gray-600">
+          ¿Estas seguro de que deseas cancelar esta solicitud de viaticos? Esta accion no se puede deshacer.
+        </p>
+      </div>
+      <div class="px-6 pb-6 flex gap-3">
+        <button
+          type="button"
+          class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          [disabled]="isCancellingAdvance()"
+          (click)="showCancelAdvanceModal.set(false)"
+        >
+          Volver
+        </button>
+        <button
+          type="button"
+          class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+          [disabled]="isCancellingAdvance()"
+          (click)="confirmCancelAdvance()"
+        >
+          @if (isCancellingAdvance()) {
+            <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+            Cancelando...
+          } @else {
+            Confirmar cancelacion
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- Modal: Cancelar solicitud -->
+  @if (showCancelModal()) {
+  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelModal.set(false)">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
+      <div class="px-6 pt-6 pb-2 flex items-center gap-3">
+        <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-gray-900">Cancelar solicitud</h3>
+          <p class="text-xs text-gray-500">Se notificara al administrador</p>
+        </div>
+      </div>
+      <div class="px-6 py-4">
+        <p class="text-sm text-gray-600 mb-4">
+          La solicitud de rendicion <strong>{{ report?.title }}</strong> sera cancelada. Esta accion notificara al coordinador asignado.
+        </p>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Motivo (opcional)</label>
+        <textarea
+          rows="3"
+          [value]="cancelReason()"
+          (input)="cancelReason.set($any($event.target).value)"
+          class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 resize-none"
+          placeholder="Ej: Ya no realizare el viaje..."
+        ></textarea>
+      </div>
+      <div class="px-6 pb-6 flex gap-3">
+        <button
+          type="button"
+          class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          [disabled]="isCancelling()"
+          (click)="showCancelModal.set(false)"
+        >
+          Volver
+        </button>
+        <button
+          type="button"
+          class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+          [disabled]="isCancelling()"
+          (click)="confirmCancelReport()"
+        >
+          @if (isCancelling()) {
+            <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+            Cancelando...
+          } @else {
+            Confirmar cancelacion
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+  }
+
+<!-- Modal: Adjuntar comprobante de devolución de saldo (colaborador, rendición cerrada) -->
+@if (showReturnVoucherModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showReturnVoucherModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">Comprobante de devolución</h3>
+    <p class="text-sm text-gray-500 mb-4">Adjunta el comprobante del depósito que realizaste a la cuenta de la empresa.</p>
+
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Fecha del depósito *</label>
+        <input type="date" [value]="returnVoucherDepositDate()"
+          (input)="returnVoucherDepositDate.set($any($event.target).value)"
+          [max]="returnVoucherDepositDate()"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Banco origen</label>
+        <input type="text" [value]="returnVoucherBank()"
+          (input)="returnVoucherBank.set($any($event.target).value)"
+          placeholder="Ej: BCP, Interbank..."
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">N° de operación</label>
+        <input type="text" [value]="returnVoucherOperation()"
+          (input)="returnVoucherOperation.set($any($event.target).value)"
+          placeholder="Número de operación o referencia"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Comprobante (PDF, JPG, PNG — máx 10MB) *</label>
+        @if (returnVoucherFileName()) {
+          <p class="text-xs text-green-600 font-medium mb-1">Archivo cargado: {{ returnVoucherFileName() }}</p>
+        }
+        <label class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" (change)="onReturnVoucherFileSelected($event)">
+          @if (isUploadingReturnVoucher()) {
+            <span class="inline-block w-4 h-4 border-2 border-gray-400/40 border-t-gray-700 rounded-full animate-spin"></span>
+            Subiendo...
+          } @else {
+            Seleccionar archivo
+          }
+        </label>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-5">
+      <button type="button" (click)="showReturnVoucherModal.set(false)"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">
+        Cancelar
+      </button>
+      <button type="button" (click)="submitReturnVoucher()"
+        [disabled]="isSubmittingReturnVoucher() || isUploadingReturnVoucher() || !returnVoucherUrl()"
+        class="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+        @if (isSubmittingReturnVoucher()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Enviando...
+        } @else {
+          Enviar comprobante
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Registrar reembolso al colaborador (admin, rendición cerrada) -->
+@if (showAdminReembolsoModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showAdminReembolsoModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">Registrar reembolso al colaborador</h3>
+    <p class="text-sm text-gray-500 mb-4">Registra el pago realizado al colaborador. El comprobante es opcional si el pago fue en efectivo.</p>
+
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Método de pago</label>
+        <select [value]="adminReembolsoMethod()"
+          (change)="adminReembolsoMethod.set($any($event.target).value)"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+          <option value="transferencia_bancaria">Transferencia bancaria</option>
+          <option value="efectivo">Efectivo</option>
+          <option value="cheque">Cheque</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Fecha de pago *</label>
+        <input type="date" [value]="adminReembolsoDate()"
+          (input)="adminReembolsoDate.set($any($event.target).value)"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Banco / Entidad</label>
+        <input type="text" [value]="adminReembolsoBank()"
+          (input)="adminReembolsoBank.set($any($event.target).value)"
+          placeholder="Ej: BCP, Interbank..."
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Referencia / N° operación</label>
+        <input type="text" [value]="adminReembolsoRef()"
+          (input)="adminReembolsoRef.set($any($event.target).value)"
+          placeholder="Número de referencia"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">
+          Comprobante (PDF, JPG, PNG — máx 10MB)
+          @if (adminReembolsoMethod() !== 'efectivo') {
+            *
+          } @else {
+            <span class="text-gray-400 font-normal">(opcional)</span>
+          }
+        </label>
+        @if (adminReembolsoFileName()) {
+          <p class="text-xs text-green-600 font-medium mb-1">Archivo cargado: {{ adminReembolsoFileName() }}</p>
+        }
+        <label class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" (change)="onAdminReembolsoFileSelected($event)">
+          @if (isUploadingAdminReembolso()) {
+            <span class="inline-block w-4 h-4 border-2 border-gray-400/40 border-t-gray-700 rounded-full animate-spin"></span>
+            Subiendo...
+          } @else {
+            Seleccionar archivo
+          }
+        </label>
+      </div>
+    </div>
+
+    <div class="flex gap-3 mt-5">
+      <button type="button" (click)="showAdminReembolsoModal.set(false)"
+        class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50">
+        Cancelar
+      </button>
+      <button type="button" (click)="submitAdminReembolso()"
+        [disabled]="isSubmittingAdminReembolso() || isUploadingAdminReembolso() || (adminReembolsoMethod() !== 'efectivo' && !adminReembolsoUrl())"
+        class="flex-1 py-2.5 bg-emerald-700 text-white rounded-xl text-sm font-medium hover:bg-emerald-800 disabled:opacity-50">
+        @if (isSubmittingAdminReembolso()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Registrando...
+        } @else {
+          Registrar reembolso
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Cargar comprobante de devolución (Fase 7) -->
+@if (showReturnProofModal()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showReturnProofModal.set(false)">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-1">Cargar comprobante de deposito</h3>
+    <p class="text-sm text-gray-500 mb-4">Adjunta el comprobante del deposito que realizaste para devolver el saldo del viático.</p>
+    <div class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Fecha de deposito <span class="text-red-500">*</span></label>
+          <input type="date" [value]="returnProofDepositDate()" (input)="returnProofDepositDate.set($any($event.target).value)"
+            class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-600">Monto devuelto S/ <span class="text-red-500">*</span></label>
+          <input type="number" [value]="returnProofAmount()" (input)="returnProofAmount.set(+$any($event.target).value)"
+            min="0" step="0.01" class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+        </div>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Banco de origen <span class="text-red-500">*</span></label>
+        <input type="text" [value]="returnProofBank()" (input)="returnProofBank.set($any($event.target).value)"
+          placeholder="BCP, Interbank, BBVA..." class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">N° de operacion <span class="text-red-500">*</span></label>
+        <input type="text" [value]="returnProofOperation()" (input)="returnProofOperation.set($any($event.target).value)"
+          placeholder="Numero de transaccion" class="w-full h-[38px] px-3 rounded-lg border border-gray-200 text-sm" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Nota (opcional)</label>
+        <textarea [value]="returnProofNote()" (input)="returnProofNote.set($any($event.target).value)"
+          rows="2" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none"></textarea>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Comprobante adjunto <span class="text-red-500">*</span></label>
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+          (change)="onReturnProofFileSelected($event)"
+          class="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700" />
+        @if (isUploadingReturnProof()) {
+        <p class="text-xs text-blue-600">Subiendo...</p>
+        } @else if (returnProofFileName()) {
+        <p class="text-xs text-green-700">Adjunto: {{ returnProofFileName() }}</p>
+        } @else {
+        <p class="text-xs text-gray-400">PDF/JPG/PNG (max 10MB)</p>
+        }
+      </div>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button type="button" (click)="showReturnProofModal.set(false)"
+        [disabled]="isSubmittingReturnProof()"
+        class="flex-1 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+        Cancelar
+      </button>
+      <button type="button" (click)="submitReturnProof()"
+        [disabled]="!returnProofUrl() || isSubmittingReturnProof() || isUploadingReturnProof()"
+        class="flex-1 py-2 bg-red-700 text-white rounded-xl text-sm font-medium hover:bg-red-800 disabled:opacity-50">
+        {{ isSubmittingReturnProof() ? 'Enviando...' : 'Enviar comprobante' }}
+      </button>
+    </div>
+  </div>
+</div>
+}
+

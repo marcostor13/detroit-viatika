@@ -1,0 +1,14 @@
+<button
+  [type]="type()"
+  [disabled]="disabled() || loading()"
+  [class]="buttonClasses()"
+  (click)="onClick()"
+>
+  @if (loading()) {
+    <span class="w-3.5 h-3.5 rounded-full animate-spin shrink-0 border-2 border-current/25 border-t-current" aria-hidden="true"></span>
+    <span>{{ loadingLabel() }}</span>
+  } @else {
+    <ng-content></ng-content>
+    <span>{{ label() }}</span>
+  }
+</button>

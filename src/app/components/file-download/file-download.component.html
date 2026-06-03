@@ -1,0 +1,15 @@
+<div class="file-download-container">
+  <button (click)="downloadFile()" class="download-button">
+    @if (fileType === 'excel' || fileType === 'csv') {
+    <span>
+      <i class="excel-icon"></i>
+      Descargar CSV
+    </span>
+    } @else if (fileType === 'pdf') {
+    <span>
+      <i class="pdf-icon"></i>
+      Descargar PDF
+    </span>
+    }
+  </button>
+</div>

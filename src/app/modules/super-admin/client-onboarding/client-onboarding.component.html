@@ -1,0 +1,347 @@
+<div
+  class="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background to-primary/5 px-4 py-10"
+>
+  <div class="mb-8 flex justify-center">
+    <img src="/logo.svg" alt="Logo" class="h-16 lg:h-20 w-auto" />
+  </div>
+  <div
+    class="w-full max-w-5xl bg-quaternary rounded-3xl shadow-2xl border border-primary/10 overflow-hidden grid grid-cols-1 lg:grid-cols-2"
+  >
+    <!-- Left Panel - Branding / Info -->
+    <div
+      class="relative bg-gradient-to-br from-primary to-secondary text-white p-8 lg:p-10 flex flex-col justify-between"
+    >
+      <div>
+        <h1 class="text-3xl lg:text-4xl font-bold mb-4 leading-tight">
+          Bienvenido a tu nueva plataforma
+        </h1>
+        <p class="text-sm lg:text-base text-white/80 mb-6">
+          Agrega nuevos clientes de forma rápida y sencilla. En minutos tendrán acceso completo a todas las funcionalidades de gestión de facturas.
+        </p>
+        <ul class="space-y-3 text-sm lg:text-base">
+          <li class="flex items-start gap-3">
+            <span class="mt-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5 text-emerald-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+            </span>
+            <span
+              ><strong>Proceso simplificado:</strong> Registra cliente y usuario administrador en un solo paso, sin complicaciones.</span
+            >
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="mt-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5 text-emerald-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"
+                />
+              </svg>
+            </span>
+            <span
+              ><strong>Activación automática:</strong> El cliente recibirá un correo con sus credenciales y podrá comenzar a trabajar de inmediato.</span
+            >
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="mt-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5 text-emerald-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                />
+              </svg>
+            </span>
+            <span
+              ><strong>Seguridad garantizada:</strong> Cada cliente tiene su propio espacio seguro con acceso controlado y datos protegidos.</span
+            >
+          </li>
+          <li class="flex items-start gap-3">
+            <span class="mt-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-5 h-5 text-emerald-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+            </span>
+            <span
+              ><strong>Gestión eficiente:</strong> Control total sobre facturas, aprobaciones y reportes desde una interfaz intuitiva.</span
+            >
+          </li>
+        </ul>
+      </div>
+      <div class="mt-8 text-xs text-white/70">
+        <p class="mb-1">Acceso de clientes:</p>
+        <p class="font-mono text-sm">
+          http://app.viatika.tecdidata.com/login
+        </p>
+      </div>
+    </div>
+
+    <!-- Right Panel - Form -->
+    <div
+      class="p-6 lg:p-8 bg-quaternary overflow-y-auto max-h-[90vh]"
+      [formGroup]="form"
+    >
+      <form (ngSubmit)="submit()" class="space-y-6">
+        <!-- Client Section -->
+        <div class="space-y-4" formGroupName="client">
+          <h2
+            class="text-lg font-semibold text-secondary flex items-center gap-2"
+          >
+            <span
+              class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                  d="M3.75 4.5h16.5M4.5 9h15M5.25 13.5h13.5M6 18h12"
+                />
+              </svg>
+            </span>
+            Datos del cliente
+          </h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <app-input
+              label="Código"
+              placeholder="Ej: EMP-001"
+              [required]="true"
+              [error]="
+                form.get('client.codigo')?.touched &&
+                form.get('client.codigo')?.invalid
+                  ? 'Obligatorio'
+                  : ''
+              "
+              [type]="'text'"
+              [value]="form.get('client.codigo')?.value"
+              (changed)="form.get('client.codigo')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Nombre Comercial"
+              placeholder="Ej: Viatika SAC"
+              [required]="true"
+              [error]="
+                form.get('client.comercialName')?.touched &&
+                form.get('client.comercialName')?.invalid
+                  ? 'Obligatorio'
+                  : ''
+              "
+              [type]="'text'"
+              [value]="form.get('client.comercialName')?.value"
+              (changed)="form.get('client.comercialName')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Razón Social"
+              placeholder="Ej: Viatika Servicios Empresariales SAC"
+              [required]="true"
+              [error]="
+                form.get('client.businessName')?.touched &&
+                form.get('client.businessName')?.invalid
+                  ? 'Obligatorio'
+                  : ''
+              "
+              [type]="'text'"
+              [value]="form.get('client.businessName')?.value"
+              (changed)="form.get('client.businessName')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="RUC"
+              placeholder="11 dígitos"
+              [required]="true"
+              [type]="'text'"
+              [error]="
+                form.get('client.businessId')?.touched &&
+                form.get('client.businessId')?.invalid
+                  ? 'RUC inválido'
+                  : ''
+              "
+              [value]="form.get('client.businessId')?.value"
+              (changed)="form.get('client.businessId')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Teléfono"
+              placeholder="Número de contacto"
+              [required]="true"
+              [value]="form.get('client.phone')?.value"
+              (changed)="form.get('client.phone')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Correo de contacto"
+              placeholder="contacto@empresa.com"
+              [required]="true"
+              [type]="'email'"
+              [error]="
+                form.get('client.email')?.touched &&
+                form.get('client.email')?.invalid
+                  ? 'Email inválido'
+                  : ''
+              "
+              [value]="form.get('client.email')?.value"
+              (changed)="form.get('client.email')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Dirección"
+              placeholder="Av. Siempre Viva 123"
+              [required]="true"
+              [value]="form.get('client.address')?.value"
+              (changed)="form.get('client.address')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Logo (URL)"
+              placeholder="https://mi-cdn.com/logos/logo.png"
+              [value]="form.get('client.logo')?.value"
+              (changed)="form.get('client.logo')?.setValue($event)"
+            ></app-input>
+          </div>
+        </div>
+
+        <!-- Admin User Section -->
+        <div class="space-y-4" formGroupName="adminUser">
+          <h2
+            class="text-lg font-semibold text-secondary flex items-center gap-2"
+          >
+            <span
+              class="w-8 h-8 rounded-xl bg-secondary/10 flex items-center justify-center text-secondary"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                  d="M5.121 17.804A3 3 0 017.5 17h9a3 3 0 012.379 1.196M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            </span>
+            Usuario administrador
+          </h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <app-input
+              label="Nombre completo"
+              placeholder="Nombre y apellidos"
+              [required]="true"
+              [value]="form.get('adminUser.name')?.value"
+              (changed)="form.get('adminUser.name')?.setValue($event)"
+            ></app-input>
+
+            <app-input
+              label="Email del administrador"
+              placeholder="admin@empresa.com"
+              [required]="true"
+              [type]="'email'"
+              [error]="
+                form.get('adminUser.email')?.touched &&
+                form.get('adminUser.email')?.invalid
+                  ? 'Email inválido'
+                  : ''
+              "
+              [value]="form.get('adminUser.email')?.value"
+              (changed)="form.get('adminUser.email')?.setValue($event)"
+            ></app-input>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div
+          class="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t border-gray-100 mt-4"
+        >
+          <button
+            type="button"
+            class="px-4 py-2 rounded-xl text-sm font-medium text-tertiary hover:text-secondary hover:bg-background transition-colors"
+            (click)="form.reset()"
+          >
+            Limpiar formulario
+          </button>
+
+          <app-button
+            label="Registrar cliente"
+            variant="primary"
+            size="md"
+            [disabled]="loading || form.invalid"
+            (clicked)="submit()"
+          >
+            @if (loading) {
+            <svg
+              class="animate-spin h-5 w-5"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            }
+          </app-button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
