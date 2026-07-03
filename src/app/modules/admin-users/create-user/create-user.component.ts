@@ -5,6 +5,9 @@ import { AdminUsersService } from '../services/admin-users.service';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
+import { InputComponent } from '../../../design-system/input/input.component';
+import { ModalComponent } from '../../../design-system/modal/modal.component';
 import {
   IRoleResponse,
   IUserResponse,
@@ -26,7 +29,7 @@ interface ModuleOption {
 }
 
 @Component({
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, ReactiveFormsModule, FormsModule, ButtonComponent, IconComponent, InputComponent, ModalComponent],
   selector: 'app-create-user',
   templateUrl: './create-user.component.html',
   styleUrls: ['./create-user.component.scss'],
@@ -53,7 +56,6 @@ export class CreateUserComponent implements OnInit {
     cargo: [''],
     address: [''],
     phone: [''],
-    coordinatorId: [''],
     bankName: [''],
     accountNumber: [''],
     cci: [''],
@@ -62,7 +64,10 @@ export class CreateUserComponent implements OnInit {
   step = 1;
   roles: IRoleResponse[] = [];
   enumRoles = ERoles;
+  /** Candidatos a aprobador: usuarios activos con rol Coordinador. */
   coordinatorCandidates: IUserResponse[] = [];
+  /** Cadena ordenada de aprobadores (ids), en el orden en que deben aprobar. */
+  approverIds: string[] = [];
   temporaryPassword: string = '';
   showPasswordModal: boolean = false;
   passwordCopied: boolean = false;
@@ -75,11 +80,13 @@ export class CreateUserComponent implements OnInit {
     { key: 'mis-rendiciones', label: 'Mis Rendiciones', description: 'Ver y gestionar rendiciones propias' },
     { key: 'nueva-rendicion', label: 'Nueva Rendición', description: 'Crear nuevas rendiciones' },
     { key: 'rendiciones', label: 'Rendiciones (todas)', description: 'Ver rendiciones de todos los colaboradores' },
+    { key: 'invoice-approval', label: 'Aprobación de Facturas', description: 'Aprobar o rechazar comprobantes y rendiciones enviadas por otros colaboradores' },
     { key: 'viaticos', label: 'Viáticos', description: 'Gestión y seguimiento de anticipos' },
     { key: 'consolidated-invoices', label: 'Dashboard', description: 'Dashboard con KPIs y reportes consolidados de gastos' },
     { key: 'tesoreria', label: 'Pagos', description: 'Registrar comprobantes de pago' },
     { key: 'configuracion', label: 'Configuración', description: 'Configurar parámetros de la empresa' },
     { key: 'audit-log', label: 'Actividad', description: 'Ver registro de actividad' },
+    { key: 'caja-chica', label: 'Rendicion Caja Chica', description: 'Crear y subir comprobantes de caja chica propios' },
   ];
 
   permissions: IUserPermissions = {
@@ -105,19 +112,48 @@ export class CreateUserComponent implements OnInit {
         this.coordinatorCandidates = users.filter((u) => {
           if (!u.isActive) return false;
           if (exclude && u._id === exclude) return false;
-          const roleName = u.role?.name;
-          return (
-            roleName === 'Administrador' ||
-            roleName === 'Coordinador' ||
-            u.permissions?.canApproveL1 === true ||
-            u.permissions?.canApproveL2 === true
-          );
+          return u.role?.name === 'Coordinador';
         });
       },
       error: () => {
         this.coordinatorCandidates = [];
       },
     });
+  }
+
+  /** Candidatos aún no agregados a la cadena de aprobadores. */
+  get availableApproverCandidates(): IUserResponse[] {
+    return this.coordinatorCandidates.filter(
+      (u) => !this.approverIds.includes(u._id),
+    );
+  }
+
+  approverName(id: string): string {
+    const u = this.coordinatorCandidates.find((c) => c._id === id);
+    return u ? `${u.name} — ${u.email}` : id;
+  }
+
+  addApprover(id: string): void {
+    if (!id || this.approverIds.includes(id)) return;
+    this.approverIds = [...this.approverIds, id];
+  }
+
+  removeApprover(index: number): void {
+    this.approverIds = this.approverIds.filter((_, i) => i !== index);
+  }
+
+  moveApproverUp(index: number): void {
+    if (index <= 0) return;
+    const arr = [...this.approverIds];
+    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+    this.approverIds = arr;
+  }
+
+  moveApproverDown(index: number): void {
+    if (index >= this.approverIds.length - 1) return;
+    const arr = [...this.approverIds];
+    [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
+    this.approverIds = arr;
   }
 
   get selectedRoleIsCollaborador(): boolean {
@@ -186,10 +222,11 @@ export class CreateUserComponent implements OnInit {
     this.permissions = { modules: [], canApproveL1: false, canApproveL2: false, categoryIds: [] };
   }
 
-  private coordinatorIdFromUser(user: IUserResponse): string {
-    const c = user.coordinatorId;
-    if (!c) return '';
-    return typeof c === 'object' && c !== null && '_id' in c ? c._id : String(c);
+  private approverIdsFromUser(user: IUserResponse): string[] {
+    const list = user.approverIds ?? [];
+    return list.map((c) =>
+      typeof c === 'object' && c !== null && '_id' in c ? c._id : String(c),
+    );
   }
 
   getRoleName(roleId: string) {
@@ -222,12 +259,12 @@ export class CreateUserComponent implements OnInit {
       cargo: user.cargo || '',
       address: user.address || '',
       phone: user.phone || '',
-      coordinatorId: this.coordinatorIdFromUser(user),
       bankName: user.bankAccount?.bankName || '',
       accountNumber: user.bankAccount?.accountNumber || '',
       cci: user.bankAccount?.cci || '',
       accountType: user.bankAccount?.accountType || '',
     });
+    this.approverIds = this.approverIdsFromUser(user);
   }
 
   getUser() {
@@ -240,8 +277,8 @@ export class CreateUserComponent implements OnInit {
     if (this.form.valid) {
       const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
       const payload: any = { ...rest };
-      if (!this.selectedRoleIsCollaborador || !rest.coordinatorId?.trim()) {
-        delete payload.coordinatorId;
+      if (this.selectedRoleIsCollaborador) {
+        payload.approverIds = this.approverIds;
       }
       if (bankName || accountNumber || cci) {
         payload.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };
@@ -274,10 +311,8 @@ export class CreateUserComponent implements OnInit {
       const updateData: any = { ...rest };
       delete updateData['password'];
 
-      if (!this.selectedRoleIsCollaborador) {
-        delete updateData['coordinatorId'];
-      } else if (!updateData['coordinatorId']) {
-        updateData['coordinatorId'] = null;
+      if (this.selectedRoleIsCollaborador) {
+        updateData['approverIds'] = this.approverIds;
       }
 
       if (bankName || accountNumber || cci) {

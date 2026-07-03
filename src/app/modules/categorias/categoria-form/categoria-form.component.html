@@ -2,11 +2,9 @@
 
   <!-- Header -->
   <div class="flex items-center gap-4 mb-6">
-    <button (click)="goBack()" class="text-tertiary hover:text-secondary transition-colors">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-      </svg>
-    </button>
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" (clicked)="goBack()">
+      <app-icon name="arrow-left" size="sm" />
+    </app-button>
     <div>
       <h1 class="text-2xl font-bold text-secondary">{{ title }}</h1>
       <p class="text-sm text-tertiary mt-0.5">Configura los datos de la categoría de gasto</p>
@@ -114,24 +112,15 @@
 
     <!-- Acciones -->
     <div class="flex items-center justify-end gap-3 mt-5">
-      <button
-        (click)="goBack()"
-        class="px-4 py-2.5 text-sm font-medium text-tertiary bg-quaternary border border-tertiary/30 rounded-xl hover:bg-background transition-colors"
-      >
-        Cancelar
-      </button>
-      <button
-        (click)="save()"
+      <app-button variant="secondary" label="Cancelar" (clicked)="goBack()" />
+      <app-button
+        variant="primary"
+        [label]="id() ? 'Actualizar categoría' : 'Crear categoría'"
+        loadingLabel="Guardando..."
+        [loading]="saving()"
         [disabled]="saving()"
-        class="px-5 py-2.5 text-sm font-medium text-white bg-primary rounded-xl hover:bg-primary/90 disabled:opacity-60 transition-colors flex items-center gap-2"
-      >
-        @if (saving()) {
-          <div class="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-white"></div>
-          Guardando...
-        } @else {
-          {{ id() ? 'Actualizar categoría' : 'Crear categoría' }}
-        }
-      </button>
+        (clicked)="save()"
+      />
     </div>
   }
 </div>

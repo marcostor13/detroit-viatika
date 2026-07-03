@@ -180,6 +180,23 @@
             }
           </div>
 
+          <!-- Orden de Trabajo -->
+          <div class="md:col-span-2 flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-gray-700">
+              Orden de Trabajo (opcional)
+            </label>
+            <select
+              formControlName="ordenTrabajoId"
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow"
+            >
+              <option value="">Sin Orden de Trabajo</option>
+              @for (ot of ordenesTrabajo(); track ot._id) {
+                <option [value]="ot._id">{{ ot.codigo }} — {{ departamentoLabel(ot.departamento) }}</option>
+              }
+            </select>
+            <p class="text-xs text-gray-500">Departamento al que se imputará el gasto de este viático, si corresponde.</p>
+          </div>
+
           <!-- Saldo de la bolsa (mismo centro de costo) -->
           @if (canUseSaldoBag && selectedProjectId()) {
           <div class="md:col-span-2 flex flex-col gap-2">

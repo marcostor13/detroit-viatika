@@ -7,11 +7,12 @@ import { ConfirmationService } from '../../services/confirmation.service';
 import { CategoryGroupService } from '../../services/category-group.service';
 import { ICategoryGroup } from '../categorias/interfaces/category-group.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
+import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
 
 @Component({
   selector: 'app-perfiles-categoria',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, EmptyStateComponent],
   templateUrl: './perfiles-categoria.component.html',
 })
 export class PerfilesCategoriaComponent implements OnInit {

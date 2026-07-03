@@ -28,12 +28,15 @@ import {
   ExpenseType,
 } from '../interfaces/invoices.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
 import { CategoryGroupService } from '../../../services/category-group.service';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
+import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
+import { IOrdenTrabajo, otDepartamentoLabel } from '../../../interfaces/orden-trabajo.interface';
 
 function findDepartamento(label: string): Departamento | undefined {
   return PERU_LOCATIONS.find(d => d.label === label);
@@ -44,7 +47,7 @@ declare const google: any;
 @Component({
   selector: 'app-add-invoice',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, ProjectSelectComponent, WorkerSelectComponent, PlacesAutocompleteDirective],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, WorkerSelectComponent, PlacesAutocompleteDirective],
   templateUrl: './add-invoice.component.html',
   styleUrl: './add-invoice.component.scss',
 })
@@ -62,6 +65,7 @@ export default class AddInvoiceComponent implements OnInit {
   private companyConfigService = inject(CompanyConfigService);
   private expenseService = inject(ExpenseService);
   private categoryGroupService = inject(CategoryGroupService);
+  private ordenTrabajoService = inject(OrdenTrabajoService);
 
   form!: FormGroup;
   id: string = this.route.snapshot.params['id'];
@@ -69,6 +73,9 @@ export default class AddInvoiceComponent implements OnInit {
   /** Perfiles de categoría (category-groups). Cada proyecto referencia uno y de él se derivan sus categorías. */
   categoryGroups: ICategoryGroup[] = [];
   proyects: IProject[] = [];
+  /** Órdenes de Trabajo activas, requeridas en planilla de movilidad (formato ADF-FOR-005). */
+  ordenesTrabajo: IOrdenTrabajo[] = [];
+  readonly departamentoLabel = otDepartamentoLabel;
   /** Trabajadores del cliente, para el selector de colaborador por fila de la planilla. */
   workers: WorkerOption[] = [];
   previewImage: SafeUrl | null = null;
@@ -297,6 +304,7 @@ export default class AddInvoiceComponent implements OnInit {
     this.loadCategories();
     this.loadCategoryGroups();
     this.loadProjects();
+    this.loadOrdenesTrabajo();
     this.loadClientUsers();
     // Al cambiar de proyecto, si la categoría elegida no pertenece a su perfil, se limpia.
     this.form.get('proyectId')?.valueChanges.subscribe(() => {
@@ -353,6 +361,7 @@ export default class AddInvoiceComponent implements OnInit {
 
           const baseValues: any = {
             proyectId: res.proyectId?._id || res.proyectId || '',
+            ordenTrabajoId: (res as any).ordenTrabajoId?._id || (res as any).ordenTrabajoId || '',
             categoryId: res.categoryId?._id || res.categoryId || '',
             comentario: (res as any).comentario || dataObj.comentario || '',
           };
@@ -566,6 +575,17 @@ export default class AddInvoiceComponent implements OnInit {
     });
   }
 
+  loadOrdenesTrabajo() {
+    this.ordenTrabajoService.getAll().subscribe({
+      next: (list) => {
+        this.ordenesTrabajo = (list || []).filter((o) => o.isActive !== false);
+      },
+      error: () => {
+        this.ordenesTrabajo = [];
+      },
+    });
+  }
+
   loadClientUsers() {
     this.invoiceService.getClientUsers().subscribe({
       next: (users) => {
@@ -701,6 +721,7 @@ export default class AddInvoiceComponent implements OnInit {
   initForm() {
     this.form = this.fb.group({
       proyectId: ['', Validators.required],
+      ordenTrabajoId: [''],
       categoryId: ['', Validators.required],
       file: [''],
       fechaEmision: [''],
@@ -1380,8 +1401,10 @@ export default class AddInvoiceComponent implements OnInit {
     const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
     // En planilla directa proyecto y categoría viven en cada fila; el selector superior se omite.
     const categoryOk = this.isDirectaPlanilla() || !!this.form.get('categoryId')?.valid;
-    if (!proyectOk || !categoryOk) {
-      this.notificationService.show('Completa los campos requeridos', 'error');
+    // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de Costo.
+    const otOk = !!this.form.get('ordenTrabajoId')?.value;
+    if (!proyectOk || !categoryOk || !otOk) {
+      this.notificationService.show('Completa los campos requeridos (incluida la Orden de Trabajo)', 'error');
       return;
     }
     if (this.isDirectaContext()) {
@@ -1442,6 +1465,7 @@ export default class AddInvoiceComponent implements OnInit {
         : this.form.get('categoryId')?.value;
       const payload = {
         proyectId: expenseProjectId,
+        ordenTrabajoId: this.form.get('ordenTrabajoId')?.value,
         categoryId: expenseCategoryId,
         expenseReportId: this.rendicionId || undefined,
         mobilityRows: rows,
@@ -1633,6 +1657,7 @@ export default class AddInvoiceComponent implements OnInit {
 
     const payload: any = {
       proyectId: formValue.proyectId,
+      ordenTrabajoId: formValue.ordenTrabajoId || undefined,
       categoryId: formValue.categoryId,
       status: this.originalInvoice.status,
       comentario: (formValue.comentario || '').trim() || undefined,

@@ -2,6 +2,7 @@
   [type]="type()"
   [disabled]="disabled() || loading()"
   [class]="buttonClasses()"
+  [attr.aria-label]="ariaLabel() || null"
   (click)="onClick()"
 >
   @if (loading()) {
@@ -9,6 +10,8 @@
     <span>{{ loadingLabel() }}</span>
   } @else {
     <ng-content></ng-content>
-    <span>{{ label() }}</span>
+    @if (label()) {
+      <span>{{ label() }}</span>
+    }
   }
 </button>

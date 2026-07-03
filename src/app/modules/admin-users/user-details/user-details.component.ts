@@ -6,11 +6,14 @@ import { AdminUsersService } from '../services/admin-users.service';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { ERoles } from '../interfaces/roles.enum';
 import { NotificationService } from '../../../services/notification.service';
+import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
+import { BadgeComponent } from '../../../design-system/badge/badge.component';
 
 @Component({
   selector: 'app-user-details',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, BadgeComponent],
   templateUrl: './user-details.component.html',
   styleUrls: ['./user-details.component.scss']
 })

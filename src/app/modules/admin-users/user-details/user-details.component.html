@@ -3,46 +3,23 @@
   <!-- Header -->
   <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
     <div class="flex items-center gap-3 min-w-0">
-      <button
-        (click)="goBack()"
-        class="p-2 text-tertiary rounded-xl hover:bg-background hover:text-secondary transition-colors shrink-0"
-        title="Volver"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
-        </svg>
-      </button>
+      <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" class="shrink-0" (clicked)="goBack()">
+        <app-icon name="arrow-left" size="sm" />
+      </app-button>
       <h1 class="text-xl sm:text-2xl font-bold text-secondary truncate">Detalles del Colaborador</h1>
     </div>
     <div class="flex flex-wrap gap-2">
-      <button
-        (click)="goToEdit()"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-tertiary border border-tertiary/30 rounded-xl hover:bg-background hover:text-secondary transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
-        </svg>
-        <span>Editar</span>
-      </button>
-      <button
-        (click)="goToPermisos()"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-primary border border-primary/40 rounded-xl hover:bg-primary/5 transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-        </svg>
-        <span>Permisos</span>
-      </button>
-      <button
-        (click)="goToRendiciones()"
-        class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-tertiary border border-tertiary/30 rounded-xl hover:bg-background hover:text-secondary transition-colors"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        </svg>
+      <app-button variant="secondary" size="sm" label="Editar" (clicked)="goToEdit()">
+        <app-icon name="edit" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="Permisos" (clicked)="goToPermisos()">
+        <app-icon name="shield-check" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="" (clicked)="goToRendiciones()">
+        <app-icon name="file-text" size="sm" />
         <span class="hidden sm:inline">Ver Rendiciones</span>
         <span class="sm:hidden">Rendiciones</span>
-      </button>
+      </app-button>
     </div>
   </div>
 
@@ -73,17 +50,13 @@
         </div>
         <div>
           <p class="text-xs text-tertiary mb-0.5">Rol</p>
-          <span class="inline-flex px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-semibold">
-            {{ roleName }}
-          </span>
+          <app-badge variant="info">{{ roleName }}</app-badge>
         </div>
         <div>
           <p class="text-xs text-tertiary mb-0.5">Estado</p>
-          @if (user.isActive) {
-          <span class="inline-flex px-2.5 py-1 rounded-full bg-green-100 text-green-800 text-xs font-semibold">Activo</span>
-          } @else {
-          <span class="inline-flex px-2.5 py-1 rounded-full bg-red-100 text-red-800 text-xs font-semibold">Inactivo</span>
-          }
+          <app-badge [variant]="user.isActive ? 'success' : 'error'">
+            {{ user.isActive ? 'Activo' : 'Inactivo' }}
+          </app-badge>
         </div>
       </div>
     </div>

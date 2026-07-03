@@ -57,12 +57,8 @@ export class AdvanceService {
     return this.http.get<IAdvance>(`${this.url}/${id}`);
   }
 
-  approveL1(id: string, payload: IApproveAdvancePayload): Observable<IAdvance> {
-    return this.http.patch<IAdvance>(`${this.url}/${id}/approve-l1`, payload);
-  }
-
-  approveL2(id: string, payload: IApproveAdvancePayload): Observable<IAdvance> {
-    return this.http.patch<IAdvance>(`${this.url}/${id}/approve-l2`, payload);
+  approve(id: string, payload: IApproveAdvancePayload): Observable<IAdvance> {
+    return this.http.patch<IAdvance>(`${this.url}/${id}/approve`, payload);
   }
 
   reject(id: string, payload: IRejectAdvancePayload): Observable<IAdvance> {

@@ -14,12 +14,15 @@ import {
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
+import { ButtonComponent } from '../../design-system/button/button.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
+import { TabsComponent, TabItem } from '../../design-system/tabs/tabs.component';
 type Tab = 'pendientes' | 'aprobados' | 'devoluciones' | 'rendiciones-directas';
 
 @Component({
   selector: 'app-tesoreria',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule],
+  imports: [CommonModule, ReactiveFormsModule, RouterModule, ButtonComponent, IconComponent, TabsComponent],
   templateUrl: './tesoreria.component.html',
 })
 export class TesoreriaComponent implements OnInit {
@@ -33,6 +36,24 @@ export class TesoreriaComponent implements OnInit {
   private fb = inject(FormBuilder);
 
   activeTab = signal<Tab>('pendientes');
+
+  get tabsList(): TabItem[] {
+    const tabs: TabItem[] = [
+      { value: 'pendientes', label: 'Pendientes' },
+      { value: 'aprobados', label: 'En pago' },
+    ];
+    if (this.canPayAndSettle) {
+      tabs.push({ value: 'devoluciones', label: 'Devoluciones', badge: this.pendingReturns.length || undefined });
+    }
+    if (this.canManageDirectaDeposit) {
+      tabs.push({ value: 'rendiciones-directas', label: 'Rendiciones Directas' });
+    }
+    return tabs;
+  }
+
+  onTabChange(value: string): void {
+    this.activeTab.set(value as Tab);
+  }
   isLoading = signal(false);
   isActing = signal(false);
 
@@ -73,7 +94,6 @@ export class TesoreriaComponent implements OnInit {
   reimbursementOperationDate: string | null = null;
   reimbursementOperationTime: string | null = null;
   showPaymentModal = false;
-  showRejectModal = false;
   showReturnModal = false;
   showHistoryModal = false;
   pendingReturns: IAdvance[] = [];
@@ -110,7 +130,6 @@ export class TesoreriaComponent implements OnInit {
   } | null>(null);
 
   paymentForm!: FormGroup;
-  rejectForm!: FormGroup;
   returnForm!: FormGroup;
 
   readonly STATUS_LABELS = ADVANCE_STATUS_LABELS;
@@ -152,12 +171,6 @@ export class TesoreriaComponent implements OnInit {
       cci: [''],
       transferDate: [new Date().toISOString().split('T')[0], Validators.required],
       reference: ['', Validators.required],
-    });
-    this.rejectForm = this.fb.group({
-      rejectionReason: [
-        '',
-        [Validators.required, Validators.minLength(10)],
-      ],
     });
     this.returnForm = this.fb.group({
       returnedAmount: [null, [Validators.required, Validators.min(0.01)]],
@@ -419,44 +432,6 @@ export class TesoreriaComponent implements OnInit {
       default:
         return this.allAdvances;
     }
-  }
-
-  approveL2(advance: IAdvance) {
-    this.isActing.set(true);
-    this.advanceService.approveL2(advance._id, {}).subscribe({
-      next: () => {
-        this.notificationService.show('Viático aprobado (Nivel 2 — Tesorería)', 'success');
-        this.loadData();
-        this.isActing.set(false);
-      },
-      error: (e) => {
-        this.notificationService.show(e.error?.message || 'Error al aprobar', 'error');
-        this.isActing.set(false);
-      },
-    });
-  }
-
-  openRejectModal(advance: IAdvance) {
-    this.selectedAdvance = advance;
-    this.rejectForm.reset();
-    this.showRejectModal = true;
-  }
-
-  confirmReject() {
-    if (!this.selectedAdvance || this.rejectForm.invalid) return;
-    this.isActing.set(true);
-    this.advanceService.reject(this.selectedAdvance._id, this.rejectForm.value).subscribe({
-      next: () => {
-        this.notificationService.show('Viático rechazado', 'success');
-        this.showRejectModal = false;
-        this.loadData();
-        this.isActing.set(false);
-      },
-      error: (e) => {
-        this.notificationService.show(e.error?.message || 'Error', 'error');
-        this.isActing.set(false);
-      },
-    });
   }
 
   openPaymentModal(advance: IAdvance) {

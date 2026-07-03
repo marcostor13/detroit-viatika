@@ -1,7 +1,7 @@
 import { Component, input, output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 @Component({
@@ -23,6 +23,8 @@ export class ButtonComponent {
   type = input<'button' | 'submit' | 'reset'>('button');
   loading = input<boolean>(false);
   loadingLabel = input<string>('Cargando…');
+  /** Required when label is empty (icon-only buttons) — screen readers have no other accessible name to fall back on. */
+  ariaLabel = input<string>('');
   
   // Outputs
   clicked = output<void>();
@@ -36,6 +38,7 @@ export class ButtonComponent {
       secondary: 'bg-transparent border border-divider text-secondary hover:bg-background hover:border-primary hover:text-primary',
       ghost: 'bg-transparent text-tertiary hover:text-primary hover:bg-background',
       danger: 'bg-error text-quaternary hover:bg-error/90 shadow-soft hover:shadow-lg',
+      success: 'bg-success text-quaternary hover:bg-success/90 shadow-soft hover:shadow-lg',
     };
 
     const sizes = {

@@ -4,12 +4,16 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { InvoicesService } from '../services/invoices.service';
 import { IInvoiceResponse } from '../interfaces/invoices.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { CardComponent } from '../../../design-system/card/card.component';
+import { BadgeComponent, BadgeVariant } from '../../../design-system/badge/badge.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
+import { EmptyStateComponent } from '../../../design-system/empty-state/empty-state.component';
 import { UserStateService } from '../../../services/user-state.service';
 
 @Component({
   selector: 'app-invoice-detail',
   standalone: true,
-  imports: [CommonModule, RouterModule, ButtonComponent],
+  imports: [CommonModule, RouterModule, ButtonComponent, CardComponent, BadgeComponent, IconComponent, EmptyStateComponent],
   templateUrl: './invoice-detail.component.html',
   styleUrls: ['./invoice-detail.component.scss']
 })
@@ -84,5 +88,15 @@ export class InvoiceDetailComponent implements OnInit {
       'error_sunat': 'Error SUNAT',
     };
     return states[status.toLowerCase()] || status;
+  }
+
+  getStatusVariant(status?: string): BadgeVariant {
+    if (!status) return 'warning';
+    const s = status.toLowerCase();
+    if (s === 'pending') return 'warning';
+    if (s === 'approved' || s === 'sunat_valid' || s === 'valido_aceptado') return 'success';
+    if (s === 'rejected' || s === 'sunat_error' || s === 'error_sunat') return 'error';
+    if (s === 'sunat_valid_not_ours' || s === 'valido_no_pertenece') return 'warning';
+    return 'neutral';
   }
 }

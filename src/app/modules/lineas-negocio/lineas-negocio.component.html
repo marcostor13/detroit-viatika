@@ -21,10 +21,7 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
     </div>
     } @else if (lineas.length === 0) {
-    <div class="text-center py-10 text-tertiary">
-      <p class="font-medium text-secondary">No hay líneas de negocio</p>
-      <p class="text-sm mt-1">Agrega la primera línea de negocio de la empresa</p>
-    </div>
+    <app-empty-state icon="briefcase" title="No hay líneas de negocio" description="Agrega la primera línea de negocio de la empresa" />
     } @else {
     <div class="overflow-x-auto">
       <table class="min-w-full divide-y divide-tertiary/15">
@@ -42,9 +39,9 @@
             <td class="px-4 py-3 text-sm font-medium text-secondary">{{ linea.name }}</td>
             <td class="px-4 py-3 text-sm text-secondary">{{ linea.code }}</td>
             <td class="px-4 py-3 text-sm">
-              <span [class]="linea.isActive ? 'text-green-600' : 'text-error'">
+              <app-badge [variant]="linea.isActive ? 'success' : 'neutral'">
                 {{ linea.isActive ? 'Activo' : 'Inactivo' }}
-              </span>
+              </app-badge>
             </td>
             <td class="px-4 py-3 text-sm text-right">
               <div class="flex justify-end gap-2">

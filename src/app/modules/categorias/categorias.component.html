@@ -7,32 +7,16 @@
       <p class="text-sm text-tertiary mt-0.5">Gestiona las categorías de gasto de la empresa</p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
-      <button
-        (click)="downloadTemplate()"
-        class="h-[38px] px-3 rounded-xl text-sm font-medium text-tertiary border border-tertiary/30 hover:bg-background hover:text-secondary transition-colors flex items-center gap-1.5"
-      >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-        </svg>
-        Plantilla
-      </button>
-      <button
-        (click)="triggerFileInput()"
-        [disabled]="importing()"
-        class="h-[38px] px-3 rounded-xl text-sm font-medium text-primary border border-primary/30 hover:bg-primary/10 transition-colors flex items-center gap-1.5 disabled:opacity-50"
-      >
-        @if (importing()) {
-          <div class="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-primary"></div>
-          Importando...
-        } @else {
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
-          </svg>
-          Importar Excel
-        }
-      </button>
+      <app-button variant="secondary" size="sm" label="Plantilla" (clicked)="downloadTemplate()">
+        <app-icon name="download" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="Importar Excel" loadingLabel="Importando..." [loading]="importing()" (clicked)="triggerFileInput()">
+        <app-icon name="upload" size="sm" />
+      </app-button>
       <input #fileInput type="file" accept=".xlsx,.xls" class="hidden" (change)="onFileSelected($event)" />
-      <app-button label="Nueva Categoría" variant="primary" size="md" (clicked)="openAddCategory()" />
+      <app-button label="Nueva Categoría" variant="primary" size="md" (clicked)="openAddCategory()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
     </div>
   </div>
 
@@ -40,13 +24,11 @@
   @if (importResult()) {
     <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-4 flex flex-col gap-2">
       <div class="flex items-center gap-2">
-        <svg class="w-4 h-4 text-success" fill="currentColor" viewBox="0 0 20 20">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-        </svg>
+        <app-icon name="circle-check" size="sm" class="text-success" />
         <span class="text-sm font-medium text-secondary">{{ importResult()!.created }} categoría(s) importada(s)</span>
-        <button (click)="importResult.set(null)" class="ml-auto text-tertiary hover:text-secondary">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
+        <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" class="ml-auto" (clicked)="importResult.set(null)">
+          <app-icon name="close" size="sm" />
+        </app-button>
       </div>
       @if (importResult()!.errors.length > 0) {
         <div class="border-t border-tertiary/10 pt-2 mt-1">
@@ -63,9 +45,7 @@
 
   <!-- Search -->
   <div class="relative flex-1 max-w-sm">
-    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0" />
-    </svg>
+    <app-icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
     <input
       type="text"
       [value]="search()"
@@ -83,16 +63,7 @@
   } @else {
     <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft overflow-hidden">
       @if (result().data.length === 0) {
-        <div class="flex flex-col items-center justify-center py-16 text-center gap-3 text-tertiary">
-          <svg class="w-12 h-12 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-          </svg>
-          <div>
-            <p class="text-sm font-medium text-secondary">No hay categorías</p>
-            <p class="text-xs mt-1">Crea la primera con el botón de arriba o importa desde Excel</p>
-          </div>
-        </div>
+        <app-empty-state icon="tag" title="No hay categorías" description="Crea la primera con el botón de arriba o importa desde Excel" />
       } @else {
         <!-- Desktop: tabla -->
         <table class="hidden sm:table w-full text-sm">
@@ -114,9 +85,7 @@
                   <button type="button" (click)="toggleExpand(cat._id, $event)" title="Ver más"
                     [attr.aria-expanded]="isExpanded(cat._id)"
                     class="inline-flex items-center justify-center w-6 h-6 rounded-md text-tertiary hover:bg-tertiary/10 hover:text-secondary transition-colors">
-                    <svg class="w-4 h-4 transition-transform" [class.rotate-90]="isExpanded(cat._id)" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                    </svg>
+                    <app-icon name="chevron-right" size="sm" class="transition-transform" [class.rotate-90]="isExpanded(cat._id)" />
                   </button>
                 </td>
                 <td class="px-5 py-3.5 font-medium text-secondary break-words">{{ cat.name }}</td>
@@ -129,23 +98,17 @@
                   @if (cat.limit != null) { {{ cat.limit | number:'1.2-2' }} } @else { <span class="text-tertiary/50">—</span> }
                 </td>
                 <td class="px-5 py-3.5">
-                  @if (cat.isActive !== false) {
-                    <span class="text-xs font-medium text-green-700 bg-green-50 px-2.5 py-1 rounded-full border border-green-200">Activa</span>
-                  } @else {
-                    <span class="text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">Inactiva</span>
-                  }
+                  <app-badge [variant]="cat.isActive !== false ? 'success' : 'warning'">
+                    {{ cat.isActive !== false ? 'Activa' : 'Inactiva' }}
+                  </app-badge>
                 </td>
                 <td class="px-5 py-3.5 text-right">
                   <div class="flex justify-end gap-2">
                     <button (click)="openEdit(cat)" class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors" title="Editar">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
+                      <app-icon name="edit" size="sm" />
                     </button>
                     <button (click)="remove(cat)" class="p-2 rounded-lg text-tertiary hover:text-error hover:bg-error/10 transition-colors" title="Eliminar">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
+                      <app-icon name="trash" size="sm" />
                     </button>
                   </div>
                 </td>
@@ -196,11 +159,9 @@
                     }
                   </div>
                 </div>
-                @if (cat.isActive !== false) {
-                  <span class="text-xs font-medium text-green-700 bg-green-50 px-2.5 py-1 rounded-full border border-green-200 shrink-0">Activa</span>
-                } @else {
-                  <span class="text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 shrink-0">Inactiva</span>
-                }
+                <app-badge [variant]="cat.isActive !== false ? 'success' : 'warning'" class="shrink-0">
+                  {{ cat.isActive !== false ? 'Activa' : 'Inactiva' }}
+                </app-badge>
               </div>
               @if (perfilesForCategory(cat._id).length) {
                 <div class="flex flex-wrap gap-1 mb-1">
@@ -212,8 +173,8 @@
               @if (cat.description) { <p class="text-xs text-tertiary">{{ cat.description }}</p> }
               @if (cat.observaciones) { <p class="text-xs text-tertiary/70 italic mt-0.5">{{ cat.observaciones }}</p> }
               <div class="flex gap-2 justify-end mt-2">
-                <button (click)="openEdit(cat)" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-primary bg-primary/10 hover:bg-primary hover:text-white transition-colors">Editar</button>
-                <button (click)="remove(cat)" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-error bg-error/10 hover:bg-error hover:text-white transition-colors">Eliminar</button>
+                <app-button variant="secondary" size="sm" label="Editar" (clicked)="openEdit(cat)" />
+                <app-button variant="danger" size="sm" label="Eliminar" (clicked)="remove(cat)" />
               </div>
             </div>
           }

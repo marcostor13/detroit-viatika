@@ -15,11 +15,12 @@ import { CompanyConfigService } from '../../services/company-config.service';
 import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ICompanyConfig } from '../../interfaces/company-config.interface';
+import { IconComponent } from '../../design-system/icon/icon.component';
 
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, IconComponent],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })

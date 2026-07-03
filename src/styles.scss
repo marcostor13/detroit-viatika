@@ -16,17 +16,11 @@
   /* Fonts */
   --font-header: 'Zilla Slab', serif;
   --font-body: 'Inter', sans-serif;
-
-  /* Effects */
-  --radius-standard: 4px;
-  --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
-
-  --color-background: #F5F7FA;
 }
 
 body {
   font-family: var(--font-body);
-  background-color: var(--color-background);
+  background-color: var(--tema-bg-surface);
   color: var(--tema-text-main);
   margin: 0;
   padding: 0;
@@ -56,11 +50,6 @@ h1, h2, h3 {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #D31212;
-}
-
-/* Utility classes to match design system */
-.card-3d {
-  @apply bg-white rounded-xl shadow-soft;
 }
 
 /* Default height and font for all form inputs and selects */

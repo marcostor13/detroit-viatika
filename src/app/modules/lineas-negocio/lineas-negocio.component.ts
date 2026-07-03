@@ -7,11 +7,13 @@ import { ConfirmationService } from '../../services/confirmation.service';
 import { LineaNegocioService } from '../../services/linea-negocio.service';
 import { ILineaNegocio } from '../../interfaces/linea-negocio.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
+import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
+import { BadgeComponent } from '../../design-system/badge/badge.component';
 
 @Component({
   selector: 'app-lineas-negocio',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, EmptyStateComponent, BadgeComponent],
   templateUrl: './lineas-negocio.component.html',
 })
 export class LineasNegocioComponent implements OnInit {

@@ -1,0 +1,96 @@
+<div class="p-6">
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold text-secondary mb-2">Órdenes de Trabajo</h1>
+      <p class="text-tertiary">
+        Gestiona las OT usadas para imputar el gasto de una factura por departamento.
+      </p>
+    </div>
+    <app-button label="Nueva OT" variant="primary" size="md" (clicked)="navigateToForm()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
+  </div>
+
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-4 mb-6">
+    <div class="flex flex-wrap gap-3">
+      <div class="relative flex-1 min-w-[220px]">
+        <app-icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
+        <input
+          type="text"
+          [ngModel]="search()"
+          (ngModelChange)="onSearch($event)"
+          placeholder="Buscar por código o descripción..."
+          class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+        />
+      </div>
+      <select
+        [ngModel]="filterDepartamento()"
+        (ngModelChange)="onFilterDepartamento($event)"
+        class="px-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+      >
+        <option value="">Todos los departamentos</option>
+        @for (dept of departamentos; track dept.code) {
+          <option [value]="dept.code">{{ dept.label }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  } @else if (result().data.length === 0) {
+    <app-empty-state
+      icon="file-text"
+      title="Sin órdenes de trabajo"
+      description="Aún no se ha creado ninguna orden de trabajo con estos filtros."
+    >
+      <app-button label="Crear la primera OT" variant="primary" size="md" (clicked)="navigateToForm()" />
+    </app-empty-state>
+  } @else {
+    <app-data-table [items]="result().data">
+      <ng-container *appColumn="'codigo'; header: 'Código'; let row">
+        <span class="font-mono font-semibold text-secondary tabular-nums">{{ row.codigo }}</span>
+      </ng-container>
+
+      <ng-container *appColumn="'departamento'; header: 'Departamento'; let row">
+        <span class="text-sm text-secondary">{{ departamentoLabel(row.departamento) }}</span>
+      </ng-container>
+
+      <ng-container *appColumn="'descripcion'; header: 'Descripción'; let row">
+        <span class="text-sm text-tertiary">{{ row.descripcion || '—' }}</span>
+      </ng-container>
+
+      <ng-container *appColumn="'estado'; header: 'Estado'; align: 'center'; let row">
+        <app-badge [variant]="row.isActive ? 'success' : 'neutral'">{{ row.isActive ? 'Activa' : 'Inactiva' }}</app-badge>
+      </ng-container>
+
+      <ng-container *appColumn="'creado'; header: 'Creado'; detail: true; let row">
+        {{ row.createdAt | date: 'dd/MM/yyyy' }}
+      </ng-container>
+
+      <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let row">
+        <div class="flex items-center justify-end gap-1">
+          <app-button variant="ghost" size="sm" label="" ariaLabel="Editar" (clicked)="navigateToForm(row._id)">
+            <app-icon name="edit" size="sm" />
+          </app-button>
+          <app-button variant="ghost" size="sm" label="" ariaLabel="Eliminar" (clicked)="delete(row)">
+            <app-icon name="trash" size="sm" class="text-error" />
+          </app-button>
+        </div>
+      </ng-container>
+    </app-data-table>
+
+    <div class="mt-4">
+      <app-paginator
+        [total]="result().total"
+        [page]="result().page"
+        [pages]="result().pages"
+        [limit]="result().limit"
+        (pageChange)="onPageChange($event)"
+        (limitChange)="onLimitChange($event)"
+      />
+    </div>
+  }
+</div>

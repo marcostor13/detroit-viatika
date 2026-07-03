@@ -117,7 +117,10 @@ export interface IAdvance {
   _id: string;
   userId: { _id: string; name: string; email: string; bankAccount?: IBankAccount; dni?: string } | string;
   clientId: string;
+  /** @deprecated usar approverChain. */
   coordinatorId?: string;
+  /** Cadena ordenada de aprobadores asignada al momento de crear la solicitud. */
+  approverChain?: ({ _id: string; name: string; email: string } | string)[];
   expenseReportId?: { _id: string; title: string; status: string } | string;
   /** Fase 2 — centro de costo */
   projectId?:

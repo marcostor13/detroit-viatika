@@ -6,12 +6,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { NotificationService } from '../../../services/notification.service';
 import { LineaNegocioService } from '../../../services/linea-negocio.service';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 import { ILineaNegocio } from '../../../interfaces/linea-negocio.interface';
 
 @Component({
   selector: 'app-lineas-negocio-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   templateUrl: './lineas-negocio-form.component.html',
 })
 export class LineasNegocioFormComponent implements OnInit {

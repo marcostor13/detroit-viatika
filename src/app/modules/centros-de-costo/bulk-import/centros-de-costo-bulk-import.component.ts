@@ -5,11 +5,12 @@ import { NotificationService } from '../../../services/notification.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 
 @Component({
   selector: 'app-centros-de-costo-bulk-import',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, IconComponent],
   templateUrl: './centros-de-costo-bulk-import.component.html',
 })
 export class CentrosDeCostoBulkImportComponent {

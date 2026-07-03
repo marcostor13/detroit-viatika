@@ -29,11 +29,8 @@
       <div class="flex items-center justify-between">
         <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Solicitudes por aprobar</span>
         <div class="w-8 h-8 rounded-xl flex items-center justify-center"
-          [class]="kpiSolicitudesPendientes() > 0 ? 'bg-red-100' : 'bg-gray-100'">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
-            class="w-4 h-4" [class]="kpiSolicitudesPendientes() > 0 ? 'text-red-600' : 'text-tertiary'">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-          </svg>
+          [class]="kpiSolicitudesPendientes() > 0 ? 'bg-error/10' : 'bg-ink-100'">
+          <app-icon name="circle-check" size="sm" [class]="kpiSolicitudesPendientes() > 0 ? 'text-error' : 'text-tertiary'" />
         </div>
       </div>
       <p class="text-3xl font-bold text-secondary">{{ kpiSolicitudesPendientes() }}</p>
@@ -49,11 +46,8 @@
       <div class="flex items-center justify-between">
         <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Rendiciones por aprobar</span>
         <div class="w-8 h-8 rounded-xl flex items-center justify-center"
-          [class]="kpiRendicionesPorAprobar() > 0 ? 'bg-blue-100' : 'bg-gray-100'">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
-            class="w-4 h-4" [class]="kpiRendicionesPorAprobar() > 0 ? 'text-blue-600' : 'text-tertiary'">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-          </svg>
+          [class]="kpiRendicionesPorAprobar() > 0 ? 'bg-primary/10' : 'bg-ink-100'">
+          <app-icon name="clipboard-list" size="sm" [class]="kpiRendicionesPorAprobar() > 0 ? 'text-primary' : 'text-tertiary'" />
         </div>
       </div>
       <p class="text-3xl font-bold text-secondary">{{ kpiRendicionesPorAprobar() }}</p>
@@ -131,10 +125,15 @@
         <span class="text-sm font-semibold text-secondary whitespace-nowrap">S/. {{ row.amount | number:'1.2-2' }}</span>
         <span class="text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap" [class]="row.statusColor">{{ row.statusLabel }}</span>
         @if (approveKind && canApproveRow(row, approveKind)) {
-        <button (click)="approveRow(row, approveKind, $event)" [disabled]="acting() === row._id"
-          class="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 whitespace-nowrap transition-colors">
-          {{ acting() === row._id ? '...' : (approveKind === 'rendicion' ? 'Aprobar rendición' : 'Aprobar') }}
-        </button>
+        <span (click)="$event.stopPropagation()">
+          <app-button
+            variant="success"
+            size="sm"
+            [label]="acting() === row._id ? '...' : (approveKind === 'rendicion' ? 'Aprobar rendición' : 'Aprobar')"
+            [disabled]="acting() === row._id"
+            (clicked)="approveRow(row, approveKind)"
+          />
+        </span>
         }
       </li>
       }
@@ -158,14 +157,7 @@
     <div class="flex items-center justify-between">
       <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">{{ title }}</span>
       <div class="w-8 h-8 rounded-xl flex items-center justify-center" [class]="iconBg(accent, value > 0)">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
-          stroke="currentColor" class="w-4 h-4" [class]="iconText(accent, value > 0)">
-          @if (money) {
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-          } @else {
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-          }
-        </svg>
+        <app-icon [name]="money ? 'dollar-sign' : 'clipboard-list'" size="sm" [class]="iconText(accent, value > 0)" />
       </div>
     </div>
     <p class="text-3xl font-bold text-secondary">@if (money) {S/. {{ value | number:'1.2-2' }}} @else {{{ value }}}</p>

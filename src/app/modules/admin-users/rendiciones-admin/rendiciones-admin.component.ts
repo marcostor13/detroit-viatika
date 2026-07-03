@@ -67,9 +67,11 @@ export type UnifiedRendicionItem = {
   statusColor: string;
   createdAt: string;
   canDeleteItem: boolean;
-  canApproveL1: boolean;
-  canApproveL2: boolean;
+  /** Es el turno del usuario actual para aprobar (o es Superadmin). Solo aplica a viáticos/anticipos. */
+  canApproveNow: boolean;
   canReject: boolean;
+  approvalLevel: number;
+  requiredLevels: number;
   raw: IExpenseReport | IAdvance;
 };
 
@@ -123,15 +125,28 @@ export class RendicionesAdminComponent implements OnInit {
   // Approve modal
   showApproveModal = signal(false);
   pendingApproveItem = signal<UnifiedRendicionItem | null>(null);
-  pendingApproveLevel = signal<1 | 2>(1);
 
   // Reject modal
   showRejectModal = signal(false);
   selectedRejectItem = signal<UnifiedRendicionItem | null>(null);
   rejectForm!: FormGroup;
 
-  get userCanApproveL1() { return this.userStateService.canApproveL1(); }
+  private get currentUserId(): string {
+    return (this.userStateService.getUser() as any)?._id ?? '';
+  }
+
+  private get isSuperAdmin(): boolean {
+    return this.userStateService.isSuperAdmin();
+  }
+
+  /** Usado para el acceso a registro de pagos (Tesorería), no para la cadena de aprobadores. */
   get userCanApproveL2() { return this.userStateService.canApproveL2(); }
+
+  private approverIdAt(chain: ({ _id: string } | string)[] | undefined, level: number): string {
+    const entry = chain?.[level];
+    if (!entry) return '';
+    return typeof entry === 'object' ? entry._id : entry;
+  }
 
   ngOnInit(): void {
     this.rejectForm = this.fb.group({
@@ -228,9 +243,12 @@ export class RendicionesAdminComponent implements OnInit {
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
-        canApproveL1: isViatico && r.status === 'pending_l1' && this.userCanApproveL1,
-        canApproveL2: isViatico && r.status === 'pending_l2' && this.userCanApproveL2,
-        canReject: isViatico && ['pending_l1', 'pending_l2'].includes(r.status) && (this.userCanApproveL1 || this.userCanApproveL2),
+        canApproveNow: isViatico && r.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        canReject: isViatico && r.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        approvalLevel: r.viaticoApprovalLevel ?? 0,
+        requiredLevels: r.viaticoRequiredLevels ?? 1,
         raw: r,
       };
     });
@@ -257,9 +275,12 @@ export class RendicionesAdminComponent implements OnInit {
         statusColor: ADVANCE_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: a.createdAt,
         canDeleteItem: false,
-        canApproveL1: a.status === 'pending_l1' && this.userCanApproveL1,
-        canApproveL2: a.status === 'pending_l2' && this.userCanApproveL2,
-        canReject: ['pending_l1', 'pending_l2'].includes(a.status) && (this.userCanApproveL1 || this.userCanApproveL2),
+        canApproveNow: a.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
+        canReject: a.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
+        approvalLevel: a.approvalLevel,
+        requiredLevels: a.requiredLevels,
         raw: a,
       };
     });
@@ -311,25 +332,23 @@ export class RendicionesAdminComponent implements OnInit {
 
   // ─── Approve ──────────────────────────────────────────────────────────────────
 
-  openApproveModal(item: UnifiedRendicionItem, level: 1 | 2): void {
+  openApproveModal(item: UnifiedRendicionItem): void {
     this.pendingApproveItem.set(item);
-    this.pendingApproveLevel.set(level);
     this.showApproveModal.set(true);
   }
 
   confirmApprove(): void {
     const item = this.pendingApproveItem();
     if (!item) return;
-    const level = this.pendingApproveLevel();
     this.isActing.set(true);
     const action$: Observable<unknown> = item.source === 'advance'
-      ? (level === 1 ? this.advanceService.approveL1(item._id, {}) : this.advanceService.approveL2(item._id, {}))
-      : (level === 1 ? this.expenseReportsService.approveViaticoL1(item._id) : this.expenseReportsService.approveViaticoL2(item._id));
+      ? this.advanceService.approve(item._id, {})
+      : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
         this.isActing.set(false);
-        this.notifications.show(`Solicitud aprobada (Nivel ${level})`, 'success');
+        this.notifications.show(`Solicitud aprobada (nivel ${item.approvalLevel + 1} de ${item.requiredLevels})`, 'success');
         this.loadData();
       },
       error: (e: any) => {

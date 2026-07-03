@@ -5,11 +5,14 @@ import { NotificationBellComponent } from '../../components/notification-bell/no
 import { UserStateService } from '../../services/user-state.service';
 import { Subscription } from 'rxjs';
 import { finalize } from 'rxjs/operators';
+import { ModalComponent } from '../../design-system/modal/modal.component';
+import { ButtonComponent } from '../../design-system/button/button.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
 
 @Component({
   selector: 'app-main',
   standalone: true,
-  imports: [RouterOutlet, SidebarComponent, NotificationBellComponent],
+  imports: [RouterOutlet, SidebarComponent, NotificationBellComponent, ModalComponent, ButtonComponent, IconComponent],
   templateUrl: './main.component.html',
   styleUrl: './main.component.scss',
 })

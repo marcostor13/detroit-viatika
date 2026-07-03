@@ -11,12 +11,16 @@ import { ERoles } from './interfaces/roles.enum';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { PaginatorComponent } from '../../design-system/paginator/paginator.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
+import { BadgeComponent } from '../../design-system/badge/badge.component';
+import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
+import { ModalComponent } from '../../design-system/modal/modal.component';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
 
 @Component({
   selector: 'app-admin-users',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, PaginatorComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, PaginatorComponent, IconComponent, BadgeComponent, EmptyStateComponent, ModalComponent],
   templateUrl: './admin-users.component.html',
   styleUrls: ['./admin-users.component.scss'],
 })

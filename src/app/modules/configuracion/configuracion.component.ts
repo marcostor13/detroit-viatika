@@ -17,6 +17,7 @@ import {
   DEFAULT_ACCOUNTING_CONFIG,
 } from '../../interfaces/accounting-config.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
 import { environment } from '../../../environments/environment';
 
 @Component({
@@ -24,7 +25,7 @@ import { environment } from '../../../environments/environment';
   templateUrl: './configuracion.component.html',
   styleUrls: ['./configuracion.component.scss'],
   standalone: true,
-  imports: [CommonModule, FormsModule, MaskPipe, ButtonComponent],
+  imports: [CommonModule, FormsModule, MaskPipe, ButtonComponent, IconComponent],
 })
 export class ConfiguracionComponent implements OnInit {
   private invoicesService = inject(InvoicesService);

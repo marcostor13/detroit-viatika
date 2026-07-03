@@ -70,6 +70,11 @@ describe('ButtonComponent', () => {
       expect(component.buttonClasses()).toContain('bg-error');
     });
 
+    it('should contain success variant classes when set', () => {
+      fixture.componentRef.setInput('variant', 'success');
+      expect(component.buttonClasses()).toContain('bg-success');
+    });
+
     it('should contain md size classes by default', () => {
       expect(component.buttonClasses()).toContain('h-[42px]');
     });

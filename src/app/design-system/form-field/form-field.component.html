@@ -1,0 +1,18 @@
+<div class="w-full">
+  @if (label()) {
+    <label [for]="fieldId" class="block text-sm font-medium text-secondary mb-2">
+      {{ label() }}
+      @if (required()) {
+        <span class="text-error" aria-hidden="true">*</span>
+      }
+    </label>
+  }
+
+  <ng-content></ng-content>
+
+  @if (error()) {
+    <p [id]="errorId" class="mt-1 text-sm text-error" role="alert">{{ error() }}</p>
+  } @else if (helperText()) {
+    <p [id]="helpId" class="mt-1 text-sm text-tertiary">{{ helperText() }}</p>
+  }
+</div>

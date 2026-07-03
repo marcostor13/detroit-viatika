@@ -12,11 +12,14 @@ import {
   ADVANCE_STATUS_LABELS,
   ADVANCE_STATUS_COLORS,
 } from '../../../interfaces/advance.interface';
+import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
+import { BadgeComponent } from '../../../design-system/badge/badge.component';
 
 @Component({
   selector: 'app-tesoreria-detalle',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterModule],
+  imports: [CommonModule, ReactiveFormsModule, RouterModule, ButtonComponent, IconComponent, BadgeComponent],
   templateUrl: './tesoreria-detalle.component.html',
 })
 export class TesoreriaDetalleComponent implements OnInit {
@@ -36,10 +39,8 @@ export class TesoreriaDetalleComponent implements OnInit {
   isUploadingReceipt = signal(false);
   advance = signal<IAdvance | null>(null);
 
-  showRejectModal = signal(false);
   showPaymentModal = signal(false);
 
-  rejectForm!: FormGroup;
   paymentForm!: FormGroup;
 
   paymentReceiptUrl: string | null = null;
@@ -49,25 +50,12 @@ export class TesoreriaDetalleComponent implements OnInit {
 
   get canPayAndSettle() { return this.userState.canApproveL2(); }
 
-  get canApproveL2Action(): boolean {
-    const a = this.advance();
-    return !!a && a.status === 'pending_l2' && this.canPayAndSettle;
-  }
-
   get canRegisterPayment(): boolean {
     const a = this.advance();
     return !!a && ['pending_l2', 'approved'].includes(a.status) && this.canPayAndSettle;
   }
 
-  get canReject(): boolean {
-    const a = this.advance();
-    return !!a && ['pending_l2', 'approved'].includes(a.status) && this.canPayAndSettle;
-  }
-
   ngOnInit() {
-    this.rejectForm = this.fb.group({
-      rejectionReason: ['', [Validators.required, Validators.minLength(10)]],
-    });
     this.paymentForm = this.fb.group({
       method: ['transferencia_bancaria', Validators.required],
       bankName: [''],
@@ -254,38 +242,4 @@ export class TesoreriaDetalleComponent implements OnInit {
     });
   }
 
-  approveL2() {
-    const a = this.advance();
-    if (!a) return;
-    this.isActing.set(true);
-    this.advanceService.approveL2(a._id, {}).subscribe({
-      next: (updated) => {
-        this.advance.set(updated);
-        this.notifications.show('Viático aprobado (Nivel 2)', 'success');
-        this.isActing.set(false);
-      },
-      error: (e) => {
-        this.notifications.show(e?.error?.message || 'Error al aprobar', 'error');
-        this.isActing.set(false);
-      },
-    });
-  }
-
-  confirmReject() {
-    const a = this.advance();
-    if (!a || this.rejectForm.invalid) return;
-    this.isActing.set(true);
-    this.advanceService.reject(a._id, this.rejectForm.value).subscribe({
-      next: (updated) => {
-        this.advance.set(updated);
-        this.notifications.show('Viático rechazado', 'success');
-        this.showRejectModal.set(false);
-        this.isActing.set(false);
-      },
-      error: (e) => {
-        this.notifications.show(e?.error?.message || 'Error al rechazar', 'error');
-        this.isActing.set(false);
-      },
-    });
-  }
 }

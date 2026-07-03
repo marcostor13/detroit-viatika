@@ -11,6 +11,9 @@ import { ICategoryGroup } from './interfaces/category-group.interface';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { PaginatorComponent } from '../../design-system/paginator/paginator.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
+import { BadgeComponent } from '../../design-system/badge/badge.component';
+import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
 import { HttpErrorResponse } from '@angular/common/http';
 import * as ExcelJS from 'exceljs';
 
@@ -23,7 +26,7 @@ interface GroupForm {
 @Component({
   selector: 'app-categorias',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, PaginatorComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, PaginatorComponent, IconComponent, BadgeComponent, EmptyStateComponent],
   templateUrl: './categorias.component.html',
 })
 export class CategoriasComponent implements OnInit {

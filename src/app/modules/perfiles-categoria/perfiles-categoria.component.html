@@ -16,10 +16,7 @@
       <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
     </div>
     } @else if (perfiles.length === 0) {
-    <div class="text-center py-10 text-tertiary">
-      <p class="font-medium text-secondary">No hay perfiles de categoría</p>
-      <p class="text-sm mt-1">Crea el primer perfil para agrupar categorías.</p>
-    </div>
+    <app-empty-state icon="tag" title="No hay perfiles de categoría" description="Crea el primer perfil para agrupar categorías." />
     } @else {
     <div class="overflow-x-auto">
       <table class="min-w-full divide-y divide-tertiary/15">

@@ -1,7 +1,7 @@
 <div class="p-6">
   <div class="mb-8">
-    <h1 class="text-3xl font-bold text-gray-900 mb-2">Configuración</h1>
-    <p class="text-gray-600">
+    <h1 class="text-3xl font-bold text-secondary mb-2">Configuración</h1>
+    <p class="text-tertiary">
       Gestiona la configuración de tu empresa
     </p>
   </div>
@@ -9,7 +9,7 @@
   @if (loading) {
   <div class="flex justify-center items-center py-8">
     <div
-      class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
+      class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"
     ></div>
   </div>
   } @if (!loading) {
@@ -17,9 +17,9 @@
 
 
   @if (canConfigureEmpresa) {
-  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
-      <h2 class="text-xl font-semibold text-gray-900">
+      <h2 class="text-xl font-semibold text-secondary">
         Configuración de Empresa
       </h2>
       @if (!showCompanyForm) {
@@ -39,23 +39,20 @@
         <img
           [src]="companyConfig?.logo || ''"
           alt="Logo de la empresa"
-          class="w-20 h-20 rounded-lg object-cover border-2 border-gray-200"
+          class="w-20 h-20 rounded-lg object-cover border-2 border-divider"
           onerror="this.style.display='none'"
         />
         <div class="absolute inset-0 rounded-lg bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
-          </svg>
+          <app-icon name="upload" size="sm" class="text-white" />
           <span class="text-white text-xs font-medium">Cambiar</span>
         </div>
       </div>
       }
       <div>
-        <h3 class="text-lg font-medium text-gray-900">
+        <h3 class="text-lg font-medium text-secondary">
           {{ companyConfig?.businessName || "Tema Litoclean" }}
         </h3>
-        <p class="text-gray-500">Configuración general de la empresa</p>
+        <p class="text-tertiary">Configuración general de la empresa</p>
       </div>
     </div>
     } @if (showCompanyForm) {
@@ -63,7 +60,7 @@
       <div>
         <label
           for="companyName"
-          class="block text-sm font-medium text-gray-700 mb-2"
+          class="block text-sm font-medium text-secondary mb-2"
         >
           Nombre de la empresa
         </label>
@@ -71,7 +68,7 @@
           id="companyName"
           type="text"
           [(ngModel)]="companyName"
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          class="w-full px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
           placeholder="Ingresa el nombre de la empresa"
         />
       </div>
@@ -79,7 +76,7 @@
       <div>
         <label
           for="companyLogo"
-          class="block text-sm font-medium text-gray-700 mb-2"
+          class="block text-sm font-medium text-secondary mb-2"
         >
           Logo de la empresa
         </label>
@@ -89,13 +86,10 @@
             <img
               [src]="logoPreview || companyConfig?.logo"
               alt="Preview del logo"
-              class="w-16 h-16 rounded-lg object-contain border-2 border-gray-200"
+              class="w-16 h-16 rounded-lg object-contain border-2 border-divider"
             />
             <div class="absolute inset-0 rounded-lg bg-black/40 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
-              </svg>
+              <app-icon name="upload" size="sm" class="text-white" />
             </div>
           </label>
           }
@@ -106,21 +100,21 @@
               accept="image/*"
               (change)="onLogoSelected($event)"
               [disabled]="isUploadingLogo"
-              class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 disabled:opacity-50"
+              class="block w-full text-sm text-tertiary file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20 disabled:opacity-50"
             />
-            <p class="text-xs text-gray-500 mt-1">
+            <p class="text-xs text-tertiary mt-1">
               Formatos: JPG, PNG, GIF. Máximo 2MB
             </p>
 
             @if (isUploadingLogo) {
             <div class="mt-2">
-              <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="w-full bg-tertiary/10 rounded-full h-2">
                 <div
-                  class="bg-purple-600 h-2 rounded-full transition-all duration-300"
+                  class="bg-primary h-2 rounded-full transition-all duration-300"
                   [style.width.%]="logoUploadProgress"
                 ></div>
               </div>
-              <p class="text-xs text-gray-600 mt-1">
+              <p class="text-xs text-tertiary mt-1">
                 Subiendo logo... {{ logoUploadProgress }}%
               </p>
             </div>
@@ -138,26 +132,7 @@
           (clicked)="saveCompanyConfig()"
         >
           @if (isUploadingLogo) {
-          <svg
-            class="animate-spin -ml-1 mr-2 h-4 w-4"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
+          <app-icon name="loader" size="sm" class="animate-spin" />
           }
         </app-button>
         <app-button
@@ -174,9 +149,9 @@
   } <!-- end canConfigureEmpresa: empresa -->
 
   @if (isAdminUser) {
-  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
-      <h2 class="text-xl font-semibold text-gray-900">
+      <h2 class="text-xl font-semibold text-secondary">
         Configuración de SUNAT
       </h2>
       @if (!showSunatForm) {
@@ -194,21 +169,21 @@
       @if (sunatConfig) {
       <div class="flex items-center space-x-4">
         <div
-          class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center"
+          class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center"
         >
-          <span class="text-orange-600 text-xl">🔧</span>
+          <app-icon name="settings" size="md" class="text-primary" />
         </div>
         <div>
-          <h3 class="text-lg font-medium text-gray-900">
+          <h3 class="text-lg font-medium text-secondary">
             Configuración SUNAT Activa
           </h3>
-          <p class="text-gray-500">
+          <p class="text-tertiary">
             Client ID: {{ sunatConfig.clientIdSunat | mask : "00000000000" }}
           </p>
-          <p class="text-gray-500">
+          <p class="text-tertiary">
             Estado:
             <span
-              [class]="sunatConfig.isActive ? 'text-green-600' : 'text-red-600'"
+              [class]="sunatConfig.isActive ? 'text-success-ink' : 'text-error'"
             >
               {{ sunatConfig.isActive ? "Activo" : "Inactivo" }}
             </span>
@@ -216,11 +191,11 @@
         </div>
       </div>
       } @else {
-      <div class="text-center py-6 text-gray-500">
+      <div class="text-center py-6 text-tertiary">
         <div
-          class="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-4"
+          class="w-16 h-16 bg-background rounded-lg flex items-center justify-center mx-auto mb-4"
         >
-          <span class="text-gray-400 text-2xl">🔧</span>
+          <app-icon name="settings" size="lg" class="text-tertiary" />
         </div>
         <p class="font-medium">No hay configuración de SUNAT</p>
         <p class="text-sm">
@@ -249,7 +224,7 @@
       <div>
         <label
           for="clientId"
-          class="block text-sm font-medium text-gray-700 mb-2"
+          class="block text-sm font-medium text-secondary mb-2"
         >
           Client ID
         </label>
@@ -257,7 +232,7 @@
           id="clientId"
           type="text"
           [(ngModel)]="sunatForm.clientIdSunat"
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          class="w-full px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
           placeholder="Ingresa el Client ID de SUNAT"
         />
       </div>
@@ -265,7 +240,7 @@
       <div>
         <label
           for="clientSecret"
-          class="block text-sm font-medium text-gray-700 mb-2"
+          class="block text-sm font-medium text-secondary mb-2"
         >
           Client Secret
         </label>
@@ -273,20 +248,20 @@
           id="clientSecret"
           type="password"
           [(ngModel)]="sunatForm.clientSecret"
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          class="w-full px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
           placeholder="Ingresa el Client Secret de SUNAT"
         />
       </div>
 
       <div>
-        <label for="ruc" class="block text-sm font-medium text-gray-700 mb-2">
+        <label for="ruc" class="block text-sm font-medium text-secondary mb-2">
           RUC
         </label>
         <input
           id="ruc"
           type="text"
           [(ngModel)]="sunatForm.ruc"
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          class="w-full px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
           placeholder="Ingresa el RUC de SUNAT"
         />
       </div>
@@ -296,9 +271,9 @@
           id="isActive"
           type="checkbox"
           [(ngModel)]="sunatForm.isActive"
-          class="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+          class="h-4 w-4 text-primary focus:ring-primary/30 border-tertiary/30 rounded"
         />
-        <label for="isActive" class="ml-2 block text-sm text-gray-900">
+        <label for="isActive" class="ml-2 block text-sm text-secondary">
           Activar configuración
         </label>
       </div>
@@ -323,11 +298,11 @@
   } <!-- end isAdminUser: sunat -->
 
   @if (canConfigureEmpresa) {
-  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-gray-900">Límites</h2>
-        <p class="text-sm text-gray-500 mt-1">Configura los montos máximos permitidos por tipo de gasto.</p>
+        <h2 class="text-xl font-semibold text-secondary">Límites</h2>
+        <p class="text-sm text-tertiary mt-1">Configura los montos máximos permitidos por tipo de gasto.</p>
       </div>
       @if (!showLimitsForm) {
       <app-button label="Editar Límites" variant="primary" size="md" (clicked)="editLimits()" />
@@ -336,16 +311,16 @@
 
     @if (!showLimitsForm) {
     <div class="space-y-3">
-      <div class="flex items-center justify-between py-3 border-b border-gray-100">
+      <div class="flex items-center justify-between py-3 border-b border-divider">
         <div>
-          <p class="text-sm font-medium text-gray-900">Planilla de Movilidad — Límite diario</p>
-          <p class="text-xs text-gray-500 mt-0.5">Monto máximo permitido por día en planillas de movilidad</p>
+          <p class="text-sm font-medium text-secondary">Planilla de Movilidad — Límite diario</p>
+          <p class="text-xs text-tertiary mt-0.5">Monto máximo permitido por día en planillas de movilidad</p>
         </div>
-        <span class="text-sm font-semibold text-gray-900">
+        <span class="text-sm font-semibold text-secondary">
           @if (companyConfig?.limits?.movilidadDiario != null) {
             S/ {{ companyConfig!.limits!.movilidadDiario | number:'1.2-2' }}
           } @else {
-            <span class="text-gray-400 font-normal">Sin límite</span>
+            <span class="text-tertiary/70 font-normal">Sin límite</span>
           }
         </span>
       </div>
@@ -355,10 +330,10 @@
     @if (showLimitsForm) {
     <div class="space-y-6">
       <div>
-        <label for="movilidadDiario" class="block text-sm font-medium text-gray-700 mb-1">
+        <label for="movilidadDiario" class="block text-sm font-medium text-secondary mb-1">
           Planilla de Movilidad — Límite diario (S/)
         </label>
-        <p class="text-xs text-gray-500 mb-2">Monto máximo que puede registrarse por día en una planilla de movilidad. Déjalo vacío para no aplicar límite.</p>
+        <p class="text-xs text-tertiary mb-2">Monto máximo que puede registrarse por día en una planilla de movilidad. Déjalo vacío para no aplicar límite.</p>
         <input
           id="movilidadDiario"
           type="number"
@@ -366,7 +341,7 @@
           step="0.01"
           [(ngModel)]="limitsMovilidadDiario"
           placeholder="Ej: 50.00"
-          class="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+          class="w-full sm:w-64 px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm"
         />
       </div>
       <div class="flex space-x-3">
@@ -391,11 +366,11 @@
   } <!-- end canConfigureEmpresa: limites -->
 
   @if (canConfigureEmpresa) {
-  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-gray-900">Notificaciones Automaticas</h2>
-        <p class="text-sm text-gray-500 mt-1">Configura el envio automatico de recordatorios de rendicion a colaboradores y coordinadores.</p>
+        <h2 class="text-xl font-semibold text-secondary">Notificaciones Automaticas</h2>
+        <p class="text-sm text-tertiary mt-1">Configura el envio automatico de recordatorios de rendicion a colaboradores y coordinadores.</p>
       </div>
       @if (!showNotificationsForm) {
         <app-button label="Editar Notificaciones" variant="primary" size="md" (clicked)="editNotifications()" />
@@ -404,32 +379,32 @@
 
     @if (!showNotificationsForm) {
     <div class="space-y-3">
-      <div class="flex items-center justify-between py-3 border-b border-gray-100">
+      <div class="flex items-center justify-between py-3 border-b border-divider">
         <div>
-          <p class="text-sm font-medium text-gray-900">Notificaciones automaticas</p>
-          <p class="text-xs text-gray-500 mt-0.5">Recordatorios periodicos para rendicion de viaticos</p>
+          <p class="text-sm font-medium text-secondary">Notificaciones automaticas</p>
+          <p class="text-xs text-tertiary mt-0.5">Recordatorios periodicos para rendicion de viaticos</p>
         </div>
-        <span class="text-sm font-semibold" [class]="(companyConfig?.notificationSettings?.enabled) ? 'text-green-600' : 'text-gray-400'">
+        <span class="text-sm font-semibold" [class]="(companyConfig?.notificationSettings?.enabled) ? 'text-success-ink' : 'text-tertiary/70'">
           {{ (companyConfig?.notificationSettings?.enabled) ? 'Activadas' : 'Desactivadas' }}
         </span>
       </div>
       @if (companyConfig?.notificationSettings?.enabled) {
-      <div class="flex items-center justify-between py-3 border-b border-gray-100">
+      <div class="flex items-center justify-between py-3 border-b border-divider">
         <div>
-          <p class="text-sm font-medium text-gray-900">Frecuencia</p>
-          <p class="text-xs text-gray-500 mt-0.5">Intervalo de envio de notificaciones</p>
+          <p class="text-sm font-medium text-secondary">Frecuencia</p>
+          <p class="text-xs text-tertiary mt-0.5">Intervalo de envio de notificaciones</p>
         </div>
-        <span class="text-sm font-semibold text-gray-900 capitalize">
+        <span class="text-sm font-semibold text-secondary capitalize">
           {{ companyConfig?.notificationSettings?.frequency === 'semanal' ? 'Semanal' : 'Mensual' }}
         </span>
       </div>
       @if (companyConfig?.notificationSettings?.frequency === 'semanal') {
-      <div class="flex items-center justify-between py-3 border-b border-gray-100">
+      <div class="flex items-center justify-between py-3 border-b border-divider">
         <div>
-          <p class="text-sm font-medium text-gray-900">Dia de envio semanal</p>
-          <p class="text-xs text-gray-500 mt-0.5">Dia de la semana en que se envian los recordatorios</p>
+          <p class="text-sm font-medium text-secondary">Dia de envio semanal</p>
+          <p class="text-xs text-tertiary mt-0.5">Dia de la semana en que se envian los recordatorios</p>
         </div>
-        <span class="text-sm font-semibold text-gray-900">
+        <span class="text-sm font-semibold text-secondary">
           {{ ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'][companyConfig?.notificationSettings?.notificationDay ?? 1] }}
         </span>
       </div>
@@ -445,16 +420,16 @@
           id="notificationsEnabled"
           type="checkbox"
           [(ngModel)]="notificationsEnabled"
-          class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+          class="h-4 w-4 text-primary focus:ring-primary/30 border-tertiary/30 rounded"
         />
-        <label for="notificationsEnabled" class="text-sm font-medium text-gray-900">
+        <label for="notificationsEnabled" class="text-sm font-medium text-secondary">
           Activar notificaciones automaticas de rendicion
         </label>
       </div>
 
       @if (notificationsEnabled) {
       <div>
-        <p class="text-sm font-medium text-gray-700 mb-3">Frecuencia de notificaciones</p>
+        <p class="text-sm font-medium text-secondary mb-3">Frecuencia de notificaciones</p>
         <div class="flex gap-4">
           <label class="flex items-center gap-2 cursor-pointer">
             <input
@@ -462,9 +437,9 @@
               name="notifFrequency"
               value="semanal"
               [(ngModel)]="notificationsFrequency"
-              class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
+              class="h-4 w-4 text-primary focus:ring-primary/30 border-tertiary/30"
             />
-            <span class="text-sm text-gray-900">Semanal</span>
+            <span class="text-sm text-secondary">Semanal</span>
           </label>
           <label class="flex items-center gap-2 cursor-pointer">
             <input
@@ -472,23 +447,23 @@
               name="notifFrequency"
               value="mensual"
               [(ngModel)]="notificationsFrequency"
-              class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
+              class="h-4 w-4 text-primary focus:ring-primary/30 border-tertiary/30"
             />
-            <span class="text-sm text-gray-900">Mensual</span>
-            <span class="text-xs text-gray-500">(el dia 1 de cada mes)</span>
+            <span class="text-sm text-secondary">Mensual</span>
+            <span class="text-xs text-tertiary">(el dia 1 de cada mes)</span>
           </label>
         </div>
       </div>
 
       @if (notificationsFrequency === 'semanal') {
       <div>
-        <label for="notifDay" class="block text-sm font-medium text-gray-700 mb-2">
+        <label for="notifDay" class="block text-sm font-medium text-secondary mb-2">
           Dia de envio semanal
         </label>
         <select
           id="notifDay"
           [(ngModel)]="notificationsDay"
-          class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+          class="w-full max-w-xs px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm"
         >
           <option [ngValue]="1">Lunes</option>
           <option [ngValue]="2">Martes</option>
@@ -498,13 +473,13 @@
           <option [ngValue]="0">Domingo</option>
           <option [ngValue]="6">Sabado</option>
         </select>
-        <p class="text-xs text-gray-500 mt-1">
+        <p class="text-xs text-tertiary mt-1">
           Dia en que se envian recordatorios semanales a coordinadores y contabilidad.
         </p>
       </div>
       }
 
-      <p class="text-xs text-gray-500">
+      <p class="text-xs text-tertiary">
         El colaborador recibe un aviso el ultimo dia de su viatico.<br>
         El coordinador recibe un recordatorio de rendiciones pendientes de revision.<br>
         Contabilidad recibe un recordatorio de rendiciones pendientes de aprobacion contable.<br>
@@ -534,11 +509,11 @@
   } <!-- end canConfigureEmpresa: notificaciones -->
 
   @if (canConfigureEmpresa) {
-  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-gray-900">Correos de Tesoreria</h2>
-        <p class="text-sm text-gray-500 mt-1">Cuando Contabilidad aprueba una rendicion, se notifica a estos correos con los datos de pago del colaborador.</p>
+        <h2 class="text-xl font-semibold text-secondary">Correos de Tesoreria</h2>
+        <p class="text-sm text-tertiary mt-1">Cuando Contabilidad aprueba una rendicion, se notifica a estos correos con los datos de pago del colaborador.</p>
       </div>
       @if (!showTesoreriaEmailsForm) {
         <app-button label="Editar" variant="primary" size="md" (clicked)="editTesoreriaEmails()" />
@@ -548,14 +523,12 @@
     @if (!showTesoreriaEmailsForm) {
     <div class="space-y-2">
       @if ((companyConfig?.tesoreriaEmails ?? []).length === 0) {
-        <p class="text-gray-400 text-sm">No hay correos configurados.</p>
+        <p class="text-tertiary/70 text-sm">No hay correos configurados.</p>
       } @else {
         @for (email of companyConfig?.tesoreriaEmails ?? []; track email) {
-          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 text-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-            </svg>
-            <span class="text-gray-700">{{ email }}</span>
+          <div class="flex items-center gap-2 px-3 py-2 bg-background rounded-lg border border-divider text-sm">
+<app-icon name="send" size="sm" class="text-tertiary flex-shrink-0" />
+            <span class="text-secondary">{{ email }}</span>
           </div>
         }
       }
@@ -566,16 +539,12 @@
     <div class="space-y-4">
       <div class="space-y-2">
         @for (email of tesoreriaEmails; track email; let i = $index) {
-          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-            </svg>
-            <span class="flex-1 text-sm text-gray-700">{{ email }}</span>
-            <button type="button" (click)="removeTesoreriaEmail(i)" class="text-red-400 hover:text-red-600 transition-colors">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-              </svg>
-            </button>
+          <div class="flex items-center gap-2 px-3 py-2 bg-background rounded-lg border border-divider">
+<app-icon name="send" size="sm" class="text-tertiary flex-shrink-0" />
+            <span class="flex-1 text-sm text-secondary">{{ email }}</span>
+            <app-button variant="ghost" size="sm" label="" ariaLabel="Quitar correo" (clicked)="removeTesoreriaEmail(i)">
+              <app-icon name="close" size="sm" />
+            </app-button>
           </div>
         }
       </div>
@@ -585,11 +554,9 @@
           [(ngModel)]="newTesoreriaEmail"
           (keyup.enter)="addTesoreriaEmail()"
           placeholder="correo@empresa.com"
-          class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          class="flex-1 px-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-        <button type="button" (click)="addTesoreriaEmail()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
-          Agregar
-        </button>
+        <app-button variant="secondary" size="sm" label="Agregar" (clicked)="addTesoreriaEmail()" />
       </div>
       <div class="flex gap-3">
         <app-button
@@ -613,11 +580,11 @@
   } <!-- end canConfigureEmpresa: tesoreria emails -->
 
   @if (canConfigureContabilidad) {
-  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
       <div>
-        <h2 class="text-xl font-semibold text-gray-900">Plan de Cuentas y Bancos (Asientos Contables)</h2>
-        <p class="text-sm text-gray-500 mt-1">Parametriza las cuentas del PCGE, tasas de IGV y bancos para generar los archivos de importación a Contanet.</p>
+        <h2 class="text-xl font-semibold text-secondary">Plan de Cuentas y Bancos (Asientos Contables)</h2>
+        <p class="text-sm text-tertiary mt-1">Parametriza las cuentas del PCGE, tasas de IGV y bancos para generar los archivos de importación a Contanet.</p>
       </div>
       @if (!showAccountingForm) {
         <app-button label="Editar Configuración Contable" variant="primary" size="md" (clicked)="editAccountingConfig()" />
@@ -628,33 +595,33 @@
     <div class="space-y-2">
       @if (accountingConfig) {
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div class="py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500">Cuenta 42 (CxP terceros)</p>
-          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuenta42 || '—' }}</p>
+        <div class="py-2 border-b border-divider">
+          <p class="text-xs text-tertiary">Cuenta 42 (CxP terceros)</p>
+          <p class="text-sm font-medium text-secondary">{{ accountingConfig.cuenta42 || '—' }}</p>
         </div>
-        <div class="py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500">Cuenta 79 (enlace destino)</p>
-          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuenta79 || '—' }}</p>
+        <div class="py-2 border-b border-divider">
+          <p class="text-xs text-tertiary">Cuenta 79 (enlace destino)</p>
+          <p class="text-sm font-medium text-secondary">{{ accountingConfig.cuenta79 || '—' }}</p>
         </div>
-        <div class="py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500">Cuenta 14 (raíz colaborador)</p>
-          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuenta14Raiz || '—' }}</p>
+        <div class="py-2 border-b border-divider">
+          <p class="text-xs text-tertiary">Cuenta 14 (raíz colaborador)</p>
+          <p class="text-sm font-medium text-secondary">{{ accountingConfig.cuenta14Raiz || '—' }}</p>
         </div>
-        <div class="py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500">Tasas de IGV</p>
-          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.igvRates.length || 0 }} configurada(s)</p>
+        <div class="py-2 border-b border-divider">
+          <p class="text-xs text-tertiary">Tasas de IGV</p>
+          <p class="text-sm font-medium text-secondary">{{ accountingConfig.igvRates.length || 0 }} configurada(s)</p>
         </div>
-        <div class="py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500">Bancos registrados</p>
-          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.bankAccounts.length || 0 }}</p>
+        <div class="py-2 border-b border-divider">
+          <p class="text-xs text-tertiary">Bancos registrados</p>
+          <p class="text-sm font-medium text-secondary">{{ accountingConfig.bankAccounts.length || 0 }}</p>
         </div>
-        <div class="py-2 border-b border-gray-100">
-          <p class="text-xs text-gray-500">Cuenta de reembolso</p>
-          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuentaReembolso }}</p>
+        <div class="py-2 border-b border-divider">
+          <p class="text-xs text-tertiary">Cuenta de reembolso</p>
+          <p class="text-sm font-medium text-secondary">{{ accountingConfig.cuentaReembolso }}</p>
         </div>
       </div>
       } @else {
-      <p class="text-sm text-gray-500 italic">Aún no hay configuración contable. Pulsa "Editar" para crearla con los valores por defecto.</p>
+      <p class="text-sm text-tertiary italic">Aún no hay configuración contable. Pulsa "Editar" para crearla con los valores por defecto.</p>
       }
     </div>
     }
@@ -663,27 +630,27 @@
     <div class="space-y-8">
       <!-- Cuentas fijas -->
       <div>
-        <h3 class="text-sm font-semibold text-gray-800 mb-3">Cuentas fijas del plan</h3>
+        <h3 class="text-sm font-semibold text-secondary mb-3">Cuentas fijas del plan</h3>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 42 (CxP terceros)</label>
-            <input type="text" [(ngModel)]="accountingForm.cuenta42" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="42.1.2.100" />
+            <label class="block text-xs font-medium text-secondary mb-1">Cuenta 42 (CxP terceros)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta42" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="42.1.2.100" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 79 (enlace destino)</label>
-            <input type="text" [(ngModel)]="accountingForm.cuenta79" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="79.1.1.100" />
+            <label class="block text-xs font-medium text-secondary mb-1">Cuenta 79 (enlace destino)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta79" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="79.1.1.100" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 14 (raíz colaborador)</label>
-            <input type="text" [(ngModel)]="accountingForm.cuenta14Raiz" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="14.1.3.100" />
+            <label class="block text-xs font-medium text-secondary mb-1">Cuenta 14 (raíz colaborador)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta14Raiz" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="14.1.3.100" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 46 (reembolso alt.)</label>
-            <input type="text" [(ngModel)]="accountingForm.cuenta46" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="46.x.x.x (opcional)" />
+            <label class="block text-xs font-medium text-secondary mb-1">Cuenta 46 (reembolso alt.)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta46" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="46.x.x.x (opcional)" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta de reembolso al colaborador</label>
-            <select [(ngModel)]="accountingForm.cuentaReembolso" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <label class="block text-xs font-medium text-secondary mb-1">Cuenta de reembolso al colaborador</label>
+            <select [(ngModel)]="accountingForm.cuentaReembolso" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm">
               <option value="14">14 (Cuentas por cobrar al personal)</option>
               <option value="46">46 (Cuentas por pagar diversas)</option>
             </select>
@@ -694,15 +661,15 @@
       <!-- Tasas de IGV -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-gray-800">Tasas de IGV y cuenta 40</h3>
-          <button type="button" (click)="addIgvRate()" class="text-xs text-purple-600 hover:text-purple-800 font-medium">+ Añadir tasa</button>
+          <h3 class="text-sm font-semibold text-secondary">Tasas de IGV y cuenta 40</h3>
+          <app-button variant="ghost" size="sm" label="+ Añadir tasa" (clicked)="addIgvRate()" />
         </div>
         <div class="space-y-2">
           @for (rate of accountingForm.igvRates; track $index) {
           <div class="flex items-center gap-3">
-            <input type="number" step="0.5" [(ngModel)]="rate.tasa" class="w-28 px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Tasa %" />
-            <input type="text" [(ngModel)]="rate.cuenta40" class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Cuenta 40 (ej. 40.1.1.100)" />
-            <button type="button" (click)="removeIgvRate($index)" class="text-xs text-red-500 hover:text-red-700">Quitar</button>
+            <input type="number" step="0.5" [(ngModel)]="rate.tasa" class="w-28 px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="Tasa %" />
+            <input type="text" [(ngModel)]="rate.cuenta40" class="flex-1 px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="Cuenta 40 (ej. 40.1.1.100)" />
+            <app-button variant="ghost" size="sm" label="Quitar" (clicked)="removeIgvRate($index)" />
           </div>
           }
         </div>
@@ -710,66 +677,66 @@
 
       <!-- Palabras clave inafecto -->
       <div>
-        <h3 class="text-sm font-semibold text-gray-800 mb-2">Palabras clave de conceptos inafectos</h3>
-        <p class="text-xs text-gray-500 mb-2">Una por línea (recargo al consumo, servicio, D.L. 25988, propina…).</p>
-        <textarea [(ngModel)]="inafectoKeywordsText" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"></textarea>
+        <h3 class="text-sm font-semibold text-secondary mb-2">Palabras clave de conceptos inafectos</h3>
+        <p class="text-xs text-tertiary mb-2">Una por línea (recargo al consumo, servicio, D.L. 25988, propina…).</p>
+        <textarea [(ngModel)]="inafectoKeywordsText" rows="4" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm font-mono"></textarea>
       </div>
 
       <!-- Constantes Contanet -->
       <div>
-        <h3 class="text-sm font-semibold text-gray-800 mb-3">Constantes y valores por defecto (Contanet)</h3>
+        <h3 class="text-sm font-semibold text-secondary mb-3">Constantes y valores por defecto (Contanet)</h3>
         <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cod. Módulo</label>
-            <input type="text" [(ngModel)]="accountingForm.codModulo" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Cod. Módulo</label>
+            <input type="text" [(ngModel)]="accountingForm.codModulo" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Módulo</label>
-            <input type="text" [(ngModel)]="accountingForm.modulo" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Módulo</label>
+            <input type="text" [(ngModel)]="accountingForm.modulo" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Fuente compra</label>
-            <input type="text" [(ngModel)]="accountingForm.fuenteCompra" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Fuente compra</label>
+            <input type="text" [(ngModel)]="accountingForm.fuenteCompra" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Fuente aplicación</label>
-            <input type="text" [(ngModel)]="accountingForm.fuenteAplicacion" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Fuente aplicación</label>
+            <input type="text" [(ngModel)]="accountingForm.fuenteAplicacion" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Fuente caja-bancos</label>
-            <input type="text" [(ngModel)]="accountingForm.fuenteCajaBancos" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Fuente caja-bancos</label>
+            <input type="text" [(ngModel)]="accountingForm.fuenteCajaBancos" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Moneda origen</label>
-            <input type="text" [(ngModel)]="accountingForm.monedaOrigen" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Moneda origen</label>
+            <input type="text" [(ngModel)]="accountingForm.monedaOrigen" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Moneda registro</label>
-            <input type="text" [(ngModel)]="accountingForm.monedaRegistro" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Moneda registro</label>
+            <input type="text" [(ngModel)]="accountingForm.monedaRegistro" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Concepto FEC</label>
-            <input type="text" [(ngModel)]="accountingForm.conceptoFec" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Concepto FEC</label>
+            <input type="text" [(ngModel)]="accountingForm.conceptoFec" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Identif. Ctr Mda</label>
-            <input type="text" [(ngModel)]="accountingForm.identificadorCtrMda" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Identif. Ctr Mda</label>
+            <input type="text" [(ngModel)]="accountingForm.identificadorCtrMda" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Área (def.)</label>
-            <input type="text" [(ngModel)]="accountingForm.area" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="010101" />
+            <label class="block text-xs font-medium text-secondary mb-1">Área (def.)</label>
+            <input type="text" [(ngModel)]="accountingForm.area" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="010101" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Centro costo (def.)</label>
-            <input type="text" [(ngModel)]="accountingForm.centroCosto" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="SC" />
+            <label class="block text-xs font-medium text-secondary mb-1">Centro costo (def.)</label>
+            <input type="text" [(ngModel)]="accountingForm.centroCosto" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="SC" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Sub-centro costo (def.)</label>
-            <input type="text" [(ngModel)]="accountingForm.subCentroCosto" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Sub-centro costo (def.)</label>
+            <input type="text" [(ngModel)]="accountingForm.subCentroCosto" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Tipo de cambio</label>
-            <input type="number" step="0.001" [(ngModel)]="accountingForm.tipoCambio" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            <label class="block text-xs font-medium text-secondary mb-1">Tipo de cambio</label>
+            <input type="number" step="0.001" [(ngModel)]="accountingForm.tipoCambio" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
           </div>
         </div>
       </div>
@@ -777,36 +744,36 @@
       <!-- Bancos -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-gray-800">Bancos de la empresa (cuenta 104)</h3>
-          <button type="button" (click)="addBankAccount()" class="text-xs text-purple-600 hover:text-purple-800 font-medium">+ Añadir banco</button>
+          <h3 class="text-sm font-semibold text-secondary">Bancos de la empresa (cuenta 104)</h3>
+          <app-button variant="ghost" size="sm" label="+ Añadir banco" (clicked)="addBankAccount()" />
         </div>
         <div class="space-y-3">
           @for (bank of accountingForm.bankAccounts; track $index) {
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end border border-gray-100 rounded-md p-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end border border-divider rounded-md p-3">
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1">Banco</label>
-              <input type="text" [(ngModel)]="bank.banco" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="BCP" />
+              <label class="block text-xs font-medium text-secondary mb-1">Banco</label>
+              <input type="text" [(ngModel)]="bank.banco" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="BCP" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1">Nro. cuenta</label>
-              <input type="text" [(ngModel)]="bank.nroCuenta" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+              <label class="block text-xs font-medium text-secondary mb-1">Nro. cuenta</label>
+              <input type="text" [(ngModel)]="bank.nroCuenta" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta contable (104)</label>
-              <input type="text" [(ngModel)]="bank.cuentaContable" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="10.4.1.100" />
+              <label class="block text-xs font-medium text-secondary mb-1">Cuenta contable (104)</label>
+              <input type="text" [(ngModel)]="bank.cuentaContable" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="10.4.1.100" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1">Moneda</label>
-              <input type="text" [(ngModel)]="bank.moneda" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="01" />
+              <label class="block text-xs font-medium text-secondary mb-1">Moneda</label>
+              <input type="text" [(ngModel)]="bank.moneda" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="01" />
             </div>
             <div class="flex items-center gap-3">
-              <input type="text" [(ngModel)]="bank.cci" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="CCI (opcional)" />
-              <button type="button" (click)="removeBankAccount($index)" class="text-xs text-red-500 hover:text-red-700 whitespace-nowrap">Quitar</button>
+              <input type="text" [(ngModel)]="bank.cci" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="CCI (opcional)" />
+              <app-button variant="ghost" size="sm" label="Quitar" class="whitespace-nowrap" (clicked)="removeBankAccount($index)" />
             </div>
           </div>
           }
           @if (!accountingForm.bankAccounts.length) {
-          <p class="text-xs text-gray-400 italic">No hay bancos registrados.</p>
+          <p class="text-xs text-tertiary/70 italic">No hay bancos registrados.</p>
           }
         </div>
       </div>

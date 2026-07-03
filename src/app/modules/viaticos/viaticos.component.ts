@@ -34,9 +34,13 @@ type UnifiedSolicitudItem = {
   statusLabel: string;
   statusColor: string;
   createdAt: string;
-  canApproveL1: boolean;
-  canApproveL2: boolean;
+  /** Es el turno del usuario actual para aprobar (o es Superadmin). */
+  canApproveNow: boolean;
   canReject: boolean;
+  /** Nombre del aprobador cuyo turno es actualmente, para mostrar en la lista. */
+  pendingApproverName: string;
+  approvalLevel: number;
+  requiredLevels: number;
   raw: IAdvance | IExpenseReport;
 };
 
@@ -62,7 +66,6 @@ export class ViaticosComponent implements OnInit {
   readonly ALL_STATUSES = [
     { value: 'all', label: 'Todos los estados' },
     { value: 'pending_l1', label: 'Pendiente aprobación' },
-    { value: 'pending_l2', label: 'Pendiente tesorería' },
     { value: 'viatico_approved', label: 'Aprobado' },
     { value: 'partially_paid', label: 'Pago parcial' },
     { value: 'open', label: 'Registrando gastos' },
@@ -90,15 +93,32 @@ export class ViaticosComponent implements OnInit {
   // Approve modal
   showApproveModal = signal(false);
   pendingApproveItem = signal<UnifiedSolicitudItem | null>(null);
-  pendingApproveLevel = signal<1 | 2>(1);
 
   // Reject modal
   showRejectModal = signal(false);
   selectedItem = signal<UnifiedSolicitudItem | null>(null);
   rejectForm!: FormGroup;
 
-  get canApproveL1() { return this.userState.canApproveL1(); }
-  get canApproveL2() { return this.userState.canApproveL2(); }
+  private get currentUserId(): string {
+    return (this.userState.getUser() as any)?._id ?? '';
+  }
+
+  private get isSuperAdmin(): boolean {
+    return this.userState.isSuperAdmin();
+  }
+
+  /** Extrae el id del aprobador en la posición `level` de la cadena (soporta poblado o sin poblar). */
+  private approverIdAt(chain: ({ _id: string } | string)[] | undefined, level: number): string {
+    const entry = chain?.[level];
+    if (!entry) return '';
+    return typeof entry === 'object' ? entry._id : entry;
+  }
+
+  private approverNameAt(chain: ({ _id: string; name?: string } | string)[] | undefined, level: number): string {
+    const entry = chain?.[level];
+    if (!entry) return '—';
+    return typeof entry === 'object' ? (entry.name ?? entry._id) : entry;
+  }
 
   // ─── Stats ────────────────────────────────────────────────────────────────────
 
@@ -106,8 +126,11 @@ export class ViaticosComponent implements OnInit {
     const adv = this.allAdvances();
     const via = this.allViaticoReports();
     return {
-      pending_l1: adv.filter(a => a.status === 'pending_l1').length + via.filter(v => v.status === 'pending_l1').length,
-      pending_l2: adv.filter(a => a.status === 'pending_l2').length + via.filter(v => v.status === 'pending_l2').length,
+      pending_l1: adv.filter(a => a.status === 'pending_l1' && a.approvalLevel === 0).length +
+        via.filter(v => v.status === 'pending_l1' && (v.viaticoApprovalLevel ?? 0) === 0).length,
+      // Solicitudes con más de un aprobador donde ya se aprobó al menos un nivel pero falta el siguiente.
+      in_progress: adv.filter(a => a.status === 'pending_l1' && a.approvalLevel > 0).length +
+        via.filter(v => v.status === 'pending_l1' && (v.viaticoApprovalLevel ?? 0) > 0).length,
       approved: adv.filter(a => a.status === 'approved').length + via.filter(v => v.status === 'viatico_approved').length,
       paid: adv.filter(a => a.status === 'paid').length,
     };
@@ -141,9 +164,13 @@ export class ViaticosComponent implements OnInit {
         statusLabel: this.ADV_LABELS[a.status] ?? a.status,
         statusColor: this.ADV_COLORS[a.status] ?? 'bg-gray-100 text-gray-600',
         createdAt: a.createdAt,
-        canApproveL1: a.status === 'pending_l1' && this.canApproveL1,
-        canApproveL2: a.status === 'pending_l2' && this.canApproveL2,
-        canReject: ['pending_l1', 'pending_l2'].includes(a.status) && (this.canApproveL1 || this.canApproveL2),
+        canApproveNow: a.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
+        canReject: a.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
+        pendingApproverName: this.approverNameAt(a.approverChain, a.approvalLevel),
+        approvalLevel: a.approvalLevel,
+        requiredLevels: a.requiredLevels,
         raw: a,
       });
     }
@@ -173,9 +200,13 @@ export class ViaticosComponent implements OnInit {
         statusLabel,
         statusColor,
         createdAt: v.createdAt,
-        canApproveL1: v.status === 'pending_l1' && this.canApproveL1,
-        canApproveL2: v.status === 'pending_l2' && this.canApproveL2,
-        canReject: ['pending_l1', 'pending_l2'].includes(v.status) && (this.canApproveL1 || this.canApproveL2),
+        canApproveNow: v.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        canReject: v.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        pendingApproverName: this.approverNameAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0),
+        approvalLevel: v.viaticoApprovalLevel ?? 0,
+        requiredLevels: v.viaticoRequiredLevels ?? 1,
         raw: v,
       });
     }
@@ -270,25 +301,23 @@ export class ViaticosComponent implements OnInit {
 
   // ─── Approve modal ────────────────────────────────────────────────────────────
 
-  openApproveModal(item: UnifiedSolicitudItem, level: 1 | 2) {
+  openApproveModal(item: UnifiedSolicitudItem) {
     this.pendingApproveItem.set(item);
-    this.pendingApproveLevel.set(level);
     this.showApproveModal.set(true);
   }
 
   confirmApprove() {
     const item = this.pendingApproveItem();
     if (!item) return;
-    const level = this.pendingApproveLevel();
     this.isActing.set(true);
     const action$: Observable<unknown> = item.source === 'advance'
-      ? (level === 1 ? this.advanceService.approveL1(item._id, {}) : this.advanceService.approveL2(item._id, {}))
-      : (level === 1 ? this.expenseReportsService.approveViaticoL1(item._id) : this.expenseReportsService.approveViaticoL2(item._id));
+      ? this.advanceService.approve(item._id, {})
+      : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
         this.isActing.set(false);
-        this.notifications.show(`Solicitud aprobada (Nivel ${level})`, 'success');
+        this.notifications.show(`Solicitud aprobada (nivel ${item.approvalLevel + 1} de ${item.requiredLevels})`, 'success');
         this.reloadAll();
       },
       error: (e: any) => {

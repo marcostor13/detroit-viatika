@@ -23,6 +23,8 @@ import { CategoriaService } from '../../../services/categoria.service';
 import { CategoryGroupService } from '../../../services/category-group.service';
 import { SaldoService } from '../../../services/saldo.service';
 import { ISaldo } from '../../../interfaces/saldo.interface';
+import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
+import { IOrdenTrabajo, otDepartamentoLabel } from '../../../interfaces/orden-trabajo.interface';
 import {
   PlacesAutocompleteDirective,
   PlaceResult,
@@ -67,6 +69,10 @@ export class SolicitudViaticosComponent implements OnInit {
   private categoriaService = inject(CategoriaService);
   private categoryGroupService = inject(CategoryGroupService);
   private saldoService = inject(SaldoService);
+  private ordenTrabajoService = inject(OrdenTrabajoService);
+
+  readonly departamentoLabel = otDepartamentoLabel;
+  ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
 
   submitting = signal(false);
   useCustomBank = signal(false);
@@ -173,6 +179,7 @@ export class SolicitudViaticosComponent implements OnInit {
     startDate: ['', Validators.required],
     endDate: ['', Validators.required],
     projectId: ['', Validators.required],
+    ordenTrabajoId: [''],
     observations: [''],
     bankName: [''],
     accountNumber: [''],
@@ -361,6 +368,10 @@ export class SolicitudViaticosComponent implements OnInit {
       next: (groups) => this.categoryGroups.set(groups ?? []),
       error: () => this.categoryGroups.set([]),
     });
+    this.ordenTrabajoService.getAll().subscribe({
+      next: (list) => this.ordenesTrabajo.set((list || []).filter((o) => o.isActive !== false)),
+      error: () => this.ordenesTrabajo.set([]),
+    });
   }
 
   private bootstrapFromAdvance(adv: IAdvance): void {
@@ -427,10 +438,16 @@ export class SolicitudViaticosComponent implements OnInit {
         ? (report.projectId as { _id: string })._id
         : String(report.projectId ?? '');
 
+    const otId =
+      report.viaticoOrdenTrabajoId && typeof report.viaticoOrdenTrabajoId === 'object'
+        ? report.viaticoOrdenTrabajoId._id
+        : String(report.viaticoOrdenTrabajoId ?? '');
+
     this.form.patchValue({
       place: report.viaticoPlace ?? '',
       startDate: this.ymdFromDate(report.viaticoStartDate),
       endDate: this.ymdFromDate(report.viaticoEndDate),
+      ordenTrabajoId: otId,
       observations: report.viaticoObservations ?? '',
     });
     if (report.viaticoAccountNumber) {
@@ -625,6 +642,7 @@ export class SolicitudViaticosComponent implements OnInit {
     // getRawValue: el centro de costo puede estar deshabilitado (saldo heredado),
     // y los controles deshabilitados no aparecen en form.value.
     const projectId = (this.form.getRawValue().projectId as string) ?? '';
+    const ordenTrabajoId = (this.form.value.ordenTrabajoId as string) || undefined;
     const linesPayload: IAdvanceLinePayload[] = [];
 
     for (let i = 0; i < this.lines.length; i++) {
@@ -673,6 +691,7 @@ export class SolicitudViaticosComponent implements OnInit {
         startDate: `${startStr}T12:00:00.000Z`,
         endDate: `${endStr}T12:00:00.000Z`,
         projectId,
+        ordenTrabajoId,
         lines: linesPayload,
         observations: (this.form.value.observations || '').trim() || undefined,
         ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
@@ -725,6 +744,7 @@ export class SolicitudViaticosComponent implements OnInit {
       startDate: `${startStr}T12:00:00.000Z`,
       endDate: `${endStr}T12:00:00.000Z`,
       projectId,
+      ordenTrabajoId,
       lines: linesPayload,
       observations: (this.form.value.observations || '').trim() || undefined,
       ...(hasPending && {

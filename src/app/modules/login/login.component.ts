@@ -9,11 +9,12 @@ import { CompanyConfigService } from '../../services/company-config.service';
 import { finalize } from 'rxjs';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { InputComponent } from '../../design-system/input/input.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, InputComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, InputComponent, IconComponent],
   templateUrl: './login.component.html',
   styleUrl: './login.component.scss',
 })

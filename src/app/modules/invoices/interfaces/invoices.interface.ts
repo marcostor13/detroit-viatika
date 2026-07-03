@@ -37,6 +37,8 @@ export interface IMobilityRow {
 
 export interface ICreateMobilitySheetPayload {
   proyectId: string;
+  /** Orden de Trabajo, obligatoria según el formato oficial ADF-FOR-005. */
+  ordenTrabajoId: string;
   categoryId: string;
   expenseReportId?: string;
   mobilityRows: IMobilityRow[];

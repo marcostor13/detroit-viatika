@@ -44,16 +44,33 @@ export class ViaticosDetailComponent implements OnInit {
   isCancelling = signal(false);
   rejectForm!: FormGroup;
 
-  get canApproveL1() { return this.userState.canApproveL1(); }
-  get canApproveL2() { return this.userState.canApproveL2(); }
-
   private get currentUserId(): string {
     return (this.userState.getUser() as any)?._id ?? '';
+  }
+
+  private get isSuperAdmin(): boolean {
+    return this.userState.isSuperAdmin();
   }
 
   private get advanceOwnerId(): string {
     const u = this.advance()?.userId;
     return u && typeof u === 'object' ? (u as any)._id : (u ?? '');
+  }
+
+  /** Id del aprobador cuyo turno es ahora, o vacío si no hay cadena. */
+  private get expectedApproverId(): string {
+    const a = this.advance();
+    if (!a) return '';
+    const entry = a.approverChain?.[a.approvalLevel];
+    if (!entry) return '';
+    return typeof entry === 'object' ? entry._id : entry;
+  }
+
+  pendingApproverName(): string {
+    const a = this.advance();
+    const entry = a?.approverChain?.[a.approvalLevel];
+    if (!entry) return '—';
+    return typeof entry === 'object' ? ((entry as any).name ?? entry._id) : entry;
   }
 
   get canCancelAction(): boolean {
@@ -74,46 +91,24 @@ export class ViaticosDetailComponent implements OnInit {
 
   back() { this.router.navigate(['/rendiciones']); }
 
-  get canApproveL1Action(): boolean {
+  get canApproveAction(): boolean {
     const a = this.advance();
-    return !!a && a.status === 'pending_l1' && this.canApproveL1;
-  }
-
-  get canApproveL2Action(): boolean {
-    const a = this.advance();
-    return !!a && a.status === 'pending_l2' && this.canApproveL2;
+    if (!a || a.status !== 'pending_l1') return false;
+    return this.isSuperAdmin || this.expectedApproverId === this.currentUserId;
   }
 
   get canRejectAction(): boolean {
-    const a = this.advance();
-    return !!a && ['pending_l1', 'pending_l2'].includes(a.status) && (this.canApproveL1 || this.canApproveL2);
+    return this.canApproveAction;
   }
 
-  approveL1() {
+  approve() {
     const a = this.advance();
     if (!a) return;
     this.isActing.set(true);
-    this.advanceService.approveL1(a._id, {}).subscribe({
+    this.advanceService.approve(a._id, {}).subscribe({
       next: (updated) => {
         this.advance.set(updated);
-        this.notifications.show('Solicitud aprobada (Nivel 1)', 'success');
-        this.isActing.set(false);
-      },
-      error: (e) => {
-        this.notifications.show(e?.error?.message || 'Error al aprobar', 'error');
-        this.isActing.set(false);
-      },
-    });
-  }
-
-  approveL2() {
-    const a = this.advance();
-    if (!a) return;
-    this.isActing.set(true);
-    this.advanceService.approveL2(a._id, {}).subscribe({
-      next: (updated) => {
-        this.advance.set(updated);
-        this.notifications.show('Solicitud aprobada (Nivel 2)', 'success');
+        this.notifications.show(`Solicitud aprobada (nivel ${a.approvalLevel + 1} de ${a.requiredLevels})`, 'success');
         this.isActing.set(false);
       },
       error: (e) => {
@@ -210,6 +205,13 @@ export class ViaticosDetailComponent implements OnInit {
     return map[action] ?? action;
   }
 
+  private approverStepName(a: IAdvance, level: number): string {
+    const entry = a.approverChain?.[level - 1];
+    if (!entry) return `Aprobador ${level}`;
+    const name = typeof entry === 'object' ? (entry as any).name : undefined;
+    return name ? `Aprobado por ${name}` : `Aprobador ${level}`;
+  }
+
   pipelineSteps(): Array<{
     label: string;
     state: 'completed' | 'active' | 'upcoming' | 'rejected';
@@ -220,20 +222,20 @@ export class ViaticosDetailComponent implements OnInit {
     const a = this.advance();
     if (!a) return [];
 
-    const isTwoLevel = a.requiredLevels >= 2;
+    const chainLength = Math.max(a.requiredLevels, 1);
     const status = a.status;
     const history = a.approvalHistory;
 
-    const ACTIVE_STEP: Partial<Record<string, number>> = isTwoLevel
-      ? { pending_l1: 1, pending_l2: 2, approved: 3, paid: 4, settled: 5 }
-      : { pending_l1: 1, approved: 2, paid: 3, settled: 4 };
-
-    const activeStep = ACTIVE_STEP[status] ?? 0;
+    // Posiciones: 1..chainLength son los aprobadores; chainLength+1 es el pago.
+    const payPos = chainLength + 1;
+    const activeStep = status === 'approved' || status === 'partially_paid' || status === 'paid' || status === 'settled'
+      ? payPos
+      : Math.min(a.approvalLevel + 1, chainLength);
 
     const stateFor = (pos: number): 'completed' | 'active' | 'upcoming' | 'rejected' => {
       if (status === 'rejected') {
         const rejEntry = [...history].reverse().find(h => h.action === 'rejected');
-        const rejPos = (rejEntry?.level ?? 1) === 1 ? 1 : 2;
+        const rejPos = rejEntry?.level ?? 1;
         if (pos < rejPos) return 'completed';
         if (pos === rejPos) return 'rejected';
         return 'upcoming';
@@ -246,51 +248,28 @@ export class ViaticosDetailComponent implements OnInit {
     const fmt = (d?: string) =>
       d ? new Date(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' }) : undefined;
 
-    const l1Entry = history.find(h => h.level === 1 && h.action === 'approved');
-    const l2Entry = history.find(h => h.level === 2 && h.action === 'approved');
-
-    const ACTIVE_DESC: Record<number, string> = isTwoLevel
-      ? {
-          1: 'Pendiente de aprobacion del coordinador',
-          2: 'Aprobado por coordinador — pendiente de aprobacion de contabilidad y deposito',
-          3: 'Pendiente de registro de pago',
-        }
-      : {
-          1: 'Pendiente de aprobacion del coordinador',
-          2: 'Pendiente de registro de pago',
-        };
-
-    const l1S = stateFor(1);
-    const payPos = isTwoLevel ? 3 : 2;
-    const payS = stateFor(payPos);
-
     const steps: Array<{ label: string; state: ReturnType<typeof stateFor>; date?: string; description?: string; notes?: string }> = [
       { label: 'Solicitud enviada', state: 'completed', date: fmt(a.createdAt) },
-      {
-        label: 'Aprobado por coordinador',
-        state: l1S,
-        date: fmt(l1Entry?.date),
-        description: l1S === 'active' ? ACTIVE_DESC[1] : undefined,
-        notes: l1Entry?.notes,
-      },
     ];
 
-    if (isTwoLevel) {
-      const l2S = stateFor(2);
+    for (let level = 1; level <= chainLength; level++) {
+      const entry = history.find(h => h.level === level && h.action === 'approved');
+      const s = stateFor(level);
       steps.push({
-        label: 'Aprobado por contabilidad',
-        state: l2S,
-        date: fmt(l2Entry?.date),
-        description: l2S === 'active' ? ACTIVE_DESC[2] : undefined,
-        notes: l2Entry?.notes,
+        label: this.approverStepName(a, level),
+        state: s,
+        date: fmt(entry?.date),
+        description: s === 'active' ? `Pendiente de aprobación (nivel ${level} de ${chainLength})` : undefined,
+        notes: entry?.notes,
       });
     }
 
+    const payS = stateFor(payPos);
     steps.push({
       label: 'Pago registrado',
       state: payS,
       date: fmt(a.paymentInfo?.transferDate),
-      description: payS === 'active' ? ACTIVE_DESC[payPos] : undefined,
+      description: payS === 'active' ? 'Pendiente de registro de pago' : undefined,
     });
 
     return steps;

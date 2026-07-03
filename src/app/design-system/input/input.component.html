@@ -1,9 +1,9 @@
 <div class="w-full">
   @if (label()) {
-    <label class="block text-sm font-medium text-secondary mb-2">
+    <label [for]="inputId" class="block text-sm font-medium text-secondary mb-2">
       {{ label() }}
       @if (required()) {
-        <span class="text-error">*</span>
+        <span class="text-error" aria-hidden="true">*</span>
       }
     </label>
   }
@@ -19,6 +19,7 @@
     }
     
     <input
+      [id]="inputId"
       [type]="type()"
       [placeholder]="placeholder()"
       [disabled]="disabled()"
@@ -26,15 +27,17 @@
       [value]="value()"
       [class]="inputClasses()"
       [class.pl-12]="icon()"
+      [attr.aria-invalid]="error() ? true : null"
+      [attr.aria-describedby]="describedBy()"
       (input)="onInput($event)"
       (blur)="onBlur()"
     />
   </div>
-  
+
   @if (error()) {
-    <p class="mt-1 text-sm text-error">{{ error() }}</p>
+    <p [id]="errorId" class="mt-1 text-sm text-error" role="alert">{{ error() }}</p>
   } @else if (helperText()) {
-    <p class="mt-1 text-sm text-tertiary">{{ helperText() }}</p>
+    <p [id]="helpId" class="mt-1 text-sm text-tertiary">{{ helperText() }}</p>
   }
 </div>
 

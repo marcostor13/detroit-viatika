@@ -16,6 +16,7 @@ import { UserStateService } from '../../services/user-state.service';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { ExportButtonComponent } from '../../design-system/export-button/export-button.component';
 import { PaginatorComponent } from '../../design-system/paginator/paginator.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { CommonModule } from '@angular/common';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
@@ -23,7 +24,7 @@ import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
 @Component({
   selector: 'app-invoices',
   standalone: true,
-  imports: [DataComponent, FileDownloadComponent, ButtonComponent, ExportButtonComponent, PaginatorComponent, CommonModule],
+  imports: [DataComponent, FileDownloadComponent, ButtonComponent, ExportButtonComponent, PaginatorComponent, CommonModule, IconComponent],
   templateUrl: './invoices.component.html',
   styleUrl: './invoices.component.scss',
 })

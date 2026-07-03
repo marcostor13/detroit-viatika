@@ -26,6 +26,8 @@ export interface ICreateViaticoPayload {
   startDate: string;
   endDate: string;
   projectId: string;
+  /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
+  ordenTrabajoId?: string;
   lines: IViaticoLinePayload[];
   observations?: string;
   pendingBalanceFromReportId?: string;
@@ -47,6 +49,8 @@ export interface IResubmitViaticoPayload {
   startDate: string;
   endDate: string;
   projectId: string;
+  /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
+  ordenTrabajoId?: string;
   lines: IViaticoLinePayload[];
   observations?: string;
   /** Saldos de la bolsa re-seleccionados al corregir (si el viático no tiene ya uno). */
@@ -159,6 +163,8 @@ export interface IExpenseReport {
   viaticoPaidAmount?: number;
   viaticoApprovalLevel?: number;
   viaticoRequiredLevels?: number;
+  /** Cadena ordenada de aprobadores asignada al momento de crear la solicitud. */
+  viaticoApproverChain?: ({ _id: string; name: string; email: string } | string)[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
   viaticoRejectionReason?: string;
   viaticoObservations?: string;
@@ -166,6 +172,8 @@ export interface IExpenseReport {
   viaticoBankName?: string;
   viaticoAccountNumber?: string;
   viaticoCci?: string;
+  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, codigo, departamento, descripcion}). */
+  viaticoOrdenTrabajoId?: { _id: string; codigo: string; departamento: string; descripcion?: string } | string;
   /** Motivo indicado por el administrador al rechazar */
   rejectionReason?: string;
   /** Quién rechazó: coordinador (revisión inicial) o contabilidad (aprobación final). */

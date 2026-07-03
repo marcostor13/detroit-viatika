@@ -1,34 +1,18 @@
-@if (showSignatureModal) {
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-sm w-full flex flex-col gap-4">
-      <div class="flex items-start gap-3">
-        <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-warning">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-secondary">Firma digital no configurada</p>
-          <p class="text-xs text-tertiary mt-1">Debe configurar su firma digital para poder firmar documentos y rendiciones en la plataforma.</p>
-        </div>
-      </div>
-      <div class="flex gap-3">
-        <button
-          (click)="goToSignature()"
-          class="flex-1 px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
-        >
-          Configurar firma
-        </button>
-        <button
-          (click)="dismissSignatureModal()"
-          class="px-4 py-2 text-sm font-medium text-tertiary hover:text-secondary rounded-lg hover:bg-background transition-colors"
-        >
-          Ahora no
-        </button>
-      </div>
+<app-modal [open]="showSignatureModal" size="sm" [closeOnBackdrop]="false" (closed)="dismissSignatureModal()">
+  <div class="flex items-start gap-3">
+    <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0">
+      <app-icon name="triangle-alert" size="sm" class="text-warning" />
+    </div>
+    <div>
+      <p class="text-sm font-semibold text-secondary">Firma digital no configurada</p>
+      <p class="text-xs text-tertiary mt-1">Debe configurar su firma digital para poder firmar documentos y rendiciones en la plataforma.</p>
     </div>
   </div>
-}
+  <div class="flex gap-3 mt-4">
+    <app-button label="Configurar firma" variant="primary" [fullWidth]="true" (clicked)="goToSignature()" />
+    <app-button label="Ahora no" variant="ghost" (clicked)="dismissSignatureModal()" />
+  </div>
+</app-modal>
 
 <div class="flex h-screen bg-background">
   <app-sidebar
@@ -43,13 +27,10 @@
     >
       <button
         (click)="toggleSidebar()"
-        class="lg:hidden absolute top-1/2 left-4 -translate-y-1/2 z-40 p-3 rounded-xl bg-quaternary shadow-soft text-secondary hover:text-primary hover:bg-background transition-all duration-300 hover:shadow-lg hover:scale-105 group border border-tertiary/20"
+        class="lg:hidden absolute top-1/2 left-4 -translate-y-1/2 z-40 p-3 rounded-xl bg-quaternary shadow-soft text-secondary hover:text-primary hover:bg-background transition-all duration-300 hover:shadow-lg hover:scale-105 border border-tertiary/20"
+        aria-label="Abrir menú"
       >
-        <div class="relative w-6 h-6 flex flex-col justify-center space-y-1">
-          <div class="w-6 h-0.5 bg-current"></div>
-          <div class="w-6 h-0.5 bg-current"></div>
-          <div class="w-6 h-0.5 bg-current"></div>
-        </div>
+        <app-icon name="menu" size="md" />
       </button>
 
       <div class="flex items-center justify-end px-6 py-4">

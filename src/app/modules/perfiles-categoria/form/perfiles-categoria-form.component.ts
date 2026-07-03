@@ -9,11 +9,12 @@ import { CategoriaService } from '../../../services/categoria.service';
 import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import { ICategory } from '../../invoices/interfaces/category.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 
 @Component({
   selector: 'app-perfiles-categoria-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   templateUrl: './perfiles-categoria-form.component.html',
 })
 export class PerfilesCategoriaFormComponent implements OnInit {

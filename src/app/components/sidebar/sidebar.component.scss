@@ -1,7 +1,5 @@
-@use "../../../styles/variables" as *;
-
 .selected {
-  background-color: $color1;
+  background-color: var(--tema-primary);
   color: white;
   transform: scale(1.1);
 }

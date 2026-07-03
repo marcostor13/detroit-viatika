@@ -204,12 +204,8 @@ export class ExpenseReportsService {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/cancel`, {});
   }
 
-  approveViaticoL1(id: string): Observable<IExpenseReport> {
-    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve-l1`, {});
-  }
-
-  approveViaticoL2(id: string): Observable<IExpenseReport> {
-    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve-l2`, {});
+  approveViatico(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve`, {});
   }
 
   rejectViatico(id: string, rejectionReason: string): Observable<IExpenseReport> {

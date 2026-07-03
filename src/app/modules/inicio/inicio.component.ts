@@ -10,6 +10,8 @@ import { SaldoService } from '../../services/saldo.service';
 import { NotificationService } from '../../services/notification.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
+import { ButtonComponent } from '../../design-system/button/button.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
 
 /** Fila normalizada que alimenta los listados del inicio (colaborador y coordinador). */
 export interface DashRow {
@@ -23,12 +25,14 @@ export interface DashRow {
   statusLabel: string;
   statusColor: string;
   createdAt: string;
+  /** Es el turno del usuario actual para aprobar esta solicitud (o es Superadmin). */
+  canApproveNow: boolean;
 }
 
 @Component({
   selector: 'app-inicio',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, ButtonComponent, IconComponent],
   templateUrl: './inicio.component.html',
 })
 export class InicioComponent implements OnInit {
@@ -62,8 +66,6 @@ export class InicioComponent implements OnInit {
   readonly PREVIEW = 5;
 
   readonly isCoordinador = this.userState.isCoordinador();
-  readonly canApproveL1 = this.userState.canApproveL1();
-  readonly canApproveL2 = this.userState.canApproveL2();
 
   // Permisos → controlan qué tarjetas/listas propias se muestran (tanto coordinador
   // como colaborador se rigen por lo que tengan ACTIVADO). Modelo del negocio:
@@ -365,17 +367,13 @@ export class InicioComponent implements OnInit {
   }
 
   // ─── Aprobaciones inline (coordinador) ────────────────────────────
-  /** ¿El coordinador puede aprobar esta fila según su tipo y estado? */
+  /** ¿El aprobador puede aprobar esta fila (es su turno o es Superadmin)? */
   canApproveRow(row: DashRow, kind: 'solicitud' | 'rendicion'): boolean {
     if (kind === 'rendicion') return true; // aprobación de comprobantes a nivel reporte
-    if (row.status === 'pending_l1') return this.canApproveL1;
-    if (row.status === 'pending_l2') return this.canApproveL2;
-    return false;
+    return row.canApproveNow;
   }
 
-  approveRow(row: DashRow, kind: 'solicitud' | 'rendicion', event: Event) {
-    event.stopPropagation();
-
+  approveRow(row: DashRow, kind: 'solicitud' | 'rendicion') {
     // Rendición: la aprobación es por comprobante (y depende de la validación previa
     // de Contabilidad), estado que la lista no conoce. Llevamos al detalle, donde el
     // coordinador aprueba con el estado real por comprobante.
@@ -387,13 +385,11 @@ export class InicioComponent implements OnInit {
     if (this.acting()) return;
     this.acting.set(row._id);
 
-    // Solicitud de viáticos: cambio de estado limpio (pending_l1/l2). El viático puede
-    // venir como reporte (modelo nuevo) o como advance (legacy): cada uno tiene su
-    // propio endpoint de aprobación, igual que en /rendiciones.
-    const isL1 = row.status === 'pending_l1';
+    // Solicitud de viáticos: el viático puede venir como reporte (modelo nuevo) o
+    // como advance (legacy): cada uno tiene su propio endpoint de aprobación.
     const call$: Observable<unknown> = row.source === 'advance'
-      ? (isL1 ? this.advanceService.approveL1(row._id, {}) : this.advanceService.approveL2(row._id, {}))
-      : (isL1 ? this.expenseReportsService.approveViaticoL1(row._id) : this.expenseReportsService.approveViaticoL2(row._id));
+      ? this.advanceService.approve(row._id, {})
+      : this.expenseReportsService.approveViatico(row._id);
     call$.subscribe({
       next: () => {
         this.acting.set(null);
@@ -405,6 +401,16 @@ export class InicioComponent implements OnInit {
         this.notifications.show(e?.error?.message || 'Error al aprobar la solicitud', 'error');
       },
     });
+  }
+
+  private get currentUserId(): string {
+    return (this.userState.getUser() as any)?._id ?? '';
+  }
+
+  private approverIdAt(chain: ({ _id: string } | string)[] | undefined, level: number): string {
+    const entry = chain?.[level];
+    if (!entry) return '';
+    return typeof entry === 'object' ? entry._id : entry;
   }
 
   // ─── Mapeo a filas ────────────────────────────────────────────────
@@ -420,6 +426,8 @@ export class InicioComponent implements OnInit {
       statusLabel: this.REPORT_STATUS_LABELS[r.status] ?? r.status,
       statusColor: this.REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600',
       createdAt: r.createdAt,
+      canApproveNow: r.status === 'pending_l1' &&
+        (this.userState.isSuperAdmin() || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
     };
   }
 
@@ -435,6 +443,8 @@ export class InicioComponent implements OnInit {
       statusLabel: this.STATUS_LABELS[a.status] ?? a.status,
       statusColor: this.STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600',
       createdAt: a.createdAt,
+      canApproveNow: a.status === 'pending_l1' &&
+        (this.userState.isSuperAdmin() || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
     };
   }
 
@@ -464,7 +474,7 @@ export class InicioComponent implements OnInit {
     primary: 'text-primary', red: 'text-red-600', green: 'text-green-600',
   };
   iconBg(accent: string, active: boolean): string {
-    return active ? (this.ACCENT_BG[accent] ?? 'bg-gray-100') : 'bg-gray-100';
+    return active ? (this.ACCENT_BG[accent] ?? 'bg-ink-100') : 'bg-ink-100';
   }
   iconText(accent: string, active: boolean): string {
     return active ? (this.ACCENT_TEXT[accent] ?? 'text-tertiary') : 'text-tertiary';

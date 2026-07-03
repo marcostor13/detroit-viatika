@@ -155,13 +155,13 @@
       <div class="flex flex-col gap-6">
 
         <!-- Acciones -->
-        @if (canApproveL1Action || canApproveL2Action || canRejectAction || canCancelAction) {
+        @if (canApproveAction || canRejectAction || canCancelAction) {
           <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6">
             <h2 class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-4">Acciones</h2>
             <div class="flex flex-col gap-3">
-              @if (canApproveL1Action) {
+              @if (canApproveAction) {
                 <button
-                  (click)="approveL1()"
+                  (click)="approve()"
                   [disabled]="isActing()"
                   class="flex items-center justify-center gap-2 h-[42px] rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition-colors disabled:opacity-50"
                 >
@@ -169,18 +169,6 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                   </svg>
                   Aprobar solicitud
-                </button>
-              }
-              @if (canApproveL2Action) {
-                <button
-                  (click)="approveL2()"
-                  [disabled]="isActing()"
-                  class="flex items-center justify-center gap-2 h-[42px] rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                  </svg>
-                  Aprobar (Nivel 2)
                 </button>
               }
               @if (canRejectAction) {

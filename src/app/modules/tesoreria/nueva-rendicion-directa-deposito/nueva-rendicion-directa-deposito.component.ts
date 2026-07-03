@@ -10,11 +10,13 @@ import { UserStateService } from '../../../services/user-state.service';
 import { AdminUsersService } from '../../admin-users/services/admin-users.service';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { ERoles } from '../../admin-users/interfaces/roles.enum';
+import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 
 @Component({
   selector: 'app-nueva-rendicion-directa-deposito',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, IconComponent],
   templateUrl: './nueva-rendicion-directa-deposito.component.html',
 })
 export class NuevaRendicionDirectaDepositoComponent implements OnInit {

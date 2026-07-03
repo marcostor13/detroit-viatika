@@ -59,9 +59,7 @@
         (click)="goBackToHub()"
         class="flex items-center gap-2 w-full px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 text-left"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 flex-shrink-0">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
-        </svg>
+        <app-icon name="arrow-left" size="sm" class="flex-shrink-0" />
         <span class="font-medium text-sm">Volver al Hub</span>
       </button>
       <div class="border-t border-tertiary/20 my-1"></div>
@@ -96,6 +94,17 @@
         class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
       >
         <span class="font-medium">Rendiciones</span>
+      </a>
+      }
+      @if (isAdmin() && hasModulePermission('invoice-approval')) {
+      <a
+        [routerLink]="['/invoice-approval']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/invoice-approval')"
+        [class.text-quaternary]="isSelected('/invoice-approval')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Aprobación de Facturas</span>
       </a>
       }
       }
@@ -222,6 +231,17 @@
         <span class="font-medium">Rendiciones</span>
       </a>
       }
+      @if (isColaborador() && hasModulePermission('invoice-approval')) {
+      <a
+        [routerLink]="['/invoice-approval']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/invoice-approval')"
+        [class.text-quaternary]="isSelected('/invoice-approval')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Aprobación de Facturas</span>
+      </a>
+      }
       @if (!isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
       <a
         [routerLink]="['/dashboard']"
@@ -279,11 +299,12 @@
           [class.hover:text-primary]="true"
         >
           <span class="font-medium">Configuración</span>
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
-            class="w-4 h-4 transition-transform duration-200"
-            [class.rotate-180]="configOpen || isConfigSection()">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
+          <app-icon
+            name="chevron-down"
+            size="sm"
+            class="transition-transform duration-200"
+            [class.rotate-180]="configOpen || isConfigSection()"
+          />
         </button>
         @if (configOpen || isConfigSection()) {
         <div class="ml-2 mt-0.5 pl-3 border-l-2 border-primary/20 space-y-0.5">
@@ -330,6 +351,12 @@
             class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
           >Perfiles de Categoría</a>
           <a
+            [routerLink]="['/ordenes-trabajo']"
+            [class.text-primary]="isSelected('/ordenes-trabajo')"
+            [class.font-semibold]="isSelected('/ordenes-trabajo')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Órdenes de Trabajo</a>
+          <a
             [routerLink]="['/audit-log']"
             [class.text-primary]="isSelected('/audit-log')"
             [class.font-semibold]="isSelected('/audit-log')"
@@ -375,22 +402,7 @@
         (click)="confirmation()"
         class="flex items-center w-full px-4 py-2 text-tertiary rounded-xl hover:text-error hover:bg-background transition-all duration-200 group"
       >
-        <span class="mr-3">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="size-5"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"
-            />
-          </svg>
-        </span>
+        <app-icon name="log-out" size="sm" class="mr-3" />
         <span class="font-medium">Cerrar Sesión</span>
       </button>
     </div>
@@ -421,19 +433,7 @@
             (click)="toggleSidebar()"
             class="p-2 text-tertiary hover:text-secondary hover:bg-background rounded-xl transition-all duration-200 group"
           >
-            <svg
-              class="w-6 h-6 transform group-hover:rotate-90 transition-transform duration-200"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              ></path>
-            </svg>
+            <app-icon name="close" size="md" class="transform group-hover:rotate-90 transition-transform duration-200" />
           </button>
         </div>
       </div>
@@ -491,9 +491,7 @@
           (click)="goBackToHub(); toggleSidebar()"
           class="flex items-center gap-2 w-full px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 text-left"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 flex-shrink-0">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
-          </svg>
+          <app-icon name="arrow-left" size="sm" class="flex-shrink-0" />
           <span class="font-medium text-lg">Volver al Hub</span>
         </button>
         <div class="border-t border-tertiary/20 my-1"></div>
@@ -709,11 +707,12 @@
             [class.text-secondary]="!(isConfigSection() && !configOpen)"
           >
             <span class="font-medium text-lg">Configuración</span>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
-              class="w-5 h-5 transition-transform duration-200"
-              [class.rotate-180]="configOpen || isConfigSection()">
-              <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-            </svg>
+            <app-icon
+              name="chevron-down"
+              size="sm"
+              class="transition-transform duration-200"
+              [class.rotate-180]="configOpen || isConfigSection()"
+            />
           </button>
           @if (configOpen || isConfigSection()) {
           <div class="ml-2 mt-0.5 pl-3 border-l-2 border-primary/20 space-y-0.5">
@@ -767,6 +766,13 @@
               class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
             >Perfiles de Categoría</a>
             <a
+              [routerLink]="['/ordenes-trabajo']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/ordenes-trabajo')"
+              [class.font-semibold]="isSelected('/ordenes-trabajo')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Órdenes de Trabajo</a>
+            <a
               [routerLink]="['/audit-log']"
               (click)="toggleSidebar()"
               [class.text-primary]="isSelected('/audit-log')"
@@ -816,22 +822,7 @@
           (click)="confirmation()"
           class="flex items-center w-full px-4 py-3 text-tertiary rounded-xl hover:text-error hover:bg-background transition-all duration-200 group"
         >
-          <span class="mr-3 text-xl">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="size-6"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"
-              />
-            </svg>
-          </span>
+          <app-icon name="log-out" size="md" class="mr-3" />
           <span class="font-medium">Cerrar Sesión</span>
         </button>
       </div>

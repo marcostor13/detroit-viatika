@@ -19,20 +19,7 @@
     size="md"
     (clicked)="back()"
   >
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke-width="1.5"
-      stroke="currentColor"
-      class="size-5"
-    >
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        d="M6.75 15.75 3 12m0 0 3.75-3.75M3 12h18"
-      />
-    </svg>
+    <app-icon name="arrow-left" size="sm" />
   </app-button>
 </div>
 
@@ -42,10 +29,8 @@
     <div class="w-full max-w-xs">
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
         <div class="flex items-center gap-3 mb-2">
-          <div class="p-2 bg-red-50 text-red-600 rounded-lg">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-            </svg>
+          <div class="p-2 bg-error/10 text-error rounded-lg">
+            <app-icon name="dollar-sign" size="sm" />
           </div>
           <p class="font-medium text-gray-500">Total gastado</p>
         </div>
@@ -65,9 +50,7 @@
           ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
           : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        </svg>
+        <app-icon name="file-text" size="sm" />
         Factura
       </button>
       <button type="button"
@@ -76,9 +59,7 @@
           ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
           : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-        </svg>
+        <app-icon name="car" size="sm" />
         Planilla de Movilidad
       </button>
       <button type="button"
@@ -87,9 +68,7 @@
           ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
           : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" />
-        </svg>
+        <app-icon name="clipboard-list" size="sm" />
         Otros Gastos
       </button>
       <button type="button"
@@ -98,9 +77,7 @@
           ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
           : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.25h6m-7.5 3h9A2.25 2.25 0 0 0 18.75 16.5v-9A2.25 2.25 0 0 0 16.5 5.25h-9A2.25 2.25 0 0 0 5.25 7.5v9A2.25 2.25 0 0 0 7.5 18.75Z" />
-        </svg>
+        <app-icon name="wallet" size="sm" />
         Comprobante de Caja
       </button>
     </div>
@@ -125,6 +102,26 @@
       }
     </div>
 
+    @if (expenseType() === 'planilla_movilidad') {
+    <div class="flex flex-col gap-2">
+      <label for="ordenTrabajoId" class="text-sm font-medium text-secondary">
+        Orden de Trabajo <span class="text-error">*</span>
+      </label>
+      <select
+        id="ordenTrabajoId"
+        formControlName="ordenTrabajoId"
+        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+        style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+      >
+        <option value="">Seleccione una OT</option>
+        @for (ot of ordenesTrabajo; track ot._id) {
+        <option [value]="ot._id">{{ ot.codigo }} — {{ departamentoLabel(ot.departamento) }}</option>
+        }
+      </select>
+      <p class="text-xs text-tertiary">Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005).</p>
+    </div>
+    }
+
     <div class="flex flex-col gap-2">
       <label for="categoryId" class="text-sm font-medium text-secondary">
         Categoría <span class="text-error">*</span>
@@ -142,9 +139,7 @@
           }
         </select>
         <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+          <app-icon name="chevron-down" size="sm" />
         </div>
       </div>
       @if (categoryId?.invalid && categoryId?.touched) {
@@ -168,26 +163,11 @@
         (click)="fileInput.click()"
       >
         @if (selectedFile) {
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-12 w-12 mx-auto text-green-500">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-        </svg>
-        <p class="mt-3 text-sm font-medium text-green-700 break-all px-2">{{ selectedFile.name }}</p>
-        <p class="mt-1 text-xs text-green-600">Haz clic para cambiar el archivo</p>
+        <app-icon name="circle-check" size="xl" class="mx-auto text-success" />
+        <p class="mt-3 text-sm font-medium text-success-ink break-all px-2">{{ selectedFile.name }}</p>
+        <p class="mt-1 text-xs text-success">Haz clic para cambiar el archivo</p>
         } @else {
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-12 w-12 mx-auto text-tertiary group-hover:text-primary transition-colors"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-          />
-        </svg>
+        <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-3 text-sm text-secondary font-medium">
           Haga clic para seleccionar una factura
         </p>
@@ -315,9 +295,7 @@
           </div>
           <button type="button" (click)="startEditOcrAmount()" title="Editar monto"
             class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
-            </svg>
+            <app-icon name="edit" size="sm" />
           </button>
           } @else {
           <input type="number" min="0" step="0.01"
@@ -327,17 +305,13 @@
             class="flex-1 h-[40px] px-3 rounded-lg border border-amber-300 bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400/30 text-sm tabular-nums" />
           <button type="button" (click)="confirmEditOcrAmount()" title="Confirmar monto"
             class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-            </svg>
+            <app-icon name="check" size="sm" />
           </button>
           }
         </div>
         @if (ocrAmountWasEdited) {
         <div class="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5 shrink-0">
-            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
-          </svg>
+          <app-icon name="triangle-alert" size="sm" class="shrink-0" />
           Monto editado. OCR extrajo: S/ {{ ocrTotalAmount() | number:'1.2-2' }}.
         </div>
         }
@@ -453,9 +427,7 @@
         </div>
         <button type="button" (click)="startEditInvoiceAmount()" title="Editar monto"
           class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" />
-          </svg>
+          <app-icon name="edit" size="sm" />
         </button>
         } @else {
         <input type="number" min="0" step="0.01"
@@ -465,17 +437,13 @@
           class="flex-1 h-[42px] px-4 rounded-lg border border-amber-300 bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400/30 text-sm tabular-nums" />
         <button type="button" (click)="confirmEditInvoiceAmount()" title="Confirmar monto"
           class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-          </svg>
+          <app-icon name="check" size="sm" />
         </button>
         }
       </div>
       @if (invoiceAmountWasEdited) {
       <div class="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 shrink-0">
-          <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
-        </svg>
+        <app-icon name="triangle-alert" size="sm" class="shrink-0" />
         Monto editado. Valor anterior: S/ {{ (originalInvoice?.total ?? 0) | number:'1.2-2' }}.
       </div>
       }
@@ -502,9 +470,7 @@
         (click)="addMobilityRow()"
         class="flex items-center gap-1 text-sm text-primary font-medium hover:text-primary/80 transition-colors"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
+        <app-icon name="plus" size="sm" />
         Agregar fila
       </button>
     </div>
@@ -517,9 +483,7 @@
       [class.text-error]="hasAnyMobilityLimitExceeded()"
       [class.bg-blue-50]="!hasAnyMobilityLimitExceeded()"
       [class.text-blue-700]="!hasAnyMobilityLimitExceeded()">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4 shrink-0">
-        <path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A1.75 1.75 0 0 0 10.747 15H11a.75.75 0 0 0 0-1.5h-.253a.25.25 0 0 1-.244-.304l.459-2.066A1.75 1.75 0 0 0 9.253 9H9Z" clip-rule="evenodd" />
-      </svg>
+      <app-icon name="info" size="sm" class="shrink-0" />
       <span>
         @if (hasAnyMobilityLimitExceeded()) {
           Una o más fechas superan el límite diario de S/ {{ mobilityDailyLimit | number:'1.2-2' }}. Corrige los montos para poder guardar.
@@ -541,10 +505,8 @@
       <div [formGroupName]="i" class="border border-gray-200 rounded-lg p-2 sm:p-4 bg-white">
         <div class="flex justify-between items-center mb-3">
           <span class="text-xs font-semibold text-tertiary uppercase tracking-wide">Fila {{ i + 1 }}</span>
-          <button type="button" (click)="removeMobilityRow(i)" class="text-red-400 hover:text-red-600 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
+          <button type="button" (click)="removeMobilityRow(i)" class="text-error/70 hover:text-error transition-colors">
+            <app-icon name="close" size="sm" />
           </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -574,9 +536,7 @@
                 }
               </select>
               <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
+                <app-icon name="chevron-down" size="sm" />
               </div>
             </div>
             @if (row.get('categoryId')?.invalid && row.get('categoryId')?.touched) {
@@ -634,10 +594,8 @@
                   autocomplete="off"
                   class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
               @if (row.get('origenLat')?.value) {
-              <span class="text-xs text-green-600 flex items-center gap-1 mt-0.5">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
-                </svg>
+              <span class="text-xs text-success flex items-center gap-1 mt-0.5">
+                <app-icon name="check" size="sm" />
                 Ubicación confirmada
               </span>
               }
@@ -690,10 +648,8 @@
                   autocomplete="off"
                   class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
               @if (row.get('destinoLat')?.value) {
-              <span class="text-xs text-green-600 flex items-center gap-1 mt-0.5">
-                <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
-                </svg>
+              <span class="text-xs text-success flex items-center gap-1 mt-0.5">
+                <app-icon name="check" size="sm" />
                 Ubicación confirmada
               </span>
               }
@@ -734,9 +690,7 @@
           <!-- Distancia calculada (solo si hay coords) -->
           @if (row.get('distanciaKm')?.value) {
           <div class="sm:col-span-3 flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-primary flex-shrink-0">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z" />
-            </svg>
+            <app-icon name="map-pin" size="sm" class="text-primary flex-shrink-0" />
             <span class="text-xs text-primary font-medium">
               Distancia aproximada: <strong>{{ row.get('distanciaKm')?.value | number:'1.1-1' }} km</strong>
             </span>
@@ -752,9 +706,7 @@
               class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
             @if (isMobilityRowDateOverLimit(i)) {
             <p class="text-xs text-error flex items-center gap-1">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3 shrink-0">
-                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
-              </svg>
+              <app-icon name="triangle-alert" size="sm" class="shrink-0" />
               Supera el límite diario de S/ {{ mobilityDailyLimit | number:'1.2-2' }}
               (acumulado ese día: S/ {{ getMobilityDateTotal(row.get('fecha')?.value) | number:'1.2-2' }})
             </p>
@@ -800,9 +752,7 @@
   <!-- Adjunto opcional para la planilla -->
   <div class="bg-quaternary rounded-xl shadow-soft border border-tertiary/20 p-6">
     <div class="flex items-center gap-2 mb-4">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-tertiary">
-        <path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
-      </svg>
+      <app-icon name="paperclip" size="sm" class="text-tertiary" />
       <p class="text-sm font-medium text-secondary">Adjunto de respaldo <span class="text-tertiary font-normal">(opcional)</span></p>
     </div>
 
@@ -812,18 +762,14 @@
     >
       @if (selectedFile) {
       <div class="flex items-center justify-center gap-3">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-primary">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        </svg>
+        <app-icon name="file-text" size="lg" class="text-primary" />
         <div class="text-left">
           <p class="text-sm font-medium text-secondary">{{ selectedFile.name }}</p>
           <p class="text-xs text-tertiary">Haz clic para cambiar el archivo</p>
         </div>
       </div>
       } @else {
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto text-tertiary group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-      </svg>
+      <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
       <p class="mt-2 text-sm text-secondary font-medium">Haz clic para adjuntar un comprobante</p>
       <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
       }
@@ -917,9 +863,7 @@
       <label class="text-sm font-medium text-secondary">Adjunto <span class="text-error">*</span></label>
       <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
         (click)="fileInputOtros.click()">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto text-tertiary group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-        </svg>
+        <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">
           {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar un comprobante' }}
         </p>
@@ -934,9 +878,7 @@
   @if(!id && otrosSubTipo() === 'DJ') {
   <div class="bg-amber-50 rounded-xl border border-amber-200 p-6 space-y-4">
     <div class="flex items-center gap-2 mb-1">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600 flex-shrink-0">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-      </svg>
+      <app-icon name="shield-check" size="sm" class="text-amber-600 flex-shrink-0" />
       <h3 class="text-sm font-semibold text-amber-800">Declaración Jurada</h3>
     </div>
     <p class="text-sm text-amber-700 leading-relaxed">
@@ -991,9 +933,7 @@
       <label class="text-sm font-medium text-secondary">Adjunto del recibo <span class="text-error">*</span></label>
       <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
         (click)="fileInputReceipt.click()">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto text-tertiary group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-        </svg>
+        <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">
           {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar el recibo' }}
         </p>
@@ -1022,9 +962,7 @@
           Escaneando comprobante...
         </span>
         } @else {
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 text-gray-400">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
-        </svg>
+        <app-icon name="upload" size="lg" class="text-tertiary" />
         <span class="text-sm text-secondary">Sube una foto o PDF para extraer los datos automáticamente</span>
         <span class="text-xs text-gray-400">Los campos quedarán editables</span>
         }
@@ -1033,18 +971,13 @@
       </label>
       } @else {
       <div class="flex items-center justify-between gap-3 w-full px-4 py-3 rounded-lg border border-green-200 bg-green-50">
-        <span class="inline-flex items-center gap-2 text-sm text-green-700 truncate">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-          </svg>
+        <span class="inline-flex items-center gap-2 text-sm text-success-ink truncate">
+          <app-icon name="circle-check" size="sm" class="shrink-0" />
           <span class="truncate">{{ cashVoucherFileName }}</span>
         </span>
-        <button type="button" (click)="removeCashVoucherFile()" title="Quitar archivo"
-          class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <app-button variant="ghost" size="sm" label="" ariaLabel="Quitar archivo" (clicked)="removeCashVoucherFile()">
+          <app-icon name="close" size="sm" />
+        </app-button>
       </div>
       }
     </div>
@@ -1113,26 +1046,7 @@
       (clicked)="saveOrUpdate()"
     >
       @if (isLoading() || isSunatValidating()) {
-      <svg
-        class="animate-spin h-5 w-5"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <circle
-          class="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          stroke-width="4"
-        ></circle>
-        <path
-          class="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-        ></path>
-      </svg>
+      <app-icon name="loader" size="sm" class="animate-spin" />
       }
     </app-button>
   </div>

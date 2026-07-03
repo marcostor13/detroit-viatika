@@ -5,11 +5,16 @@ import { RouterModule } from '@angular/router';
 import { ClientService } from '../../services/client.service';
 import { IClient } from '../../interfaces/user.interface';
 import { NotificationService } from '../../services/notification.service';
+import { ButtonComponent } from '../../design-system/button/button.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
+import { CardComponent } from '../../design-system/card/card.component';
+import { ModalComponent } from '../../design-system/modal/modal.component';
+import { InputComponent } from '../../design-system/input/input.component';
 
 @Component({
     selector: 'app-clients',
     standalone: true,
-    imports: [CommonModule, FormsModule, RouterModule],
+    imports: [CommonModule, FormsModule, RouterModule, ButtonComponent, IconComponent, CardComponent, ModalComponent, InputComponent],
     templateUrl: './clients.component.html',
 })
 export class ClientsComponent implements OnInit {

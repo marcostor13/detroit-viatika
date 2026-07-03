@@ -8,6 +8,8 @@ import { NotificationService } from '../../../services/notification.service';
 import { ICategory } from '../../invoices/interfaces/category.interface';
 import { ICategoryGroup } from '../interfaces/category-group.interface';
 import { HttpErrorResponse } from '@angular/common/http';
+import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 
 interface CategoryForm {
   name: string;
@@ -21,7 +23,7 @@ interface CategoryForm {
 @Component({
   selector: 'app-categoria-form',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   templateUrl: './categoria-form.component.html',
 })
 export class CategoriaFormComponent implements OnInit {

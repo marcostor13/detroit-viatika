@@ -6,16 +6,9 @@
       <h1 class="text-2xl font-bold text-gray-900">Mis Rendiciones</h1>
       <p class="text-sm text-gray-500 mt-1">Gestiona tus viáticos y documentos de gastos.</p>
     </div>
-    <button
-      type="button"
-      (click)="toggleGuidelines()"
-      class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-600 bg-white text-sm font-semibold rounded-lg hover:bg-gray-50 transition-all"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-      </svg>
-      Guía
-    </button>
+    <app-button variant="secondary" label="Guía" (clicked)="toggleGuidelines()">
+      <app-icon name="file-text" size="sm" />
+    </app-button>
   </div>
 
   <!-- Tabs -->
@@ -77,16 +70,9 @@
 
   <!-- Action bar -->
   <div class="flex justify-end mb-4">
-    <button
-      type="button"
-      (click)="openViaticosModal()"
-      class="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-      </svg>
-      Solicitar viáticos
-    </button>
+    <app-button label="Solicitar viáticos" (clicked)="openViaticosModal()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
   </div>
 
   <!-- Filter bar -->
@@ -134,16 +120,9 @@
         />
       </div>
 
-      <button
-        type="button"
-        (click)="clearViaticosFilters()"
-        class="h-9 px-3 inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-        Limpiar
-      </button>
+      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearViaticosFilters()">
+        <app-icon name="close" size="sm" />
+      </app-button>
 
     </div>
   </div>
@@ -155,31 +134,17 @@
   } @else {
 
     @if (unifiedViaticoList.length === 0) {
-      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
-        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-primary/5 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 text-primary/40">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-          </svg>
-        </div>
-        @if (viaticosStatusFilter() || viaticosDateFrom() || viaticosDateTo()) {
-          <p class="text-sm font-semibold text-gray-900 mb-1">Sin resultados</p>
-          <p class="text-xs text-gray-500 mb-4">No hay registros que coincidan con los filtros aplicados.</p>
-          <button type="button" (click)="clearViaticosFilters()"
-            class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-all">
-            Limpiar filtros
-          </button>
-        } @else {
-          <p class="text-sm font-semibold text-gray-900 mb-1">Sin viáticos aún</p>
-          <p class="text-xs text-gray-500 mb-4">Crea tu primera solicitud de viáticos para comenzar el proceso.</p>
-          <button type="button" (click)="openViaticosModal()"
-            class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Solicitar viáticos
-          </button>
-        }
-      </div>
+      @if (viaticosStatusFilter() || viaticosDateFrom() || viaticosDateTo()) {
+        <app-empty-state icon="search" title="Sin resultados" description="No hay registros que coincidan con los filtros aplicados.">
+          <app-button variant="secondary" label="Limpiar filtros" (clicked)="clearViaticosFilters()" />
+        </app-empty-state>
+      } @else {
+        <app-empty-state icon="receipt" title="Sin viáticos aún" description="Crea tu primera solicitud de viáticos para comenzar el proceso.">
+          <app-button label="Solicitar viáticos" (clicked)="openViaticosModal()">
+            <app-icon name="plus" size="sm" />
+          </app-button>
+        </app-empty-state>
+      }
     } @else {
       <app-data-table
         [items]="unifiedViaticoList"
@@ -295,16 +260,9 @@
   <!-- Action bar -->
   <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <p class="text-sm text-gray-500">Crea primero la rendición y luego agrega los gastos desde su detalle.</p>
-    <button
-      type="button"
-      (click)="openNuevaRendicionDirecta()"
-      class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-      </svg>
-      Nueva Rendición Directa
-    </button>
+    <app-button label="Nueva Rendición Directa" (clicked)="openNuevaRendicionDirecta()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
   </div>
 
   <!-- Filter bar -->
@@ -347,16 +305,9 @@
         />
       </div>
 
-      <button
-        type="button"
-        (click)="clearDirectasFilters()"
-        class="h-9 px-3 inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-        Limpiar
-      </button>
+      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearDirectasFilters()">
+        <app-icon name="close" size="sm" />
+      </app-button>
 
     </div>
   </div>
@@ -366,20 +317,11 @@
       <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
     </div>
   } @else if (filteredDirectaReports.length === 0) {
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 mx-auto text-gray-300 mb-3">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-      </svg>
-      <p class="text-sm font-medium text-gray-900 mb-1">No hay rendiciones directas</p>
-      <p class="text-xs text-gray-500 mb-4">Crea una rendición directa y luego agrega los gastos desde su detalle.</p>
-      <button type="button" (click)="openNuevaRendicionDirecta()"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Crear primera rendición directa
-      </button>
-    </div>
+    <app-empty-state icon="clipboard-list" title="No hay rendiciones directas" description="Crea una rendición directa y luego agrega los gastos desde su detalle.">
+      <app-button label="Crear primera rendición directa" (clicked)="openNuevaRendicionDirecta()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </app-empty-state>
   } @else {
     <app-data-table
       [items]="filteredDirectaReports"
@@ -484,16 +426,9 @@
   <!-- Action bar -->
   <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
     <p class="text-sm text-gray-500">Sube tus comprobantes de caja chica. Contabilidad los incluirá en el reporte correspondiente.</p>
-    <button
-      type="button"
-      (click)="navigateToNuevaCajaChica()"
-      class="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-      </svg>
-      Nueva Caja Chica
-    </button>
+    <app-button label="Nueva Caja Chica" (clicked)="navigateToNuevaCajaChica()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
   </div>
 
   <!-- Filter bar -->
@@ -520,16 +455,9 @@
         />
       </div>
 
-      <button
-        type="button"
-        (click)="clearCajaFilters()"
-        class="h-9 px-3 inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
-      >
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-        Limpiar
-      </button>
+      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearCajaFilters()">
+        <app-icon name="close" size="sm" />
+      </app-button>
 
     </div>
   </div>
@@ -539,20 +467,11 @@
       <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
     </div>
   } @else if (filteredCajaChicaReports.length === 0) {
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 mx-auto text-gray-300 mb-3">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-      </svg>
-      <p class="text-sm font-medium text-gray-700 mb-1">Sin rendiciones de caja chica</p>
-      <p class="text-xs text-gray-400 mb-4">Crea una nueva para empezar a subir comprobantes.</p>
-      <button type="button" (click)="navigateToNuevaCajaChica()"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-        Nueva Caja Chica
-      </button>
-    </div>
+    <app-empty-state icon="wallet" title="Sin rendiciones de caja chica" description="Crea una nueva para empezar a subir comprobantes.">
+      <app-button label="Nueva Caja Chica" (clicked)="navigateToNuevaCajaChica()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </app-empty-state>
   } @else {
     <app-data-table [items]="filteredCajaChicaReports">
       <!-- Fecha -->
@@ -620,28 +539,22 @@
 
 
 <!-- Modal: Procedimientos y Consideraciones -->
-@if (showGuidelines()) {
-<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" (click)="toggleGuidelines()">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" (click)="$event.stopPropagation()">
-    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-      <div class="flex items-center gap-3">
-        <div class="p-2 bg-primary/10 text-primary rounded-lg shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-          </svg>
-        </div>
-        <div>
-          <h2 class="text-base font-bold text-gray-900">Procedimientos y Consideraciones</h2>
-          <p class="text-xs text-gray-500 mt-0.5">Normas importantes para la rendición de viáticos</p>
-        </div>
+<app-modal [open]="showGuidelines()" size="xl" (closed)="toggleGuidelines()">
+  <div class="flex items-center justify-between -mt-2 -mx-2 mb-4">
+    <div class="flex items-center gap-3">
+      <div class="p-2 bg-primary/10 text-primary rounded-lg shrink-0">
+        <app-icon name="file-text" size="sm" />
       </div>
-      <button type="button" (click)="toggleGuidelines()" class="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-        </svg>
-      </button>
+      <div>
+        <h2 class="text-base font-bold text-secondary">Procedimientos y Consideraciones</h2>
+        <p class="text-xs text-tertiary mt-0.5">Normas importantes para la rendición de viáticos</p>
+      </div>
     </div>
-    <div class="overflow-y-auto px-6 py-6">
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" (clicked)="toggleGuidelines()">
+      <app-icon name="close" size="sm" />
+    </app-button>
+  </div>
+    <div class="overflow-y-auto">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div>
           <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -675,130 +588,68 @@
         </div>
       </div>
     </div>
-    <div class="px-6 py-4 border-t border-gray-100 flex justify-end shrink-0">
-      <button type="button" (click)="toggleGuidelines()"
-        class="px-5 py-2 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors">
-        Cerrar
-      </button>
+    <div class="pt-4 border-t border-divider flex justify-end">
+      <app-button variant="secondary" label="Cerrar" (clicked)="toggleGuidelines()" />
     </div>
-  </div>
-</div>
-}
+</app-modal>
 
 <!-- Modal: Cancelar rendición solicitada -->
-@if (showCancelReportModal()) {
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelReportModal.set(false)">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
-    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
-      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
-        </svg>
-      </div>
-      <div>
-        <h3 class="text-base font-semibold text-gray-900">Cancelar solicitud</h3>
-        <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">{{ cancellingReport()?.title }}</p>
-      </div>
+<app-modal [open]="showCancelReportModal()" size="sm" (closed)="showCancelReportModal.set(false)">
+  <div class="flex items-center gap-3 mb-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center">
+      <app-icon name="circle-alert" size="sm" class="text-warning-ink" />
     </div>
-    <div class="px-6 py-4">
-      <label class="block text-sm font-medium text-gray-700 mb-1">Motivo (opcional)</label>
-      <textarea
-        rows="3"
-        [value]="cancelReportReason()"
-        (input)="cancelReportReason.set($any($event.target).value)"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50 focus:border-amber-400 resize-none"
-        placeholder="Ej: Ya no realizare el viaje..."
-      ></textarea>
-    </div>
-    <div class="px-6 pb-6 flex gap-3">
-      <button type="button" class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-        [disabled]="isCancellingReport()" (click)="showCancelReportModal.set(false)">
-        Volver
-      </button>
-      <button type="button" class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
-        [disabled]="isCancellingReport()" (click)="confirmCancelReport()">
-        @if (isCancellingReport()) {
-          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
-          Cancelando...
-        } @else {
-          Confirmar
-        }
-      </button>
+    <div>
+      <h3 class="text-base font-semibold text-secondary">Cancelar solicitud</h3>
+      <p class="text-xs text-tertiary mt-0.5 line-clamp-1">{{ cancellingReport()?.title }}</p>
     </div>
   </div>
-</div>
-}
+  <label class="block text-sm font-medium text-secondary mb-1">Motivo (opcional)</label>
+  <textarea
+    rows="3"
+    [value]="cancelReportReason()"
+    (input)="cancelReportReason.set($any($event.target).value)"
+    class="w-full rounded-lg border border-divider px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-warning/50 focus:border-warning resize-none"
+    placeholder="Ej: Ya no realizare el viaje..."
+  ></textarea>
+  <div class="flex gap-3 mt-4">
+    <app-button variant="secondary" [fullWidth]="true" label="Volver" [disabled]="isCancellingReport()" (clicked)="showCancelReportModal.set(false)" />
+    <app-button variant="primary" [fullWidth]="true" [loading]="isCancellingReport()" loadingLabel="Cancelando..." label="Confirmar" [disabled]="isCancellingReport()" (clicked)="confirmCancelReport()" />
+  </div>
+</app-modal>
 
 <!-- Modal: Eliminar rendición -->
-@if (showDeleteReportModal()) {
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showDeleteReportModal.set(false)">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
-    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
-      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-red-600">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-        </svg>
-      </div>
-      <div>
-        <h3 class="text-base font-semibold text-gray-900">Eliminar solicitud</h3>
-        <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">{{ deletingReport()?.title }}</p>
-      </div>
+<app-modal [open]="showDeleteReportModal()" size="sm" (closed)="showDeleteReportModal.set(false)">
+  <div class="flex items-center gap-3 mb-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-error/10 flex items-center justify-center">
+      <app-icon name="trash" size="sm" class="text-error-ink" />
     </div>
-    <div class="px-6 py-4">
-      <p class="text-sm text-gray-600">Se eliminará la solicitud y todos sus comprobantes de forma permanente. Esta acción no se puede deshacer.</p>
-    </div>
-    <div class="px-6 pb-6 flex gap-3">
-      <button type="button" class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-        [disabled]="isDeletingReport()" (click)="showDeleteReportModal.set(false)">
-        Volver
-      </button>
-      <button type="button" class="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
-        [disabled]="isDeletingReport()" (click)="confirmDeleteReport()">
-        @if (isDeletingReport()) {
-          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
-          Eliminando...
-        } @else {
-          Eliminar
-        }
-      </button>
+    <div>
+      <h3 class="text-base font-semibold text-secondary">Eliminar solicitud</h3>
+      <p class="text-xs text-tertiary mt-0.5 line-clamp-1">{{ deletingReport()?.title }}</p>
     </div>
   </div>
-</div>
-}
+  <p class="text-sm text-tertiary">Se eliminará la solicitud y todos sus comprobantes de forma permanente. Esta acción no se puede deshacer.</p>
+  <div class="flex gap-3 mt-4">
+    <app-button variant="secondary" [fullWidth]="true" label="Volver" [disabled]="isDeletingReport()" (clicked)="showDeleteReportModal.set(false)" />
+    <app-button variant="danger" [fullWidth]="true" [loading]="isDeletingReport()" loadingLabel="Eliminando..." label="Eliminar" [disabled]="isDeletingReport()" (clicked)="confirmDeleteReport()" />
+  </div>
+</app-modal>
 
 <!-- Modal: Eliminar solicitud de viáticos -->
-@if (showDeleteAdvanceModal()) {
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showDeleteAdvanceModal.set(false)">
-  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
-    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
-      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-red-600">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-        </svg>
-      </div>
-      <div>
-        <h3 class="text-base font-semibold text-gray-900">Eliminar solicitud de viáticos</h3>
-        <p class="text-xs text-gray-500">El registro se eliminará permanentemente</p>
-      </div>
+<app-modal [open]="showDeleteAdvanceModal()" size="sm" (closed)="showDeleteAdvanceModal.set(false)">
+  <div class="flex items-center gap-3 mb-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-error/10 flex items-center justify-center">
+      <app-icon name="trash" size="sm" class="text-error-ink" />
     </div>
-    <div class="px-6 py-4">
-      <p class="text-sm text-gray-600">¿Estás seguro de que deseas eliminar esta solicitud? Esta acción no se puede deshacer.</p>
-    </div>
-    <div class="px-6 pb-6 flex gap-3">
-      <button type="button" class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-        [disabled]="isDeletingAdvance()" (click)="showDeleteAdvanceModal.set(false)">
-        Volver
-      </button>
-      <button type="button" class="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
-        [disabled]="isDeletingAdvance()" (click)="confirmDeleteAdvance()">
-        @if (isDeletingAdvance()) {
-          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
-          Eliminando...
-        } @else {
-          Eliminar
-        }
-      </button>
+    <div>
+      <h3 class="text-base font-semibold text-secondary">Eliminar solicitud de viáticos</h3>
+      <p class="text-xs text-tertiary">El registro se eliminará permanentemente</p>
     </div>
   </div>
-</div>
-}
+  <p class="text-sm text-tertiary">¿Estás seguro de que deseas eliminar esta solicitud? Esta acción no se puede deshacer.</p>
+  <div class="flex gap-3 mt-4">
+    <app-button variant="secondary" [fullWidth]="true" label="Volver" [disabled]="isDeletingAdvance()" (clicked)="showDeleteAdvanceModal.set(false)" />
+    <app-button variant="danger" [fullWidth]="true" [loading]="isDeletingAdvance()" loadingLabel="Eliminando..." label="Eliminar" [disabled]="isDeletingAdvance()" (clicked)="confirmDeleteAdvance()" />
+  </div>
+</app-modal>

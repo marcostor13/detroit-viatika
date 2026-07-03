@@ -1,0 +1,25 @@
+<div class="overflow-x-auto -mx-1 px-1">
+  <div class="inline-flex gap-1 bg-background rounded-xl p-1 w-fit min-w-full sm:min-w-0" role="tablist">
+    @for (tab of tabs(); track tab.value; let i = $index) {
+      <button
+        #tabBtn
+        type="button"
+        role="tab"
+        [id]="'tab-' + tab.value"
+        [attr.aria-selected]="active() === tab.value"
+        [attr.tabindex]="active() === tab.value ? 0 : -1"
+        [class]="active() === tab.value ? 'bg-quaternary text-secondary shadow-soft' : 'text-tertiary hover:text-secondary'"
+        class="px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-1"
+        (click)="select(tab.value)"
+        (keydown)="onKeydown($event, i)"
+      >
+        {{ tab.label }}
+        @if (tab.badge) {
+          <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-error text-white text-[10px] font-bold">
+            {{ tab.badge }}
+          </span>
+        }
+      </button>
+    }
+  </div>
+</div>

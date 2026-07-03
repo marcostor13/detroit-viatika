@@ -2,6 +2,8 @@ import { Component, input, output, model, computed, forwardRef } from '@angular/
 import { CommonModule } from '@angular/common';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/forms';
 
+let nextInputId = 0;
+
 @Component({
   selector: 'app-input',
   standalone: true,
@@ -17,6 +19,20 @@ import { ControlValueAccessor, NG_VALUE_ACCESSOR, FormsModule } from '@angular/f
   styleUrl: './input.component.scss',
 })
 export class InputComponent implements ControlValueAccessor {
+  readonly inputId = `app-input-${nextInputId++}`;
+  readonly errorId = `${this.inputId}-error`;
+  readonly helpId = `${this.inputId}-help`;
+
+  describedBy = computed<string | null>(() => {
+    if (this.error()) {
+      return this.errorId;
+    }
+    if (this.helperText()) {
+      return this.helpId;
+    }
+    return null;
+  });
+
   // Required inputs
   label = input<string>('');
   placeholder = input<string>('');

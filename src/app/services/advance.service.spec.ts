@@ -61,16 +61,11 @@ describe('AdvanceService', () => {
     httpMock.expectOne(`${BASE}/a1`).flush({});
   });
 
-  it('approveL1 sends PATCH', () => {
-    service.approveL1('a1', { comment: 'ok' } as any).subscribe();
-    const req = httpMock.expectOne(`${BASE}/a1/approve-l1`);
+  it('approve sends PATCH', () => {
+    service.approve('a1', { notes: 'ok' } as any).subscribe();
+    const req = httpMock.expectOne(`${BASE}/a1/approve`);
     expect(req.request.method).toBe('PATCH');
     req.flush({});
-  });
-
-  it('approveL2 sends PATCH', () => {
-    service.approveL2('a1', { comment: 'ok' } as any).subscribe();
-    httpMock.expectOne(`${BASE}/a1/approve-l2`).flush({});
   });
 
   it('reject sends PATCH', () => {

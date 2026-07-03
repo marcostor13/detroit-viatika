@@ -9,12 +9,15 @@ import { UserStateService } from '../../services/user-state.service';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { PaginatorComponent } from '../../design-system/paginator/paginator.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
+import { BadgeComponent } from '../../design-system/badge/badge.component';
+import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
 
 @Component({
   selector: 'app-centros-de-costo',
   standalone: true,
-  imports: [CommonModule, ButtonComponent, PaginatorComponent],
+  imports: [CommonModule, ButtonComponent, PaginatorComponent, IconComponent, BadgeComponent, EmptyStateComponent],
   templateUrl: './centros-de-costo.component.html',
 })
 export class CentrosDeCostoComponent implements OnInit {

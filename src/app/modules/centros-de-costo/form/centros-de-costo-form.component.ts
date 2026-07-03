@@ -9,6 +9,7 @@ import { LineaNegocioService } from '../../../services/linea-negocio.service';
 import { CategoryGroupService } from '../../../services/category-group.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ILineaNegocio } from '../../../interfaces/linea-negocio.interface';
 import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
@@ -16,7 +17,7 @@ import { ICategoryGroup } from '../../categorias/interfaces/category-group.inter
 @Component({
   selector: 'app-centros-de-costo-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
   templateUrl: './centros-de-costo-form.component.html',
 })
 export class CentrosDeCostoFormComponent implements OnInit {

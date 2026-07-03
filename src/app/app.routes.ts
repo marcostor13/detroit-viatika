@@ -150,6 +150,14 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('rendiciones')],
       },
       {
+        path: 'invoice-approval',
+        loadComponent: () =>
+          import('./modules/invoice-approval/invoice-approval.component').then(
+            (m) => m.InvoiceApprovalComponent
+          ),
+        canActivate: [authModuleGuard('invoice-approval')],
+      },
+      {
         path: 'configuracion',
         loadComponent: () =>
           import('./modules/configuracion/configuracion.component').then(
@@ -179,6 +187,30 @@ export const routes: Routes = [
           import(
             './modules/lineas-negocio/form/lineas-negocio-form.component'
           ).then((m) => m.LineasNegocioFormComponent),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'ordenes-trabajo',
+        loadComponent: () =>
+          import('./modules/ordenes-trabajo/ordenes-trabajo.component').then(
+            (m) => m.OrdenesTrabajoComponent
+          ),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'ordenes-trabajo/nueva',
+        loadComponent: () =>
+          import(
+            './modules/ordenes-trabajo/form/ordenes-trabajo-form.component'
+          ).then((m) => m.OrdenesTrabajoFormComponent),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'ordenes-trabajo/:id/editar',
+        loadComponent: () =>
+          import(
+            './modules/ordenes-trabajo/form/ordenes-trabajo-form.component'
+          ).then((m) => m.OrdenesTrabajoFormComponent),
         canActivate: [AuthAdmin2Guard],
       },
       {
