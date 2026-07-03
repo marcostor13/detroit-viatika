@@ -1,4 +1,4 @@
-<div class="px-5 py-6 max-w-7xl mx-auto">
+<div class="px-4 sm:px-6 py-6">
 
   <!-- Header -->
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
@@ -10,7 +10,6 @@
       type="button"
       (click)="toggleGuidelines()"
       class="inline-flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-600 bg-white text-sm font-semibold rounded-lg hover:bg-gray-50 transition-all"
-      title="Procedimientos y Consideraciones"
     >
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
@@ -21,6 +20,7 @@
 
   <!-- Tabs -->
   <div class="flex gap-1 border-b border-gray-200 mb-6">
+    @if (canViewViaticos) {
     <button
       type="button"
       (click)="setTab('viaticos')"
@@ -31,10 +31,11 @@
       [class.text-gray-500]="activeTab() !== 'viaticos'"
     >
       Mis viáticos
-      @if (pendingAdvances.length > 0) {
-        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ pendingAdvances.length }}</span>
+      @if (viaticoTabBadgeCount > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ viaticoTabBadgeCount }}</span>
       }
     </button>
+    }
     @if (canCreateRendicion) {
     <button
       type="button"
@@ -46,452 +47,568 @@
       [class.text-gray-500]="activeTab() !== 'directas'"
     >
       Rendiciones Directas
-      @if (loosePendingCount > 0) {
-        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ loosePendingCount }}</span>
+      @if (directaReports.length > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ directaReports.length }}</span>
+      }
+    </button>
+    }
+    @if (canAccessCajaChica) {
+    <button
+      type="button"
+      (click)="setTab('caja-chica')"
+      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      [class.border-primary]="activeTab() === 'caja-chica'"
+      [class.text-primary]="activeTab() === 'caja-chica'"
+      [class.border-transparent]="activeTab() !== 'caja-chica'"
+      [class.text-gray-500]="activeTab() !== 'caja-chica'"
+    >
+      Caja Chica
+      @if (cajaChicaReports().length > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ cajaChicaReports().length }}</span>
       }
     </button>
     }
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- TAB 1: MIS VIÁTICOS -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB 1: MIS VIÁTICOS (UNIFIED)                               -->
+  <!-- ════════════════════════════════════════════════════════════ -->
   @if (activeTab() === 'viaticos') {
 
-  <!-- Botón solicitar viáticos -->
-  <div class="flex justify-end mb-5">
+  <!-- Action bar -->
+  <div class="flex justify-end mb-4">
     <button
       type="button"
       (click)="openViaticosModal()"
-      class="inline-flex items-center gap-2 px-4 py-2.5 border border-primary text-primary bg-white text-sm font-semibold rounded-lg hover:bg-primary/5 active:scale-[0.98] transition-all"
+      class="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm"
     >
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75a3.375 3.375 0 0 0-3.375 3.375v8.25a3.375 3.375 0 0 0 3.375 3.375h5.25a3.375 3.375 0 0 0 3.375-3.375v-2.625Z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
       </svg>
-      Solicitud de viáticos
+      Solicitar viáticos
     </button>
   </div>
 
-  @if (pendingAdvances.length > 0) {
-  <div class="mb-8">
-    <h2 class="text-lg font-bold text-gray-900 mb-3">Mis solicitudes de viáticos</h2>
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      @for (adv of pendingAdvances; track adv._id) {
-      <div
-        class="rounded-xl border shadow-sm p-5 flex flex-col gap-3 transition-all"
-        [class]="adv.status === 'paid' && hasExpenseReportLink(adv)
-          ? 'bg-emerald-50 border-emerald-300 cursor-pointer hover:border-emerald-500 hover:shadow-md'
-          : 'bg-white border-gray-200'"
-        (click)="adv.status === 'paid' && hasExpenseReportLink(adv) ? navigateToAdvanceReport(adv) : null"
-      >
-        <div class="flex justify-between items-start gap-2">
-          <span [class]="ADVANCE_STATUS_COLORS[adv.status]" class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold">
-            {{ advanceStatusText(adv) }}
-          </span>
-          @if (adv.solicitudVersion && adv.solicitudVersion > 1) {
-          <span class="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">v{{ adv.solicitudVersion }}</span>
-          }
-        </div>
+  <!-- Filter bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
+    <div class="flex flex-wrap gap-3 items-end">
 
-        <div>
-          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Centro de costo</p>
-          <p class="text-sm font-semibold text-gray-900 line-clamp-2">{{ advanceProjectLabel(adv) }}</p>
-        </div>
-
-        @if (adv.description) {
-        <div>
-          <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-0.5">Descripcion</p>
-          <p class="text-sm text-gray-700 line-clamp-2">{{ adv.description }}</p>
-        </div>
-        }
-
-        <dl class="flex flex-col gap-1.5 text-sm">
-          @if (adv.place) {
-          <div class="flex items-start gap-1.5">
-            <dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-0.5">Destino</dt>
-            <dd class="text-gray-700 line-clamp-1">{{ adv.place }}</dd>
-          </div>
-          }
-          @if (advanceDateRange(adv)) {
-          <div class="flex items-start gap-1.5">
-            <dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-0.5">Fechas</dt>
-            <dd class="text-gray-700">{{ advanceDateRange(adv) }}</dd>
-          </div>
-          }
-        </dl>
-
-        <div class="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
-          <span class="text-xs text-gray-400">Monto solicitado</span>
-          <span class="text-base font-bold text-gray-900">S/ {{ adv.amount | number:'1.2-2' }}</span>
-        </div>
-        @if (adv.status === 'rejected' && adv.rejectionReason) {
-        <div class="rounded-lg border border-red-100 bg-red-50/80 px-3 py-2 text-xs text-red-900">
-          <span class="font-semibold">Motivo del rechazo:</span>
-          <p class="mt-1 whitespace-pre-wrap break-words">{{ adv.rejectionReason }}</p>
-        </div>
-        }
-        @if (adv.status === 'pending_l1') {
-        <div class="flex gap-2 pt-1">
-          <button
-            type="button"
-            (click)="openResubmitAdvance(adv)"
-            class="flex-1 py-2 text-xs font-semibold rounded-lg border border-primary bg-white text-primary hover:bg-primary/5 transition-colors"
-          >
-            Editar
-          </button>
-          <button
-            type="button"
-            (click)="openCancelAdvanceModal(adv)"
-            class="flex-1 py-2 text-xs font-semibold rounded-lg border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
-          >
-            Cancelar
-          </button>
-        </div>
-        }
-        @if (adv.status === 'rejected') {
-        <button
-          type="button"
-          (click)="openResubmitAdvance(adv)"
-          class="w-full py-2.5 text-sm font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</label>
+        <select
+          [value]="viaticosStatusFilter()"
+          (change)="viaticosStatusFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
-          Corregir y reenviar
-        </button>
-        }
-        @if (adv.status === 'paid' && hasExpenseReportLink(adv)) {
-        <div class="flex items-center justify-between rounded-lg bg-emerald-100 border border-emerald-300 px-3 py-2 mt-auto">
-          <span class="text-xs font-semibold text-emerald-800">Toca para registrar tus gastos</span>
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 text-emerald-700 shrink-0">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-          </svg>
-        </div>
-        }
+          <option value="">Todos</option>
+          <option value="pending_l1">Pendiente aprobación</option>
+          <option value="pending_l2">Aprobado por coord.</option>
+          <option value="viatico_approved">Aprobado</option>
+          <option value="partially_paid">Pago parcial</option>
+          <option value="open">Registrando gastos</option>
+          <option value="submitted">Enviada</option>
+          <option value="approved">Aprobada</option>
+          <option value="settled">Liquidada</option>
+          <option value="rejected">Rechazada</option>
+          <option value="cancelled">Cancelada</option>
+        </select>
       </div>
-      }
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="date"
+          [value]="viaticosDateFrom()"
+          (change)="viaticosDateFrom.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="date"
+          [value]="viaticosDateTo()"
+          (change)="viaticosDateTo.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <button
+        type="button"
+        (click)="clearViaticosFilters()"
+        class="h-9 px-3 inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        Limpiar
+      </button>
+
     </div>
   </div>
-  }
 
-  @if (isLoading) {
-    <div class="flex justify-center p-12">
-      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  @if (viaticoReportsLoading() || isLoading) {
+    <div class="flex justify-center py-16">
+      <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
     </div>
   } @else {
-    @if (viaticosReports.length === 0) {
-      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-16 h-16 mx-auto text-gray-300 mb-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-        </svg>
-        <h3 class="text-lg font-medium text-gray-900">No tienes rendiciones aún</h3>
-        @if (true) {
-          <p class="text-gray-500 mt-1">Crea una solicitud de viaticos o espera que un administrador te asigne una rendicion.</p>
+
+    @if (unifiedViaticoList.length === 0) {
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+        <div class="w-14 h-14 mx-auto mb-4 rounded-full bg-primary/5 flex items-center justify-center">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 text-primary/40">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+          </svg>
+        </div>
+        @if (viaticosStatusFilter() || viaticosDateFrom() || viaticosDateTo()) {
+          <p class="text-sm font-semibold text-gray-900 mb-1">Sin resultados</p>
+          <p class="text-xs text-gray-500 mb-4">No hay registros que coincidan con los filtros aplicados.</p>
+          <button type="button" (click)="clearViaticosFilters()"
+            class="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-600 text-sm font-semibold rounded-lg hover:bg-gray-50 transition-all">
+            Limpiar filtros
+          </button>
+        } @else {
+          <p class="text-sm font-semibold text-gray-900 mb-1">Sin viáticos aún</p>
+          <p class="text-xs text-gray-500 mb-4">Crea tu primera solicitud de viáticos para comenzar el proceso.</p>
           <button type="button" (click)="openViaticosModal()"
-            class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
+            class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75a3.375 3.375 0 0 0-3.375 3.375v8.25a3.375 3.375 0 0 0 3.375 3.375h5.25a3.375 3.375 0 0 0 3.375-3.375v-2.625Z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
-            Solicitud de viaticos
+            Solicitar viáticos
           </button>
         }
       </div>
     } @else {
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <a *ngFor="let report of viaticosReports" [routerLink]="report.status !== 'cancelled' ? ['/mis-rendiciones', report._id, 'detalle'] : null" [class.cursor-pointer]="report.status !== 'cancelled'" [class.cursor-default]="report.status === 'cancelled'" class="bg-white rounded-xl shadow-soft border border-gray-100 hover:border-primary/30 transition-all duration-300 overflow-hidden flex flex-col hover:shadow-md no-underline text-inherit block">
-          <div class="p-6 flex-1 text-left">
-            <div class="flex justify-between items-start mb-4">
-              <span class="px-2.5 py-1 text-xs font-medium rounded-full"
-                [ngClass]="{
-                  'bg-purple-100 text-purple-800': report.status === 'solicited',
-                  'bg-green-100 text-green-800': report.status === 'open',
-                  'bg-yellow-100 text-yellow-800': report.status === 'submitted',
-                  'bg-blue-100 text-blue-800': report.status === 'approved',
-                  'bg-red-100 text-red-800': report.status === 'rejected',
-                  'bg-gray-100 text-gray-800': report.status === 'closed',
-                  'bg-orange-100 text-orange-800': report.status === 'cancelled',
-                  'bg-emerald-100 text-emerald-800': isReportInProgress(report)
-                }"
-              >
-                {{ panelStatusText(report) }}
-              </span>
-              <span class="text-xs text-gray-400">{{ report.createdAt | date:'dd/MM/yyyy' }}</span>
-            </div>
+      <app-data-table
+        [items]="unifiedViaticoList"
+        [rowClickable]="true"
+        (rowClick)="navigateToUnifiedItem($event.row, $event.event)"
+      >
+        <!-- Fecha -->
+        <ng-container *appColumn="'fecha'; header: 'Fecha'; let item">
+          <p class="text-xs text-gray-500">{{ item.createdAt | date:'dd/MM/yyyy' }}</p>
+        </ng-container>
 
-            <div class="flex items-start gap-2 mb-2">
-              @if (report.isDirecta) {
-                <span class="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-700 uppercase tracking-wide mt-0.5">Directa</span>
-              }
-              <h3 class="text-base font-bold text-gray-900 line-clamp-2 leading-snug" [title]="reportDisplayTitle(report)">
-                {{ reportDisplayTitle(report) }}
-              </h3>
-            </div>
-            @if (report.location || report.startDate) {
-            <dl class="mb-3 flex flex-col gap-1 text-xs">
-              @if (report.location) {
-              <div class="flex items-start gap-1.5">
-                <dt class="font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-px">Destino</dt>
-                <dd class="text-gray-600 line-clamp-1">{{ report.location }}</dd>
-              </div>
-              }
-              @if (reportDateRange(report)) {
-              <div class="flex items-start gap-1.5">
-                <dt class="font-semibold text-gray-400 uppercase tracking-wide shrink-0 mt-px">Fechas</dt>
-                <dd class="text-gray-600">{{ reportDateRange(report) }}</dd>
-              </div>
-              }
-            </dl>
+        <!-- Estado -->
+        <ng-container *appColumn="'estado'; header: 'Estado'; let item">
+          <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" [class]="item.statusColor">
+            {{ item.statusLabel }}
+          </span>
+        </ng-container>
+
+        <!-- Centro de costo -->
+        <ng-container *appColumn="'cc'; header: 'Centro de costo'; cellClass: 'max-w-[220px]'; let item">
+          <p class="font-medium text-gray-900 break-words">{{ item.projectLabel }}</p>
+        </ng-container>
+
+        <!-- Destino -->
+        <ng-container *appColumn="'destino'; header: 'Destino'; detail: true; cellClass: 'text-gray-600'; let item">
+          <span class="break-words">{{ item.place }}</span>
+        </ng-container>
+
+        <!-- Período -->
+        <ng-container *appColumn="'periodo'; header: 'Período'; detail: true; cellClass: 'text-gray-500'; let item">
+          {{ item.dateRange || '—' }}
+        </ng-container>
+
+        <!-- Monto -->
+        <ng-container *appColumn="'monto'; header: 'Monto'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let item">
+          S/ {{ item.amount | number:'1.2-2' }}
+        </ng-container>
+
+        <!-- Comprobantes -->
+        <ng-container *appColumn="'comprobantes'; header: 'Comprobantes'; detail: true; align: 'center'; cellClass: 'text-gray-600'; let item">
+          <span class="text-xs">{{ item.expensesCount }}</span>
+        </ng-container>
+
+        <!-- Acciones -->
+        <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let item">
+          <div class="flex items-center justify-end gap-1" (click)="$event.stopPropagation()">
+
+            @if (item.isInExpensePhase) {
+              <button type="button"
+                (click)="navigateToUnifiedItem(item, $event)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Registrar gastos
+              </button>
+            } @else if (item.canResubmit) {
+              <button type="button"
+                (click)="editUnifiedItem(item, $event)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                Corregir
+              </button>
+            } @else if (item.canEdit) {
+              <button type="button"
+                (click)="editUnifiedItem(item, $event)"
+                title="Editar solicitud"
+                class="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                </svg>
+              </button>
+            } @else if (item.source !== 'advance') {
+              <button type="button"
+                (click)="navigateToUnifiedItem(item, $event)"
+                title="Ver detalle"
+                class="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                </svg>
+              </button>
             } @else {
-            <div class="mb-3 min-h-[2.5rem]"></div>
+              <span class="text-xs text-gray-400 italic px-1">—</span>
             }
 
-            @if (report.status === 'solicited') {
-              <div class="mb-4 rounded-lg border border-purple-200 bg-purple-50/90 p-3 text-left">
-                <p class="text-xs font-semibold text-purple-900 uppercase tracking-wide">Pendiente de aprobación</p>
-                <p class="text-sm text-purple-800 mt-1">Tu solicitud está siendo revisada por el administrador.</p>
-              </div>
+            @if (canDeleteUnifiedItem(item)) {
+              <button type="button"
+                (click)="deleteUnifiedItem(item, $event)"
+                title="Eliminar"
+                class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+              </button>
             }
 
-            @if (report.status === 'rejected') {
-              <div class="mb-4 rounded-lg border border-red-200 bg-red-50/90 p-3 text-left">
-                <p class="text-xs font-semibold text-red-900 uppercase tracking-wide">Motivo de rechazo</p>
-                @if (report.rejectionReason) {
-                  <p class="text-sm text-red-950 mt-1 line-clamp-4 whitespace-pre-wrap break-words">{{ report.rejectionReason }}</p>
-                } @else {
-                  <p class="text-xs text-red-800/90 mt-1">Sin motivo registrado. Revisa el detalle o consulta a administración.</p>
-                }
-              </div>
-            }
-
-            <div class="bg-gray-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-sm border border-gray-100">
-              <div>
-                <p class="text-gray-500 text-xs">Presupuesto</p>
-                <p class="font-semibold text-gray-900">S/ {{ report.budget | number:'1.2-2' }}</p>
-              </div>
-              <div class="text-right">
-                <p class="text-gray-500 text-xs">Saldo Libre</p>
-                <p class="font-bold text-green-600">S/ {{ getSaldoLibre(report) | number:'1.2-2' }}</p>
-              </div>
-            </div>
-
-            <div class="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
-                <div class="flex items-center gap-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-                  </svg>
-                  <span>{{ report.expenseIds.length }} comprobantes</span>
-                </div>
-            </div>
           </div>
-
-          @if (report.status === 'solicited') {
-          <div class="bg-gray-50 px-4 py-3 border-t border-gray-100 flex gap-2 mt-auto" (click)="$event.preventDefault(); $event.stopPropagation()">
-            <button
-              type="button"
-              (click)="goToReportDetail(report, $event)"
-              class="flex-1 py-2 text-xs font-semibold rounded-lg border border-primary bg-white text-primary hover:bg-primary/5 transition-colors"
-            >
-              Ver / Editar
-            </button>
-            <button
-              type="button"
-              (click)="openCancelReportModal(report, $event)"
-              class="flex-1 py-2 text-xs font-semibold rounded-lg border border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
-          } @else if (report.isDirecta && report.status === 'open' && canCreateRendicion) {
-          <!-- Rendición directa abierta: accesos rápidos -->
-          <div class="bg-gray-50 px-4 py-3 border-t border-gray-100 flex gap-2 mt-auto" (click)="$event.preventDefault(); $event.stopPropagation()">
-            <button
-              type="button"
-              (click)="goToReportDetail(report, $event)"
-              class="flex-1 py-2 text-xs font-semibold rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Ver detalle
-            </button>
-            <button
-              type="button"
-              (click)="selectGastoType('factura'); $event.preventDefault(); $event.stopPropagation()"
-              [disabled]="isCreatingGasto()"
-              class="flex-1 py-2 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              + Añadir gasto
-            </button>
-          </div>
-          } @else if (isReportInProgress(report)) {
-          <div class="bg-emerald-600 px-6 py-3 border-t border-emerald-700 font-semibold text-white text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors mt-auto">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Registrar Gastos
-          </div>
-          } @else {
-          <div class="bg-gray-50 px-6 py-3 border-t border-gray-100 font-medium text-primary text-sm flex justify-center hover:bg-primary hover:text-white transition-colors mt-auto">
-            Ver Detalles
-          </div>
-          }
-        </a>
-      </div>
+        </ng-container>
+      </app-data-table>
     }
-  }
+
+  } <!-- end @else loading -->
 
   } <!-- fin @if activeTab === 'viaticos' -->
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!-- TAB 2: GASTOS DIRECTOS -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB 2: RENDICIONES DIRECTAS                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
   @if (activeTab() === 'directas') {
 
-  <!-- Barra de acciones -->
-  <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-    <div class="flex items-center gap-3 flex-wrap">
-      @if (loosePendingCount > 0) {
-        <div class="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <span class="font-semibold">{{ loosePendingCount }}</span> doc. sin enviar
-          <span class="text-amber-400">·</span>
-          <span class="font-semibold">S/ {{ loosePendingTotal | number:'1.2-2' }}</span>
-        </div>
-        <button
-          type="button"
-          (click)="submitDirectas()"
-          [disabled]="isSubmittingDirectas()"
-          class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-all"
+  <!-- Action bar -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <p class="text-sm text-gray-500">Crea primero la rendición y luego agrega los gastos desde su detalle.</p>
+    <button
+      type="button"
+      (click)="openNuevaRendicionDirecta()"
+      class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      Nueva Rendición Directa
+    </button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
+    <div class="flex flex-wrap gap-3 items-end">
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</label>
+        <select
+          [value]="directasStatusFilter()"
+          (change)="directasStatusFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
-          @if (isSubmittingDirectas()) {
-            <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
-            Enviando...
-          } @else {
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
-            </svg>
-            Enviar a Contabilidad
-          }
-        </button>
-      }
-    </div>
-    <div class="flex items-center gap-2">
-      <!-- Filtro tipo -->
-      <select [(ngModel)]="directaFilterTipo" (change)="directaLoaded=false; loadDirectaExpenses()"
-        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
-        <option value="">Todos los tipos</option>
-        <option value="factura">Factura</option>
-        <option value="planilla_movilidad">Planilla Movilidad</option>
-        <option value="otros_gastos">Otros Gastos</option>
-        <option value="recibo_caja">Recibo de Caja</option>
-        <option value="comprobante_caja">Comprobante Caja</option>
-      </select>
+          <option value="">Todos</option>
+          <option value="open">Abierta</option>
+          <option value="submitted">Enviada</option>
+          <option value="approved">Aprobada</option>
+          <option value="rejected">Rechazada</option>
+          <option value="cancelled">Cancelada</option>
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="date"
+          [value]="directasDateFrom()"
+          (change)="directasDateFrom.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="date"
+          [value]="directasDateTo()"
+          (change)="directasDateTo.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
       <button
         type="button"
-        (click)="openAddGasto()"
-        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm"
+        (click)="clearDirectasFilters()"
+        class="h-9 px-3 inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
         </svg>
-        Añadir gasto
+        Limpiar
       </button>
+
     </div>
   </div>
 
-  <!-- Tabla de documentos -->
-  @if (directaLoading()) {
+  @if (isLoading) {
     <div class="flex justify-center py-16">
       <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
     </div>
-  } @else if (directaExpenses().length === 0) {
-    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-12 text-center">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-14 h-14 mx-auto text-gray-300 mb-4">
+  } @else if (filteredDirectaReports.length === 0) {
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 mx-auto text-gray-300 mb-3">
         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
       </svg>
-      <p class="text-gray-900 font-semibold mb-1">No tienes gastos directos aún</p>
-      <p class="text-sm text-gray-500 mb-4">Sube tus documentos de gastos con el botón "Añadir gasto".</p>
-      <button type="button" (click)="openAddGasto()"
+      <p class="text-sm font-medium text-gray-900 mb-1">No hay rendiciones directas</p>
+      <p class="text-xs text-gray-500 mb-4">Crea una rendición directa y luego agrega los gastos desde su detalle.</p>
+      <button type="button" (click)="openNuevaRendicionDirecta()"
         class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
         </svg>
-        Añadir primer gasto
+        Crear primera rendición directa
       </button>
     </div>
   } @else {
+    <app-data-table
+      [items]="filteredDirectaReports"
+      [rowClickable]="true"
+      (rowClick)="goToReportDetail($event.row, $event.event)"
+    >
+      <!-- Fecha -->
+      <ng-container *appColumn="'fecha'; header: 'Fecha'; detail: true; cellClass: 'text-gray-500'; let r">
+        {{ r.createdAt | date:'dd/MM/yyyy' }}
+      </ng-container>
 
-    <!-- Desktop: tabla -->
-    <div class="hidden md:block bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-      <table class="w-full text-sm divide-y divide-gray-100">
-        <thead class="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left">
-          <tr>
-            <th class="px-4 py-3">Fecha</th>
-            <th class="px-4 py-3">Tipo</th>
-            <th class="px-4 py-3 whitespace-nowrap">N° Doc</th>
-            <th class="px-4 py-3">Proveedor / Concepto</th>
-            <th class="px-4 py-3 text-right whitespace-nowrap">Monto S/</th>
-            <th class="px-4 py-3 text-center">Estado</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          @for (e of directaExpenses(); track e._id) {
-          <tr class="hover:bg-gray-50 transition-colors cursor-pointer group" (click)="goToDirectaReport(e)">
-            <!-- Fecha -->
-            <td class="px-4 py-3 text-gray-700 whitespace-nowrap text-xs">{{ getDirectaFecha(e) }}</td>
-            <!-- Tipo badge -->
-            <td class="px-4 py-3">
-              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold tabular-nums" [ngClass]="getDirectaTipoBadgeClass(e)">
-                {{ getDirectaTipoCode(e) }}
-              </span>
-            </td>
-            <!-- N° documento -->
-            <td class="px-4 py-3 font-mono text-xs text-gray-700 whitespace-nowrap">{{ getDirectaDocNumber(e) }}</td>
-            <!-- Proveedor / Concepto -->
-            <td class="px-4 py-3 max-w-[220px]">
-              <p class="text-xs font-medium text-gray-800 truncate" [title]="getDirectaProveedor(e)">{{ getDirectaProveedor(e) }}</p>
-              <p class="text-xs text-gray-400 truncate" [title]="getDirectaConcepto(e)">{{ getDirectaConcepto(e) }}</p>
-            </td>
-            <!-- Monto -->
-            <td class="px-4 py-3 text-right font-semibold tabular-nums whitespace-nowrap">S/ {{ e.total | number:'1.2-2' }}</td>
-            <!-- Estado -->
-            <td class="px-4 py-3 text-center">
-              <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold" [ngClass]="getDirectaEstado(e).cls">
-                {{ getDirectaEstado(e).label }}
-              </span>
-            </td>
-          </tr>
+      <!-- Código -->
+      <ng-container *appColumn="'codigo'; header: 'Código'; let r">
+        @if (r.codigo) {
+          <span class="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{{ r.codigo }}</span>
+        } @else {
+          <span class="text-gray-400">—</span>
+        }
+      </ng-container>
+
+      <!-- Estado -->
+      <ng-container *appColumn="'estado'; header: 'Estado'; let r">
+        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold"
+          [ngClass]="{
+            'bg-gray-100 text-gray-600': isReportEffectivelyClosed(r) || r.status === 'cancelled' || r.status === 'closed',
+            'bg-green-100 text-green-700': !isReportEffectivelyClosed(r) && r.status === 'open',
+            'bg-yellow-100 text-yellow-700': !isReportEffectivelyClosed(r) && r.status === 'submitted',
+            'bg-blue-100 text-blue-700': !isReportEffectivelyClosed(r) && r.status === 'approved',
+            'bg-red-100 text-red-700': !isReportEffectivelyClosed(r) && r.status === 'rejected'
+          }"
+        >
+          {{ panelStatusText(r) }}
+        </span>
+      </ng-container>
+
+      <!-- Descripción -->
+      <ng-container *appColumn="'descripcion'; header: 'Descripción'; cellClass: 'max-w-[260px]'; let r">
+        <p class="font-medium text-gray-900 break-words">{{ reportDisplayTitle(r) }}</p>
+        @if (reportDateRange(r)) {
+          <p class="text-xs text-gray-400 mt-0.5">{{ reportDateRange(r) }}</p>
+        }
+      </ng-container>
+
+      <!-- Gastos -->
+      <ng-container *appColumn="'gastos'; header: 'Gastos'; detail: true; align: 'center'; cellClass: 'text-gray-600 text-xs'; let r">
+        {{ r.expenseIds.length || 0 }}
+      </ng-container>
+
+      <!-- Total -->
+      <ng-container *appColumn="'total'; header: 'Total'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let r">
+        S/ {{ getTotalGastado(r) | number:'1.2-2' }}
+      </ng-container>
+
+      <!-- Saldo -->
+      <ng-container *appColumn="'saldo'; header: 'Saldo'; align: 'right'; cellClass: 'whitespace-nowrap tabular-nums'; let r">
+        <span [ngClass]="hasReportSaldo(r) ? (getReportSaldo(r) >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold') : 'text-gray-400'">
+          @if (hasReportSaldo(r)) {
+            S/ {{ getReportSaldo(r) | number:'1.2-2' }}
+          } @else {
+            —
           }
-        </tbody>
-        <tfoot class="bg-gray-50 border-t border-gray-200">
-          <tr>
-            <td colspan="4" class="px-4 py-3 text-xs text-gray-500">{{ directaTotal() }} documento(s)</td>
-            <td class="px-4 py-3 text-right font-bold text-gray-900">
-              S/ {{ directaTotalMonto | number:'1.2-2' }}
-            </td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+        </span>
+      </ng-container>
 
-    <!-- Mobile: tarjetas -->
-    <div class="md:hidden flex flex-col gap-3">
-      @for (e of directaExpenses(); track e._id) {
-      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 cursor-pointer" (click)="goToDirectaReport(e)">
-        <div class="flex items-start justify-between gap-2 mb-2">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="px-2 py-0.5 rounded text-xs font-bold tabular-nums" [ngClass]="getDirectaTipoBadgeClass(e)">{{ getDirectaTipoCode(e) }}</span>
-            <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" [ngClass]="getDirectaEstado(e).cls">{{ getDirectaEstado(e).label }}</span>
-          </div>
-          <span class="text-base font-bold text-gray-900 whitespace-nowrap">S/ {{ e.total | number:'1.2-2' }}</span>
+      <!-- Acciones -->
+      <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let r">
+        <div class="flex items-center justify-end gap-1" (click)="$event.stopPropagation()">
+          <button
+            type="button"
+            (click)="goToReportDetail(r, $event)"
+            title="Ver detalle"
+            class="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+            </svg>
+          </button>
+          @if (canDeleteReport(r)) {
+            <button
+              type="button"
+              (click)="openDeleteReportModal(r, $event)"
+              title="Eliminar rendición"
+              class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              </svg>
+            </button>
+          }
         </div>
-        <p class="text-sm font-medium text-gray-800 truncate">{{ getDirectaProveedor(e) }}</p>
-        <p class="text-xs text-gray-500 truncate mt-0.5">{{ getDirectaConcepto(e) }}</p>
-        <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-100 text-xs text-gray-400">
-          <span>{{ getDirectaFecha(e) }}</span>
-          <span class="font-mono">{{ getDirectaDocNumber(e) }}</span>
-        </div>
-      </div>
-      }
-    </div>
-
-  } <!-- fin @else directaExpenses -->
+      </ng-container>
+    </app-data-table>
+  }
 
   } <!-- fin @if activeTab === 'directas' -->
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB 3: CAJA CHICA                                           -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'caja-chica') {
+
+  <!-- Action bar -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <p class="text-sm text-gray-500">Sube tus comprobantes de caja chica. Contabilidad los incluirá en el reporte correspondiente.</p>
+    <button
+      type="button"
+      (click)="navigateToNuevaCajaChica()"
+      class="inline-flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 active:scale-[0.98] transition-all"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      Nueva Caja Chica
+    </button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
+    <div class="flex flex-wrap gap-3 items-end">
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="date"
+          [value]="cajaDateFrom()"
+          (change)="cajaDateFrom.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="date"
+          [value]="cajaDateTo()"
+          (change)="cajaDateTo.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <button
+        type="button"
+        (click)="clearCajaFilters()"
+        class="h-9 px-3 inline-flex items-center gap-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+      >
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        Limpiar
+      </button>
+
+    </div>
+  </div>
+
+  @if (cajaChicaLoading()) {
+    <div class="flex justify-center p-12">
+      <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
+    </div>
+  } @else if (filteredCajaChicaReports.length === 0) {
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 mx-auto text-gray-300 mb-3">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+      </svg>
+      <p class="text-sm font-medium text-gray-700 mb-1">Sin rendiciones de caja chica</p>
+      <p class="text-xs text-gray-400 mb-4">Crea una nueva para empezar a subir comprobantes.</p>
+      <button type="button" (click)="navigateToNuevaCajaChica()"
+        class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary/90 transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        Nueva Caja Chica
+      </button>
+    </div>
+  } @else {
+    <app-data-table [items]="filteredCajaChicaReports">
+      <!-- Fecha -->
+      <ng-container *appColumn="'fecha'; header: 'Fecha'; cellClass: 'text-xs text-gray-500'; let report">
+        {{ report.createdAt | date:'dd/MM/yyyy' }}
+      </ng-container>
+
+      <!-- Título -->
+      <ng-container *appColumn="'titulo'; header: 'Título'; cellClass: 'max-w-[320px]'; let report">
+        <div class="flex items-center gap-2">
+          <span class="shrink-0 inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 uppercase tracking-wide">CC</span>
+          <p class="font-medium text-gray-900 break-words">{{ report.title }}</p>
+        </div>
+      </ng-container>
+
+      <!-- Comprobantes -->
+      <ng-container *appColumn="'comprobantes'; header: 'Comprobantes'; align: 'center'; cellClass: 'text-gray-600 text-xs'; let report">
+        {{ report.expenseIds.length }}
+      </ng-container>
+
+      <!-- Total -->
+      <ng-container *appColumn="'total'; header: 'Total'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let report">
+        S/ {{ cajaChicaTotalExpenses(report) | number:'1.2-2' }}
+      </ng-container>
+
+      <!-- Acciones -->
+      <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let report">
+        <div class="flex items-center justify-end gap-1">
+          <a
+            [routerLink]="['/mis-rendiciones', report._id, 'detalle']"
+            [queryParams]="{tab: activeTab()}"
+            title="Ver detalle"
+            class="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors inline-flex"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+            </svg>
+          </a>
+          @if (canDeleteReport(report)) {
+            <button
+              type="button"
+              (click)="openDeleteReportModal(report, $event)"
+              title="Eliminar caja chica"
+              class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              </svg>
+            </button>
+          }
+        </div>
+      </ng-container>
+    </app-data-table>
+  }
+
+  } <!-- fin @if activeTab === 'caja-chica' -->
 
 </div>
 
@@ -506,7 +623,6 @@
 @if (showGuidelines()) {
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" (click)="toggleGuidelines()">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" (click)="$event.stopPropagation()">
-    <!-- Header -->
     <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
       <div class="flex items-center gap-3">
         <div class="p-2 bg-primary/10 text-primary rounded-lg shrink-0">
@@ -525,33 +641,20 @@
         </svg>
       </button>
     </div>
-    <!-- Content -->
     <div class="overflow-y-auto px-6 py-6">
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-
-        <!-- Procedimiento -->
         <div>
           <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
             <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
             Procedimiento General
           </h3>
           <ol class="space-y-4 text-sm text-gray-700 list-decimal list-outside ml-4">
-            <li class="pl-2">
-              <span class="font-medium text-gray-900">Entrega de rendición:</span> Entrega el formato Excel y la rendición física a los <strong class="text-primary">02 días hábiles</strong> de retorno de campo.
-            </li>
-            <li class="pl-2">
-              <span class="font-medium text-gray-900">Validación (Administración):</span> Se realiza la validación de la entrega al día siguiente de recibido.
-            </li>
-            <li class="pl-2">
-              <span class="font-medium text-gray-900">Conformidad:</span> Remisión al Director de Proyectos para su conformidad.
-            </li>
-            <li class="pl-2">
-              <span class="font-medium text-red-700">Penalidad:</span> En caso excepcional, de no rendir hasta el cierre de mes, automáticamente se considerará como <strong class="text-red-700">adelanto de sueldo</strong>.
-            </li>
+            <li class="pl-2"><span class="font-medium text-gray-900">Entrega de rendición:</span> Entrega el formato Excel y la rendición física a los <strong class="text-primary">02 días hábiles</strong> de retorno de campo.</li>
+            <li class="pl-2"><span class="font-medium text-gray-900">Validación (Administración):</span> Se realiza la validación de la entrega al día siguiente de recibido.</li>
+            <li class="pl-2"><span class="font-medium text-gray-900">Conformidad:</span> Remisión al Director de Proyectos para su conformidad.</li>
+            <li class="pl-2"><span class="font-medium text-red-700">Penalidad:</span> En caso excepcional, de no rendir hasta el cierre de mes, automáticamente se considerará como <strong class="text-red-700">adelanto de sueldo</strong>.</li>
           </ol>
         </div>
-
-        <!-- Consideraciones -->
         <div>
           <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
             <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold">2</span>
@@ -570,10 +673,8 @@
             <li class="pl-1">El <strong>comprobante de caja</strong> debe estar firmado por quien recibe el efectivo y detallar bien el servicio prestado (Obligatorio).</li>
           </ul>
         </div>
-
       </div>
     </div>
-    <!-- Footer -->
     <div class="px-6 py-4 border-t border-gray-100 flex justify-end shrink-0">
       <button type="button" (click)="toggleGuidelines()"
         class="px-5 py-2 rounded-lg text-sm font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors">
@@ -610,20 +711,12 @@
       ></textarea>
     </div>
     <div class="px-6 pb-6 flex gap-3">
-      <button
-        type="button"
-        class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-        [disabled]="isCancellingReport()"
-        (click)="showCancelReportModal.set(false)"
-      >
+      <button type="button" class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        [disabled]="isCancellingReport()" (click)="showCancelReportModal.set(false)">
         Volver
       </button>
-      <button
-        type="button"
-        class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
-        [disabled]="isCancellingReport()"
-        (click)="confirmCancelReport()"
-      >
+      <button type="button" class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
+        [disabled]="isCancellingReport()" (click)="confirmCancelReport()">
         @if (isCancellingReport()) {
           <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
           Cancelando...
@@ -636,44 +729,36 @@
 </div>
 }
 
-<!-- Modal: Cancelar solicitud de viáticos -->
-@if (showCancelAdvanceModal()) {
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelAdvanceModal.set(false)">
+<!-- Modal: Eliminar rendición -->
+@if (showDeleteReportModal()) {
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showDeleteReportModal.set(false)">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
     <div class="px-6 pt-6 pb-2 flex items-center gap-3">
-      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-red-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
         </svg>
       </div>
       <div>
-        <h3 class="text-base font-semibold text-gray-900">Cancelar solicitud de viaticos</h3>
-        <p class="text-xs text-gray-500">La solicitud quedara como cancelada</p>
+        <h3 class="text-base font-semibold text-gray-900">Eliminar solicitud</h3>
+        <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">{{ deletingReport()?.title }}</p>
       </div>
     </div>
     <div class="px-6 py-4">
-      <p class="text-sm text-gray-600">¿Estas seguro de que deseas cancelar esta solicitud? Esta accion no se puede deshacer.</p>
+      <p class="text-sm text-gray-600">Se eliminará la solicitud y todos sus comprobantes de forma permanente. Esta acción no se puede deshacer.</p>
     </div>
     <div class="px-6 pb-6 flex gap-3">
-      <button
-        type="button"
-        class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-        [disabled]="isCancellingAdvance()"
-        (click)="showCancelAdvanceModal.set(false)"
-      >
+      <button type="button" class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        [disabled]="isDeletingReport()" (click)="showDeleteReportModal.set(false)">
         Volver
       </button>
-      <button
-        type="button"
-        class="flex-1 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
-        [disabled]="isCancellingAdvance()"
-        (click)="confirmCancelAdvance()"
-      >
-        @if (isCancellingAdvance()) {
+      <button type="button" class="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+        [disabled]="isDeletingReport()" (click)="confirmDeleteReport()">
+        @if (isDeletingReport()) {
           <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
-          Cancelando...
+          Eliminando...
         } @else {
-          Confirmar
+          Eliminar
         }
       </button>
     </div>
@@ -681,67 +766,39 @@
 </div>
 }
 
-<!-- Modal: Seleccion de tipo de gasto -->
-@if (showTypeModal) {
-<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="closeTypeModal()">
-  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
-  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" (click)="$event.stopPropagation()">
-    <h3 class="text-lg font-bold text-gray-900 mb-1">¿Qué tipo de gasto deseas agregar?</h3>
-    <p class="text-sm text-gray-500 mb-5">Selecciona el tipo de comprobante</p>
-    <div class="flex flex-col gap-3">
-      <button type="button" (click)="selectGastoType('factura')"
-        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
-        <div class="p-2 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-          </svg>
-        </div>
-        <div>
-          <p class="font-semibold text-gray-900 text-sm">Factura</p>
-          <p class="text-xs text-gray-500">Sube un PDF o imagen de la factura</p>
-        </div>
+<!-- Modal: Eliminar solicitud de viáticos -->
+@if (showDeleteAdvanceModal()) {
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showDeleteAdvanceModal.set(false)">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
+      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-red-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+        </svg>
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Eliminar solicitud de viáticos</h3>
+        <p class="text-xs text-gray-500">El registro se eliminará permanentemente</p>
+      </div>
+    </div>
+    <div class="px-6 py-4">
+      <p class="text-sm text-gray-600">¿Estás seguro de que deseas eliminar esta solicitud? Esta acción no se puede deshacer.</p>
+    </div>
+    <div class="px-6 pb-6 flex gap-3">
+      <button type="button" class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        [disabled]="isDeletingAdvance()" (click)="showDeleteAdvanceModal.set(false)">
+        Volver
       </button>
-      <button type="button" (click)="selectGastoType('planilla_movilidad')"
-        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
-        <div class="p-2 rounded-lg bg-yellow-50 text-yellow-600 group-hover:bg-yellow-100 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 0 1-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 0 0-3.213-9.193 2.056 2.056 0 0 0-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 0 0-10.026 0 1.106 1.106 0 0 0-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
-          </svg>
-        </div>
-        <div>
-          <p class="font-semibold text-gray-900 text-sm">Planilla de Movilidad</p>
-          <p class="text-xs text-gray-500">Fecha, Concepto, Total, Lugar, Gestion</p>
-        </div>
-      </button>
-      <button type="button" (click)="selectGastoType('otros_gastos')"
-        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
-        <div class="p-2 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-100 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" />
-          </svg>
-        </div>
-        <div>
-          <p class="font-semibold text-gray-900 text-sm">Otros Gastos</p>
-          <p class="text-xs text-gray-500">Ticket, recibos, DJ u otros</p>
-        </div>
-      </button>
-      <button type="button" (click)="selectGastoType('comprobante_caja')"
-        class="flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-primary hover:bg-primary/5 transition-all text-left group">
-        <div class="p-2 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.25h6m-7.5 3h9A2.25 2.25 0 0 0 18.75 16.5v-9A2.25 2.25 0 0 0 16.5 5.25h-9A2.25 2.25 0 0 0 5.25 7.5v9A2.25 2.25 0 0 0 7.5 18.75Z" />
-          </svg>
-        </div>
-        <div>
-          <p class="font-semibold text-gray-900 text-sm">Comprobante de Caja</p>
-          <p class="text-xs text-gray-500">Formulario interno con correlativo</p>
-        </div>
+      <button type="button" class="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition-colors"
+        [disabled]="isDeletingAdvance()" (click)="confirmDeleteAdvance()">
+        @if (isDeletingAdvance()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Eliminando...
+        } @else {
+          Eliminar
+        }
       </button>
     </div>
-    <button type="button" (click)="closeTypeModal()"
-      class="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors">
-      Cancelar
-    </button>
   </div>
 </div>
 }

@@ -23,9 +23,9 @@ export const defaultRedirectGuard: CanActivateFn = () => {
   }
 
   if (userState.isContabilidad()) {
-    return router.createUrlTree([userState.isContabilidadInCompany() ? '/consolidated-invoices' : '/hub']);
+    return router.createUrlTree([userState.isContabilidadInCompany() ? '/dashboard' : '/hub']);
   }
 
   // Coordinador
-  return router.createUrlTree(['/admin-users']);
+  return router.createUrlTree(['/inicio']);
 };

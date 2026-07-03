@@ -1,5 +1,6 @@
 import {
   Component,
+  computed,
   EventEmitter,
   inject,
   Input,
@@ -21,12 +22,15 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { CategoriaService } from '../../../services/categoria.service';
+import { CategoryGroupService } from '../../../services/category-group.service';
 import {
   PlacesAutocompleteDirective,
   PlaceResult,
 } from '../../../directives/places-autocomplete.directive';
+import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ICategory } from '../../invoices/interfaces/category.interface';
+import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import {
   ICreateAdvancePayload,
   IAdvanceLinePayload,
@@ -42,7 +46,12 @@ import {
 @Component({
   selector: 'app-solicitud-viaticos-modal',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, PlacesAutocompleteDirective],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    PlacesAutocompleteDirective,
+    ProjectSelectComponent,
+  ],
   templateUrl: './solicitud-viaticos-modal.component.html',
   styleUrls: ['./solicitud-viaticos-modal.component.scss'],
 })
@@ -62,10 +71,41 @@ export class SolicitudViaticosModalComponent implements OnChanges {
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
   private categoriaService = inject(CategoriaService);
+  private categoryGroupService = inject(CategoryGroupService);
 
   submitting = signal(false);
   projects = signal<IProject[]>([]);
+  private selectedLat: number | undefined;
+  private selectedLng: number | undefined;
   categories = signal<ICategory[]>([]);
+  /** Perfiles de categoría (category-groups). El centro de costo referencia uno y de él se derivan sus categorías. */
+  categoryGroups = signal<ICategoryGroup[]>([]);
+  /** ID del centro de costo elegido; espeja el control `projectId` para alimentar los computeds. */
+  selectedProjectId = signal<string>('');
+
+  /**
+   * IDs de categoría permitidas por el perfil del centro de costo elegido, o
+   * `null` cuando no aplica filtro (sin proyecto, proyecto sin perfil, o perfil
+   * sin categorías) — en cuyo caso se muestran todas.
+   */
+  private allowedCategoryIdSet = computed<Set<string> | null>(() => {
+    const pid = this.selectedProjectId();
+    if (!pid) return null;
+    const project = this.projects().find((p) => String(p._id) === String(pid));
+    const groupId = project?.categoryGroupId;
+    if (!groupId) return null;
+    const group = this.categoryGroups().find((g) => String(g._id) === String(groupId));
+    const ids = (group?.categoryIds ?? []).map(String);
+    if (!ids.length) return null;
+    return new Set(ids);
+  });
+
+  /** Categorías del perfil del proyecto (lista base compartida por todas las líneas). */
+  private perfilCategories = computed<ICategory[]>(() => {
+    const allowed = this.allowedCategoryIdSet();
+    if (!allowed) return this.categories();
+    return this.categories().filter((c) => allowed.has(String(c._id)));
+  });
 
   form = this.fb.group({
     place: ['', Validators.required],
@@ -75,6 +115,16 @@ export class SolicitudViaticosModalComponent implements OnChanges {
     observations: [''],
     lines: this.fb.array([this.createLineGroup()]),
   });
+
+  constructor() {
+    // Espeja el centro de costo elegido y, al cambiarlo, limpia las categorías
+    // de línea que no pertenezcan a su perfil. (En restauración se actualiza el
+    // signal sin emitir, por lo que esto no borra las líneas precargadas.)
+    this.form.get('projectId')?.valueChanges.subscribe((pid) => {
+      this.selectedProjectId.set(pid ?? '');
+      this.clearInvalidLineCategories();
+    });
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['isOpen']?.currentValue === true) {
@@ -100,19 +150,26 @@ export class SolicitudViaticosModalComponent implements OnChanges {
     }
     this.lines.push(this.createLineGroup());
 
+    this.loadCatalogues();
+  }
+
+  private loadCatalogues(): void {
     const clientId = this.resolveCompanyId();
-    if (clientId) {
-      this.invoicesService.getProjects(clientId).subscribe({
-        next: (list) =>
-          this.projects.set((list || []).filter((p) => p.isActive !== false)),
-        error: () => this.projects.set([]),
-      });
-      this.categoriaService.getAllFlat().subscribe({
-        next: (res) =>
-          this.categories.set((res || []).filter((c) => c.isActive !== false)),
-        error: () => this.categories.set([]),
-      });
-    }
+    if (!clientId) return;
+    this.invoicesService.getProjects(clientId).subscribe({
+      next: (list) =>
+        this.projects.set((list || []).filter((p) => p.isActive !== false)),
+      error: () => this.projects.set([]),
+    });
+    this.categoriaService.getAllFlat().subscribe({
+      next: (res) =>
+        this.categories.set((res || []).filter((c) => c.isActive !== false)),
+      error: () => this.categories.set([]),
+    });
+    this.categoryGroupService.getAll().subscribe({
+      next: (groups) => this.categoryGroups.set(groups ?? []),
+      error: () => this.categoryGroups.set([]),
+    });
   }
 
   private ymdFromAdvanceDate(value: string | undefined): string {
@@ -161,23 +218,14 @@ export class SolicitudViaticosModalComponent implements OnChanges {
       place: adv.place ?? '',
       startDate: this.ymdFromAdvanceDate(adv.startDate),
       endDate: this.ymdFromAdvanceDate(adv.endDate),
-      projectId: pid,
       observations: adv.observations ?? '',
     });
+    // Sin emitir: evita que el listener de `projectId` borre las categorías
+    // de las líneas que acabamos de restaurar.
+    this.form.get('projectId')?.setValue(pid, { emitEvent: false });
+    this.selectedProjectId.set(pid);
 
-    const clientId = this.resolveCompanyId();
-    if (clientId) {
-      this.invoicesService.getProjects(clientId).subscribe({
-        next: (list) =>
-          this.projects.set((list || []).filter((p) => p.isActive !== false)),
-        error: () => this.projects.set([]),
-      });
-      this.categoriaService.getAllFlat().subscribe({
-        next: (res) =>
-          this.categories.set((res || []).filter((c) => c.isActive !== false)),
-        error: () => this.categories.set([]),
-      });
-    }
+    this.loadCatalogues();
   }
 
   private resolveCompanyId(): string {
@@ -217,6 +265,31 @@ export class SolicitudViaticosModalComponent implements OnChanges {
     );
   }
 
+  /**
+   * Categorías visibles en una línea: las del perfil del proyecto, más la propia
+   * categoría ya elegida (para no ocultar selecciones previas al corregir/reenviar).
+   */
+  categoriesForLine(ctrl: FormGroup): ICategory[] {
+    const base = this.perfilCategories();
+    const selected = ctrl.get('categoryId')?.value;
+    if (!selected || base.some((c) => String(c._id) === String(selected))) {
+      return base;
+    }
+    const own = this.categories().find((c) => String(c._id) === String(selected));
+    return own ? [...base, own] : base;
+  }
+
+  /** Limpia las categorías de línea que no pertenezcan al perfil del proyecto actual. */
+  private clearInvalidLineCategories(): void {
+    const allowed = this.allowedCategoryIdSet();
+    if (!allowed) return;
+    for (let i = 0; i < this.lines.length; i++) {
+      const ctrl = this.lines.at(i).get('categoryId');
+      const val = ctrl?.value;
+      if (val && !allowed.has(String(val))) ctrl?.setValue('');
+    }
+  }
+
   totalGeneral(): number {
     let sum = 0;
     for (let i = 0; i < this.lines.length; i++) {
@@ -236,6 +309,8 @@ export class SolicitudViaticosModalComponent implements OnChanges {
 
   onPlaceSelected(ev: PlaceResult): void {
     this.form.patchValue({ place: ev.address });
+    this.selectedLat = ev.lat;
+    this.selectedLng = ev.lng;
   }
 
   dismiss(success = false): void {
@@ -296,14 +371,11 @@ export class SolicitudViaticosModalComponent implements OnChanges {
     }
 
     if (start < today) {
-      const obs = (this.form.value.observations || '').trim();
-      if (obs.length < 10) {
-        this.notifications.show(
-          'Para fechas de inicio pasadas, las observaciones deben tener al menos 10 caracteres.',
-          'error'
-        );
-        return;
-      }
+      this.notifications.show(
+        'La fecha de inicio no puede ser anterior a hoy.',
+        'error'
+      );
+      return;
     }
 
     const place = (this.form.value.place || '').trim();
@@ -330,6 +402,8 @@ export class SolicitudViaticosModalComponent implements OnChanges {
       amount: total,
       description: metaDesc,
       place,
+      ...(this.selectedLat != null && { lat: this.selectedLat }),
+      ...(this.selectedLng != null && { lng: this.selectedLng }),
       startDate: `${startStr}T12:00:00.000Z`,
       endDate: `${endStr}T12:00:00.000Z`,
       projectId: this.form.value.projectId as string,
@@ -376,5 +450,14 @@ export class SolicitudViaticosModalComponent implements OnChanges {
 
   projectLabel(p: IProject): string {
     return p.code ? `${p.code} — ${p.name}` : p.name;
+  }
+
+  /** Fecha de hoy en formato YYYY-MM-DD (local) para el atributo `min` de las fechas. */
+  get todayStr(): string {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 }

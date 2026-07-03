@@ -44,12 +44,13 @@ export class UserPermissionsComponent implements OnInit {
     { key: 'colaboradores', label: 'Colaboradores', description: 'Gestionar usuarios y permisos de la empresa' },
     { key: 'rendiciones', label: 'Rendiciones', description: 'Ver y gestionar rendiciones de todos los colaboradores' },
     { key: 'mis-rendiciones', label: 'Mis Rendiciones', description: 'Ver y gestionar rendiciones propias' },
-    { key: 'nueva-rendicion', label: 'Nueva Rendición', description: 'Crear nuevas rendiciones desde la pantalla Mis Rendiciones' },
+    { key: 'nueva-rendicion', label: 'Rendición directa', description: 'Crear nuevas rendiciones directas desde la pantalla de Tesorería' },
     { key: 'viaticos', label: 'Viáticos', description: 'Acceder a la gestión y seguimiento de anticipos de viáticos' },
-    { key: 'consolidated-invoices', label: 'Consolidado', description: 'Ver reportes consolidados de gastos' },
+    { key: 'consolidated-invoices', label: 'Dashboard', description: 'Ver el dashboard con KPIs y reportes consolidados de gastos' },
     { key: 'tesoreria', label: 'Pagos', description: 'Registrar comprobantes de pago de viáticos' },
     { key: 'configuracion', label: 'Configuración', description: 'Configurar parámetros de la empresa' },
     { key: 'audit-log', label: 'Actividad', description: 'Ver el registro de actividad de la empresa' },
+    { key: 'caja-chica', label: 'Rendicion Caja Chica', description: 'Crear y subir comprobantes de caja chica propios' },
   ];
 
   permissions: IUserPermissions = {
@@ -74,6 +75,7 @@ export class UserPermissionsComponent implements OnInit {
           canApproveL2: user.permissions?.canApproveL2 ?? false,
           categoryIds: user.permissions?.categoryIds ?? [],
         };
+        this.maybeApplyDefault();
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
     });
@@ -82,16 +84,58 @@ export class UserPermissionsComponent implements OnInit {
   loadCategoryData() {
     this.categoriesLoading.set(true);
     Promise.all([
-      this.categoriaService.getAllFlatAdmin().toPromise(),
       this.groupService.getAll().toPromise(),
-    ]).then(([cats, groups]) => {
-      this.allCategories.set(cats ?? []);
+      this.categoriaService.getAllFlatAdmin().toPromise(),
+    ]).then(([groups, cats]) => {
       this.groups.set(groups ?? []);
+      this.allCategories.set(cats ?? []);
       this.categoriesLoading.set(false);
+      this.maybeApplyDefault();
     }).catch(() => {
-      this.notification.show('Error al cargar categorías', 'error');
+      this.notification.show('Error al cargar perfiles/categorías', 'error');
       this.categoriesLoading.set(false);
     });
+  }
+
+  // --- Pre-selección por rol ---
+
+  /** Aplica el default por rol solo si el usuario aún no tiene categorías y ya cargaron los datos. */
+  private maybeApplyDefault() {
+    if (!this.user || this.allCategories().length === 0) return;
+    if ((this.permissions.categoryIds ?? []).length === 0) this.applyRoleDefault();
+  }
+
+  isColaborador(): boolean {
+    const r = (this.user?.role?.name || this.user?.roleName || '').toLowerCase();
+    return r === 'colaborador';
+  }
+
+  /** Colaborador => categorías del perfil PROYECTO; otros roles => ADMINISTRACION + COMERCIAL. */
+  applyRoleDefault() {
+    const colaborador = this.isColaborador();
+    const wantedNames = colaborador ? ['PROYECTO'] : ['ADMINISTRACION', 'COMERCIAL'];
+    const ids = new Set<string>();
+    this.groups()
+      .filter((g) => wantedNames.includes(g.name))
+      .forEach((g) => (g.categoryIds ?? []).forEach((id) => ids.add(String(id))));
+    this.permissions.categoryIds = Array.from(ids);
+  }
+
+  /** Categorías agrupadas por perfil (+ "Otras" sin perfil) para la UI. */
+  get perfilSections(): { name: string; group: ICategoryGroup | null; cats: ICategory[] }[] {
+    const all = this.allCategories();
+    const used = new Set<string>();
+    const sections: { name: string; group: ICategoryGroup | null; cats: ICategory[] }[] = this.groups()
+      .map((g) => {
+        const ids = new Set((g.categoryIds ?? []).map(String));
+        const cats = all.filter((c) => ids.has(String(c._id)));
+        cats.forEach((c) => used.add(String(c._id)));
+        return { name: g.name, group: g as ICategoryGroup | null, cats };
+      })
+      .filter((s) => s.cats.length > 0);
+    const otras = all.filter((c) => !used.has(String(c._id)));
+    if (otras.length) sections.push({ name: 'Otras', group: null, cats: otras });
+    return sections;
   }
 
   // --- Módulos ---

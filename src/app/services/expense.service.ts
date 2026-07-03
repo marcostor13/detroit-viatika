@@ -56,6 +56,24 @@ export class ExpenseService {
     return this.http.patch<any>(`${this.url}/${id}/${companyId}`, payload);
   }
 
+  /** Edición del desglose contable (base/IGV/tasa/inafecto) por Contabilidad. */
+  updateDesglose(
+    id: string,
+    payload: {
+      baseAfecta?: number;
+      igv?: number;
+      tasaIgv?: number;
+      inafecto?: number;
+      detalleAnalitico?: {
+        proyectId?: string;
+        condicion: 'afecto' | 'inafecto';
+        monto: number;
+      }[];
+    }
+  ): Observable<any> {
+    return this.http.patch<any>(`${this.url}/invoice/${id}/desglose`, payload);
+  }
+
   deleteExpense(id: string, companyId: string): Observable<any> {
     return this.http.delete<any>(`${this.url}/${id}/${companyId}`);
   }

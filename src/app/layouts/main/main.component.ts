@@ -57,8 +57,8 @@ export class MainComponent implements OnInit, OnDestroy {
       return 'Facturas';
     } else if (path.includes('/admin-users')) {
       return 'Colaboradores';
-    } else if (path.includes('/consolidated-invoices')) {
-      return 'Consolidado de Facturas';
+    } else if (path.includes('/dashboard')) {
+      return 'Dashboard';
     } else if (path.includes('/categories')) {
       return 'Categorías';
     } else if (path.includes('/projects')) {

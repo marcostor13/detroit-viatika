@@ -22,6 +22,8 @@ export interface RendicionExportComprobanteRow {
   numeroDocumento?: string;
   comentario?: string;
   placaVehiculo?: string;
+  /** Proyecto del gasto (Rendiciones Directas: el proyecto es individual por comprobante). */
+  proyecto?: string;
 }
 
 export interface RendicionExportAnticipoRow {
@@ -52,6 +54,8 @@ export interface RendicionExportData {
   fileBaseName: string;
   titulo: string;
   estado: string;
+  codigo?: string;
+  gestion?: string;
   descripcionRendicion?: string;
   colaborador: string;
   presupuesto: number;
@@ -74,6 +78,14 @@ export interface RendicionExportData {
   approvedByName?: string;
   createdByName?: string;
   projectName?: string;
+  /**
+   * Rendición directa: el proyecto no es único de la rendición sino individual
+   * por gasto. En el reporte se omite el proyecto del título y se añade una
+   * columna "Proyecto" en la tabla de comprobantes.
+   */
+  isDirecta?: boolean;
+  /** Saldos de la bolsa (pagos de contabilidad / remanentes) que financiaron la rendición directa. */
+  financiamientoSaldos?: { tipo: string; detalle: string; monto: number; fecha?: string }[];
 }
 
 export interface AffidavitExportRow {
@@ -113,6 +125,10 @@ export interface MobilitySheetExportData {
     destino: string;
     gestion: string;
     total: number;
+    /** Proyecto propio de la fila. Si falta, se usa `proyecto` (nivel planilla). */
+    proyecto?: string;
+    /** Colaborador (trabajador) propio de la fila. */
+    colaborador?: string;
   }>;
   total: number;
   signature?: string;
@@ -160,6 +176,30 @@ export interface SingleExpenseAffidavitData {
   descripcion?: string;
   signature?: string;
 }
+
+export interface FacturaPageData {
+  tipo: string;
+  razonSocial?: string;
+  rucEmisor?: string;
+  serie?: string;
+  correlativo?: string;
+  fechaEmision?: string;
+  montoTotal?: number;
+  moneda?: string;
+  comentario?: string;
+  placaVehiculo?: string;
+  descripcion?: string;
+  index: number;
+}
+
+export type ComprobantePage =
+  | { type: 'factura'; data: FacturaPageData }
+  | { type: 'factura_image'; url: string; label: string }
+  | { type: 'factura_pdf'; url: string; label: string }
+  | { type: 'mobility'; data: MobilitySheetExportData }
+  | { type: 'cash_voucher'; data: CashVoucherExportData }
+  | { type: 'receipt'; data: ReceiptExportData }
+  | { type: 'affidavit'; data: SingleExpenseAffidavitData };
 
 const RED_HEADER = 'FF912f2c'; // Dark red for headers
 const YELLOW_CELL = 'FFFFFF00'; // Yellow for summary cell
@@ -257,6 +297,12 @@ export class RendicionExportService {
       });
     }
 
+    // Rendición directa: el proyecto es por gasto → columna "Proyecto" extra.
+    const showProyecto = !!data.isDirecta;
+    const ingresosCol = showProyecto ? 9 : 8;
+    const gastosCol = showProyecto ? 10 : 9;
+    const lastCol = gastosCol;
+
     ws.columns = [
       { width: 6 },  // Item
       { width: 12 }, // Fecha
@@ -264,29 +310,35 @@ export class RendicionExportService {
       { width: 18 }, // No Doc
       { width: 28 }, // Proveedor
       { width: 40 }, // Concepto (incluye comentario)
+      ...(showProyecto ? [{ width: 24 }] : []), // Proyecto (solo directas)
       { width: 14 }, // Placa
       { width: 12 }, // Ingresos
       { width: 12 }, // Gastos
     ];
 
     // Title Block
-    ws.mergeCells('A4:I4');
+    ws.mergeCells(4, 1, 4, lastCol);
     const titleCell = ws.getCell('A4');
     titleCell.value = 'RENDICIÓN DE VIÁTICOS';
     titleCell.font = { bold: true, size: 12 };
     titleCell.alignment = { horizontal: 'center' };
 
-    ws.mergeCells('A5:I5');
+    ws.mergeCells(5, 1, 5, lastCol);
     const subtitleCell = ws.getCell('A5');
-    const proyectoLabel = data.projectName && data.projectName !== '—'
-      ? data.projectName
-      : (data.titulo || '');
-    subtitleCell.value = `PROYECTO:\n${proyectoLabel}`;
+    if (showProyecto) {
+      // En directas el proyecto va por gasto, no en el título.
+      subtitleCell.value = data.titulo || '';
+    } else {
+      const proyectoLabel = data.projectName && data.projectName !== '—'
+        ? data.projectName
+        : (data.titulo || '');
+      subtitleCell.value = `PROYECTO:\n${proyectoLabel}`;
+    }
     subtitleCell.font = { size: 10 };
     subtitleCell.alignment = { horizontal: 'center', wrapText: true };
     ws.getRow(5).height = 28;
 
-    ws.mergeCells('A7:I7');
+    ws.mergeCells(7, 1, 7, lastCol);
     const dateCell = ws.getCell('A7');
     if (data.startDate && data.endDate) {
       dateCell.value = `DEL ${data.startDate} AL ${data.endDate}`;
@@ -295,6 +347,18 @@ export class RendicionExportService {
     }
     dateCell.font = { bold: true, size: 10 };
     dateCell.alignment = { horizontal: 'center' };
+
+    if (data.codigo || data.gestion) {
+      ws.mergeCells(8, 1, 8, lastCol);
+      const infoCell = ws.getCell('A8');
+      const parts: string[] = [];
+      if (data.codigo) parts.push(`CÓDIGO: ${data.codigo}`);
+      if (data.gestion) parts.push(`GESTIÓN: ${data.gestion}`);
+      infoCell.value = parts.join('      ');
+      infoCell.font = { bold: true, size: 10 };
+      infoCell.alignment = { horizontal: 'center', wrapText: true };
+      ws.getRow(8).height = 22;
+    }
 
     ws.getCell('A9').value = 'Colaborador:';
     ws.mergeCells('B9:D9');
@@ -317,7 +381,7 @@ export class RendicionExportService {
 
     // Table Header
     let r = 13;
-    const headers = ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', 'Placa', 'Ingresos', 'Gastos'];
+    const headers = ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', ...(showProyecto ? ['Proyecto'] : []), 'Placa', 'Ingresos', 'Gastos'];
     headers.forEach((h, i) => {
       const c = ws.getCell(r, i + 1);
       c.value = h;
@@ -340,7 +404,7 @@ export class RendicionExportService {
         const c = ws.getCell(r, i + 1);
         c.value = val;
         c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-        if (i === 7 || i === 8) {
+        if (i === ingresosCol - 1 || i === gastosCol - 1) {
            c.numFmt = '#,##0.00';
            if (val === 0 || !val) c.value = ''; // Hide 0s to match screenshot
            c.alignment = { horizontal: 'right' };
@@ -359,12 +423,30 @@ export class RendicionExportService {
         '',
         '',
         'Transferencia',
-        '',
+        a.descripcion || '',
+        ...(showProyecto ? [''] : []),
         '',
         a.monto,
         ''
       ]);
       sumIngresos += a.monto;
+    });
+
+    // Saldos de la bolsa que financian la rendición directa, como "Ingresos"
+    (data.financiamientoSaldos || []).forEach(s => {
+      addDataRow([
+        itemIndex++,
+        s.fecha || '',
+        '',
+        '',
+        'Saldo',
+        `${s.tipo}${s.detalle ? ' · ' + s.detalle : ''}`,
+        ...(showProyecto ? [''] : []),
+        '',
+        s.monto,
+        ''
+      ]);
+      sumIngresos += s.monto;
     });
 
     // Expenses as "Gastos"
@@ -376,6 +458,7 @@ export class RendicionExportService {
         exp.numeroDocumento || '',
         exp.proveedor || '',
         exp.comentario || exp.descripcion || '',
+        ...(showProyecto ? [exp.proyecto || ''] : []),
         exp.placaVehiculo || '',
         '',
         exp.monto
@@ -386,22 +469,22 @@ export class RendicionExportService {
     // Fill some empty rows to make it look like a complete table (min 5 rows)
     const minRows = Math.max(5, itemIndex);
     while (itemIndex <= minRows) {
-      addDataRow([itemIndex++, '', '', '', '', '', '', '', '']);
+      addDataRow([itemIndex++, ...Array(lastCol - 1).fill('')]);
     }
 
     // Totals row
-    ws.mergeCells(r, 1, r, 7);
-    let cTotalId = ws.getCell(r, 7);
+    ws.mergeCells(r, 1, r, ingresosCol - 1);
+    let cTotalId = ws.getCell(r, ingresosCol - 1);
     cTotalId.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
 
-    const cIng = ws.getCell(r, 8);
+    const cIng = ws.getCell(r, ingresosCol);
     cIng.value = sumIngresos;
     cIng.font = { color: { argb: 'FFFFFFFF' } };
     cIng.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
     cIng.numFmt = '#,##0.00';
     cIng.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
 
-    const cGas = ws.getCell(r, 9);
+    const cGas = ws.getCell(r, gastosCol);
     cGas.value = sumGastos;
     cGas.font = { color: { argb: 'FFFFFFFF' } };
     cGas.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
@@ -414,26 +497,26 @@ export class RendicionExportService {
     const montoReembolsar = diferencia < 0 ? Math.abs(diferencia) : 0;
     const montoRendir = diferencia > 0 ? diferencia : 0;
 
-    ws.mergeCells(r, 1, r, 7);
-    const cReembLabel = ws.getCell(r, 7);
+    ws.mergeCells(r, 1, r, ingresosCol - 1);
+    const cReembLabel = ws.getCell(r, ingresosCol - 1);
     cReembLabel.value = 'POR REEMBOLSAR';
     cReembLabel.font = { bold: true };
     cReembLabel.alignment = { horizontal: 'right' };
-    ws.mergeCells(r, 8, r, 9);
-    const cReembMonto = ws.getCell(r, 8);
+    ws.mergeCells(r, ingresosCol, r, gastosCol);
+    const cReembMonto = ws.getCell(r, ingresosCol);
     cReembMonto.value = montoReembolsar;
     cReembMonto.numFmt = '#,##0.00';
     cReembMonto.alignment = { horizontal: 'right' };
     cReembMonto.font = { bold: true };
     r++;
 
-    ws.mergeCells(r, 1, r, 7);
-    const cRendLabel = ws.getCell(r, 7);
+    ws.mergeCells(r, 1, r, ingresosCol - 1);
+    const cRendLabel = ws.getCell(r, ingresosCol - 1);
     cRendLabel.value = 'POR RENDIR';
     cRendLabel.font = { bold: true };
     cRendLabel.alignment = { horizontal: 'right' };
-    ws.mergeCells(r, 8, r, 9);
-    const cRendMonto = ws.getCell(r, 8);
+    ws.mergeCells(r, ingresosCol, r, gastosCol);
+    const cRendMonto = ws.getCell(r, ingresosCol);
     cRendMonto.value = montoRendir;
     cRendMonto.numFmt = '#,##0.00';
     cRendMonto.alignment = { horizontal: 'right' };
@@ -511,9 +594,9 @@ export class RendicionExportService {
     );
   }
 
-  async exportToPdf(data: RendicionExportData): Promise<void> {
+  async exportToPdf(data: RendicionExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
     data = { ...data, signature: await this.resolveSignature(data.signature) };
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const doc = inDoc ?? new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     let y = 15;
 
     const logoB64 = await this.getLogoBase64();
@@ -526,16 +609,27 @@ export class RendicionExportService {
     doc.text('RENDICIÓN DE VIÁTICOS', doc.internal.pageSize.getWidth() / 2, 25, { align: 'center' });
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
-    const proyectoLabelPdf = data.projectName && data.projectName !== '—'
-      ? data.projectName
-      : (data.titulo || '');
-    doc.text(`PROYECTO:\n${proyectoLabelPdf}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+    if (data.isDirecta) {
+      // En directas el proyecto va por gasto, no en el título.
+      doc.text(data.titulo || '', doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+    } else {
+      const proyectoLabelPdf = data.projectName && data.projectName !== '—'
+        ? data.projectName
+        : (data.titulo || '');
+      doc.text(`PROYECTO:\n${proyectoLabelPdf}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+    }
     
     if (data.startDate && data.endDate) {
       doc.setFont("helvetica", "bold");
       doc.text(`DEL ${data.startDate} AL ${data.endDate}`, doc.internal.pageSize.getWidth() / 2, 40, { align: 'center' });
     }
-    
+
+    if (data.codigo) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(`CÓDIGO: ${data.codigo}`, doc.internal.pageSize.getWidth() / 2, 45, { align: 'center' });
+    }
+
     y = 50;
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
@@ -551,12 +645,17 @@ export class RendicionExportService {
       doc.text(`Personas:     ${data.peopleNames.join(', ')}`, 14, y);
       y += 5;
     }
+    if (data.gestion) {
+      doc.text(`Gestión:      ${data.gestion}`, 14, y);
+      y += 5;
+    }
     y += 3;
 
     let itemIndex = 1;
     let sumIngresos = 0;
     let sumGastos = 0;
 
+    const showProyecto = !!data.isDirecta;
     const bodyData: any[] = [];
 
     data.anticipos.forEach(a => {
@@ -566,12 +665,29 @@ export class RendicionExportService {
         '',
         '',
         'Transferencia',
-        '',
+        a.descripcion || '',
+        ...(showProyecto ? [''] : []),
         '',
         a.monto.toFixed(2),
         ''
       ]);
       sumIngresos += a.monto;
+    });
+
+    (data.financiamientoSaldos || []).forEach(s => {
+      bodyData.push([
+        itemIndex++,
+        s.fecha || '',
+        '',
+        '',
+        'Saldo',
+        `${s.tipo}${s.detalle ? ' · ' + s.detalle : ''}`,
+        ...(showProyecto ? [''] : []),
+        '',
+        s.monto.toFixed(2),
+        ''
+      ]);
+      sumIngresos += s.monto;
     });
 
     data.comprobantes.forEach(exp => {
@@ -582,6 +698,7 @@ export class RendicionExportService {
         exp.numeroDocumento || '',
         exp.proveedor || '',
         exp.comentario || exp.descripcion || '',
+        ...(showProyecto ? [exp.proyecto || ''] : []),
         exp.placaVehiculo || '',
         '',
         (exp.monto || 0).toFixed(2)
@@ -591,27 +708,45 @@ export class RendicionExportService {
 
     const minRows = Math.max(5, itemIndex);
     while (itemIndex <= minRows) {
-      bodyData.push([itemIndex++, '', '', '', '', '', '', '', '']);
+      bodyData.push([itemIndex++, ...Array(showProyecto ? 9 : 8).fill('')]);
     }
+
+    const head = showProyecto
+      ? ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', 'Proyecto', 'Placa', 'Ingresos', 'Gastos']
+      : ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', 'Placa', 'Ingresos', 'Gastos'];
+    const columnStyles: Record<number, any> = showProyecto
+      ? {
+          0: { halign: 'center', cellWidth: 8 },
+          1: { halign: 'center', cellWidth: 15 },
+          2: { halign: 'center', cellWidth: 14 },
+          3: { cellWidth: 20 },
+          4: { cellWidth: 30 },
+          5: { cellWidth: 'auto' },
+          6: { cellWidth: 28 },
+          7: { halign: 'center', cellWidth: 14 },
+          8: { halign: 'right', cellWidth: 15 },
+          9: { halign: 'right', cellWidth: 15 },
+        }
+      : {
+          0: { halign: 'center', cellWidth: 9 },
+          1: { halign: 'center', cellWidth: 17 },
+          2: { halign: 'center', cellWidth: 18 },
+          3: { cellWidth: 24 },
+          4: { cellWidth: 36 },
+          5: { cellWidth: 'auto' },
+          6: { halign: 'center', cellWidth: 16 },
+          7: { halign: 'right', cellWidth: 16 },
+          8: { halign: 'right', cellWidth: 16 },
+        };
 
     autoTable(doc, {
       startY: y,
-      head: [['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', 'Placa', 'Ingresos', 'Gastos']],
+      head: [head],
       body: bodyData,
       theme: 'grid',
       headStyles: { fillColor: [145, 47, 44], textColor: 255, halign: 'center', valign: 'middle' },
       styles: { fontSize: 7, cellPadding: 2, textColor: 0 },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 9 },
-        1: { halign: 'center', cellWidth: 17 },
-        2: { halign: 'center', cellWidth: 18 },
-        3: { cellWidth: 24 },
-        4: { cellWidth: 36 },
-        5: { cellWidth: 'auto' },
-        6: { halign: 'center', cellWidth: 16 },
-        7: { halign: 'right', cellWidth: 16 },
-        8: { halign: 'right', cellWidth: 16 },
-      },
+      columnStyles,
       margin: { left: 14, right: 14 }
     });
 
@@ -699,7 +834,10 @@ export class RendicionExportService {
       doc.text(`DNI N° ${data.idDocument}`, centerPage, lineY + 8, { align: 'center' });
     }
 
-    doc.save(`${data.fileBaseName}.pdf`);
+    if (!inDoc) {
+      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
+      doc.save(`${data.fileBaseName}.pdf`);
+    }
   }
 
   async exportAffidavitToPdf(data: AffidavitExportData): Promise<void> {
@@ -742,9 +880,11 @@ export class RendicionExportService {
     doc.save(`${data.fileBaseName}.pdf`);
   }
 
-  async exportMobilitySheetToPdf(data: MobilitySheetExportData): Promise<void> {
+  async exportMobilitySheetToPdf(data: MobilitySheetExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
     data = { ...data, signature: await this.resolveSignature(data.signature) };
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const isNew = !inDoc;
+    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    if (!isNew) doc.addPage([210, 297], 'portrait');
     const lm = 14;
     const rm = 196;
     const pageW = 210;
@@ -755,8 +895,8 @@ export class RendicionExportService {
 
     const logoB64 = await this.getLogoBase64();
 
-    // Col X positions: Fecha | CliProv | Proyecto | Origen | Destino | Gestión | TOTALES | end
-    const cols = [14, 34, 60, 78, 109, 140, 170, 196];
+    // Col X positions: Fecha | Colaborador | CliProv | Proyecto | Origen | Destino | Gestión | TOTALES | end
+    const cols = [14, 30, 56, 80, 96, 122, 148, 170, 196];
 
     // Title
     doc.setFont('helvetica', 'bold');
@@ -827,8 +967,8 @@ export class RendicionExportService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
 
-    const headers = ['Fecha', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    for (let i = 0; i < 7; i++) {
+    const headers = ['Fecha', 'Colaborador', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
+    for (let i = 0; i < 8; i++) {
       doc.rect(cols[i], y, cols[i + 1] - cols[i], hdr, 'S');
       doc.text(headers[i], (cols[i] + cols[i + 1]) / 2, y + 5, { align: 'center' });
     }
@@ -846,50 +986,62 @@ export class RendicionExportService {
     doc.setFontSize(8);
 
     for (const row of dataRows) {
-      for (let c = 0; c < 7; c++) {
+      for (let c = 0; c < 8; c++) {
         doc.rect(cols[c], y, cols[c + 1] - cols[c], rowH, 'S');
       }
+      const hasContent = !!(row.fecha || row.origen || row.destino || row.gestion);
       if (row.fecha) {
         doc.text(this.formatDateDdMmYyyy(row.fecha), cols[0] + 1, y + 4.5);
       }
-      if (row.clienteProveedor) {
-        doc.text(doc.splitTextToSize(row.clienteProveedor, cols[2] - cols[1] - 2)[0], cols[1] + 1, y + 4.5);
+      if (row.colaborador && hasContent) {
+        const prevSize = doc.getFontSize();
+        doc.setFontSize(6.5);
+        const cLines = (doc.splitTextToSize(row.colaborador, cols[2] - cols[1] - 2) as string[]).slice(0, 2);
+        const cStartY = cLines.length > 1 ? y + 2.8 : y + 4.5;
+        cLines.forEach((line, i) => {
+          doc.text(line, cols[1] + 1, cStartY + i * 3);
+        });
+        doc.setFontSize(prevSize);
       }
-      if (data.proyecto && (row.fecha || row.origen || row.destino || row.gestion)) {
-        doc.text(doc.splitTextToSize(data.proyecto, cols[3] - cols[2] - 2)[0], cols[2] + 1, y + 4.5);
+      if (row.clienteProveedor) {
+        doc.text(doc.splitTextToSize(row.clienteProveedor, cols[3] - cols[2] - 2)[0], cols[2] + 1, y + 4.5);
+      }
+      const proyectoCell = row.proyecto || data.proyecto;
+      if (proyectoCell && hasContent) {
+        doc.text(doc.splitTextToSize(proyectoCell, cols[4] - cols[3] - 2)[0], cols[3] + 1, y + 4.5);
       }
       if (row.origen) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const oLines = (doc.splitTextToSize(row.origen, cols[4] - cols[3] - 2) as string[]).slice(0, 2);
+        const oLines = (doc.splitTextToSize(row.origen, cols[5] - cols[4] - 2) as string[]).slice(0, 2);
         const oStartY = oLines.length > 1 ? y + 2.8 : y + 4.5;
         oLines.forEach((line, i) => {
-          doc.text(line, cols[3] + 1, oStartY + i * 3);
+          doc.text(line, cols[4] + 1, oStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.destino) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const dLines = (doc.splitTextToSize(row.destino, cols[5] - cols[4] - 2) as string[]).slice(0, 2);
+        const dLines = (doc.splitTextToSize(row.destino, cols[6] - cols[5] - 2) as string[]).slice(0, 2);
         const dStartY = dLines.length > 1 ? y + 2.8 : y + 4.5;
         dLines.forEach((line, i) => {
-          doc.text(line, cols[4] + 1, dStartY + i * 3);
+          doc.text(line, cols[5] + 1, dStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.gestion) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const gLines = (doc.splitTextToSize(row.gestion, cols[6] - cols[5] - 2) as string[]).slice(0, 2);
+        const gLines = (doc.splitTextToSize(row.gestion, cols[7] - cols[6] - 2) as string[]).slice(0, 2);
         const gStartY = gLines.length > 1 ? y + 2.8 : y + 4.5;
         gLines.forEach((line, i) => {
-          doc.text(line, cols[5] + 1, gStartY + i * 3);
+          doc.text(line, cols[6] + 1, gStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.total) {
-        doc.text(row.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
+        doc.text(row.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
       }
       y += rowH;
     }
@@ -903,22 +1055,22 @@ export class RendicionExportService {
     doc.setTextColor(145, 47, 44);
     doc.text('IMPORTE TOTAL PLANILLA DE MOVILIDAD', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
-    doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
+    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
+    doc.text(data.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
     y += footerH;
 
     doc.setTextColor(145, 47, 44);
     doc.text('CANTIDAD RECIBIDA  A CUENTA', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
+    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
     y += footerH;
 
     doc.setTextColor(145, 47, 44);
     doc.text('DIFERENCIA A MI FAVOR', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.text('S/.', cols[6] - 2, y + 4.5, { align: 'right' });
-    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
-    doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
+    doc.text('S/.', cols[7] - 2, y + 4.5, { align: 'right' });
+    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
+    doc.text(data.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
     y += footerH + 10;
 
     // Signature area
@@ -963,13 +1115,18 @@ export class RendicionExportService {
       y,
     );
 
-    doc.save(`${data.fileBaseName}.pdf`);
+    if (isNew) {
+      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
+      doc.save(`${data.fileBaseName}.pdf`);
+    }
   }
 
-  async exportCashVoucherToPdf(data: CashVoucherExportData): Promise<void> {
+  async exportCashVoucherToPdf(data: CashVoucherExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
     data = { ...data, signature: await this.resolveSignature(data.signature) };
+    const isNew = !inDoc;
     // Quarter A4: 105 x 148 mm
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [105, 148] });
+    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: [105, 148] });
+    if (!isNew) doc.addPage([105, 148], 'portrait');
     const pageW = 105;
     const lm = 7;
     const rm = 98;
@@ -1082,12 +1239,17 @@ export class RendicionExportService {
     doc.text(data.clientName || '', pageW / 2, 144, { align: 'center' });
     doc.setTextColor(0, 0, 0);
 
-    doc.save(`${data.fileBaseName}.pdf`);
+    if (isNew) {
+      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
+      doc.save(`${data.fileBaseName}.pdf`);
+    }
   }
 
-  async exportReceiptToPdf(data: ReceiptExportData): Promise<void> {
+  async exportReceiptToPdf(data: ReceiptExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
     data = { ...data, signature: await this.resolveSignature(data.signature) };
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const isNew = !inDoc;
+    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    if (!isNew) doc.addPage([210, 297], 'portrait');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.text('RECIBO DE CAJA', 105, 18, { align: 'center' });
@@ -1125,7 +1287,10 @@ export class RendicionExportService {
       doc.text(`DNI N° ${data.collaboratorDni}`, 105, sigY + 16, { align: 'center' });
     }
 
-    doc.save(`${data.fileBaseName}.pdf`);
+    if (isNew) {
+      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
+      doc.save(`${data.fileBaseName}.pdf`);
+    }
   }
 
   async exportMobilitySheetToExcel(data: MobilitySheetExportData): Promise<void> {
@@ -1137,12 +1302,13 @@ export class RendicionExportService {
 
     ws.columns = [
       { width: 14 },  // A: Fecha
-      { width: 24 },  // B: Cliente/Proveedor
-      { width: 14 },  // C: Proyecto
-      { width: 22 },  // D: Origen
-      { width: 22 },  // E: Destino
-      { width: 24 },  // F: Gestión
-      { width: 13 },  // G: TOTALES
+      { width: 22 },  // B: Colaborador
+      { width: 24 },  // C: Cliente/Proveedor
+      { width: 14 },  // D: Proyecto
+      { width: 22 },  // E: Origen
+      { width: 22 },  // F: Destino
+      { width: 24 },  // G: Gestión
+      { width: 13 },  // H: TOTALES
     ];
 
     const cfg = this.companyConfigService.getCompanyConfig();
@@ -1155,7 +1321,7 @@ export class RendicionExportService {
     };
 
     // Row 1: Title
-    ws.mergeCells('A1:G1');
+    ws.mergeCells('A1:H1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'PLANILLA DE MOVILIDAD';
     titleCell.font = { bold: true, size: 13 };
@@ -1177,7 +1343,7 @@ export class RendicionExportService {
     if (logoB64) {
       const ext = logoB64.includes('data:image/png') ? 'png' : 'jpeg';
       const imgId = wb.addImage({ base64: logoB64, extension: ext as 'png' | 'jpeg' });
-      ws.addImage(imgId, { tl: { col: 5, row: 0 }, ext: { width: 150, height: 60 } });
+      ws.addImage(imgId, { tl: { col: 6, row: 0 }, ext: { width: 150, height: 60 } });
     }
 
     // Row 4: blank separator
@@ -1187,24 +1353,24 @@ export class RendicionExportService {
     ws.getCell('A5').value = 'Nombre Completo :';
     ws.getCell('A5').font = { bold: true, size: 9 };
     ws.getCell('A5').border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-    ws.mergeCells('B5:E5');
+    ws.mergeCells('B5:F5');
     ws.getCell('B5').value = data.collaborator;
     ws.getCell('B5').border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-    ws.getCell('F5').value = 'Nº';
-    ws.getCell('F5').font = { bold: true, size: 9 };
-    ws.getCell('F5').border = bt;
-    ws.getCell('G5').value = data.internalCode || '';
-    ws.getCell('G5').font = { size: 9 };
+    ws.getCell('G5').value = 'Nº';
+    ws.getCell('G5').font = { bold: true, size: 9 };
     ws.getCell('G5').border = bt;
+    ws.getCell('H5').value = data.internalCode || '';
+    ws.getCell('H5').font = { size: 9 };
+    ws.getCell('H5').border = bt;
 
     // Row 6: Vo.Bo.
     ws.getCell('A6').border = { bottom: { style: 'thin' } };
     ws.getCell('B6').border = { bottom: { style: 'thin' } };
-    ws.mergeCells('F6:G6');
-    ws.getCell('F6').value = 'Vo.Bo. Gerencia Adm y Finanzas';
-    ws.getCell('F6').alignment = { horizontal: 'center' };
-    ws.getCell('F6').font = { size: 8 };
-    ws.getCell('F6').border = bt;
+    ws.mergeCells('G6:H6');
+    ws.getCell('G6').value = 'Vo.Bo. Gerencia Adm y Finanzas';
+    ws.getCell('G6').alignment = { horizontal: 'center' };
+    ws.getCell('G6').font = { size: 8 };
+    ws.getCell('G6').border = bt;
 
     // Row 7: Periodo
     ws.getCell('A7').value = 'Periodo:';
@@ -1216,7 +1382,7 @@ export class RendicionExportService {
     ws.getRow(8).height = 4;
 
     // Row 9: Table title bar
-    ws.mergeCells('A9:G9');
+    ws.mergeCells('A9:H9');
     const tableTitle = ws.getCell('A9');
     tableTitle.value = 'DETALLE DE GASTOS DE MOVILIDAD';
     tableTitle.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
@@ -1225,8 +1391,8 @@ export class RendicionExportService {
     ws.getRow(9).height = 18;
 
     // Row 10: Single header row
-    const hdrLabels = ['Fecha', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    const hdrCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+    const hdrLabels = ['Fecha', 'Colaborador', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
+    const hdrCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
     for (let i = 0; i < hdrLabels.length; i++) {
       const cell = ws.getCell(`${hdrCols[i]}10`);
       cell.value = hdrLabels[i];
@@ -1246,20 +1412,22 @@ export class RendicionExportService {
     for (const row of dataRows) {
       const hasContent = !!(row.fecha || row.origen || row.destino || row.gestion);
       ws.getCell(r, 1).value = this.formatDateDdMmYyyy(row.fecha);
-      ws.getCell(r, 2).value = row.clienteProveedor || '';
-      ws.getCell(r, 3).value = hasContent ? (data.proyecto || '') : '';
-      ws.getCell(r, 4).value = row.origen || '';
-      ws.getCell(r, 4).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 5).value = row.destino || '';
+      ws.getCell(r, 2).value = hasContent ? (row.colaborador || '') : '';
+      ws.getCell(r, 2).alignment = { wrapText: true, vertical: 'middle' };
+      ws.getCell(r, 3).value = row.clienteProveedor || '';
+      ws.getCell(r, 4).value = hasContent ? (row.proyecto || data.proyecto || '') : '';
+      ws.getCell(r, 5).value = row.origen || '';
       ws.getCell(r, 5).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 6).value = row.gestion || '';
+      ws.getCell(r, 6).value = row.destino || '';
       ws.getCell(r, 6).alignment = { wrapText: true, vertical: 'middle' };
+      ws.getCell(r, 7).value = row.gestion || '';
+      ws.getCell(r, 7).alignment = { wrapText: true, vertical: 'middle' };
       if (row.total) {
-        ws.getCell(r, 7).value = row.total;
-        ws.getCell(r, 7).numFmt = '#,##0.00';
-        ws.getCell(r, 7).alignment = { horizontal: 'right' };
+        ws.getCell(r, 8).value = row.total;
+        ws.getCell(r, 8).numFmt = '#,##0.00';
+        ws.getCell(r, 8).alignment = { horizontal: 'right' };
       }
-      for (let i = 1; i <= 7; i++) {
+      for (let i = 1; i <= 8; i++) {
         ws.getCell(r, i).border = bt;
         ws.getCell(r, i).font = { size: 8.5 };
       }
@@ -1270,33 +1438,33 @@ export class RendicionExportService {
     // Footer rows
     const redFont = { bold: true, color: { argb: 'FF912f2c' } };
 
-    ws.mergeCells(r, 1, r, 6);
+    ws.mergeCells(r, 1, r, 7);
     ws.getCell(r, 1).value = 'IMPORTE TOTAL PLANILLA DE MOVILIDAD';
     ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 7).value = data.total;
-    ws.getCell(r, 7).numFmt = '#,##0.00';
-    ws.getCell(r, 7).alignment = { horizontal: 'right' };
-    ws.getCell(r, 7).border = bt;
+    ws.getCell(r, 8).value = data.total;
+    ws.getCell(r, 8).numFmt = '#,##0.00';
+    ws.getCell(r, 8).alignment = { horizontal: 'right' };
+    ws.getCell(r, 8).border = bt;
+    ws.getRow(r).height = 16;
+    r++;
+
+    ws.mergeCells(r, 1, r, 7);
+    ws.getCell(r, 1).value = 'CANTIDAD RECIBIDA  A CUENTA';
+    ws.getCell(r, 1).font = redFont;
+    ws.getCell(r, 8).border = bt;
     ws.getRow(r).height = 16;
     r++;
 
     ws.mergeCells(r, 1, r, 6);
-    ws.getCell(r, 1).value = 'CANTIDAD RECIBIDA  A CUENTA';
-    ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 7).border = bt;
-    ws.getRow(r).height = 16;
-    r++;
-
-    ws.mergeCells(r, 1, r, 5);
     ws.getCell(r, 1).value = 'DIFERENCIA A MI FAVOR';
     ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 6).value = 'S/.';
-    ws.getCell(r, 6).font = { bold: true };
-    ws.getCell(r, 6).alignment = { horizontal: 'right' };
-    ws.getCell(r, 7).value = data.total;
-    ws.getCell(r, 7).numFmt = '#,##0.00';
+    ws.getCell(r, 7).value = 'S/.';
+    ws.getCell(r, 7).font = { bold: true };
     ws.getCell(r, 7).alignment = { horizontal: 'right' };
-    ws.getCell(r, 7).border = bt;
+    ws.getCell(r, 8).value = data.total;
+    ws.getCell(r, 8).numFmt = '#,##0.00';
+    ws.getCell(r, 8).alignment = { horizontal: 'right' };
+    ws.getCell(r, 8).border = bt;
     ws.getRow(r).height = 16;
     r += 2;
 
@@ -1351,9 +1519,11 @@ export class RendicionExportService {
     );
   }
 
-  async exportSingleExpenseAffidavitToPdf(data: SingleExpenseAffidavitData): Promise<void> {
+  async exportSingleExpenseAffidavitToPdf(data: SingleExpenseAffidavitData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
     data = { ...data, signature: await this.resolveSignature(data.signature) };
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const isNew = !inDoc;
+    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    if (!isNew) doc.addPage([210, 297], 'portrait');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
@@ -1420,7 +1590,170 @@ export class RendicionExportService {
       doc.text(`DNI N° ${data.colaboradorDni}`, center, y, { align: 'center' });
     }
 
-    doc.save(`${data.fileBaseName}.pdf`);
+    if (isNew) {
+      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
+      doc.save(`${data.fileBaseName}.pdf`);
+    }
+  }
+
+  private async _renderFacturaContent(doc: jsPDF, data: FacturaPageData): Promise<void> {
+    const pageW = 210;
+    const lm = 14;
+    const rm = 196;
+
+    const logoB64 = await this.getLogoBase64();
+    if (logoB64) {
+      doc.addImage(logoB64, 'PNG', rm - 40, 6, 40, 12);
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text(data.tipo.toUpperCase(), pageW / 2, 16, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Comprobante N° ${data.index}`, pageW / 2, 22, { align: 'center' });
+
+    doc.setLineWidth(0.3);
+    doc.line(lm, 26, rm, 26);
+
+    let y = 35;
+    const row = (label: string, value: string | undefined) => {
+      if (!value) return;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text(`${label}:`, lm, y);
+      doc.setFont('helvetica', 'normal');
+      const lines = doc.splitTextToSize(value, rm - lm - 52) as string[];
+      doc.text(lines, lm + 52, y);
+      y += lines.length > 1 ? lines.length * 5 + 2 : 7;
+    };
+
+    row('Proveedor', data.razonSocial || undefined);
+    row('RUC', data.rucEmisor || undefined);
+    if (data.serie && data.correlativo) {
+      row('N° Documento', `${data.serie}-${data.correlativo}`);
+    }
+    row('Fecha Emisión', data.fechaEmision || undefined);
+    if (data.montoTotal !== undefined) {
+      row('Monto', `${data.moneda || 'PEN'} ${data.montoTotal.toFixed(2)}`);
+    }
+    row('Comentario', data.comentario || undefined);
+    row('Placa Vehículo', data.placaVehiculo || undefined);
+    row('Descripción', data.descripcion || undefined);
+  }
+
+  async exportFullRendicionPdf(
+    summaryData: RendicionExportData,
+    pages: ComprobantePage[],
+  ): Promise<void> {
+    const { PDFDocument } = await import('pdf-lib');
+    const sections: Uint8Array[] = [];
+
+    const summaryBytes = await this.exportToPdf(summaryData, undefined, true);
+    if (summaryBytes) sections.push(summaryBytes);
+
+    for (const page of pages) {
+      try {
+        let bytes: Uint8Array | null = null;
+        switch (page.type) {
+          case 'mobility':
+            bytes = (await this.exportMobilitySheetToPdf(page.data, undefined, true)) as Uint8Array ?? null;
+            break;
+          case 'cash_voucher':
+            bytes = (await this.exportCashVoucherToPdf(page.data, undefined, true)) as Uint8Array ?? null;
+            break;
+          case 'receipt':
+            bytes = (await this.exportReceiptToPdf(page.data, undefined, true)) as Uint8Array ?? null;
+            break;
+          case 'affidavit':
+            bytes = (await this.exportSingleExpenseAffidavitToPdf(page.data, undefined, true)) as Uint8Array ?? null;
+            break;
+          case 'factura': {
+            const fichaDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            await this._renderFacturaContent(fichaDoc, page.data);
+            bytes = new Uint8Array(fichaDoc.output('arraybuffer'));
+            break;
+          }
+          case 'factura_image':
+            bytes = await this._buildImageSectionBytes(page.url);
+            break;
+          case 'factura_pdf':
+            bytes = await this._fetchBytes(page.url);
+            break;
+        }
+        if (bytes) sections.push(bytes);
+      } catch {
+        // skip failed section
+      }
+    }
+
+    const merged = await PDFDocument.create();
+    for (const section of sections) {
+      try {
+        const src = await PDFDocument.load(section, { ignoreEncryption: true });
+        const copied = await merged.copyPages(src, src.getPageIndices());
+        copied.forEach(p => merged.addPage(p));
+      } catch {
+        // skip invalid section
+      }
+    }
+
+    const mergedBytes = await merged.save();
+    this.triggerDownload(
+      new Blob([mergedBytes], { type: 'application/pdf' }),
+      `${summaryData.fileBaseName}_completo.pdf`,
+    );
+  }
+
+  private async _buildImageSectionBytes(url: string): Promise<Uint8Array | null> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      const mimeType = blob.type || 'image/jpeg';
+      const isPng = mimeType.includes('png');
+      const format = isPng ? 'PNG' : 'JPEG';
+
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = base64;
+      });
+
+      const pageW = 210;
+      const pageH = 297;
+      const margin = 10;
+      const maxW = pageW - margin * 2;
+      const maxH = pageH - margin * 2;
+      const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+      const drawW = img.naturalWidth * scale;
+      const drawH = img.naturalHeight * scale;
+      const x = (pageW - drawW) / 2;
+      const y = (pageH - drawH) / 2;
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      doc.addImage(base64, format, x, y, drawW, drawH);
+      return new Uint8Array(doc.output('arraybuffer'));
+    } catch {
+      return null;
+    }
+  }
+
+  private async _fetchBytes(url: string): Promise<Uint8Array | null> {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      return new Uint8Array(await response.arrayBuffer());
+    } catch {
+      return null;
+    }
   }
 
   private triggerDownload(blob: Blob, filename: string): void {

@@ -23,17 +23,13 @@ export class UserStateService {
       if (!parsedUser.companyId) {
         // Try to recover companyId from the stored token
         const token = localStorage.getItem('token');
-        let isHubToken = false;
         if (token) {
           try {
             const payload = JSON.parse(atob(token.split('.')[1]));
-            isHubToken = !!payload.isHubToken;
             if (payload.clientId) parsedUser.companyId = payload.clientId;
           } catch {}
         }
-        // Mientras el token sea de hub no derivar companyId del `client`: el rol
-        // global debe elegir empresa en el hub para tener un token scoped.
-        if (!parsedUser.companyId && !isHubToken) {
+        if (!parsedUser.companyId) {
           parsedUser.companyId = parsedUser.client?._id ||
                                  parsedUser.clientId?._id ||
                                  parsedUser.clientId ||
@@ -50,23 +46,16 @@ export class UserStateService {
     // JWT payload is the authoritative source for which company is active.
     // This matters for Contabilidad users whose `client` field is null but
     // whose token carries the clientId of the company they selected in the hub.
-    let isHubToken = false;
     if (user.access_token) {
       try {
         const payload = JSON.parse(atob(user.access_token.split('.')[1]));
-        isHubToken = !!payload.isHubToken;
         if (payload.clientId) {
           userToSave.companyId = payload.clientId;
         }
       } catch {}
     }
 
-    // No derivar companyId del `client` mientras el token sea de hub: los roles
-    // globales (Administrador/Contabilidad) deben elegir empresa en el hub para
-    // obtener un token scoped con clientId. Si tomáramos el client "casa" del
-    // admin aquí, la app lo creería "en empresa" pero el token seguiría sin
-    // clientId y las vistas que lo leen del token (p. ej. /advance) darían 500.
-    if (!userToSave.companyId && !isHubToken) {
+    if (!userToSave.companyId) {
       userToSave.companyId = (userToSave as any).client?._id ||
                              (userToSave as any).clientId?._id ||
                              (userToSave as any).clientId ||
@@ -203,9 +192,14 @@ export class UserStateService {
     return this.canAccessTesoreria();
   }
 
+  canAccessCajaChica(): boolean {
+    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    return this.hasModulePermission('caja-chica');
+  }
+
   canCreateRendicion(): boolean {
-    // Solo colaboradores con el permiso explícito; admins/contabilidad no usan este flujo
-    if (!this.isColaborador()) return false;
+    // Colaboradores y coordinadores con el permiso explícito; admins/contabilidad usan otro flujo
+    if (!this.isColaborador() && !this.isCoordinador()) return false;
     const perms = this.getPermissions();
     return perms.modules?.includes('nueva-rendicion') ?? false;
   }
@@ -222,17 +216,5 @@ export class UserStateService {
     if (!this.isAdmin()) return false;
     const user = this._user();
     return !!(user?.companyId);
-  }
-
-  /**
-   * Global roles (Administrador y Contabilidad) operan con un token de hub
-   * sin clientId hasta que eligen empresa. Mientras no haya empresa seleccionada
-   * NO deben entrar a vistas scoped (provocarían 500 por clientId vacío en el back).
-   * Superadministrador es global de verdad y queda exento.
-   */
-  needsCompanySelection(): boolean {
-    if (this.isSuperAdmin()) return false;
-    if (!this.isAdmin() && !this.isContabilidad()) return false;
-    return !this._user()?.companyId;
   }
 }

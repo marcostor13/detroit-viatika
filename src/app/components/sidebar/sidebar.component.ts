@@ -40,7 +40,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
   configOpen = false;
 
   isConfigSection(): boolean {
-    return ['/configuracion', '/mi-firma', '/categorias', '/centros-de-costo', '/audit-log', '/mi-perfil']
+    return ['/configuracion', '/mi-firma', '/categorias', '/centros-de-costo', '/lineas-negocio', '/perfiles-categoria', '/audit-log', '/mi-perfil']
       .some(p => this.currentPath.startsWith(p));
   }
 
@@ -87,14 +87,16 @@ export class SidebarComponent implements OnInit, OnDestroy {
   }
 
   isSelected(path: string) {
+    // Ignorar query string / fragment (ej: /rendiciones?tab=directas) para no perder el activo al cambiar de tab
+    const current = this.currentPath.split('?')[0].split('#')[0];
     // Paths que pueden ser prefijo de otros necesitan match más estricto
     if (path === '/rendiciones') {
-      return this.currentPath === '/rendiciones' || this.currentPath.startsWith('/rendiciones/');
+      return current === '/rendiciones' || current.startsWith('/rendiciones/');
     }
     if (path === '/mis-rendiciones') {
-      return this.currentPath === '/mis-rendiciones' || this.currentPath.startsWith('/mis-rendiciones/');
+      return current === '/mis-rendiciones' || current.startsWith('/mis-rendiciones/');
     }
-    return this.currentPath.includes(path);
+    return current.includes(path);
   }
 
   toggleSidebar() {

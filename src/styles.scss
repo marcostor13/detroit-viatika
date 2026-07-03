@@ -73,6 +73,80 @@ h1, h2, h3 {
   }
 }
 
+/* ── Google PlaceAutocompleteElement (new Places API) ──────────────────────
+   El borde se aplica sobre el elemento host (gmp-placeautocomplete) porque
+   es 100% controlable desde fuera, sin depender de ::part(input).
+   ::part(input) complementa con color/fondo si el browser lo expone.
+   color-scheme:only light evita que el SO dark mode afecte al shadow DOM.
+   ───────────────────────────────────────────────────────────────────────── */
+gmp-placeautocomplete {
+  display: block;
+  width: 100%;
+  color-scheme: only light;
+  /* Borde y fondo aplicados al host — siempre funcionan */
+  border: 1px solid rgb(209 213 219);
+  border-radius: 0.75rem;
+  background-color: #ffffff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  /* CSS variables para el theming interno de Google */
+  --gmp-color-surface: #ffffff;
+  --gmp-color-on-surface: rgb(17 24 39);
+  --gmp-color-outline: transparent; /* evitar borde interno duplicado */
+  --gmp-color-primary: var(--tema-primary, #D31212);
+  font-size: 0.875rem;
+  font-family: var(--font-body);
+}
+
+/* Estado focus usando :focus-within en el host */
+gmp-placeautocomplete:focus-within {
+  border-color: var(--tema-primary);
+  box-shadow: 0 0 0 3px rgba(211, 18, 18, 0.2);
+  outline: none;
+}
+
+/* ::part(input) — complemento si el browser expone la parte */
+gmp-placeautocomplete::part(input) {
+  width: 100%;
+  height: 2.625rem;
+  padding: 0 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-family: var(--font-body);
+  border-radius: 0.75rem;
+  border: none;           /* el host ya tiene el borde */
+  background-color: transparent;
+  color: rgb(17 24 39);
+  box-sizing: border-box;
+  outline: none;
+  color-scheme: only light;
+}
+
+gmp-placeautocomplete::part(input)::placeholder {
+  color: rgb(156 163 175);
+}
+
+/* Dark mode: forzar colores claros sobre los internos de Google */
+@media (prefers-color-scheme: dark) {
+  gmp-placeautocomplete {
+    color-scheme: only light;
+    border-color: rgb(209 213 219) !important;
+    background-color: #ffffff !important;
+    --gmp-color-surface: #ffffff;
+    --gmp-color-on-surface: rgb(17 24 39);
+    --gmp-color-outline: transparent;
+  }
+
+  gmp-placeautocomplete::part(input) {
+    background-color: transparent !important;
+    color: rgb(17 24 39) !important;
+    color-scheme: only light;
+  }
+
+  gmp-placeautocomplete::part(input)::placeholder {
+    color: rgb(156 163 175) !important;
+  }
+}
+
 /* Select: remove native arrow, add consistent custom chevron */
 select:not([multiple]) {
   appearance: none;

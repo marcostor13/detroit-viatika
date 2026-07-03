@@ -40,10 +40,26 @@ export class ViaticosDetailComponent implements OnInit {
   advance = signal<IAdvance | null>(null);
 
   showRejectModal = signal(false);
+  showCancelModal = signal(false);
+  isCancelling = signal(false);
   rejectForm!: FormGroup;
 
   get canApproveL1() { return this.userState.canApproveL1(); }
   get canApproveL2() { return this.userState.canApproveL2(); }
+
+  private get currentUserId(): string {
+    return (this.userState.getUser() as any)?._id ?? '';
+  }
+
+  private get advanceOwnerId(): string {
+    const u = this.advance()?.userId;
+    return u && typeof u === 'object' ? (u as any)._id : (u ?? '');
+  }
+
+  get canCancelAction(): boolean {
+    const a = this.advance();
+    return !!a && a.status === 'pending_l1' && this.currentUserId === this.advanceOwnerId;
+  }
 
   ngOnInit() {
     this.rejectForm = this.fb.group({
@@ -52,11 +68,11 @@ export class ViaticosDetailComponent implements OnInit {
     const id = this.route.snapshot.paramMap.get('id')!;
     this.advanceService.findOne(id).subscribe({
       next: (a) => { this.advance.set(a); this.isLoading.set(false); },
-      error: () => { this.notifications.show('No se pudo cargar la solicitud', 'error'); this.router.navigate(['/viaticos']); },
+      error: () => { this.notifications.show('No se pudo cargar la solicitud', 'error'); this.router.navigate(['/rendiciones']); },
     });
   }
 
-  back() { this.router.navigate(['/viaticos']); }
+  back() { this.router.navigate(['/rendiciones']); }
 
   get canApproveL1Action(): boolean {
     const a = this.advance();
@@ -121,6 +137,24 @@ export class ViaticosDetailComponent implements OnInit {
       error: (e) => {
         this.notifications.show(e?.error?.message || 'Error al rechazar', 'error');
         this.isActing.set(false);
+      },
+    });
+  }
+
+  doCancel() {
+    const a = this.advance();
+    if (!a) return;
+    this.isCancelling.set(true);
+    this.advanceService.cancelAdvance(a._id).subscribe({
+      next: (updated) => {
+        this.advance.set(updated);
+        this.showCancelModal.set(false);
+        this.isCancelling.set(false);
+        this.notifications.show('Solicitud cancelada.', 'success');
+      },
+      error: (e) => {
+        this.isCancelling.set(false);
+        this.notifications.show(e?.error?.message || 'Error al cancelar la solicitud.', 'error');
       },
     });
   }

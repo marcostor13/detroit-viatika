@@ -77,106 +77,69 @@
       </div>
     </div>
 
-    <!-- Categorías permitidas -->
+    <!-- Categorías permitidas (agrupadas por perfil) -->
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-      <div class="flex items-start justify-between mb-1">
+      <div class="flex items-start justify-between gap-3 mb-1">
         <h2 class="text-base font-semibold text-gray-800">Categorías Permitidas</h2>
         @if (!categoriesLoading()) {
-          <span class="text-xs text-gray-500 mt-0.5">{{ selectedCount }} / {{ totalCount }} seleccionada(s)</span>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-gray-500">{{ selectedCount }} seleccionada(s)</span>
+            <button (click)="applyRoleDefault()" class="text-xs text-primary hover:underline whitespace-nowrap">
+              Restablecer según rol
+            </button>
+          </div>
         }
       </div>
-      <p class="text-sm text-gray-500 mb-5">Define qué categorías puede usar este usuario al registrar gastos. Si no seleccionas ninguna, no tendrá categorías disponibles.</p>
+      <p class="text-sm text-gray-500 mb-5">
+        Selecciona las categorías del usuario. De cada categoría se deriva su perfil y, con ello, los centros de costo
+        que verá. Por defecto se preseleccionan según el rol
+        ({{ isColaborador() ? 'PROYECTO' : 'ADMINISTRACIÓN + COMERCIAL' }}).
+      </p>
 
       @if (categoriesLoading()) {
         <div class="flex justify-center py-8">
           <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
         </div>
+      } @else if (allCategories().length === 0) {
+        <p class="text-sm text-gray-500 text-center py-6">
+          No hay categorías. Créalas primero desde Configuración → Categorías.
+        </p>
       } @else {
-
-        <!-- Grupos rápidos -->
-        @if (groups().length > 0) {
-          <div class="mb-5">
-            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Grupos rápidos</p>
-            <div class="flex flex-wrap gap-2">
-              @for (group of groups(); track group._id) {
-                <button
-                  (click)="toggleGroup(group)"
-                  class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors"
-                  [class]="groupIsFullySelected(group)
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : groupIsPartiallySelected(group)
-                      ? 'border-primary/40 bg-primary/5 text-primary/70'
-                      : 'border-gray-200 text-gray-600 hover:border-primary/30 hover:bg-gray-50'"
-                >
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {{ group.name }}
-                  <span class="text-xs opacity-60">({{ group.categoryIds.length }})</span>
-                  @if (groupIsFullySelected(group)) {
-                    <svg class="w-3.5 h-3.5 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                    </svg>
-                  }
-                </button>
-              }
-            </div>
-          </div>
-        }
-
-        <!-- Acciones globales + búsqueda -->
-        <div class="flex items-center gap-3 mb-3">
-          <div class="relative flex-1 max-w-xs">
-            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0" />
-            </svg>
-            <input
-              type="text"
-              [value]="categorySearch()"
-              (input)="categorySearch.set($any($event.target).value)"
-              placeholder="Buscar..."
-              class="w-full h-[34px] pl-8 pr-3 rounded-lg border border-gray-200 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-            />
-          </div>
-          <button (click)="selectAllCategories()" class="text-xs text-primary hover:underline whitespace-nowrap">Seleccionar todas</button>
-          <button (click)="clearAllCategories()" class="text-xs text-gray-500 hover:underline whitespace-nowrap">Limpiar</button>
-        </div>
-
-        <!-- Category checklist -->
-        @if (allCategories().length === 0) {
-          <p class="text-sm text-gray-500 text-center py-6">No hay categorías disponibles. Crea categorías primero desde la sección Configuración.</p>
-        } @else {
-          <div class="max-h-64 overflow-y-auto rounded-lg border border-gray-100 divide-y divide-gray-50">
-            @for (cat of filteredCategories; track cat._id) {
-              <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
-                  [checked]="hasCategory(cat._id!)"
-                  (change)="toggleCategory(cat._id!, $any($event.target).checked)"
-                />
-                <div class="flex-1 min-w-0">
-                  <span class="text-sm text-gray-800">{{ cat.name }}</span>
-                  @if (cat.cuenta) {
-                    <span class="ml-2 text-xs text-gray-400">{{ cat.cuenta }}</span>
-                  }
-                  @if (cat.description) {
-                    <p class="text-xs text-gray-400 mt-0.5 truncate">{{ cat.description }}</p>
-                  }
-                </div>
-                @if (cat.limit != null) {
-                  <span class="text-xs text-primary whitespace-nowrap">S/ {{ cat.limit | number:'1.2-2' }}</span>
+        <div class="space-y-5">
+          @for (section of perfilSections; track section.name) {
+            <div class="rounded-lg border border-gray-100">
+              <div class="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                <span class="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                  {{ section.name }} <span class="text-gray-400 normal-case">({{ section.cats.length }})</span>
+                </span>
+                @if (section.group; as g) {
+                  <button (click)="toggleGroup(g)"
+                    class="text-xs font-medium"
+                    [class]="groupIsFullySelected(g) ? 'text-gray-500 hover:underline' : 'text-primary hover:underline'">
+                    {{ groupIsFullySelected(g) ? 'Quitar todas' : 'Seleccionar todas' }}
+                  </button>
                 }
-              </label>
-            }
-          </div>
-        }
+              </div>
+              <div class="divide-y divide-gray-50">
+                @for (cat of section.cats; track cat._id) {
+                  <label class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer transition-colors">
+                    <input type="checkbox" class="h-4 w-4 rounded border-gray-300 accent-primary cursor-pointer"
+                      [checked]="hasCategory(cat._id!)" (change)="toggleCategory(cat._id!, $any($event.target).checked)" />
+                    <span class="text-sm text-gray-800 flex-1">{{ cat.name }}</span>
+                    @if (cat.cuenta) { <span class="text-xs text-gray-400">{{ cat.cuenta }}</span> }
+                  </label>
+                }
+              </div>
+            </div>
+          }
+        </div>
       }
     </div>
 
     <!-- Nota informativa -->
     <div class="rounded-lg bg-blue-50 border border-blue-100 p-4 mb-6 text-sm text-blue-700">
-      <strong>Nota:</strong> Los cambios en permisos de categorías requieren que el usuario vuelva a iniciar sesión para que tengan efecto. Los Coordinadores ven solo las categorías que tengan asignadas.
+      <strong>Nota:</strong> Los cambios requieren que el usuario vuelva a iniciar sesión para que tengan efecto.
+      Los perfiles de categoría son una referencia: de las categorías asignadas se derivan los centros de costo visibles.
     </div>
 
     <!-- Acciones -->

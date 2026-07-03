@@ -1,0 +1,202 @@
+<div class="min-h-screen bg-gray-50 flex flex-col">
+
+  <!-- Header -->
+  <div class="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
+    <div class="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <button type="button" (click)="goBack()"
+          class="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+          </svg>
+          Volver
+        </button>
+        <span class="text-gray-200 text-xl font-light">|</span>
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+            </svg>
+          </div>
+          <h1 class="text-base font-bold text-gray-900 truncate">Nueva Rendición Directa</h1>
+        </div>
+      </div>
+
+      <button type="button" (click)="submit()"
+        [disabled]="form.invalid || isCreating() || isUploadingDeposit() || isScanningDeposit() || isReceiptMissing"
+        class="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm shrink-0">
+        @if (isCreating()) {
+          <span class="inline-flex items-center gap-2">
+            <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+            Creando...
+          </span>
+        } @else {
+          Crear y asignar
+        }
+      </button>
+    </div>
+  </div>
+
+  <!-- Contenido -->
+  <div class="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+
+    <div class="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-700">
+      Asigna un saldo a un colaborador o coordinador. Si fue por depósito o transferencia, adjunta el comprobante y el monto se detecta automáticamente. Si fue en efectivo, el comprobante es opcional.
+    </div>
+
+    <form [formGroup]="form" class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-100">
+
+      <!-- Destinatario -->
+      <div class="p-5">
+        <label class="block text-sm font-semibold text-gray-800 mb-1.5">Destinatario <span class="text-red-500">*</span></label>
+        <p class="text-xs text-gray-500 mb-2">Colaborador o coordinador que recibirá el saldo.</p>
+        <select formControlName="userId"
+          class="w-full border rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
+          [class.border-red-400]="isInvalid('userId')" [class.border-gray-300]="!isInvalid('userId')">
+          <option value="" disabled>Selecciona un usuario...</option>
+          @for (u of targetUsers(); track u._id) {
+          <option [value]="u._id">{{ targetUserLabel(u) }}</option>
+          }
+        </select>
+        @if (isInvalid('userId')) {
+          <p class="mt-1 text-xs text-red-500">Selecciona un destinatario.</p>
+        }
+      </div>
+
+      <!-- Método de pago -->
+      <div class="p-5">
+        <label class="block text-sm font-semibold text-gray-800 mb-1.5">Método de pago <span class="text-red-500">*</span></label>
+        <p class="text-xs text-gray-500 mb-2">¿Cómo se entregó el dinero al colaborador?</p>
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" (click)="setMetodoPago('deposito')"
+            class="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors"
+            [ngClass]="!isEfectivo ? 'border-primary bg-primary/5 text-primary' : 'border-gray-300 text-gray-600 hover:bg-gray-50'">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 0 0 2.25-2.25V6.75A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25v10.5A2.25 2.25 0 0 0 4.5 19.5Z" />
+            </svg>
+            Depósito / transferencia
+          </button>
+          <button type="button" (click)="setMetodoPago('efectivo')"
+            class="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors"
+            [ngClass]="isEfectivo ? 'border-primary bg-primary/5 text-primary' : 'border-gray-300 text-gray-600 hover:bg-gray-50'">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+            Efectivo
+          </button>
+        </div>
+      </div>
+
+      <!-- Gestión -->
+      <div class="p-5">
+        <label class="block text-sm font-semibold text-gray-800 mb-1.5">Gestión / motivo</label>
+        <p class="text-xs text-gray-500 mb-2">Indica para qué es el pago.</p>
+        <textarea formControlName="gestion" rows="3"
+          placeholder="Ej: Compra de materiales para obra X..."
+          class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none transition-colors"></textarea>
+      </div>
+
+      <!-- Comprobante de depósito -->
+      <div class="p-5">
+        <label class="block text-sm font-semibold text-gray-800 mb-1.5">
+          Comprobante de depósito
+          @if (requiresReceipt) {
+            <span class="text-red-500">*</span>
+          } @else {
+            <span class="text-xs font-normal text-gray-400">(opcional)</span>
+          }
+        </label>
+        <p class="text-xs text-gray-500 mb-2">
+          @if (isEfectivo) {
+            Si tienes un recibo o comprobante del pago en efectivo puedes adjuntarlo (opcional).
+          } @else {
+            Imagen o PDF del comprobante de transferencia (BCP, Scotiabank, BBVA, etc.).
+          }
+        </p>
+        @if (!depositReceiptName) {
+        <label class="flex flex-col items-center justify-center gap-2 h-28 rounded-xl border-2 border-dashed border-gray-300 hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-400">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+          </svg>
+          <span class="text-xs text-gray-500">PDF, JPG o PNG (máx. 10MB)</span>
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            (change)="onDepositReceiptSelected($event)" class="hidden" />
+        </label>
+        } @else {
+        <div class="flex items-center gap-3 p-3 rounded-xl bg-green-50 border border-green-200">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-600 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+          <span class="text-xs text-green-700 font-medium truncate flex-1">{{ depositReceiptName }}</span>
+          <button type="button" (click)="removeDepositReceipt()"
+            class="text-xs text-gray-500 hover:text-red-600 transition-colors shrink-0">Quitar</button>
+        </div>
+        }
+        @if (isUploadingDeposit()) {
+        <p class="mt-2 text-xs text-primary flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+          Subiendo comprobante...
+        </p>
+        }
+        @if (isScanningDeposit()) {
+        <p class="mt-2 text-xs text-primary flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+          Escaneando datos del depósito...
+        </p>
+        }
+      </div>
+
+      <!-- Monto -->
+      <div class="p-5">
+        <label class="block text-sm font-semibold text-gray-800 mb-1.5">Monto depositado S/ <span class="text-red-500">*</span></label>
+        <input type="number" formControlName="amount" min="0" step="0.01" placeholder="0.00"
+          class="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
+          [class.border-red-400]="isInvalid('amount')" [class.border-gray-300]="!isInvalid('amount')" />
+        @if (depositScannedAmount !== null) {
+        <p class="mt-1 text-xs text-gray-500">Monto detectado del comprobante: S/ {{ depositScannedAmount | number:'1.2-2' }}. Puedes editarlo.</p>
+        }
+        @if (isInvalid('amount')) {
+        <p class="mt-1 text-xs text-red-500">Ingresa un monto válido.</p>
+        }
+      </div>
+
+      <!-- Datos detectados -->
+      @if (hasDetectedData) {
+      <div class="p-5 bg-gray-50/60">
+        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Datos detectados del comprobante</p>
+        <div class="space-y-1.5">
+          @if (depositTitular) {
+          <div class="flex justify-between gap-3 text-sm"><span class="text-gray-500">Titular</span><span class="font-medium text-gray-800 text-right">{{ depositTitular }}</span></div>
+          }
+          @if (depositOperationNumber) {
+          <div class="flex justify-between gap-3 text-sm"><span class="text-gray-500">N° operación</span><span class="font-medium text-gray-800 text-right">{{ depositOperationNumber }}</span></div>
+          }
+          @if (depositOperationDate) {
+          <div class="flex justify-between gap-3 text-sm"><span class="text-gray-500">Fecha</span><span class="font-medium text-gray-800 text-right">{{ depositOperationDate }}</span></div>
+          }
+          @if (depositOperationTime) {
+          <div class="flex justify-between gap-3 text-sm"><span class="text-gray-500">Hora</span><span class="font-medium text-gray-800 text-right">{{ depositOperationTime }}</span></div>
+          }
+        </div>
+      </div>
+      }
+    </form>
+
+    <!-- Botón mobile -->
+    <div class="sm:hidden">
+      <button type="button" (click)="submit()"
+        [disabled]="form.invalid || isCreating() || isUploadingDeposit() || isScanningDeposit() || isReceiptMissing"
+        class="w-full px-5 py-3 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+        @if (isCreating()) {
+          <span class="inline-flex items-center justify-center gap-2">
+            <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+            Creando...
+          </span>
+        } @else {
+          Crear y asignar
+        }
+      </button>
+    </div>
+
+  </div>
+</div>

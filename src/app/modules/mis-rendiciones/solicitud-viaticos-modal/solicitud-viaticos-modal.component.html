@@ -61,29 +61,28 @@
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-sm font-medium text-secondary">Fecha inicio <span class="text-error">*</span></label>
-          <input type="date" formControlName="startDate"
+          <input type="date" formControlName="startDate" [min]="todayStr"
             class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow appearance-none" />
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-sm font-medium text-secondary">Fecha fin <span class="text-error">*</span></label>
-          <input type="date" formControlName="endDate"
+          <input type="date" formControlName="endDate" [min]="form.get('startDate')?.value || todayStr"
             class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow appearance-none" />
         </div>
         <div class="flex flex-col gap-1 md:col-span-2">
           <label class="text-sm font-medium text-secondary">Centro de costo <span class="text-error">*</span></label>
-          <select formControlName="projectId"
-            class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow appearance-none">
-            <option value="">Seleccione proyecto…</option>
-            @for (p of projects(); track p._id) {
-            <option [value]="p._id">{{ projectLabel(p) }}</option>
-            }
-          </select>
+          <app-project-select
+            formControlName="projectId"
+            [projects]="projects()"
+            placeholder="Seleccione proyecto…"
+            [invalid]="!!(form.get('projectId')?.invalid && form.get('projectId')?.touched)"
+          />
         </div>
       </div>
 
       <div class="flex flex-col gap-1">
         <label class="text-sm font-medium text-secondary">Observaciones <span class="text-tertiary text-xs font-normal">(opcional)</span></label>
-        <textarea formControlName="observations" rows="2" placeholder="Justificación si corresponde (obligatorio si la fecha de inicio es pasada, mín. 10 caracteres)."
+        <textarea formControlName="observations" rows="2" placeholder="Justificación del viaje (opcional)."
           class="w-full px-3 py-2.5 text-sm rounded-xl border border-tertiary/30 bg-background text-secondary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow resize-none"></textarea>
       </div>
 
@@ -104,7 +103,7 @@
                 <th class="text-right px-3 py-2 font-medium">Importe (S/)</th>
                 <th class="text-right px-3 py-2 font-medium">Personas</th>
                 <th class="text-right px-3 py-2 font-medium">GLP/día</th>
-                <th class="text-right px-3 py-2 font-medium">Días</th>
+                <th class="text-right px-3 py-2 font-medium">Días/Cantidad</th>
                 <th class="text-right px-3 py-2 font-medium">Total fila</th>
                 <th class="w-10 px-2 py-2"></th>
               </tr>
@@ -115,7 +114,7 @@
                 <td class="px-3 py-2 align-middle">
                   <select formControlName="categoryId" class="w-full max-w-[200px] h-10 px-2 rounded-xl border border-tertiary/30 bg-background text-secondary text-xs md:text-sm">
                     <option value="">—</option>
-                    @for (c of categories(); track c._id) {
+                    @for (c of categoriesForLine($any(lineCtrl)); track c._id) {
                     <option [value]="c._id">{{ c.name }}</option>
                     }
                   </select>

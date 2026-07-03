@@ -68,7 +68,7 @@ describe('defaultRedirectGuard', () => {
     expect(router.createUrlTree).toHaveBeenCalledWith(['/hub']);
   });
 
-  it('redirects contabilidad in company to /consolidated-invoices', () => {
+  it('redirects contabilidad in company to /dashboard', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.isColaborador.and.returnValue(false);
     userState.isSuperAdmin.and.returnValue(false);
@@ -76,7 +76,7 @@ describe('defaultRedirectGuard', () => {
     userState.isContabilidad.and.returnValue(true);
     userState.isContabilidadInCompany.and.returnValue(true);
     run();
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/consolidated-invoices']);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/dashboard']);
   });
 
   it('redirects contabilidad not in company to /hub', () => {
@@ -90,13 +90,13 @@ describe('defaultRedirectGuard', () => {
     expect(router.createUrlTree).toHaveBeenCalledWith(['/hub']);
   });
 
-  it('redirects other roles to /admin-users by default', () => {
+  it('redirects coordinador (and other roles) to /inicio by default', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.isColaborador.and.returnValue(false);
     userState.isSuperAdmin.and.returnValue(false);
     userState.isAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
     run();
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/admin-users']);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/inicio']);
   });
 });

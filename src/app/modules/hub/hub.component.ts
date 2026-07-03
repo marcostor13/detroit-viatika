@@ -88,7 +88,7 @@ export class HubComponent implements OnInit {
             return;
           }
           this.notificationService.show('Bienvenid@ ' + res.name, 'success');
-          const redirect = isAdmin ? '/admin-users' : isContabilidad ? '/consolidated-invoices' : '/';
+          const redirect = isAdmin ? '/admin-users' : isContabilidad ? '/dashboard' : '/';
           this.router.navigate([redirect]);
         },
         error: () => {

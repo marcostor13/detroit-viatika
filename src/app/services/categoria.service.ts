@@ -47,6 +47,7 @@ export class CategoriaService {
     cuenta?: string;
     observaciones?: string;
     limit?: number | null;
+    perfilIds?: string[];
   }): Observable<ICategory> {
     return this.http.post<ICategory>(this.baseUrl, {
       ...dto,
@@ -61,6 +62,7 @@ export class CategoriaService {
     observaciones?: string;
     isActive?: boolean;
     limit?: number | null;
+    perfilIds?: string[];
   }): Observable<ICategory> {
     return this.http.patch<ICategory>(`${this.baseUrl}/${id}/${this.companyId}`, dto);
   }

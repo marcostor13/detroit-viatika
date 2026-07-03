@@ -3,6 +3,7 @@ export type AdvanceStatus =
   | 'pending_l1'
   | 'pending_l2'
   | 'approved'
+  | 'partially_paid'
   | 'paid'
   | 'settled'
   | 'rejected'
@@ -28,6 +29,27 @@ export interface IPaymentInfo {
   paymentReceiptFileName?: string;
   paymentReceiptMimeType?: string;
   paymentReceiptSizeBytes?: number;
+}
+
+/** Pago parcial de un viático (contabilidad puede registrar varios). */
+export interface IAdvancePayment {
+  amount: number;
+  method: 'transferencia_bancaria' | 'efectivo' | 'cheque';
+  bankName?: string;
+  accountNumber?: string;
+  cci?: string;
+  transferDate: string;
+  reference?: string;
+  paymentReceiptUrl: string;
+  paymentReceiptFileName?: string;
+  paymentReceiptMimeType?: string;
+  paymentReceiptSizeBytes?: number;
+  scannedAmount?: number;
+  scannedTitular?: string;
+  operationNumber?: string;
+  operationDate?: string;
+  operationTime?: string;
+  createdAt?: string;
 }
 
 export interface IAdvanceSettlement {
@@ -66,6 +88,11 @@ export interface IReturnProof {
   fileKey?: string;
   uploadedAt: string;
   note?: string;
+  /** Datos extraídos del comprobante por OCR/visión (informativos). */
+  scannedAmount?: number;
+  operationDate?: string;
+  operationTime?: string;
+  titular?: string;
 }
 
 export interface IReturnValidation {
@@ -109,6 +136,8 @@ export interface IAdvance {
   requiredLevels: number;
   approvalHistory: IApprovalEntry[];
   paymentInfo?: IPaymentInfo;
+  payments?: IAdvancePayment[];
+  paidAmount?: number;
   settlement?: IAdvanceSettlement;
   rejectedBy?: string;
   rejectionReason?: string;
@@ -121,6 +150,9 @@ export interface IAdvance {
   pendingBalanceFromReportId?: string;
   pendingBalanceAmount?: number;
   additionalAmount?: number;
+  requestBankName?: string;
+  requestAccountNumber?: string;
+  requestCci?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -157,6 +189,8 @@ export interface ICreateAdvancePayload {
   description: string;
   expenseReportId?: string;
   place?: string;
+  lat?: number;
+  lng?: number;
   startDate?: string;
   endDate?: string;
   projectId?: string;
@@ -165,6 +199,9 @@ export interface ICreateAdvancePayload {
   pendingBalanceFromReportId?: string;
   pendingBalanceAmount?: number;
   additionalAmount?: number;
+  bankName?: string;
+  accountNumber?: string;
+  cci?: string;
 }
 
 export interface IApproveAdvancePayload {
@@ -176,6 +213,7 @@ export interface IRejectAdvancePayload {
 }
 
 export interface IPayAdvancePayload {
+  amount?: number;
   method: 'transferencia_bancaria' | 'efectivo' | 'cheque';
   bankName?: string;
   accountNumber?: string;
@@ -186,6 +224,11 @@ export interface IPayAdvancePayload {
   paymentReceiptFileName?: string;
   paymentReceiptMimeType?: string;
   paymentReceiptSizeBytes?: number;
+  scannedAmount?: number;
+  scannedTitular?: string;
+  operationNumber?: string;
+  operationDate?: string;
+  operationTime?: string;
 }
 
 export const ADVANCE_STATUS_LABELS: Record<AdvanceStatus, string> = {
@@ -193,6 +236,7 @@ export const ADVANCE_STATUS_LABELS: Record<AdvanceStatus, string> = {
   pending_l1: 'Pendiente Aprobación',
   pending_l2: 'Aprobado por Coordinador',
   approved: 'Aprobado',
+  partially_paid: 'Pago parcial',
   paid: 'Pagado',
   settled: 'Liquidado',
   rejected: 'Rechazado',
@@ -205,6 +249,7 @@ export const ADVANCE_STATUS_COLORS: Record<AdvanceStatus, string> = {
   pending_l1: 'bg-yellow-100 text-yellow-700',
   pending_l2: 'bg-orange-100 text-orange-700',
   approved: 'bg-blue-100 text-blue-700',
+  partially_paid: 'bg-cyan-100 text-cyan-700',
   paid: 'bg-green-100 text-green-700',
   settled: 'bg-emerald-100 text-emerald-700',
   rejected: 'bg-red-100 text-red-700',

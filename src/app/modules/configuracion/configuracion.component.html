@@ -423,6 +423,17 @@
           {{ companyConfig?.notificationSettings?.frequency === 'semanal' ? 'Semanal' : 'Mensual' }}
         </span>
       </div>
+      @if (companyConfig?.notificationSettings?.frequency === 'semanal') {
+      <div class="flex items-center justify-between py-3 border-b border-gray-100">
+        <div>
+          <p class="text-sm font-medium text-gray-900">Dia de envio semanal</p>
+          <p class="text-xs text-gray-500 mt-0.5">Dia de la semana en que se envian los recordatorios</p>
+        </div>
+        <span class="text-sm font-semibold text-gray-900">
+          {{ ['Domingo','Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'][companyConfig?.notificationSettings?.notificationDay ?? 1] }}
+        </span>
+      </div>
+      }
       }
     </div>
     }
@@ -454,7 +465,6 @@
               class="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300"
             />
             <span class="text-sm text-gray-900">Semanal</span>
-            <span class="text-xs text-gray-500">(cada lunes)</span>
           </label>
           <label class="flex items-center gap-2 cursor-pointer">
             <input
@@ -468,11 +478,38 @@
             <span class="text-xs text-gray-500">(el dia 1 de cada mes)</span>
           </label>
         </div>
-        <p class="text-xs text-gray-500 mt-3">
-          El colaborador recibe un recordatorio si no cargo comprobantes en el periodo.<br>
-          El coordinador recibe un resumen de los comprobantes pendientes de aprobacion.
+      </div>
+
+      @if (notificationsFrequency === 'semanal') {
+      <div>
+        <label for="notifDay" class="block text-sm font-medium text-gray-700 mb-2">
+          Dia de envio semanal
+        </label>
+        <select
+          id="notifDay"
+          [(ngModel)]="notificationsDay"
+          class="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+        >
+          <option [ngValue]="1">Lunes</option>
+          <option [ngValue]="2">Martes</option>
+          <option [ngValue]="3">Miercoles</option>
+          <option [ngValue]="4">Jueves</option>
+          <option [ngValue]="5">Viernes</option>
+          <option [ngValue]="0">Domingo</option>
+          <option [ngValue]="6">Sabado</option>
+        </select>
+        <p class="text-xs text-gray-500 mt-1">
+          Dia en que se envian recordatorios semanales a coordinadores y contabilidad.
         </p>
       </div>
+      }
+
+      <p class="text-xs text-gray-500">
+        El colaborador recibe un aviso el ultimo dia de su viatico.<br>
+        El coordinador recibe un recordatorio de rendiciones pendientes de revision.<br>
+        Contabilidad recibe un recordatorio de rendiciones pendientes de aprobacion contable.<br>
+        Para viáticos de menos de 7 dias, se envia una notificacion urgente 1 dia antes del vencimiento.
+      </p>
       }
 
       <div class="flex space-x-3">
@@ -495,6 +532,305 @@
     }
   </section>
   } <!-- end canConfigureEmpresa: notificaciones -->
+
+  @if (canConfigureEmpresa) {
+  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+    <div class="flex justify-between items-center mb-6">
+      <div>
+        <h2 class="text-xl font-semibold text-gray-900">Correos de Tesoreria</h2>
+        <p class="text-sm text-gray-500 mt-1">Cuando Contabilidad aprueba una rendicion, se notifica a estos correos con los datos de pago del colaborador.</p>
+      </div>
+      @if (!showTesoreriaEmailsForm) {
+        <app-button label="Editar" variant="primary" size="md" (clicked)="editTesoreriaEmails()" />
+      }
+    </div>
+
+    @if (!showTesoreriaEmailsForm) {
+    <div class="space-y-2">
+      @if ((companyConfig?.tesoreriaEmails ?? []).length === 0) {
+        <p class="text-gray-400 text-sm">No hay correos configurados.</p>
+      } @else {
+        @for (email of companyConfig?.tesoreriaEmails ?? []; track email) {
+          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+            </svg>
+            <span class="text-gray-700">{{ email }}</span>
+          </div>
+        }
+      }
+    </div>
+    }
+
+    @if (showTesoreriaEmailsForm) {
+    <div class="space-y-4">
+      <div class="space-y-2">
+        @for (email of tesoreriaEmails; track email; let i = $index) {
+          <div class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+            </svg>
+            <span class="flex-1 text-sm text-gray-700">{{ email }}</span>
+            <button type="button" (click)="removeTesoreriaEmail(i)" class="text-red-400 hover:text-red-600 transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        }
+      </div>
+      <div class="flex gap-2">
+        <input
+          type="email"
+          [(ngModel)]="newTesoreriaEmail"
+          (keyup.enter)="addTesoreriaEmail()"
+          placeholder="correo@empresa.com"
+          class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+        />
+        <button type="button" (click)="addTesoreriaEmail()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+          Agregar
+        </button>
+      </div>
+      <div class="flex gap-3">
+        <app-button
+          label="Guardar"
+          variant="primary"
+          size="md"
+          [disabled]="isSavingTesoreriaEmails"
+          (clicked)="saveTesoreriaEmails()"
+        />
+        <app-button
+          label="Cancelar"
+          variant="secondary"
+          size="md"
+          [disabled]="isSavingTesoreriaEmails"
+          (clicked)="cancelTesoreriaEmailsEdit()"
+        />
+      </div>
+    </div>
+    }
+  </section>
+  } <!-- end canConfigureEmpresa: tesoreria emails -->
+
+  @if (canConfigureContabilidad) {
+  <section class="bg-white rounded-lg shadow-lg p-6 mb-8">
+    <div class="flex justify-between items-center mb-6">
+      <div>
+        <h2 class="text-xl font-semibold text-gray-900">Plan de Cuentas y Bancos (Asientos Contables)</h2>
+        <p class="text-sm text-gray-500 mt-1">Parametriza las cuentas del PCGE, tasas de IGV y bancos para generar los archivos de importación a Contanet.</p>
+      </div>
+      @if (!showAccountingForm) {
+        <app-button label="Editar Configuración Contable" variant="primary" size="md" (clicked)="editAccountingConfig()" />
+      }
+    </div>
+
+    @if (!showAccountingForm) {
+    <div class="space-y-2">
+      @if (accountingConfig) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div class="py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500">Cuenta 42 (CxP terceros)</p>
+          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuenta42 || '—' }}</p>
+        </div>
+        <div class="py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500">Cuenta 79 (enlace destino)</p>
+          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuenta79 || '—' }}</p>
+        </div>
+        <div class="py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500">Cuenta 14 (raíz colaborador)</p>
+          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuenta14Raiz || '—' }}</p>
+        </div>
+        <div class="py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500">Tasas de IGV</p>
+          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.igvRates.length || 0 }} configurada(s)</p>
+        </div>
+        <div class="py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500">Bancos registrados</p>
+          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.bankAccounts.length || 0 }}</p>
+        </div>
+        <div class="py-2 border-b border-gray-100">
+          <p class="text-xs text-gray-500">Cuenta de reembolso</p>
+          <p class="text-sm font-medium text-gray-900">{{ accountingConfig.cuentaReembolso }}</p>
+        </div>
+      </div>
+      } @else {
+      <p class="text-sm text-gray-500 italic">Aún no hay configuración contable. Pulsa "Editar" para crearla con los valores por defecto.</p>
+      }
+    </div>
+    }
+
+    @if (showAccountingForm) {
+    <div class="space-y-8">
+      <!-- Cuentas fijas -->
+      <div>
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Cuentas fijas del plan</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 42 (CxP terceros)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta42" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="42.1.2.100" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 79 (enlace destino)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta79" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="79.1.1.100" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 14 (raíz colaborador)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta14Raiz" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="14.1.3.100" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta 46 (reembolso alt.)</label>
+            <input type="text" [(ngModel)]="accountingForm.cuenta46" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="46.x.x.x (opcional)" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta de reembolso al colaborador</label>
+            <select [(ngModel)]="accountingForm.cuentaReembolso" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+              <option value="14">14 (Cuentas por cobrar al personal)</option>
+              <option value="46">46 (Cuentas por pagar diversas)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tasas de IGV -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-gray-800">Tasas de IGV y cuenta 40</h3>
+          <button type="button" (click)="addIgvRate()" class="text-xs text-purple-600 hover:text-purple-800 font-medium">+ Añadir tasa</button>
+        </div>
+        <div class="space-y-2">
+          @for (rate of accountingForm.igvRates; track $index) {
+          <div class="flex items-center gap-3">
+            <input type="number" step="0.5" [(ngModel)]="rate.tasa" class="w-28 px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Tasa %" />
+            <input type="text" [(ngModel)]="rate.cuenta40" class="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="Cuenta 40 (ej. 40.1.1.100)" />
+            <button type="button" (click)="removeIgvRate($index)" class="text-xs text-red-500 hover:text-red-700">Quitar</button>
+          </div>
+          }
+        </div>
+      </div>
+
+      <!-- Palabras clave inafecto -->
+      <div>
+        <h3 class="text-sm font-semibold text-gray-800 mb-2">Palabras clave de conceptos inafectos</h3>
+        <p class="text-xs text-gray-500 mb-2">Una por línea (recargo al consumo, servicio, D.L. 25988, propina…).</p>
+        <textarea [(ngModel)]="inafectoKeywordsText" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-mono"></textarea>
+      </div>
+
+      <!-- Constantes Contanet -->
+      <div>
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Constantes y valores por defecto (Contanet)</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Cod. Módulo</label>
+            <input type="text" [(ngModel)]="accountingForm.codModulo" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Módulo</label>
+            <input type="text" [(ngModel)]="accountingForm.modulo" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Fuente compra</label>
+            <input type="text" [(ngModel)]="accountingForm.fuenteCompra" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Fuente aplicación</label>
+            <input type="text" [(ngModel)]="accountingForm.fuenteAplicacion" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Fuente caja-bancos</label>
+            <input type="text" [(ngModel)]="accountingForm.fuenteCajaBancos" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Moneda origen</label>
+            <input type="text" [(ngModel)]="accountingForm.monedaOrigen" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Moneda registro</label>
+            <input type="text" [(ngModel)]="accountingForm.monedaRegistro" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Concepto FEC</label>
+            <input type="text" [(ngModel)]="accountingForm.conceptoFec" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Identif. Ctr Mda</label>
+            <input type="text" [(ngModel)]="accountingForm.identificadorCtrMda" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Área (def.)</label>
+            <input type="text" [(ngModel)]="accountingForm.area" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="010101" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Centro costo (def.)</label>
+            <input type="text" [(ngModel)]="accountingForm.centroCosto" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="SC" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Sub-centro costo (def.)</label>
+            <input type="text" [(ngModel)]="accountingForm.subCentroCosto" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-700 mb-1">Tipo de cambio</label>
+            <input type="number" step="0.001" [(ngModel)]="accountingForm.tipoCambio" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Bancos -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-gray-800">Bancos de la empresa (cuenta 104)</h3>
+          <button type="button" (click)="addBankAccount()" class="text-xs text-purple-600 hover:text-purple-800 font-medium">+ Añadir banco</button>
+        </div>
+        <div class="space-y-3">
+          @for (bank of accountingForm.bankAccounts; track $index) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end border border-gray-100 rounded-md p-3">
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Banco</label>
+              <input type="text" [(ngModel)]="bank.banco" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="BCP" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Nro. cuenta</label>
+              <input type="text" [(ngModel)]="bank.nroCuenta" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Cuenta contable (104)</label>
+              <input type="text" [(ngModel)]="bank.cuentaContable" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="10.4.1.100" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-700 mb-1">Moneda</label>
+              <input type="text" [(ngModel)]="bank.moneda" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="01" />
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="text" [(ngModel)]="bank.cci" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" placeholder="CCI (opcional)" />
+              <button type="button" (click)="removeBankAccount($index)" class="text-xs text-red-500 hover:text-red-700 whitespace-nowrap">Quitar</button>
+            </div>
+          </div>
+          }
+          @if (!accountingForm.bankAccounts.length) {
+          <p class="text-xs text-gray-400 italic">No hay bancos registrados.</p>
+          }
+        </div>
+      </div>
+
+      <div class="flex space-x-3">
+        <app-button
+          [label]="isSavingAccounting ? 'Guardando...' : 'Guardar Configuración'"
+          variant="primary"
+          size="md"
+          [disabled]="isSavingAccounting"
+          (clicked)="saveAccountingConfig()"
+        />
+        <app-button
+          label="Cancelar"
+          variant="secondary"
+          size="md"
+          [disabled]="isSavingAccounting"
+          (clicked)="cancelAccountingEdit()"
+        />
+      </div>
+    </div>
+    }
+  </section>
+  } <!-- end canConfigureContabilidad: plan de cuentas -->
 
   }
 </div>

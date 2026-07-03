@@ -9,6 +9,7 @@ import {
   ICreateOtherExpensePayload,
   ICreateCashReceiptPayload,
   ICreateCashVoucherPayload,
+  ICashVoucherScanResult,
 } from '../interfaces/invoices.interface';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -31,6 +32,7 @@ export class InvoicesService {
   projectUrl: string = `${environment.api}/project`;
   companyConfigUrl: string = `${environment.api}/client`;
   sunatConfigUrl: string = `${environment.api}/sunat-config`;
+  userUrl: string = `${environment.api}/user`;
 
   private http = inject(HttpClient);
 
@@ -161,6 +163,16 @@ export class InvoicesService {
     return this.http.get<IProject[]>(url);
   }
 
+  /**
+   * Lista mínima de trabajadores/colaboradores de la empresa del usuario, para selectores
+   * (colaborador por fila en planilla). Endpoint liviano accesible a cualquier autenticado.
+   */
+  getClientUsers(): Observable<{ _id: string; name?: string; email?: string; dni?: string }[]> {
+    return this.http
+      .get<any[]>(`${this.userUrl}/colaboradores`)
+      .pipe(map((users) => (Array.isArray(users) ? users : [])));
+  }
+
   getProjectById(id: string, companyId: string): Observable<IProject> {
     return this.http.get<IProject>(`${this.projectUrl}/${id}/${companyId}`);
   }
@@ -204,6 +216,11 @@ export class InvoicesService {
     return this.http.post<IInvoiceResponse>(`${this.url}/cash-voucher`, payload);
   }
 
+  /** Escanea un comprobante de caja (imagen/PDF ya subido a S3) y extrae sus datos. */
+  scanCashVoucher(payload: { url: string; mimeType?: string }): Observable<ICashVoucherScanResult> {
+    return this.http.post<ICashVoucherScanResult>(`${this.url}/scan-cash-voucher`, payload);
+  }
+
   // Métodos para validación SUNAT
   getSunatValidation(
     id: string,
@@ -228,17 +245,25 @@ export class InvoicesService {
         logo: client.logo,
         limits: client.limits,
         notificationSettings: client.notificationSettings,
+        tesoreriaEmails: client.tesoreriaEmails ?? [],
       }))
     );
   }
 
   updateNotificationSettings(
     companyId: string,
-    settings: { enabled: boolean; frequency: 'semanal' | 'mensual' }
+    settings: { enabled: boolean; frequency: 'semanal' | 'mensual'; notificationDay?: number }
   ): Observable<void> {
     return this.http.patch<void>(
       `${this.companyConfigUrl}/${companyId}/notification-settings`,
       settings
+    );
+  }
+
+  updateTesoreriaEmails(companyId: string, emails: string[]): Observable<void> {
+    return this.http.patch<void>(
+      `${this.companyConfigUrl}/${companyId}/tesoreria-emails`,
+      { emails }
     );
   }
 

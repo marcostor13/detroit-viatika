@@ -1,23 +1,19 @@
-<div class="p-4 sm:p-6 flex flex-col gap-5 max-w-screen-xl mx-auto">
+<div class="px-4 sm:px-6 py-6 flex flex-col gap-5">
 
   <!-- Header -->
-  <div class="flex items-start justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-bold text-secondary">Viáticos</h1>
-      <p class="text-sm text-tertiary mt-0.5">
-        {{ filtered().length }} solicitud{{ filtered().length !== 1 ? 'es' : '' }}
-      </p>
-    </div>
+  <div>
+    <h1 class="text-2xl font-bold text-secondary">Viáticos</h1>
+    <p class="text-sm text-tertiary mt-0.5">
+      {{ unifiedFiltered().length }} registro{{ unifiedFiltered().length !== 1 ? 's' : '' }}
+    </p>
   </div>
 
   <!-- Stats -->
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-
     <div class="bg-quaternary rounded-2xl border border-yellow-200 shadow-soft p-4 flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl bg-yellow-100 flex items-center justify-center shrink-0">
         <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-            d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
         </svg>
       </div>
       <div>
@@ -25,12 +21,10 @@
         <p class="text-xs text-tertiary mt-1 font-medium leading-tight">Pend. aprobación</p>
       </div>
     </div>
-
     <div class="bg-quaternary rounded-2xl border border-orange-200 shadow-soft p-4 flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
         <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-            d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z"/>
         </svg>
       </div>
       <div>
@@ -38,12 +32,10 @@
         <p class="text-xs text-tertiary mt-1 font-medium leading-tight">Pend. tesorería</p>
       </div>
     </div>
-
     <div class="bg-quaternary rounded-2xl border border-blue-200 shadow-soft p-4 flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
         <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-            d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
         </svg>
       </div>
       <div>
@@ -51,12 +43,10 @@
         <p class="text-xs text-tertiary mt-1 font-medium leading-tight">Aprobados</p>
       </div>
     </div>
-
     <div class="bg-quaternary rounded-2xl border border-emerald-200 shadow-soft p-4 flex items-center gap-3">
       <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
         <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-            d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
         </svg>
       </div>
       <div>
@@ -64,13 +54,11 @@
         <p class="text-xs text-tertiary mt-1 font-medium leading-tight">Pagados</p>
       </div>
     </div>
-
   </div>
 
   <!-- Filtros -->
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft px-4 sm:px-5 py-4">
     <div class="flex flex-wrap gap-3 items-end">
-
       <div class="flex flex-col gap-1.5 flex-1 min-w-[160px]">
         <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Buscar</label>
         <div class="relative">
@@ -82,8 +70,7 @@
             class="h-9 pl-9 pr-3 w-full rounded-lg border border-tertiary/30 bg-background text-sm text-secondary placeholder:text-tertiary/40 focus:outline-none focus:ring-2 focus:ring-primary/30"/>
         </div>
       </div>
-
-      <div class="flex flex-col gap-1.5 w-44">
+      <div class="flex flex-col gap-1.5 w-48">
         <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Estado</label>
         <select [value]="filterStatus()" (change)="onStatusChange($event)"
           class="h-9 px-3 w-full rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30">
@@ -92,52 +79,41 @@
           }
         </select>
       </div>
-
-      <div class="flex flex-col gap-1.5 flex-1 min-w-[220px] sm:flex-none">
+      <div class="flex flex-col gap-1.5">
         <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Período</label>
         <div class="flex items-center gap-2">
           <input type="date" [value]="filterDateFrom()" (change)="onDateFromChange($event)"
-            class="h-9 px-2 min-w-0 flex-1 sm:flex-none sm:w-[140px] rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"/>
-          <span class="text-tertiary/40 text-xs shrink-0">—</span>
+            class="h-9 px-2 w-[140px] rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"/>
+          <span class="text-tertiary/40 text-xs">—</span>
           <input type="date" [value]="filterDateTo()" (change)="onDateToChange($event)"
-            class="h-9 px-2 min-w-0 flex-1 sm:flex-none sm:w-[140px] rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"/>
+            class="h-9 px-2 w-[140px] rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"/>
         </div>
       </div>
-
-      <div class="flex items-center gap-2 ml-auto w-full sm:w-auto justify-end">
-        <button (click)="clearFilters()"
-          class="h-9 px-3 flex items-center gap-1.5 text-sm rounded-lg border border-tertiary/30 text-tertiary hover:text-secondary hover:border-tertiary/50 transition-colors">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-          Limpiar
-        </button>
-        <button (click)="applyFilters()"
-          class="h-9 px-5 text-sm rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors font-medium">
-          Aplicar
-        </button>
-      </div>
-
+      <button (click)="clearFilters()"
+        class="h-9 px-3 flex items-center gap-1.5 text-sm rounded-lg border border-tertiary/30 text-tertiary hover:text-secondary hover:border-tertiary/50 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+        Limpiar
+      </button>
     </div>
   </div>
 
   <!-- Tabla -->
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft overflow-hidden">
-
-    @if (isLoading()) {
+    @if (isLoading() || viaticoReportsLoading()) {
       <div class="flex justify-center items-center py-16">
         <div class="animate-spin rounded-full h-8 w-8 border-2 border-primary/20 border-t-primary"></div>
       </div>
-    } @else if (filtered().length === 0) {
+    } @else if (unifiedFiltered().length === 0) {
       <div class="flex flex-col items-center justify-center py-20 text-center gap-4">
         <div class="w-16 h-16 rounded-2xl bg-tertiary/10 flex items-center justify-center">
           <svg class="w-8 h-8 text-tertiary/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
           </svg>
         </div>
         <div>
-          <p class="text-sm font-semibold text-secondary">Sin solicitudes</p>
+          <p class="text-sm font-semibold text-secondary">Sin viáticos</p>
           <p class="text-xs text-tertiary mt-1">Ajusta los filtros para ver más resultados</p>
         </div>
       </div>
@@ -149,116 +125,86 @@
           <tr class="bg-background border-b border-tertiary/15">
             <th class="text-left px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Colaborador</th>
             <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Destino / Proyecto</th>
-            <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Fechas</th>
+            <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider hidden lg:table-cell">Fechas</th>
             <th class="text-right px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Monto</th>
             <th class="text-center px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Estado</th>
             <th class="text-right px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Acciones</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-tertiary/8">
-          @for (a of filtered(); track a._id) {
+          @for (item of unifiedFiltered(); track item._id) {
             <tr class="hover:bg-background/60 transition-colors group">
-
-              <!-- Colaborador -->
               <td class="px-5 py-3.5">
                 <div class="flex items-center gap-3 min-w-0">
                   <div class="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-bold shrink-0 select-none">
-                    {{ collaboratorInitials(a) }}
+                    {{ item.collaboratorInitials }}
                   </div>
                   <div class="min-w-0">
-                    <p class="font-semibold text-secondary truncate">{{ collaboratorName(a) }}</p>
-                    @if (a.userId && $any(a.userId).email) {
-                      <p class="text-xs text-tertiary truncate">{{ $any(a.userId).email }}</p>
+                    <p class="font-semibold text-secondary truncate">{{ item.collaboratorName }}</p>
+                    @if (item.collaboratorEmail) {
+                      <p class="text-xs text-tertiary truncate">{{ item.collaboratorEmail }}</p>
                     }
                   </div>
                 </div>
               </td>
-
-              <!-- Destino / Proyecto -->
               <td class="px-4 py-3.5 max-w-[180px]">
-                <p class="text-secondary font-medium truncate">{{ a.place || '—' }}</p>
-                @if (projectLabel(a) !== '—') {
-                  <p class="text-xs text-tertiary truncate mt-0.5">{{ projectLabel(a) }}</p>
+                <p class="text-secondary font-medium truncate">{{ item.place }}</p>
+                @if (item.projectLabel !== '—') {
+                  <p class="text-xs text-tertiary truncate mt-0.5">{{ item.projectLabel }}</p>
                 }
               </td>
-
-              <!-- Fechas -->
-              <td class="px-3 py-3.5 whitespace-nowrap">
-                <div class="text-xs text-tertiary leading-tight">
-                  <div>{{ startDateFmt(a) }}</div>
-                  @if (endDateFmt(a)) {
-                    <div class="text-tertiary/70">al {{ endDateFmt(a) }}</div>
-                  }
-                </div>
-                <p class="text-[10px] text-tertiary/50 mt-1">Sol. {{ createdAt(a) }}</p>
+              <td class="px-3 py-3.5 hidden lg:table-cell whitespace-nowrap">
+                <p class="text-xs text-tertiary">{{ item.dateRange }}</p>
+                <p class="text-[10px] text-tertiary/50 mt-1">Sol. {{ item.createdAt | date:'dd/MM/yyyy' }}</p>
               </td>
-
-              <!-- Monto -->
               <td class="px-4 py-3.5 text-right">
-                <span class="text-base font-bold text-secondary tabular-nums">S/ {{ a.amount | number:'1.2-2' }}</span>
-                @if ($any(a).pendingBalanceAmount != null && $any(a).pendingBalanceAmount > 0) {
-                  <div class="text-xs text-tertiary mt-0.5 leading-snug">
-                    <span class="text-amber-600">Saldo S/ {{ $any(a).pendingBalanceAmount | number:'1.2-2' }}</span>
-                    <span class="mx-0.5">+</span>
-                    <span>Adic. S/ {{ $any(a).additionalAmount | number:'1.2-2' }}</span>
+                <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
+                @if (item.pendingBalanceAmount && item.pendingBalanceAmount > 0) {
+                  <div class="text-xs text-amber-600 mt-0.5 tabular-nums">
+                    Saldo S/ {{ item.pendingBalanceAmount | number:'1.2-2' }}
                   </div>
                 }
               </td>
-
-              <!-- Estado -->
               <td class="px-4 py-3.5 text-center">
-                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border"
-                      [ngClass]="STATUS_COLORS[a.status]">
-                  {{ STATUS_LABELS[a.status] }}
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" [class]="item.statusColor">
+                  {{ item.statusLabel }}
                 </span>
               </td>
-
-              <!-- Acciones -->
               <td class="px-5 py-3.5">
                 <div class="flex items-center justify-end gap-1">
-
-                  <!-- Ver detalle -->
-                  <button (click)="openDetail(a)" title="Ver detalle"
+                  <button (click)="openDetail(item)" title="Ver detalle"
                     class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
                     </svg>
                   </button>
-
-                  <!-- Aprobar L1 -->
-                  @if (canApproveL1Action(a)) {
-                    <button (click)="openApproveModal(a, 1)" [disabled]="isActing()" title="Aprobar solicitud"
+                  @if (item.canApproveL1) {
+                    <button (click)="openApproveModal(item, 1)" [disabled]="isActing()" title="Aprobar (Nivel 1)"
                       class="p-2 rounded-lg text-tertiary hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                       </svg>
                     </button>
                   }
-
-                  <!-- Aprobar L2 -->
-                  @if (canApproveL2Action(a)) {
-                    <button (click)="openApproveModal(a, 2)" [disabled]="isActing()" title="Aprobar (Nivel 2)"
+                  @if (item.canApproveL2) {
+                    <button (click)="openApproveModal(item, 2)" [disabled]="isActing()" title="Aprobar (Nivel 2)"
                       class="p-2 rounded-lg text-tertiary hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                       </svg>
                     </button>
                   }
-
-                  <!-- Rechazar -->
-                  @if (canRejectAction(a)) {
-                    <button (click)="openRejectModal(a)" [disabled]="isActing()" title="Rechazar solicitud"
-                      class="p-2 rounded-lg text-tertiary hover:text-error hover:bg-error/10 transition-colors disabled:opacity-50">
+                  @if (item.canReject) {
+                    <button (click)="openRejectModal(item)" [disabled]="isActing()" title="Rechazar"
+                      class="p-2 rounded-lg text-tertiary hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                       </svg>
                     </button>
                   }
-
                 </div>
               </td>
-
             </tr>
           }
         </tbody>
@@ -266,80 +212,61 @@
 
       <!-- Mobile cards -->
       <div class="md:hidden divide-y divide-tertiary/10">
-        @for (a of filtered(); track a._id) {
+        @for (item of unifiedFiltered(); track item._id) {
           <div class="p-4">
-
             <div class="flex items-start gap-3 mb-3">
               <div class="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold shrink-0 select-none">
-                {{ collaboratorInitials(a) }}
+                {{ item.collaboratorInitials }}
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <p class="font-semibold text-secondary truncate">{{ collaboratorName(a) }}</p>
-                    <p class="text-xs text-tertiary mt-0.5 truncate">{{ a.place || '—' }}</p>
+                    <p class="font-semibold text-secondary truncate">{{ item.collaboratorName }}</p>
+                    <p class="text-xs text-tertiary mt-0.5 truncate">{{ item.place }}</p>
                   </div>
-                  <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border shrink-0"
-                        [ngClass]="STATUS_COLORS[a.status]">
-                    {{ STATUS_LABELS[a.status] }}
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold shrink-0" [class]="item.statusColor">
+                    {{ item.statusLabel }}
                   </span>
                 </div>
               </div>
             </div>
-
-            <div class="flex items-start justify-between text-xs text-tertiary mb-3 pl-[52px]">
-              <span>{{ dateRange(a) }}</span>
-              <div class="text-right">
-                <span class="text-base font-bold text-secondary tabular-nums">S/ {{ a.amount | number:'1.2-2' }}</span>
-                @if ($any(a).pendingBalanceAmount != null && $any(a).pendingBalanceAmount > 0) {
-                  <div class="text-xs text-tertiary mt-0.5 leading-snug">
-                    <span class="text-amber-600">Saldo S/ {{ $any(a).pendingBalanceAmount | number:'1.2-2' }}</span>
-                    <span class="mx-0.5">+</span>
-                    <span>Adic. S/ {{ $any(a).additionalAmount | number:'1.2-2' }}</span>
-                  </div>
-                }
-              </div>
+            <div class="flex items-center justify-between text-xs text-tertiary mb-3 pl-[52px]">
+              <span>{{ item.dateRange }}</span>
+              <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
             </div>
-
             <div class="flex items-center gap-1 pl-[52px]">
-              <button (click)="openDetail(a)"
+              <button (click)="openDetail(item)"
                 class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                </svg>
-                Ver detalle
+                Ver
               </button>
-              @if (canApproveL1Action(a)) {
-                <button (click)="openApproveModal(a, 1)" [disabled]="isActing()"
-                  class="p-2 rounded-lg text-tertiary hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50" title="Aprobar">
+              @if (item.canApproveL1) {
+                <button (click)="openApproveModal(item, 1)" [disabled]="isActing()"
+                  class="p-2 rounded-lg text-tertiary hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                   </svg>
                 </button>
               }
-              @if (canApproveL2Action(a)) {
-                <button (click)="openApproveModal(a, 2)" [disabled]="isActing()"
-                  class="p-2 rounded-lg text-tertiary hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50" title="Aprobar L2">
+              @if (item.canApproveL2) {
+                <button (click)="openApproveModal(item, 2)" [disabled]="isActing()"
+                  class="p-2 rounded-lg text-tertiary hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                   </svg>
                 </button>
               }
-              @if (canRejectAction(a)) {
-                <button (click)="openRejectModal(a)" [disabled]="isActing()"
-                  class="p-2 rounded-lg text-tertiary hover:text-error hover:bg-error/10 transition-colors disabled:opacity-50" title="Rechazar">
+              @if (item.canReject) {
+                <button (click)="openRejectModal(item)" [disabled]="isActing()"
+                  class="p-2 rounded-lg text-tertiary hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
                 </button>
               }
             </div>
-
           </div>
         }
       </div>
-
     }
   </div>
 
@@ -358,13 +285,11 @@
              [ngClass]="pendingApproveLevel() === 1 ? 'bg-emerald-100' : 'bg-blue-100'">
           @if (pendingApproveLevel() === 1) {
             <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-                d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
             </svg>
           } @else {
             <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-                d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"/>
             </svg>
           }
         </div>
@@ -379,26 +304,16 @@
       <div class="bg-background rounded-xl border border-tertiary/15 p-4 mb-5 space-y-2.5">
         <div class="flex justify-between items-center text-sm">
           <span class="text-tertiary">Colaborador</span>
-          <span class="font-semibold text-secondary">{{ collaboratorName(pendingApproveAdvance()!) }}</span>
+          <span class="font-semibold text-secondary">{{ pendingApproveItem()?.collaboratorName }}</span>
         </div>
         <div class="flex justify-between items-center text-sm">
           <span class="text-tertiary">Destino</span>
-          <span class="font-medium text-secondary">{{ pendingApproveAdvance()?.place || '—' }}</span>
+          <span class="font-medium text-secondary">{{ pendingApproveItem()?.place || '—' }}</span>
         </div>
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
-          <span class="text-lg font-bold text-secondary tabular-nums">S/ {{ pendingApproveAdvance()?.amount | number:'1.2-2' }}</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">S/ {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
         </div>
-        @if ($any(pendingApproveAdvance())?.pendingBalanceAmount != null && $any(pendingApproveAdvance())?.pendingBalanceAmount > 0) {
-          <div class="flex justify-between text-xs pt-1.5">
-            <span class="text-tertiary">Saldo pendiente</span>
-            <span class="text-amber-700 font-semibold tabular-nums">S/ {{ $any(pendingApproveAdvance())?.pendingBalanceAmount | number:'1.2-2' }}</span>
-          </div>
-          <div class="flex justify-between text-xs">
-            <span class="text-tertiary">Adicional</span>
-            <span class="text-secondary font-medium tabular-nums">S/ {{ $any(pendingApproveAdvance())?.additionalAmount | number:'1.2-2' }}</span>
-          </div>
-        }
       </div>
 
       <div class="flex gap-3">
@@ -432,14 +347,13 @@
       <div class="flex items-center gap-3 mb-5">
         <div class="w-11 h-11 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
           <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
-              d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
           </svg>
         </div>
         <div>
           <h2 class="text-base font-bold text-secondary">Rechazar solicitud</h2>
           <p class="text-xs text-tertiary mt-0.5">
-            {{ collaboratorName(selectedAdvance()!) }} — S/ {{ selectedAdvance()?.amount | number:'1.2-2' }}
+            {{ selectedItem()?.collaboratorName }} — S/ {{ selectedItem()?.amount | number:'1.2-2' }}
           </p>
         </div>
       </div>

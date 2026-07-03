@@ -92,13 +92,22 @@ export class TesoreriaDetalleComponent implements OnInit {
   }
 
   private prefillBankData(a: IAdvance) {
-    const user = typeof a.userId === 'object' ? a.userId : null;
-    if (user?.bankAccount) {
+    // Prefer bank data from the solicitud itself; fall back to user profile.
+    if (a.requestAccountNumber) {
       this.paymentForm.patchValue({
-        bankName: user.bankAccount.bankName,
-        accountNumber: user.bankAccount.accountNumber,
-        cci: user.bankAccount.cci,
+        bankName: a.requestBankName ?? '',
+        accountNumber: a.requestAccountNumber,
+        cci: a.requestCci ?? '',
       });
+    } else {
+      const user = typeof a.userId === 'object' ? a.userId : null;
+      if (user?.bankAccount) {
+        this.paymentForm.patchValue({
+          bankName: user.bankAccount.bankName,
+          accountNumber: user.bankAccount.accountNumber,
+          cci: user.bankAccount.cci,
+        });
+      }
     }
   }
 

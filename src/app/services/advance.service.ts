@@ -41,6 +41,10 @@ export class AdvanceService {
     return this.http.get<IAdvance[]>(`${this.url}/client/${this.clientId}`);
   }
 
+  findOrphaned(clientId: string): Observable<IAdvance[]> {
+    return this.http.get<IAdvance[]>(`${this.url}/orphaned/client/${clientId}`);
+  }
+
   findPending(): Observable<IAdvance[]> {
     return this.http.get<IAdvance[]>(`${this.url}/pending/client/${this.clientId}`);
   }
@@ -80,6 +84,11 @@ export class AdvanceService {
 
   cancelAdvance(id: string): Observable<IAdvance> {
     return this.http.patch<IAdvance>(`${this.url}/${id}/cancel`, {});
+  }
+
+  /** Elimina (borrado físico) una solicitud de viáticos. */
+  delete(id: string): Observable<IAdvance> {
+    return this.http.delete<IAdvance>(`${this.url}/${id}`);
   }
 
   // ─── Fase 7 — devolución de saldo ──────────────────────────────────────────

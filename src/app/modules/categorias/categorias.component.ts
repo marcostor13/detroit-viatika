@@ -40,6 +40,18 @@ export class CategoriasComponent implements OnInit {
   // --- Category state ---
   result = signal<IPaginatedResult<ICategory>>({ data: [], total: 0, page: 1, pages: 0, limit: 20 });
   loading = signal(false);
+
+  // ─── Filas expandibles (detalle inline para no cortar columnas) ─────────────
+  expandedRows = signal<Set<string>>(new Set<string>());
+  toggleExpand(id: string | undefined, event?: Event): void {
+    if (!id) return;
+    event?.stopPropagation();
+    const set = new Set<string>(this.expandedRows());
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.expandedRows.set(set);
+  }
+  isExpanded(id: string | undefined): boolean { return !!id && this.expandedRows().has(id); }
+
   search = signal('');
   page = signal(1);
   limit = signal(20);
@@ -58,13 +70,27 @@ export class CategoriasComponent implements OnInit {
 
   ngOnInit() {
     this.load();
+    // Precargar perfiles (grupos) para mostrar la columna "Perfiles de Categoría".
+    this.groupService.getAll().subscribe({
+      next: (g) => this.groups.set(g ?? []),
+      error: () => {},
+    });
   }
 
   setTab(tab: 'categorias' | 'grupos') {
     this.activeTab.set(tab);
-    if (tab === 'grupos' && this.groups().length === 0) {
+    if (tab === 'grupos' && this.allCategories().length === 0) {
       this.loadGroups();
     }
+  }
+
+  /** Nombres de los perfiles de categoría que contienen esta categoría. */
+  perfilesForCategory(catId?: string): string[] {
+    if (!catId) return [];
+    const id = String(catId);
+    return this.groups()
+      .filter((g) => (g.categoryIds ?? []).map(String).includes(id))
+      .map((g) => g.name);
   }
 
   // ==================== CATEGORÍAS ====================
@@ -144,8 +170,11 @@ export class CategoriasComponent implements OnInit {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Viatika';
 
+    const perfilNames = this.groups().map((g) => g.name).filter(Boolean);
+    const perfilList = perfilNames.length ? perfilNames : ['PROYECTO', 'ADMINISTRACION', 'COMERCIAL'];
+
     const sheet = workbook.addWorksheet('Categorías');
-    const headers = ['Nombre*', 'Cuenta', 'Descripción', 'Observaciones', 'Límite'];
+    const headers = ['Nombre*', 'Cuenta', 'Descripción', 'Observaciones', 'Límite', 'Perfil de Categoría'];
     sheet.addRow(headers);
 
     const headerRow = sheet.getRow(1);
@@ -160,12 +189,23 @@ export class CategoriasComponent implements OnInit {
       { key: 'Descripción', width: 30 },
       { key: 'Observaciones', width: 30 },
       { key: 'Límite', width: 14 },
+      { key: 'Perfil de Categoría', width: 24 },
     ];
     headerRow.height = 22;
 
     // Sample row
-    sheet.addRow(['Viáticos de transporte', '6310', 'Gastos de movilidad del colaborador', 'Solo traslados locales', 500]);
+    sheet.addRow(['Viáticos de transporte', '6310', 'Gastos de movilidad del colaborador', 'Solo traslados locales', 500, perfilList[0]]);
     sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } };
+
+    // Lista desplegable de perfiles en la columna F (filas 2..200)
+    const formula = '"' + perfilList.join(',').slice(0, 250) + '"';
+    for (let r = 2; r <= 200; r++) {
+      sheet.getCell(`F${r}`).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [formula],
+      };
+    }
 
     const instrSheet = workbook.addWorksheet('Instrucciones');
     instrSheet.addRow(['Campo', 'Requerido', 'Descripción']);
@@ -175,12 +215,14 @@ export class CategoriasComponent implements OnInit {
     instrSheet.addRow(['Descripción', 'No', 'Descripción breve de la categoría']);
     instrSheet.addRow(['Observaciones', 'No', 'Notas adicionales o restricciones']);
     instrSheet.addRow(['Límite', 'No', 'Límite de gasto en soles (solo número, sin S/)']);
+    instrSheet.addRow(['Perfil de Categoría', 'No', 'Perfil al que se asignará la categoría (debe existir)']);
     instrSheet.columns = [
-      { key: 'Campo', width: 18 },
+      { key: 'Campo', width: 22 },
       { key: 'Requerido', width: 12 },
-      { key: 'Descripción', width: 45 },
+      { key: 'Descripción', width: 50 },
     ];
     instrSheet.addRow([]);
+    instrSheet.addRow(['Perfiles disponibles:', perfilList.join(', ')]);
     instrSheet.addRow(['Nota: La fila de ejemplo en la hoja "Categorías" puede eliminarse antes de cargar.']);
 
     const buffer = await workbook.xlsx.writeBuffer();

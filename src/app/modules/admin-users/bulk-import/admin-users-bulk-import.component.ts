@@ -20,7 +20,12 @@ export class AdminUsersBulkImportComponent {
 
   file: File | null = null;
   loading = false;
-  result: { created: number; skipped: string[]; errors: string[] } | null = null;
+  result: {
+    created: number;
+    skipped: string[];
+    errors: string[];
+    credentials: { name: string; email: string; temporaryPassword: string }[];
+  } | null = null;
 
   back() {
     this.router.navigate(['/admin-users']);
@@ -67,5 +72,23 @@ export class AdminUsersBulkImportComponent {
         this.notification.show('Error al importar usuarios', 'error');
       },
     });
+  }
+
+  downloadCredentials() {
+    const creds = this.result?.credentials ?? [];
+    if (!creds.length) return;
+    const escape = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = 'Nombre,Email,Contraseña temporal';
+    const rows = creds.map(
+      (c) => `${escape(c.name)},${escape(c.email)},${escape(c.temporaryPassword)}`,
+    );
+    const csv = '﻿' + [header, ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'credenciales_colaboradores.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }

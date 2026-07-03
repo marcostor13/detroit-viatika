@@ -6,6 +6,8 @@ import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { UserStateService } from '../../services/user-state.service';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { NotificationService } from '../../services/notification.service';
+import { AdminUsersService } from '../admin-users/services/admin-users.service';
+import { IUserResponse } from '../../interfaces/user.interface';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ICategory } from '../invoices/interfaces/category.interface';
 import {
@@ -33,12 +35,21 @@ export class RendicionesDirectasComponent implements OnInit {
   private notifications = inject(NotificationService);
   private exportService = inject(RendicionExportService);
   private router = inject(Router);
+  private adminUsersService = inject(AdminUsersService);
 
-  // Estado
+  // Pestañas: "rendiciones" (una fila por rendición) y "gastos" (por comprobante).
+  activeTab = signal<'rendiciones' | 'gastos'>('rendiciones');
+  setTab(tab: 'rendiciones' | 'gastos'): void { this.activeTab.set(tab); }
+
+  // Estado — pestaña Gastos (por comprobante)
   loading = signal(false);
   data = signal<any[]>([]);
   total = signal(0);
   pages = signal(0);
+
+  // Estado — pestaña Rendiciones directas (por reporte)
+  reports = signal<any[]>([]);
+  loadingReports = signal(false);
 
   // Filtros
   filterDateFrom = '';
@@ -47,22 +58,27 @@ export class RendicionesDirectasComponent implements OnInit {
   filterCategoryId = '';
   filterDocNumber = '';
   filterTipo = '';
+  filterUserId = '';
   page = 1;
   readonly limit = 50;
 
   // Catálogos
   projects = signal<IProject[]>([]);
   categories = signal<ICategory[]>([]);
+  users = signal<IUserResponse[]>([]);
 
   // Acciones
   approvingId = signal<string | null>(null);
   deletingId = signal<string | null>(null);
   confirmDeleteExpense = signal<any | null>(null);
+  confirmApproveExpense = signal<any | null>(null);
   isExportingExcel = signal(false);
   isExportingPdf = signal(false);
 
   // Selección para exportar
   selectedIds = signal<Set<string>>(new Set<string>());
+
+  get isContabilidad(): boolean { return this.userState.isContabilidad(); }
 
   toggleSelectAll(): void {
     const all = this.data();
@@ -83,6 +99,18 @@ export class RendicionesDirectasComponent implements OnInit {
 
   isRowSelected(id: string): boolean { return this.selectedIds().has(id); }
 
+  // ─── Filas expandibles (detalle inline para tablas densas) ──────────────────
+  // En vez de scroll horizontal, las columnas secundarias se muestran al
+  // expandir cada fila, así toda la información queda accesible sin recortes.
+  expandedRows = signal<Set<string>>(new Set<string>());
+  toggleExpand(id: string, event?: Event): void {
+    event?.stopPropagation();
+    const set = new Set<string>(this.expandedRows());
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.expandedRows.set(set);
+  }
+  isExpanded(id: string): boolean { return this.expandedRows().has(id); }
+
   get allSelected(): boolean { const d = this.data(); return d.length > 0 && this.selectedIds().size === d.length; }
   get anySelected(): boolean { return this.selectedIds().size > 0; }
   get selectedCount(): number { return this.selectedIds().size; }
@@ -90,6 +118,7 @@ export class RendicionesDirectasComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadCatalogs();
+    this.loadReports();
     this.loadData();
   }
 
@@ -104,6 +133,7 @@ export class RendicionesDirectasComponent implements OnInit {
     if (!cid) return;
     this.invoicesService.getProjects(cid).subscribe({ next: list => this.projects.set(list ?? []) });
     this.invoicesService.getCategories().subscribe({ next: list => this.categories.set(list ?? []) });
+    this.adminUsersService.getUsers().subscribe({ next: list => this.users.set(list ?? []) });
   }
 
   loadData(): void {
@@ -115,18 +145,74 @@ export class RendicionesDirectasComponent implements OnInit {
       dateFrom: this.filterDateFrom || undefined, dateTo: this.filterDateTo || undefined,
       projectId: this.filterProjectId || undefined, categoryId: this.filterCategoryId || undefined,
       docNumber: this.filterDocNumber || undefined, tipo: this.filterTipo || undefined,
+      userId: this.filterUserId || undefined,
     }).subscribe({
       next: res => { this.data.set(res.data ?? []); this.total.set(res.total ?? 0); this.pages.set(res.pages ?? 0); this.loading.set(false); this.selectedIds.set(new Set<string>()); },
       error: () => { this.loading.set(false); this.notifications.show('Error al cargar los datos', 'error'); },
     });
   }
 
-  applyFilters(): void { this.page = 1; this.loadData(); }
+  loadReports(): void {
+    const cid = this.clientId;
+    if (!cid) return;
+    this.loadingReports.set(true);
+    this.expenseReportsService.findDirectRendicionReports(cid, {
+      dateFrom: this.filterDateFrom || undefined,
+      dateTo: this.filterDateTo || undefined,
+      userId: this.filterUserId || undefined,
+    }).subscribe({
+      next: rows => { this.reports.set(rows ?? []); this.loadingReports.set(false); },
+      error: () => { this.loadingReports.set(false); this.notifications.show('Error al cargar las rendiciones', 'error'); },
+    });
+  }
+
+  applyFilters(): void { this.page = 1; this.loadReports(); this.loadData(); }
 
   clearFilters(): void {
     this.filterDateFrom = ''; this.filterDateTo = ''; this.filterProjectId = '';
     this.filterCategoryId = ''; this.filterDocNumber = ''; this.filterTipo = '';
-    this.page = 1; this.loadData();
+    this.filterUserId = '';
+    this.page = 1; this.loadReports(); this.loadData();
+  }
+
+  // ─── Helpers pestaña Rendiciones directas (nivel reporte) ────────────────────
+
+  reportColaborador(r: any): string {
+    const u = r?.userId;
+    if (!u) return '—';
+    return (typeof u === 'object' ? u.name || u.email : u) || '—';
+  }
+
+  reportOrigenLabel(r: any): string {
+    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Coordinador', colaborador: 'Colaborador' };
+    return labels[r?.origin] ?? 'Colaborador';
+  }
+
+  reportOrigenBadgeClass(r: any): string {
+    if (r?.origin === 'contabilidad') return 'bg-blue-100 text-blue-700';
+    if (r?.origin === 'coordinador') return 'bg-purple-100 text-purple-700';
+    return 'bg-gray-100 text-gray-600';
+  }
+
+  reportStatusLabel(r: any): string {
+    if (r?.effectivelyClosed) return 'Cerrada';
+    const map: Record<string, string> = {
+      open: 'Abierta', solicited: 'Solicitada', submitted: 'Enviada',
+      pending_accounting: 'En contabilidad', approved: 'Aprobada',
+      rejected: 'Rechazada', closed: 'Cerrada', liquidated: 'Liquidada',
+      reimbursed: 'Reembolsada', cancelled: 'Cancelada',
+    };
+    return map[String(r?.status || '')] ?? (r?.status || '—');
+  }
+
+  reportFecha(r: any): string { return formatFechaEmisionDdMmYyyy(r?.createdAt) || '—'; }
+
+  viewReport(r: any): void {
+    this.router.navigate(['/mis-rendiciones', String(r._id), 'detalle']);
+  }
+
+  get reportsTotalGastado(): number {
+    return this.reports().reduce((sum, r) => sum + (Number(r?.totalGastado) || 0), 0);
   }
 
   goToPage(p: number): void { if (p < 1 || p > this.pages()) return; this.page = p; this.loadData(); }
@@ -134,6 +220,12 @@ export class RendicionesDirectasComponent implements OnInit {
   // ─── Navegación ──────────────────────────────────────────────────────────────
 
   viewDetail(e: any): void {
+    // Una fila de depósito apunta al reporte (su _id es el id de la rendición),
+    // no a un gasto: navega al detalle de la rendición directa.
+    if (this.isDeposito(e)) {
+      this.router.navigate(['/mis-rendiciones', String(e._id), 'detalle']);
+      return;
+    }
     this.router.navigate(['/mis-rendiciones/gasto', String(e._id)]);
   }
 
@@ -143,9 +235,18 @@ export class RendicionesDirectasComponent implements OnInit {
 
   // ─── Aprobación ──────────────────────────────────────────────────────────────
 
-  approveExpense(e: any, event: Event): void {
+  openApproveConfirm(e: any, event: Event): void {
     event.stopPropagation();
     if (this.approvingId() || this.isRevisado(e)) return;
+    this.confirmApproveExpense.set(e);
+  }
+
+  cancelApprove(): void { this.confirmApproveExpense.set(null); }
+
+  doApprove(): void {
+    const e = this.confirmApproveExpense();
+    if (!e) return;
+    this.confirmApproveExpense.set(null);
     this.approvingId.set(e._id);
     this.invoicesService.approveByContabilidad(e._id).subscribe({
       next: () => {
@@ -162,6 +263,8 @@ export class RendicionesDirectasComponent implements OnInit {
       },
     });
   }
+
+  approveExpense(e: any, event: Event): void { this.openApproveConfirm(e, event); }
 
   // ─── Eliminación ─────────────────────────────────────────────────────────────
 
@@ -200,7 +303,11 @@ export class RendicionesDirectasComponent implements OnInit {
     return {};
   }
 
+  /** Fila placeholder que representa una directa con depósito sin comprobantes aún. */
+  isDeposito(e: any): boolean { return e?._isDepositPlaceholder === true; }
+
   getTypeKey(e: any): string {
+    if (this.isDeposito(e)) return 'directa_deposito';
     const t = e?.expenseType;
     if (t === 'planilla_movilidad') return 'planilla_movilidad';
     if (t === 'otros_gastos') return 'otros_gastos';
@@ -210,6 +317,7 @@ export class RendicionesDirectasComponent implements OnInit {
   }
 
   getTypeCode(e: any): string {
+    if (this.isDeposito(e)) return 'DEP';
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
     if (type === 'comprobante_caja') return 'CC';
@@ -233,6 +341,7 @@ export class RendicionesDirectasComponent implements OnInit {
 
   getTypeBadgeClass(e: any): string {
     const code = this.getTypeCode(e);
+    if (code === 'DEP') return 'bg-emerald-100 text-emerald-700';
     if (code === 'PM') return 'bg-yellow-100 text-yellow-800';
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
@@ -248,12 +357,46 @@ export class RendicionesDirectasComponent implements OnInit {
     return (typeof u === 'object' ? u.name || u.email : u) || '—';
   }
 
+  /** DNI del colaborador de la rendición (perfil del usuario), para los PDFs. */
+  getColaboradorDni(e: any): string | undefined {
+    const u = e._report?.userId;
+    return u && typeof u === 'object' ? u.dni : undefined;
+  }
+
   getRendicionTitle(e: any): string { return e._report?.motivo || e._report?.title || '—'; }
+
+  /** Nombre del usuario que generó la rendición directa (createdBy del reporte). */
+  getGeneradoPor(e: any): string { return e._report?._generatedByName || '—'; }
+
+  /** Origen/tipo de la rendición directa: Contabilidad, Coordinador o Colaborador. */
+  getOrigen(e: any): string { return e._report?._origin || 'colaborador'; }
+
+  getOrigenLabel(e: any): string {
+    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Coordinador', colaborador: 'Colaborador' };
+    return labels[this.getOrigen(e)] ?? 'Colaborador';
+  }
+
+  getOrigenBadgeClass(e: any): string {
+    const o = this.getOrigen(e);
+    if (o === 'contabilidad') return 'bg-blue-100 text-blue-700';
+    if (o === 'coordinador') return 'bg-purple-100 text-purple-700';
+    return 'bg-gray-100 text-gray-600';
+  }
 
   getProject(e: any): string {
     const p = e._projectDoc || e._project?.[0];
     if (!p) return '—';
     return p.code ? `${p.code} — ${p.name}` : p.name || '—';
+  }
+
+  /** Resuelve la etiqueta de un proyecto (código — nombre) a partir de su id, usando el catálogo cargado. */
+  private resolveProjectLabel(id: any): string {
+    if (!id) return '';
+    const pid = typeof id === 'object' ? String(id._id ?? '') : String(id);
+    if (!pid) return '';
+    const p = this.projects().find(pr => String(pr._id) === pid);
+    if (!p) return '';
+    return p.code ? `${p.code} — ${p.name}` : p.name || '';
   }
 
   getCategory(e: any): string {
@@ -281,7 +424,15 @@ export class RendicionesDirectasComponent implements OnInit {
 
   getProveedor(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja' || type === 'otros_gastos') return '-';
+    if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
+    if (type === 'comprobante_caja') {
+      try {
+        const d = this.getData(e);
+        const raw = d['payload'];
+        const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
+        return String(obj['entregadoA'] || '-');
+      } catch { return '-'; }
+    }
     const d = this.getData(e);
     const r = d['razonSocial'];
     if (typeof r === 'string' && r.trim()) return r.trim();
@@ -289,6 +440,7 @@ export class RendicionesDirectasComponent implements OnInit {
   }
 
   getConcepto(e: any): string {
+    if (this.isDeposito(e)) return e?.description || 'Depósito de saldo';
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') { const rows: any[] = e?.mobilityRows || []; const first = rows[0]; return first?.gestion || `${rows.length} filas`; }
     if (type === 'otros_gastos') return e?.description || 'DJ firmada';
@@ -298,6 +450,7 @@ export class RendicionesDirectasComponent implements OnInit {
   }
 
   getFecha(e: any): string {
+    if (this.isDeposito(e)) return e.fechaEmision || formatFechaEmisionDdMmYyyy(e.createdAt) || '—';
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') { const rows: any[] = e?.mobilityRows || []; const dates = rows.map((r: any) => r.fecha).filter(Boolean); return dates.length ? ([...dates].sort()[0]) : '—'; }
     if (type === 'otros_gastos') return e.fechaEmision || formatFechaEmisionDdMmYyyy(e.createdAt) || '—';
@@ -338,7 +491,7 @@ export class RendicionesDirectasComponent implements OnInit {
   getEstadoContClass(e: any): string { return e.approvalCont?.status === 'approved' ? 'bg-teal-100 text-teal-700' : 'bg-yellow-100 text-yellow-700'; }
   isRevisado(e: any): boolean { return e.approvalCont?.status === 'approved'; }
   getTotal(e: any): number { const t = e?.total; if (typeof t === 'number') return t; const n = Number(t); return Number.isNaN(n) ? 0 : n; }
-  get totalMonto(): number { return this.data().reduce((sum, e) => sum + this.getTotal(e), 0); }
+  get totalMonto(): number { return this.data().reduce((sum, e) => sum + (this.isDeposito(e) ? 0 : this.getTotal(e)), 0); }
 
   private mapExpenseStatus(status?: string): string {
     const s = String(status || 'pending').toLowerCase();
@@ -350,22 +503,22 @@ export class RendicionesDirectasComponent implements OnInit {
 
   async exportMobilityPdf(e: any, event: Event): Promise<void> {
     event.stopPropagation();
-    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r) }));
-    const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
+    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
+    const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToPdf(data);
   }
 
   async exportMobilityExcel(e: any, event: Event): Promise<void> {
     event.stopPropagation();
-    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r) }));
-    const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
+    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
+    const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToExcel(data);
   }
 
   async exportCashVoucherPdf(e: any, event: Event): Promise<void> {
     event.stopPropagation();
     const payload = this.cashVoucherPayload(e);
-    const data: CashVoucherExportData = { fileBaseName: `comprobante_${e._id}`, collaborator: this.getColaborador(e), internalCode: e.internalCode, entregadoA: String(payload['entregadoA'] || ''), direccion: String(payload['direccion'] || ''), concepto: String(payload['concepto'] || ''), monto: this.getTotal(e), generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), projectName: this.getProject(e), fechaEmision: this.emissionDateText(e) };
+    const data: CashVoucherExportData = { fileBaseName: `comprobante_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, entregadoA: String(payload['entregadoA'] || ''), direccion: String(payload['direccion'] || ''), concepto: String(payload['concepto'] || ''), monto: this.getTotal(e), generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), projectName: this.getProject(e), fechaEmision: this.emissionDateText(e) };
     await this.exportService.exportCashVoucherToPdf(data);
   }
 
@@ -373,7 +526,7 @@ export class RendicionesDirectasComponent implements OnInit {
     event.stopPropagation();
     const d = this.getData(e);
     const payload: any = typeof d['payload'] === 'string' ? (() => { try { return JSON.parse(String(d['payload'])); } catch { return {}; } })() : (d['payload'] ?? {});
-    const data: ReceiptExportData = { fileBaseName: `recibo_${e._id}`, collaborator: this.getColaborador(e), razonSocial: String(e.receiptRazonSocial || payload['razonSocial'] || ''), ruc: String(e.receiptRuc || payload['ruc'] || ''), numeroDocumento: String(payload['numeroDocumento'] || e.receiptNumeroDocumento || ''), concepto: String(e.receiptConcepto || payload['concepto'] || ''), fecha: this.emissionDateText(e), monto: this.getTotal(e) };
+    const data: ReceiptExportData = { fileBaseName: `recibo_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), razonSocial: String(e.receiptRazonSocial || payload['razonSocial'] || ''), ruc: String(e.receiptRuc || payload['ruc'] || ''), numeroDocumento: String(payload['numeroDocumento'] || e.receiptNumeroDocumento || ''), concepto: String(e.receiptConcepto || payload['concepto'] || ''), fecha: this.emissionDateText(e), monto: this.getTotal(e) };
     await this.exportService.exportReceiptToPdf(data);
   }
 
@@ -388,6 +541,19 @@ export class RendicionesDirectasComponent implements OnInit {
     const filters: string[] = [];
     if (this.filterDateFrom || this.filterDateTo) filters.push(`Periodo: ${this.filterDateFrom || '...'} al ${this.filterDateTo || '...'}`);
     if (this.filterTipo) filters.push(`Tipo: ${this.filterTipo}`);
+
+    // Cta / CCI: solo tiene sentido cuando el reporte es de un único colaborador.
+    // Si el consolidado mezcla varios, no se muestra una cuenta (sería ambigua).
+    const colaboradores = new Map<string, any>();
+    for (const e of expenses) {
+      const u = (e as any)._report?.userId;
+      if (u && typeof u === 'object') colaboradores.set(String(u._id), u);
+    }
+    let accountNumber: string | undefined;
+    if (colaboradores.size === 1) {
+      const ba = [...colaboradores.values()][0]?.bankAccount;
+      accountNumber = ba?.cci || ba?.accountNumber || undefined;
+    }
 
     const comprobantes = expenses.map(e => {
       const type = e?.expenseType;
@@ -411,6 +577,7 @@ export class RendicionesDirectasComponent implements OnInit {
       estado: `${this.total()} documento(s)`,
       descripcionRendicion: filters.length ? filters.join(' | ') : undefined,
       colaborador: 'Reporte consolidado',
+      accountNumber,
       presupuesto: 0,
       totalGastado,
       totalAnticipado: 0,

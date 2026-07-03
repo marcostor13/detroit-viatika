@@ -51,12 +51,17 @@ export const routes: Routes = [
         canActivate: [AuthColaboradorGuard],
       },
       {
-        path: 'consolidated-invoices',
+        path: 'dashboard',
         loadComponent: () =>
-          import(
-            './modules/consolidated-invoices/consolidated-invoices.component'
-          ).then((m) => m.ConsolidatedInvoicesComponent),
+          import('./modules/dashboard/dashboard.component').then(
+            (m) => m.DashboardComponent
+          ),
         canActivate: [authModuleGuard('consolidated-invoices')],
+      },
+      {
+        path: 'consolidated-invoices',
+        redirectTo: 'dashboard',
+        pathMatch: 'full',
       },
       {
         path: 'notificaciones',
@@ -66,7 +71,7 @@ export const routes: Routes = [
           ).then((m) => m.NotificationListComponent),
       },
       {
-        path: 'consolidated-invoices/add-category',
+        path: 'dashboard/add-category',
         loadComponent: () =>
           import(
             './modules/consolidated-invoices/add-category/add-category.component'
@@ -74,7 +79,7 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('consolidated-invoices', true)],
       },
       {
-        path: 'consolidated-invoices/edit-category/:id',
+        path: 'dashboard/edit-category/:id',
         loadComponent: () =>
           import(
             './modules/consolidated-invoices/add-category/add-category.component'
@@ -82,7 +87,7 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('consolidated-invoices', true)],
       },
       {
-        path: 'consolidated-invoices/add-project',
+        path: 'dashboard/add-project',
         loadComponent: () =>
           import(
             './modules/consolidated-invoices/add-project/add-project.component'
@@ -90,7 +95,7 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('consolidated-invoices', true)],
       },
       {
-        path: 'consolidated-invoices/edit-project/:id',
+        path: 'dashboard/edit-project/:id',
         loadComponent: () =>
           import(
             './modules/consolidated-invoices/add-project/add-project.component'
@@ -139,8 +144,8 @@ export const routes: Routes = [
       {
         path: 'rendiciones',
         loadComponent: () =>
-          import('./modules/admin-users/rendiciones-admin/rendiciones-admin.component').then(
-            (m) => m.RendicionesAdminComponent
+          import('./modules/admin-users/rendiciones-admin/rendiciones-tabs.component').then(
+            (m) => m.RendicionesTabsComponent
           ),
         canActivate: [authModuleGuard('rendiciones')],
       },
@@ -151,6 +156,54 @@ export const routes: Routes = [
             (m) => m.ConfiguracionComponent
           ),
         canActivate: [authModuleGuard('configuracion')],
+      },
+      {
+        path: 'lineas-negocio',
+        loadComponent: () =>
+          import('./modules/lineas-negocio/lineas-negocio.component').then(
+            (m) => m.LineasNegocioComponent
+          ),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'lineas-negocio/nueva',
+        loadComponent: () =>
+          import(
+            './modules/lineas-negocio/form/lineas-negocio-form.component'
+          ).then((m) => m.LineasNegocioFormComponent),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'lineas-negocio/:id/editar',
+        loadComponent: () =>
+          import(
+            './modules/lineas-negocio/form/lineas-negocio-form.component'
+          ).then((m) => m.LineasNegocioFormComponent),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'perfiles-categoria',
+        loadComponent: () =>
+          import('./modules/perfiles-categoria/perfiles-categoria.component').then(
+            (m) => m.PerfilesCategoriaComponent
+          ),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'perfiles-categoria/nueva',
+        loadComponent: () =>
+          import(
+            './modules/perfiles-categoria/form/perfiles-categoria-form.component'
+          ).then((m) => m.PerfilesCategoriaFormComponent),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'perfiles-categoria/:id/editar',
+        loadComponent: () =>
+          import(
+            './modules/perfiles-categoria/form/perfiles-categoria-form.component'
+          ).then((m) => m.PerfilesCategoriaFormComponent),
+        canActivate: [AuthAdmin2Guard],
       },
       {
         path: 'mi-perfil',
@@ -181,6 +234,14 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./modules/mis-rendiciones/mis-rendiciones.component').then(
             (m) => m.MisRendicionesComponent
+          ),
+        canActivate: [AuthColaboradorGuard],
+      },
+      {
+        path: 'saldo',
+        loadComponent: () =>
+          import('./modules/saldo/saldo.component').then(
+            (m) => m.SaldoComponent
           ),
         canActivate: [AuthColaboradorGuard],
       },
@@ -225,27 +286,11 @@ export const routes: Routes = [
         canActivate: [AuthColaboradorGuard],
       },
       {
-        path: 'mis-documentos',
-        loadComponent: () =>
-          import('./modules/mis-documentos/mis-documentos.component').then(
-            (m) => m.MisDocumentosComponent
-          ),
-        canActivate: [AuthColaboradorGuard],
-      },
-      {
         path: 'mi-firma',
         loadComponent: () =>
           import('./modules/firma-digital/firma-digital.component').then(
             (m) => m.FirmaDigitalComponent
           ),
-      },
-      {
-        path: 'viaticos',
-        loadComponent: () =>
-          import('./modules/viaticos/viaticos.component').then(
-            (m) => m.ViaticosComponent
-          ),
-        canActivate: [AuthViaticosGuard],
       },
       {
         path: 'viaticos/:id',
@@ -257,17 +302,22 @@ export const routes: Routes = [
       },
       {
         path: 'rendiciones-directas',
-        loadComponent: () =>
-          import('./modules/rendiciones-directas/rendiciones-directas.component').then(
-            (m) => m.RendicionesDirectasComponent
-          ),
-        canActivate: [AuthAdmin2Guard],
+        redirectTo: '/rendiciones?tab=directas',
+        pathMatch: 'full',
       },
       {
         path: 'tesoreria',
         loadComponent: () =>
           import('./modules/tesoreria/tesoreria.component').then(
             (m) => m.TesoreriaComponent
+          ),
+        canActivate: [AuthTesoreroGuard],
+      },
+      {
+        path: 'tesoreria/rendicion-directa/nueva',
+        loadComponent: () =>
+          import('./modules/tesoreria/nueva-rendicion-directa-deposito/nueva-rendicion-directa-deposito.component').then(
+            (m) => m.NuevaRendicionDirectaDepositoComponent
           ),
         canActivate: [AuthTesoreroGuard],
       },
@@ -350,6 +400,27 @@ export const routes: Routes = [
             (m) => m.CajaChicaComponent
           ),
         canActivate: [AuthColaboradorGuard],
+      },
+      {
+        path: 'mis-rendiciones/nueva-caja-chica',
+        loadComponent: () =>
+          import('./modules/mis-rendiciones/nueva-caja-chica/nueva-caja-chica.component').then(
+            (m) => m.NuevaCajaChicaComponent
+          ),
+        canActivate: [AuthColaboradorGuard],
+      },
+      {
+        path: 'rendiciones-caja-chica',
+        redirectTo: '/rendiciones?tab=caja-chica',
+        pathMatch: 'full',
+      },
+      {
+        path: 'rendiciones-caja-chica/:id',
+        loadComponent: () =>
+          import('./modules/rendiciones-caja-chica/rendicion-caja-chica-detalle/rendicion-caja-chica-detalle.component').then(
+            (m) => m.RendicionCajaChicaDetalleComponent
+          ),
+        canActivate: [AuthAdmin2Guard],
       },
     ],
   },

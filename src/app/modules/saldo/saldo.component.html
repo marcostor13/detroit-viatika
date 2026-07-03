@@ -1,0 +1,90 @@
+<div class="p-4 lg:p-8 max-w-5xl mx-auto">
+  <!-- Header / total -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">Saldo</h1>
+      <p class="text-sm text-tertiary">
+        Saldos disponibles de tus rendiciones y pagos de contabilidad.
+      </p>
+    </div>
+    <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3">
+      <div class="text-xs font-medium text-emerald-600 uppercase tracking-wide">
+        Total disponible
+      </div>
+      <div class="text-2xl font-bold text-emerald-700">
+        S/ {{ total() | number: '1.2-2' }}
+      </div>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="py-16 text-center text-tertiary">Cargando saldos...</div>
+  } @else if (error()) {
+    <div class="py-8 text-center text-error">
+      {{ error() }}
+      <button (click)="load()" class="ml-2 underline">Reintentar</button>
+    </div>
+  } @else if (saldos().length === 0) {
+    <div class="py-16 text-center text-tertiary">
+      No tienes saldos disponibles.
+    </div>
+  } @else {
+    <!-- Tabla (desktop) -->
+    <div class="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-tertiary">
+          <tr>
+            <th class="text-left font-medium px-4 py-3">Tipo</th>
+            <th class="text-left font-medium px-4 py-3">Centro de costo</th>
+            <th class="text-left font-medium px-4 py-3">Origen</th>
+            <th class="text-right font-medium px-4 py-3">Monto</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          @for (s of saldos(); track s._id) {
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-3">
+              <span
+                class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                [class]="typeBadgeClass(s.type)"
+              >
+                {{ typeLabel(s.type) }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-secondary">
+              {{ centroCosto(s) || '—' }}
+            </td>
+            <td class="px-4 py-3 text-tertiary">{{ origen(s) || '—' }}</td>
+            <td class="px-4 py-3 text-right font-semibold text-secondary">
+              S/ {{ s.amount | number: '1.2-2' }}
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Cards (mobile) -->
+    <div class="md:hidden space-y-3">
+      @for (s of saldos(); track s._id) {
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-2">
+          <span
+            class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+            [class]="typeBadgeClass(s.type)"
+          >
+            {{ typeLabel(s.type) }}
+          </span>
+          <span class="font-bold text-secondary">
+            S/ {{ s.amount | number: '1.2-2' }}
+          </span>
+        </div>
+        <div class="text-sm text-secondary">
+          {{ centroCosto(s) || 'Sin centro de costo' }}
+        </div>
+        <div class="text-xs text-tertiary">{{ origen(s) || '—' }}</div>
+      </div>
+      }
+    </div>
+  }
+</div>

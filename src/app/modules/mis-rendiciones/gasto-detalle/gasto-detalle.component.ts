@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ExpenseService } from '../../../services/expense.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -15,7 +16,7 @@ type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos' | 'compr
 @Component({
   selector: 'app-gasto-detalle',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './gasto-detalle.component.html',
 })
 export class GastoDetalleComponent implements OnInit {
@@ -31,6 +32,30 @@ export class GastoDetalleComponent implements OnInit {
   deleting = signal(false);
   showDeleteConfirm = signal(false);
 
+  // --- Edición de desglose contable (solo Contabilidad) ---
+  showDesgloseForm = signal(false);
+  savingDesglose = signal(false);
+  desgloseForm = {
+    baseAfecta: null as number | null,
+    igv: null as number | null,
+    tasaIgv: null as number | null,
+    inafecto: null as number | null,
+  };
+
+  get isContabilidad(): boolean {
+    return this.userState.isContabilidad();
+  }
+
+  /** Suma del desglose para validación visual (debe coincidir con el total). */
+  get desgloseSuma(): number {
+    const f = this.desgloseForm;
+    return (
+      (Number(f.baseAfecta) || 0) +
+      (Number(f.igv) || 0) +
+      (Number(f.inafecto) || 0)
+    );
+  }
+
   ngOnInit(): void {
     if (!this.id) { this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'directas' } }); return; }
     this.expenseService.getById(this.id).subscribe({
@@ -40,11 +65,11 @@ export class GastoDetalleComponent implements OnInit {
   }
 
   private get backRoute(): string[] {
-    return this.userState.isContabilidad() ? ['/rendiciones-directas'] : ['/mis-rendiciones'];
+    return [this.userState.isContabilidad() ? '/rendiciones' : '/mis-rendiciones'];
   }
 
   private get backQueryParams(): object {
-    return this.userState.isContabilidad() ? {} : { tab: 'directas' };
+    return { tab: 'directas' };
   }
 
   goBack(): void {
@@ -55,6 +80,57 @@ export class GastoDetalleComponent implements OnInit {
     this.router.navigate(['/invoices/edit', this.id], {
       queryParams: { mode: 'directa', from: this.userState.isContabilidad() ? 'contabilidad' : 'colaborador' },
     });
+  }
+
+  editDesglose(): void {
+    const exp = this.expense();
+    this.desgloseForm = {
+      baseAfecta: (exp?.['baseAfecta'] as number) ?? null,
+      igv: (exp?.['igv'] as number) ?? null,
+      tasaIgv: (exp?.['tasaIgv'] as number) ?? null,
+      inafecto: (exp?.['inafecto'] as number) ?? null,
+    };
+    this.showDesgloseForm.set(true);
+  }
+
+  cancelDesglose(): void {
+    this.showDesgloseForm.set(false);
+  }
+
+  saveDesglose(): void {
+    if (!this.id || this.savingDesglose()) return;
+    const f = this.desgloseForm;
+    this.savingDesglose.set(true);
+    this.expenseService
+      .updateDesglose(this.id, {
+        baseAfecta: f.baseAfecta ?? undefined,
+        igv: f.igv ?? undefined,
+        tasaIgv: f.tasaIgv ?? undefined,
+        inafecto: f.inafecto ?? undefined,
+      })
+      .subscribe({
+        next: (updated) => {
+          this.savingDesglose.set(false);
+          this.showDesgloseForm.set(false);
+          // Refresca los campos visibles del documento.
+          const exp = this.expense();
+          if (exp) {
+            this.expense.set({
+              ...exp,
+              baseAfecta: updated?.baseAfecta ?? f.baseAfecta,
+              igv: updated?.igv ?? f.igv,
+              tasaIgv: updated?.tasaIgv ?? f.tasaIgv,
+              inafecto: updated?.inafecto ?? f.inafecto,
+              desgloseRevisado: true,
+            });
+          }
+          this.notifications.show('Desglose contable actualizado.', 'success');
+        },
+        error: () => {
+          this.savingDesglose.set(false);
+          this.notifications.show('Error al guardar el desglose.', 'error');
+        },
+      });
   }
 
   confirmDelete(): void { this.showDeleteConfirm.set(true); }
@@ -336,6 +412,8 @@ export class GastoDetalleComponent implements OnInit {
     const reportStatus = exp['_reportStatus'] as string | undefined;
     if (reportStatus && ['approved', 'closed', 'cancelled'].includes(reportStatus)) return false;
     const st = String(exp['status'] ?? 'pending').toLowerCase();
-    return !['approved', 'rejected'].includes(st);
+    // Un comprobante rechazado puede corregirlo el colaborador; solo queda
+    // bloqueado cuando ya está aprobado.
+    return st !== 'approved';
   }
 }

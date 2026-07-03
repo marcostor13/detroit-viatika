@@ -47,13 +47,13 @@ export class AddProjectComponent implements OnInit {
           'Error al cargar el proyecto: ' + error.message,
           'error'
         );
-        this.router.navigate(['/consolidated-invoices']);
+        this.router.navigate(['/dashboard']);
       },
     });
   }
 
   back() {
-    this.router.navigate(['/consolidated-invoices']);
+    this.router.navigate(['/dashboard']);
   }
 
   save() {
@@ -88,7 +88,7 @@ export class AddProjectComponent implements OnInit {
           'Proyecto creado exitosamente',
           'success'
         );
-        this.router.navigate(['/consolidated-invoices']);
+        this.router.navigate(['/dashboard']);
       },
       error: (error: HttpErrorResponse) => {
         this.notificationService.show(
@@ -115,7 +115,7 @@ export class AddProjectComponent implements OnInit {
             'Proyecto actualizado exitosamente',
             'success'
           );
-          this.router.navigate(['/consolidated-invoices']);
+          this.router.navigate(['/dashboard']);
         },
         error: (error: HttpErrorResponse) => {
           this.notificationService.show(

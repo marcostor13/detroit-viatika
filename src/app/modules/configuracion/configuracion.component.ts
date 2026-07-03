@@ -10,6 +10,12 @@ import { ISunatConfig } from '../../interfaces/sunat-config.interface';
 import { CompanyConfigService } from '../../services/company-config.service';
 import { UserStateService } from '../../services/user-state.service';
 import { UploadService } from '../../services/upload.service';
+import { AccountingConfigService } from '../../services/accounting-config.service';
+import {
+  IAccountingConfig,
+  IBankAccount,
+  DEFAULT_ACCOUNTING_CONFIG,
+} from '../../interfaces/accounting-config.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { environment } from '../../../environments/environment';
 
@@ -26,6 +32,7 @@ export class ConfiguracionComponent implements OnInit {
   private companyConfigService = inject(CompanyConfigService);
   private userStateService = inject(UserStateService);
   private uploadService = inject(UploadService);
+  private accountingConfigService = inject(AccountingConfigService);
   private http = inject(HttpClient);
 
   // Company config
@@ -46,6 +53,7 @@ export class ConfiguracionComponent implements OnInit {
   showNotificationsForm = false;
   notificationsEnabled = false;
   notificationsFrequency: 'semanal' | 'mensual' = 'semanal';
+  notificationsDay: number = 1;
   isSavingNotifications = false;
 
   // Profile
@@ -63,9 +71,22 @@ export class ConfiguracionComponent implements OnInit {
   confirmPassword: string = '';
   isSavingPassword = false;
 
+  // Accounting config (plan de cuentas + bancos)
+  accountingConfig: IAccountingConfig | null = null;
+  showAccountingForm = false;
+  accountingForm: IAccountingConfig = { ...DEFAULT_ACCOUNTING_CONFIG };
+  isSavingAccounting = false;
+
+  // Tesoreria emails
+  showTesoreriaEmailsForm = false;
+  tesoreriaEmails: string[] = [];
+  newTesoreriaEmail = '';
+  isSavingTesoreriaEmails = false;
+
   get currentUser() { return this.userStateService.getUser(); }
   get isAdminUser() { return this.userStateService.isAdmin() || this.userStateService.isSuperAdmin(); }
   get canConfigureEmpresa() { return this.isAdminUser || this.userStateService.isContabilidad(); }
+  get canConfigureContabilidad() { return this.isAdminUser || this.userStateService.isContabilidad(); }
 
   sunatConfig: ISunatConfig | null = null;
   showSunatForm = false;
@@ -83,6 +104,9 @@ export class ConfiguracionComponent implements OnInit {
     if (this.isAdminUser) {
       this.loadSunatConfig();
     }
+    if (this.canConfigureContabilidad) {
+      this.loadAccountingConfig();
+    }
   }
 
   loadCompanyConfig() {
@@ -92,6 +116,8 @@ export class ConfiguracionComponent implements OnInit {
         this.limitsMovilidadDiario = config?.limits?.movilidadDiario ?? null;
         this.notificationsEnabled = config?.notificationSettings?.enabled ?? false;
         this.notificationsFrequency = config?.notificationSettings?.frequency ?? 'semanal';
+        this.notificationsDay = config?.notificationSettings?.notificationDay ?? 1;
+        this.tesoreriaEmails = [...(config?.tesoreriaEmails ?? [])];
       }
     );
   }
@@ -128,6 +154,7 @@ export class ConfiguracionComponent implements OnInit {
   editNotifications() {
     this.notificationsEnabled = this.companyConfig?.notificationSettings?.enabled ?? false;
     this.notificationsFrequency = this.companyConfig?.notificationSettings?.frequency ?? 'semanal';
+    this.notificationsDay = this.companyConfig?.notificationSettings?.notificationDay ?? 1;
     this.showNotificationsForm = true;
   }
 
@@ -135,6 +162,7 @@ export class ConfiguracionComponent implements OnInit {
     this.showNotificationsForm = false;
     this.notificationsEnabled = this.companyConfig?.notificationSettings?.enabled ?? false;
     this.notificationsFrequency = this.companyConfig?.notificationSettings?.frequency ?? 'semanal';
+    this.notificationsDay = this.companyConfig?.notificationSettings?.notificationDay ?? 1;
   }
 
   saveNotifications() {
@@ -144,6 +172,7 @@ export class ConfiguracionComponent implements OnInit {
     this.invoicesService.updateNotificationSettings(companyId, {
       enabled: this.notificationsEnabled,
       frequency: this.notificationsFrequency,
+      notificationDay: this.notificationsDay,
     }).subscribe({
       next: () => {
         this.notificationService.show('Configuración de notificaciones guardada', 'success');
@@ -154,6 +183,54 @@ export class ConfiguracionComponent implements OnInit {
       error: () => {
         this.notificationService.show('Error al guardar la configuración de notificaciones', 'error');
         this.isSavingNotifications = false;
+      },
+    });
+  }
+
+  editTesoreriaEmails() {
+    this.tesoreriaEmails = [...(this.companyConfig?.tesoreriaEmails ?? [])];
+    this.newTesoreriaEmail = '';
+    this.showTesoreriaEmailsForm = true;
+  }
+
+  cancelTesoreriaEmailsEdit() {
+    this.showTesoreriaEmailsForm = false;
+    this.tesoreriaEmails = [...(this.companyConfig?.tesoreriaEmails ?? [])];
+    this.newTesoreriaEmail = '';
+  }
+
+  addTesoreriaEmail() {
+    const email = this.newTesoreriaEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      this.notificationService.show('Ingresa un correo electrónico válido', 'error');
+      return;
+    }
+    if (this.tesoreriaEmails.includes(email)) {
+      this.notificationService.show('Este correo ya está en la lista', 'error');
+      return;
+    }
+    this.tesoreriaEmails.push(email);
+    this.newTesoreriaEmail = '';
+  }
+
+  removeTesoreriaEmail(index: number) {
+    this.tesoreriaEmails.splice(index, 1);
+  }
+
+  saveTesoreriaEmails() {
+    const companyId = this.companyConfig?._id || this.companyConfig?.companyId;
+    if (!companyId) return;
+    this.isSavingTesoreriaEmails = true;
+    this.invoicesService.updateTesoreriaEmails(companyId, this.tesoreriaEmails).subscribe({
+      next: () => {
+        this.notificationService.show('Correos de tesoreria guardados', 'success');
+        this.showTesoreriaEmailsForm = false;
+        this.isSavingTesoreriaEmails = false;
+        this.companyConfigService.refreshConfig();
+      },
+      error: () => {
+        this.notificationService.show('Error al guardar los correos de tesoreria', 'error');
+        this.isSavingTesoreriaEmails = false;
       },
     });
   }
@@ -510,6 +587,130 @@ export class ConfiguracionComponent implements OnInit {
         this.notificationService.show('Error al actualizar la contraseña', 'error');
       },
     });
+  }
+
+  // --- Configuración contable (Plan de cuentas + Bancos) ---
+
+  loadAccountingConfig() {
+    const clientId = this.getClientId();
+    if (!clientId) return;
+    this.accountingConfigService.getConfig(clientId).subscribe({
+      next: (config) => {
+        this.accountingConfig = config;
+      },
+      error: (error: HttpErrorResponse) => {
+        if (error.status !== 404) {
+          this.notificationService.show(
+            'Error al cargar configuración contable: ' + error.message,
+            'error'
+          );
+        }
+      },
+    });
+  }
+
+  editAccountingConfig() {
+    // Clona la config actual sobre los defaults para no perder campos nuevos.
+    this.accountingForm = {
+      ...DEFAULT_ACCOUNTING_CONFIG,
+      ...(this.accountingConfig ?? {}),
+      igvRates: (this.accountingConfig?.igvRates?.length
+        ? this.accountingConfig.igvRates
+        : DEFAULT_ACCOUNTING_CONFIG.igvRates
+      ).map((r) => ({ ...r })),
+      inafectoKeywords: [
+        ...(this.accountingConfig?.inafectoKeywords ??
+          DEFAULT_ACCOUNTING_CONFIG.inafectoKeywords),
+      ],
+      bankAccounts: (this.accountingConfig?.bankAccounts ?? []).map((b) => ({
+        ...b,
+      })),
+    };
+    this.showAccountingForm = true;
+  }
+
+  cancelAccountingEdit() {
+    this.showAccountingForm = false;
+    this.accountingForm = { ...DEFAULT_ACCOUNTING_CONFIG };
+  }
+
+  addIgvRate() {
+    this.accountingForm.igvRates.push({ tasa: 0, cuenta40: '' });
+  }
+
+  removeIgvRate(index: number) {
+    this.accountingForm.igvRates.splice(index, 1);
+  }
+
+  addBankAccount() {
+    const bank: IBankAccount = {
+      banco: '',
+      nroCuenta: '',
+      cuentaContable: '',
+      moneda: '01',
+      cci: '',
+      activo: true,
+    };
+    this.accountingForm.bankAccounts.push(bank);
+  }
+
+  removeBankAccount(index: number) {
+    this.accountingForm.bankAccounts.splice(index, 1);
+  }
+
+  /** Convierte el textarea de palabras clave (una por línea) a array. */
+  get inafectoKeywordsText(): string {
+    return (this.accountingForm.inafectoKeywords ?? []).join('\n');
+  }
+  set inafectoKeywordsText(value: string) {
+    this.accountingForm.inafectoKeywords = value
+      .split('\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
+  saveAccountingConfig() {
+    const clientId = this.getClientId();
+    if (!clientId) {
+      this.notificationService.show(
+        'No se encontró companyId. Inicia sesión nuevamente.',
+        'error'
+      );
+      return;
+    }
+    // Validación mínima de cuentas fijas.
+    if (
+      !this.accountingForm.cuenta42?.trim() ||
+      !this.accountingForm.cuenta79?.trim() ||
+      !this.accountingForm.cuenta14Raiz?.trim()
+    ) {
+      this.notificationService.show(
+        'Las cuentas 42, 79 y 14 son obligatorias',
+        'error'
+      );
+      return;
+    }
+    this.isSavingAccounting = true;
+    this.accountingConfigService
+      .saveConfig(clientId, this.accountingForm)
+      .subscribe({
+        next: (config) => {
+          this.accountingConfig = config;
+          this.isSavingAccounting = false;
+          this.showAccountingForm = false;
+          this.notificationService.show(
+            'Configuración contable guardada correctamente',
+            'success'
+          );
+        },
+        error: (error: HttpErrorResponse) => {
+          this.isSavingAccounting = false;
+          this.notificationService.show(
+            'Error al guardar la configuración contable: ' + error.message,
+            'error'
+          );
+        },
+      });
   }
 
   testSunatConnection() {

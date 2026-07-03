@@ -7,6 +7,8 @@ import {
   IUpdateExpenseReport,
   IRegisterReimbursementPaymentPayload,
   IMisDocumentoItem,
+  ICreateViaticoPayload,
+  IResubmitViaticoPayload,
 } from '../interfaces/expense-report.interface';
 import { Observable } from 'rxjs';
 
@@ -45,6 +47,62 @@ export class ExpenseReportsService {
     return this.http.get<IExpenseReport[]>(
       `${this.apiUrl}/expense-report/pending-reimbursements/client/${clientId}`
     );
+  }
+
+  /** Contabilidad: crea una rendición directa con depósito inicial para un colaborador/coordinador. */
+  createDirectaDeposit(payload: {
+    userId: string;
+    gestion?: string;
+    amount: number;
+    scannedAmount?: number;
+    receiptUrl: string;
+    receiptFileName?: string;
+    receiptMimeType?: string;
+    receiptSizeBytes?: number;
+    depositDate?: string;
+    operationNumber?: string;
+    operationDate?: string;
+    operationTime?: string;
+    titular?: string;
+  }): Observable<IExpenseReport> {
+    return this.http.post<IExpenseReport>(
+      `${this.apiUrl}/expense-report/directa-deposit`,
+      payload
+    );
+  }
+
+  /** Colaborador: sus propias rendiciones de caja chica. */
+  getMyCajaChica(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/expense-report/my/caja-chica`);
+  }
+
+  /** Contabilidad: todas las rendiciones de caja chica disponibles del cliente. */
+  getAllCajaChicaAvailable(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiUrl}/expense-report/caja-chica/available`);
+  }
+
+  /** Contabilidad: lista las rendiciones directas iniciadas con depósito. */
+  findDirectaDepositReports(clientId: string): Observable<any[]> {
+    return this.http.get<any[]>(
+      `${this.apiUrl}/expense-report/directas-deposito/client/${clientId}`
+    );
+  }
+
+  /** Escanea el comprobante de depósito (imagen o PDF, por URL) y extrae monto, fecha, hora, n° de operación y titular. */
+  scanDepositAmount(url: string, mimeType?: string): Observable<{
+    amount: number;
+    fecha?: string;
+    hora?: string;
+    operationNumber?: string;
+    titular?: string;
+  }> {
+    return this.http.post<{
+      amount: number;
+      fecha?: string;
+      hora?: string;
+      operationNumber?: string;
+      titular?: string;
+    }>(`${this.apiUrl}/expense/scan-deposit-amount`, { url, mimeType });
   }
 
   findMyDocuments(): Observable<{ items: IMisDocumentoItem[] }> {
@@ -94,7 +152,17 @@ export class ExpenseReportsService {
 
   registerReturnVoucher(
     reportId: string,
-    payload: { depositDate: string; bankOrigin?: string; operationNumber?: string; fileUrl: string; fileName?: string }
+    payload: {
+      depositDate: string;
+      bankOrigin?: string;
+      operationNumber?: string;
+      fileUrl: string;
+      fileName?: string;
+      scannedAmount?: number;
+      operationDate?: string;
+      operationTime?: string;
+      titular?: string;
+    }
   ): Observable<IExpenseReport> {
     return this.http.post<IExpenseReport>(
       `${this.apiUrl}/expense-report/${reportId}/return-voucher`,
@@ -116,6 +184,52 @@ export class ExpenseReportsService {
     return this.http.get<{ data: any[]; total: number; page: number; limit: number; pages: number }>(
       `${this.apiUrl}/expense-report/${reportId}/expenses${qs ? '?' + qs : ''}`
     );
+  }
+
+  // ─── Viáticos unificados ──────────────────────────────────────────────────
+
+  createViatico(payload: ICreateViaticoPayload): Observable<IExpenseReport> {
+    return this.http.post<IExpenseReport>(`${this.apiUrl}/expense-report/viatico`, payload);
+  }
+
+  getMyViaticos(): Observable<IExpenseReport[]> {
+    return this.http.get<IExpenseReport[]>(`${this.apiUrl}/expense-report/viaticos/my`);
+  }
+
+  resubmitViatico(id: string, payload: IResubmitViaticoPayload): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/resubmit`, payload);
+  }
+
+  cancelViatico(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/cancel`, {});
+  }
+
+  approveViaticoL1(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve-l1`, {});
+  }
+
+  approveViaticoL2(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve-l2`, {});
+  }
+
+  rejectViatico(id: string, rejectionReason: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/reject`, { rejectionReason });
+  }
+
+  registerViaticoPayment(id: string, payload: IRegisterReimbursementPaymentPayload): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(
+      `${this.apiUrl}/expense-report/${id}/viatico/register-payment`,
+      payload
+    );
+  }
+
+  getViaticosList(filters: { status?: string; dateFrom?: string; dateTo?: string } = {}): Observable<IExpenseReport[]> {
+    const parts: string[] = [];
+    if (filters.status) parts.push(`status=${encodeURIComponent(filters.status)}`);
+    if (filters.dateFrom) parts.push(`dateFrom=${encodeURIComponent(filters.dateFrom)}`);
+    if (filters.dateTo) parts.push(`dateTo=${encodeURIComponent(filters.dateTo)}`);
+    const qs = parts.length ? '?' + parts.join('&') : '';
+    return this.http.get<IExpenseReport[]>(`${this.apiUrl}/expense-report/viaticos/list${qs}`);
   }
 
   reopen(reportId: string, reason: string): Observable<IExpenseReport> {
@@ -162,6 +276,7 @@ export class ExpenseReportsService {
     page?: number; limit?: number;
     dateFrom?: string; dateTo?: string;
     projectId?: string; categoryId?: string; docNumber?: string; tipo?: string;
+    userId?: string;
   } = {}): Observable<{ data: any[]; total: number; page: number; limit: number; pages: number }> {
     let params = new HttpParams();
     if (filters.page) params = params.set('page', String(filters.page));
@@ -172,8 +287,23 @@ export class ExpenseReportsService {
     if (filters.categoryId) params = params.set('categoryId', filters.categoryId);
     if (filters.docNumber) params = params.set('docNumber', filters.docNumber);
     if (filters.tipo) params = params.set('tipo', filters.tipo);
+    if (filters.userId) params = params.set('userId', filters.userId);
     return this.http.get<{ data: any[]; total: number; page: number; limit: number; pages: number }>(
       `${this.apiUrl}/expense-report/directas/expenses/${clientId}`,
+      { params }
+    );
+  }
+
+  /** Rendiciones directas a nivel de reporte (una fila por rendición) para la pestaña "Rendiciones directas". */
+  findDirectRendicionReports(clientId: string, filters: {
+    dateFrom?: string; dateTo?: string; userId?: string;
+  } = {}): Observable<any[]> {
+    let params = new HttpParams();
+    if (filters.dateFrom) params = params.set('dateFrom', filters.dateFrom);
+    if (filters.dateTo) params = params.set('dateTo', filters.dateTo);
+    if (filters.userId) params = params.set('userId', filters.userId);
+    return this.http.get<any[]>(
+      `${this.apiUrl}/expense-report/directas/reports/${clientId}`,
       { params }
     );
   }

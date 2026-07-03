@@ -1,0 +1,68 @@
+<div class="p-5 flex flex-col gap-6">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <button (click)="back()" class="p-2 rounded-xl hover:bg-background transition-colors text-tertiary" title="Volver">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+      </svg>
+    </button>
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">{{ isEditing ? 'Editar Perfil de Categoría' : 'Nuevo Perfil de Categoría' }}</h1>
+      <p class="text-sm text-tertiary mt-0.5">Define el nombre y las categorías que agrupa este perfil.</p>
+    </div>
+  </div>
+
+  @if (loading()) {
+  <div class="flex justify-center items-center py-12">
+    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  </div>
+  } @else {
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-2xl flex flex-col gap-5">
+
+    <!-- Nombre -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Nombre *</label>
+      <input type="text" [(ngModel)]="form.name" placeholder="Nombre del perfil"
+        class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" />
+    </div>
+
+    <!-- Descripción -->
+    <div class="flex flex-col gap-1.5">
+      <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Descripción</label>
+      <input type="text" [(ngModel)]="form.description" placeholder="Opcional"
+        class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all" />
+    </div>
+
+    <!-- Categorías -->
+    <div class="flex flex-col gap-1.5">
+      <div class="flex items-center justify-between">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Categorías ({{ selected.size }})</label>
+        <input type="text" [(ngModel)]="search" placeholder="Buscar..."
+          class="h-9 px-3 rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 w-44" />
+      </div>
+      @if (categories.length === 0) {
+        <p class="text-sm text-tertiary py-4">No hay categorías. Créalas primero.</p>
+      } @else {
+        <div class="max-h-72 overflow-y-auto rounded-xl border border-tertiary/20 divide-y divide-tertiary/10">
+          @for (cat of filteredCategories; track cat._id) {
+          <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-background cursor-pointer transition-colors">
+            <input type="checkbox" class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
+              [checked]="isChecked(cat._id!)" (change)="toggle(cat._id!, $any($event.target).checked)" />
+            <span class="text-sm text-secondary flex-1">{{ cat.name }}</span>
+            @if (cat.cuenta) { <span class="text-xs text-tertiary">{{ cat.cuenta }}</span> }
+          </label>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Actions -->
+    <div class="flex gap-3 pt-1">
+      <app-button [label]="saving ? 'Guardando...' : (isEditing ? 'Actualizar' : 'Guardar')" variant="primary" size="md" [disabled]="saving" (clicked)="save()" />
+      <app-button label="Cancelar" variant="secondary" size="md" (clicked)="back()" />
+    </div>
+  </div>
+  }
+
+</div>

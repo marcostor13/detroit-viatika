@@ -7,6 +7,7 @@
       <p class="text-sm text-gray-500 mt-0.5">Comprobantes de gastos directos para revision contable.</p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+      @if (activeTab() === 'gastos') {
       @if (anySelected) {
         <span class="text-xs font-medium text-primary bg-primary/10 px-2.5 py-1.5 rounded-lg">
           {{ selectedCount }} seleccionado(s)
@@ -26,12 +27,33 @@
         </svg>
         @if (isExportingPdf()) { Generando... } @else if (anySelected) { PDF ({{ selectedCount }}) } @else { PDF }
       </button>
+      }
     </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex items-center gap-1 mb-4 border-b border-gray-200">
+    <button type="button" (click)="setTab('rendiciones')"
+      class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
+      [class.border-primary]="activeTab() === 'rendiciones'" [class.text-primary]="activeTab() === 'rendiciones'"
+      [class.border-transparent]="activeTab() !== 'rendiciones'" [class.text-gray-500]="activeTab() !== 'rendiciones'"
+      [class.hover:text-gray-700]="activeTab() !== 'rendiciones'">
+      Rendiciones directas
+    </button>
+    @if (!isContabilidad) {
+    <button type="button" (click)="setTab('gastos')"
+      class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
+      [class.border-primary]="activeTab() === 'gastos'" [class.text-primary]="activeTab() === 'gastos'"
+      [class.border-transparent]="activeTab() !== 'gastos'" [class.text-gray-500]="activeTab() !== 'gastos'"
+      [class.hover:text-gray-700]="activeTab() !== 'gastos'">
+      Gastos
+    </button>
+    }
   </div>
 
   <!-- Filtros -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-5">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Fecha desde</label>
         <input type="date" [(ngModel)]="filterDateFrom" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
@@ -40,6 +62,14 @@
         <label class="block text-xs font-medium text-gray-500 mb-1">Fecha hasta</label>
         <input type="date" [(ngModel)]="filterDateTo" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
       </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Colaborador</label>
+        <select [(ngModel)]="filterUserId" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
+          <option value="">Todos</option>
+          @for (u of users(); track u._id) { <option [value]="u._id">{{ u.name || u.email }}</option> }
+        </select>
+      </div>
+      @if (activeTab() === 'gastos') {
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
         <select [(ngModel)]="filterTipo" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
@@ -69,6 +99,7 @@
         <label class="block text-xs font-medium text-gray-500 mb-1">N° Comprobante</label>
         <input type="text" [(ngModel)]="filterDocNumber" placeholder="Serie, correlativo..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
       </div>
+      }
     </div>
     <div class="flex justify-end gap-2 mt-3">
       <button type="button" (click)="clearFilters()" class="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Limpiar</button>
@@ -78,6 +109,7 @@
 
   <!-- Tabla -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    @if (activeTab() === 'gastos') {
     <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
       <p class="text-sm text-gray-500">
         @if (loading()) { Cargando... }
@@ -99,7 +131,7 @@
         <p class="text-sm font-medium">Sin resultados. Ajusta los filtros.</p>
       </div>
     } @else {
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto hidden sm:block">
         <table class="w-full text-sm divide-y divide-gray-200">
           <thead class="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left">
             <tr>
@@ -108,14 +140,10 @@
                 <input type="checkbox" [checked]="allSelected" (change)="toggleSelectAll()"
                   class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 cursor-pointer" />
               </th>
+              <th class="px-2 py-3 w-8"></th>
               <th class="px-3 py-3 whitespace-nowrap">Fecha</th>
               <th class="px-3 py-3 whitespace-nowrap">Tipo</th>
-              <th class="px-3 py-3 whitespace-nowrap">N° Doc</th>
-              <th class="px-3 py-3 whitespace-nowrap">Colaborador</th>
-              <th class="px-3 py-3 whitespace-nowrap">Proyecto</th>
-              <th class="px-3 py-3 whitespace-nowrap">Categoria</th>
-              <th class="px-3 py-3 whitespace-nowrap">Proveedor</th>
-              <th class="px-3 py-3 whitespace-nowrap">Concepto</th>
+              <th class="px-3 py-3">Colaborador</th>
               <th class="px-3 py-3 text-right whitespace-nowrap">Monto S/</th>
               <th class="px-3 py-3 text-center whitespace-nowrap text-teal-600">Revisado Cont.</th>
               <th class="px-3 py-3 text-center whitespace-nowrap">Opciones</th>
@@ -129,20 +157,28 @@
                 <input type="checkbox" [checked]="isRowSelected(e._id)" (change)="toggleSelect(e._id, $event)"
                   class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 cursor-pointer" />
               </td>
+              <!-- Expandir -->
+              <td class="px-2 py-2.5">
+                <button type="button" (click)="toggleExpand(e._id, $event)" title="Ver más"
+                  [attr.aria-expanded]="isExpanded(e._id)"
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+                  <svg class="w-4 h-4 transition-transform" [class.rotate-90]="isExpanded(e._id)" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              </td>
               <td class="px-3 py-2.5 text-gray-700 whitespace-nowrap text-xs">{{ getFecha(e) }}</td>
               <td class="px-3 py-2.5">
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold tabular-nums" [ngClass]="getTypeBadgeClass(e)">{{ getTypeCode(e) }}</span>
               </td>
-              <td class="px-3 py-2.5 font-mono text-xs text-gray-700 whitespace-nowrap">{{ getDocNumber(e) }}</td>
-              <td class="px-3 py-2.5 text-xs text-gray-700 whitespace-nowrap max-w-[120px]"><span class="block truncate" [title]="getColaborador(e)">{{ getColaborador(e) }}</span></td>
-              <td class="px-3 py-2.5 text-xs text-gray-700 max-w-[130px]"><span class="block truncate" [title]="getProject(e)">{{ getProject(e) }}</span></td>
-              <td class="px-3 py-2.5 text-xs text-gray-700 max-w-[110px]"><span class="block truncate" [title]="getCategory(e)">{{ getCategory(e) }}</span></td>
-              <td class="px-3 py-2.5 text-xs text-gray-700 max-w-[150px]"><span class="block truncate" [title]="getProveedor(e)">{{ getProveedor(e) }}</span></td>
-              <td class="px-3 py-2.5 text-xs text-gray-600 max-w-[160px]"><span class="block truncate" [title]="getConcepto(e)">{{ getConcepto(e) }}</span></td>
+              <td class="px-3 py-2.5 text-xs text-gray-700"><span class="block break-words" [title]="getColaborador(e)">{{ getColaborador(e) }}</span></td>
               <td class="px-3 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap text-gray-900">S/ {{ getTotal(e) | number:'1.2-2' }}</td>
 
               <!-- Columna REVISADO CONT. — mismo estilo que rendicion-detail -->
               <td class="px-3 py-2.5 text-center">
+                @if (isDeposito(e)) {
+                  <span class="text-xs text-gray-400">—</span>
+                } @else {
                 <div class="flex flex-col items-center gap-1">
                   @if (isRevisado(e)) {
                     <!-- Aprobado: badge verde igual que rendicion-detail -->
@@ -170,6 +206,7 @@
                     <span class="text-[10px] text-yellow-600 font-medium">Pendiente</span>
                   }
                 </div>
+                }
               </td>
 
               <!-- Opciones — iconos igual que rendicion-detail (sin Editar) -->
@@ -234,6 +271,7 @@
                   </div>
                   }
                   <!-- Eliminar -->
+                  @if (!isDeposito(e)) {
                   <div class="relative group/del">
                     <button type="button" (click)="openDeleteConfirm(e, $event)"
                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
@@ -243,12 +281,122 @@
                     </button>
                     <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/del:opacity-100 pointer-events-none transition-opacity z-10">Eliminar</div>
                   </div>
+                  }
+                </div>
+              </td>
+            </tr>
+            @if (isExpanded(e._id)) {
+            <tr class="bg-gray-50/60">
+              <td class="px-3 pb-3 pt-0" colspan="8">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-2 text-xs pl-8">
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">N° Doc</span>
+                    <span class="font-mono text-gray-700 break-words">{{ getDocNumber(e) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Generado por</span>
+                    <span class="text-gray-700 break-words">{{ getGeneradoPor(e) }}</span>
+                    <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" [ngClass]="getOrigenBadgeClass(e)">{{ getOrigenLabel(e) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Proyecto</span>
+                    <span class="text-gray-700 break-words">{{ getProject(e) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Categoría</span>
+                    <span class="text-gray-700 break-words">{{ getCategory(e) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Proveedor</span>
+                    <span class="text-gray-700 break-words">{{ getProveedor(e) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Concepto</span>
+                    <span class="text-gray-600 break-words">{{ getConcepto(e) }}</span>
+                  </div>
                 </div>
               </td>
             </tr>
             }
+            }
           </tbody>
         </table>
+      </div>
+
+      <!-- Mobile: tarjetas (gastos) -->
+      <div class="sm:hidden flex flex-col gap-3 p-3">
+        @for (e of data(); track e._id) {
+        <div class="border border-gray-200 rounded-xl p-3.5" [ngClass]="isRowSelected(e._id) ? 'bg-primary/5 border-primary/30' : ''">
+          <div class="flex items-start justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" [checked]="isRowSelected(e._id)" (change)="toggleSelect(e._id, $event)"
+                class="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 cursor-pointer shrink-0" />
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold tabular-nums shrink-0" [ngClass]="getTypeBadgeClass(e)">{{ getTypeCode(e) }}</span>
+              <span class="text-xs text-gray-500 truncate">{{ getFecha(e) }}</span>
+            </div>
+            <span class="text-sm font-semibold text-gray-900 tabular-nums whitespace-nowrap shrink-0">S/ {{ getTotal(e) | number:'1.2-2' }}</span>
+          </div>
+          <p class="text-sm font-medium text-gray-900 break-words mb-2">{{ getColaborador(e) }}</p>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs mb-3">
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">N° Doc</span>
+              <span class="font-mono text-gray-700 break-words">{{ getDocNumber(e) }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Proyecto</span>
+              <span class="text-gray-700 break-words">{{ getProject(e) }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Categoría</span>
+              <span class="text-gray-700 break-words">{{ getCategory(e) }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Proveedor</span>
+              <span class="text-gray-700 break-words">{{ getProveedor(e) }}</span>
+            </div>
+            <div class="col-span-2">
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Concepto</span>
+              <span class="text-gray-600 break-words">{{ getConcepto(e) }}</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between gap-2 pt-2 border-t border-gray-100">
+            <span class="text-xs">
+              @if (isDeposito(e)) {
+                <span class="text-gray-400">—</span>
+              } @else if (isRevisado(e)) {
+                <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded font-semibold bg-green-100 text-green-700">Revisado</span>
+              } @else {
+                <span class="text-yellow-600 font-medium">Pendiente revisión</span>
+              }
+            </span>
+            <div class="flex items-center gap-1">
+              <button type="button" (click)="viewDetail(e)" title="Detalle"
+                class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+              </button>
+              @if (hasFile(e)) {
+                <button type="button" (click)="openFile(e, $event)" title="Abrir doc."
+                  class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-blue-600 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                  </svg>
+                </button>
+              }
+              @if (!isDeposito(e)) {
+                <button type="button" (click)="openDeleteConfirm(e, $event)" title="Eliminar"
+                  class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                  </svg>
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+        }
       </div>
 
       <!-- Paginacion -->
@@ -270,8 +418,163 @@
       </div>
       }
     }
+    }
+    @else {
+    <!-- ───── Pestaña: Rendiciones directas (una fila por rendición) ───── -->
+    <div class="px-4 py-3 border-b border-gray-100">
+      <p class="text-sm text-gray-500">
+        @if (loadingReports()) { Cargando... }
+        @else { <span class="font-semibold text-gray-800">{{ reports().length }}</span> rendición(es) · Total gastado: <span class="font-semibold">S/ {{ reportsTotalGastado | number:'1.2-2' }}</span> }
+      </p>
+    </div>
+
+    @if (loadingReports()) {
+      <div class="flex items-center justify-center py-16"><span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span></div>
+    } @else if (reports().length === 0) {
+      <div class="flex flex-col items-center justify-center py-16 text-gray-400">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mb-3 opacity-40"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+        <p class="text-sm font-medium">Sin rendiciones directas. Ajusta los filtros.</p>
+      </div>
+    } @else {
+      <div class="overflow-x-auto hidden sm:block">
+        <table class="w-full text-sm divide-y divide-gray-200">
+          <thead class="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wider text-left">
+            <tr>
+              <th class="px-2 py-3 w-8"></th>
+              <th class="px-3 py-3 whitespace-nowrap">Código</th>
+              <th class="px-3 py-3">Colaborador</th>
+              <th class="px-3 py-3 whitespace-nowrap">Estado</th>
+              <th class="px-3 py-3 text-right whitespace-nowrap">Saldo S/</th>
+              <th class="px-3 py-3 text-center whitespace-nowrap">Opciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100 bg-white">
+            @for (r of reports(); track r._id) {
+            <tr class="hover:bg-gray-50 transition-colors cursor-pointer" [class.bg-gray-50]="isExpanded(r._id)" (click)="viewReport(r)">
+              <!-- Expandir -->
+              <td class="px-2 py-2.5">
+                <button type="button" (click)="toggleExpand(r._id, $event)" title="Ver más"
+                  [attr.aria-expanded]="isExpanded(r._id)"
+                  class="inline-flex items-center justify-center w-6 h-6 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+                  <svg class="w-4 h-4 transition-transform" [class.rotate-90]="isExpanded(r._id)" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              </td>
+              <td class="px-3 py-2.5 font-mono text-xs font-semibold text-gray-800 whitespace-nowrap">{{ r.codigo || '—' }}</td>
+              <td class="px-3 py-2.5 text-xs text-gray-700"><span class="block break-words" [title]="reportColaborador(r)">{{ reportColaborador(r) }}</span></td>
+              <td class="px-3 py-2.5 text-xs"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ reportStatusLabel(r) }}</span></td>
+              <td class="px-3 py-2.5 text-right tabular-nums whitespace-nowrap" [ngClass]="(r.saldo ?? 0) < 0 ? 'text-red-600 font-semibold' : 'text-gray-700'">{{ r.saldo == null ? '—' : ('S/ ' + (r.saldo | number:'1.2-2')) }}</td>
+              <td class="px-3 py-2.5">
+                <div class="flex items-center justify-center">
+                  <div class="relative group/det">
+                    <button type="button" (click)="viewReport(r); $event.stopPropagation()"
+                      class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                      </svg>
+                    </button>
+                    <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-gray-800 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/det:opacity-100 pointer-events-none transition-opacity z-10">Ver detalle</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            @if (isExpanded(r._id)) {
+            <tr class="bg-gray-50/60">
+              <td class="px-3 pb-3 pt-0" colspan="6">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-2 text-xs pl-8">
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Fecha</span>
+                    <span class="text-gray-700">{{ reportFecha(r) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Generado por</span>
+                    <span class="text-gray-700 break-words">{{ r.generatedByName || '—' }}</span>
+                    <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold" [ngClass]="reportOrigenBadgeClass(r)">{{ reportOrigenLabel(r) }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">N° Gastos</span>
+                    <span class="text-gray-700 tabular-nums">{{ r.expenseCount }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Depósito S/</span>
+                    <span class="text-gray-700 tabular-nums">{{ r.hasDeposit ? ('S/ ' + (r.deposited | number:'1.2-2')) : '—' }}</span>
+                  </div>
+                  <div>
+                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Gastado S/</span>
+                    <span class="text-gray-900 font-semibold tabular-nums">S/ {{ r.totalGastado | number:'1.2-2' }}</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            }
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Mobile: tarjetas (rendiciones) -->
+      <div class="sm:hidden flex flex-col gap-3 p-3">
+        @for (r of reports(); track r._id) {
+        <div class="border border-gray-200 rounded-xl p-3.5 active:bg-gray-50 transition-colors" (click)="viewReport(r)">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <span class="font-mono text-xs font-semibold text-gray-800">{{ r.codigo || '—' }}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">{{ reportStatusLabel(r) }}</span>
+          </div>
+          <p class="text-sm font-medium text-gray-900 break-words mb-2">{{ reportColaborador(r) }}</p>
+          <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Saldo S/</span>
+              <span class="tabular-nums" [ngClass]="(r.saldo ?? 0) < 0 ? 'text-red-600 font-semibold' : 'text-gray-700'">{{ r.saldo == null ? '—' : ('S/ ' + (r.saldo | number:'1.2-2')) }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Gastado S/</span>
+              <span class="text-gray-900 font-semibold tabular-nums">S/ {{ r.totalGastado | number:'1.2-2' }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Depósito S/</span>
+              <span class="text-gray-700 tabular-nums">{{ r.hasDeposit ? ('S/ ' + (r.deposited | number:'1.2-2')) : '—' }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">N° Gastos</span>
+              <span class="text-gray-700 tabular-nums">{{ r.expenseCount }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Fecha</span>
+              <span class="text-gray-700">{{ reportFecha(r) }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Generado por</span>
+              <span class="text-gray-700 break-words">{{ r.generatedByName || '—' }}</span>
+            </div>
+          </div>
+        </div>
+        }
+      </div>
+    }
+    }
   </div>
 </div>
+
+<!-- Modal: Confirmar marcar como revisado -->
+@if (confirmApproveExpense()) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="cancelApprove()">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" (click)="$event.stopPropagation()">
+    <h3 class="text-lg font-bold text-gray-900 mb-2">Marcar como revisado</h3>
+    <p class="text-sm text-gray-600 mb-1">¿Confirmas que este documento fue revisado por Contabilidad?</p>
+    <p class="text-xs text-gray-400 mb-5">Esta accion no se puede deshacer.</p>
+    <div class="flex gap-3">
+      <button type="button" (click)="cancelApprove()" class="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">Cancelar</button>
+      <button type="button" (click)="doApprove()"
+        class="flex-1 py-2.5 bg-teal-600 rounded-xl text-sm font-semibold text-white hover:bg-teal-700 transition-colors">
+        Confirmar
+      </button>
+    </div>
+  </div>
+</div>
+}
 
 <!-- Modal: Confirmar eliminar -->
 @if (confirmDeleteExpense()) {

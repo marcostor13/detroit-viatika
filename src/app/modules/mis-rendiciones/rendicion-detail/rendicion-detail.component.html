@@ -16,20 +16,22 @@
       </button>
       <div class="min-w-0 flex-1">
         <h1 class="text-xl sm:text-2xl font-bold text-gray-900 leading-tight">
-          {{ report?.description || 'Rendición de viáticos' }}
+          {{ report?.description || (report?.isDirecta ? 'Rendición Directa' : (report?.isCajaChica ? 'Rendición Caja Chica' : 'Rendición de viáticos')) }}
         </h1>
         @if (report) {
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
             <span class="px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [ngClass]="{
-              'bg-purple-100 text-purple-700': report.status === 'solicited',
-              'bg-blue-100 text-blue-700': report.status === 'open',
-              'bg-yellow-100 text-yellow-700': report.status === 'submitted',
-              'bg-indigo-100 text-indigo-700': report.status === 'pending_accounting',
-              'bg-green-100 text-green-700': report.status === 'approved',
-              'bg-emerald-100 text-emerald-800': report.status === 'reimbursed',
-              'bg-red-100 text-red-700': report.status === 'rejected',
-              'bg-gray-100 text-gray-700': report.status === 'closed',
-              'bg-orange-100 text-orange-700': report.status === 'cancelled'
+              'bg-purple-100 text-purple-700': report.status === 'solicited' && !isEffectivelyClosed,
+              'bg-blue-100 text-blue-700': report.status === 'open' && !isEffectivelyClosed,
+              'bg-yellow-100 text-yellow-700': (report.status === 'submitted' || report.status === 'pending_l1') && !isEffectivelyClosed,
+              'bg-indigo-100 text-indigo-700': report.status === 'pending_accounting' && !isEffectivelyClosed,
+              'bg-green-100 text-green-700': (report.status === 'approved' || report.status === 'viatico_approved') && !isEffectivelyClosed,
+              'bg-emerald-100 text-emerald-800': (report.status === 'reimbursed' || report.status === 'settled') && !isEffectivelyClosed,
+              'bg-red-100 text-red-700': report.status === 'rejected' && !isEffectivelyClosed,
+              'bg-gray-100 text-gray-700': report.status === 'closed' || report.status === 'returned' || isEffectivelyClosed,
+              'bg-orange-100 text-orange-700': (report.status === 'cancelled' || report.status === 'pending_l2') && !isEffectivelyClosed,
+              'bg-cyan-100 text-cyan-700': report.status === 'partially_paid' && !isEffectivelyClosed,
+              'bg-teal-100 text-teal-700': report.status === 'paid' && !isEffectivelyClosed
             }">{{ getReportStatusLabel() }}</span>
             @if (report.isDirecta) {
               <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 text-teal-700 shrink-0">Rendicion Directa</span>
@@ -40,10 +42,22 @@
               </p>
             }
           </div>
+          @if (report.codigo) {
+          <div class="mt-3">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Código</p>
+            <p class="text-sm text-gray-900 font-bold mt-0.5">{{ report.codigo }}</p>
+          </div>
+          }
           @if (report.motivo) {
           <div class="mt-3">
             <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Motivo</p>
             <p class="text-sm text-gray-800 font-medium mt-0.5">{{ report.motivo }}</p>
+          </div>
+          }
+          @if (report.gestion) {
+          <div class="mt-3">
+            <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Gestión</p>
+            <p class="text-sm text-gray-800 font-medium mt-0.5">{{ report.gestion }}</p>
           </div>
           }
           @if (report.location || report.startDate) {
@@ -100,6 +114,36 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
           </svg>
         </app-button>
+        <app-button
+          label="PDF completo"
+          variant="secondary"
+          size="sm"
+          [fullWidth]="false"
+          [loading]="isExportingFullPdf()"
+          loadingLabel="Generando…"
+          [disabled]="isExportingFullPdf()"
+          (clicked)="exportRendicionFullPdf()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 7.5h-.75A2.25 2.25 0 0 0 4.5 9.75v7.5a2.25 2.25 0 0 0 2.25 2.25h7.5a2.25 2.25 0 0 0 2.25-2.25v-7.5a2.25 2.25 0 0 0-2.25-2.25h-.75m0-3-3-3m0 0-3 3m3-3v11.25m6-2.25h.75a2.25 2.25 0 0 1 2.25 2.25v7.5a2.25 2.25 0 0 1-2.25 2.25h-7.5a2.25 2.25 0 0 1-2.25-2.25v-.75" />
+          </svg>
+        </app-button>
+        @if (canDownloadAsientos) {
+        <app-button
+          label="Asientos contables"
+          variant="secondary"
+          size="sm"
+          [fullWidth]="false"
+          [loading]="downloadingAsientos"
+          loadingLabel="Generando…"
+          [disabled]="downloadingAsientos"
+          (clicked)="downloadAsientos()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h3.879a1.5 1.5 0 0 1 1.06.44l2.122 2.12a1.5 1.5 0 0 0 1.06.44H18A2.25 2.25 0 0 1 20.25 9v.776" />
+          </svg>
+        </app-button>
+        }
       </div>
 
       <!-- Acciones contextuales (derecha en desktop) -->
@@ -233,8 +277,8 @@
         <!-- Colaborador: abierta / rechazada con gastos — hidden en mobile (sticky bar) -->
         @if (collaboratorCanEdit) {
         <div class="hidden sm:flex flex-wrap items-center gap-2 justify-end">
-          @if (canAddExpenses && !report.isDirecta) {
-          <app-button label="Solicitar mas viaticos" variant="secondary" size="sm" [fullWidth]="false" (clicked)="openAdvanceModal()">
+          @if (canAddExpenses && !report.isDirecta && !report.isCajaChica) {
+          <app-button label="Ampliación de viáticos" variant="secondary" size="sm" [fullWidth]="false" (clicked)="openAdvanceModal()">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
               <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
             </svg>
@@ -245,6 +289,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
           </app-button>
+          @if (!report.isCajaChica) {
           <div class="relative group/submit">
             <app-button
               [label]="report.status === 'rejected' ? 'Volver a enviar rendicion' : (report.isDirecta ? 'Enviar a Contabilidad' : 'Enviar Rendicion')"
@@ -264,11 +309,19 @@
             </div>
             }
           </div>
+          }
         </div>
         }
 
+        <!-- Colaborador: caja chica finalizada por Contabilidad -->
+        @if (!isAdminView && report.isCajaChica && report.lockedByCajaChica) {
+        <p class="max-w-xs text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          La caja chica fue finalizada por Contabilidad. Ya no puedes agregar más gastos a esta rendición.
+        </p>
+        }
+
         <!-- Colaborador: abierta sin pago registrado (solo aplica a rendiciones con anticipo) -->
-        @if (!isAdminView && report.status === 'open' && !hasPaidAdvanceForReport && !report.isDirecta) {
+        @if (!isAdminView && report.status === 'open' && !hasPaidAdvanceForReport && !report.isDirecta && !report.isCajaChica) {
         <p class="max-w-xs text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Debes esperar que Contabilidad registre el pago del viatico para habilitar el registro de gastos.
         </p>
@@ -336,7 +389,11 @@
         <div class="flex flex-col gap-2 items-end">
           @if (!canContabilidadApprove) {
             <p class="text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
-              Esta rendicion fue aprobada por el coordinador y esta en espera de aprobacion de contabilidad.
+              @if (report.isDirecta) {
+                Esta rendicion esta en espera de aprobacion de contabilidad.
+              } @else {
+                Esta rendicion fue aprobada por el coordinador y esta en espera de aprobacion de contabilidad.
+              }
             </p>
           }
           @if (canContabilidadApprove) {
@@ -420,6 +477,200 @@
 
 
       <!-- Progress and Summary Cards -->
+      @if (report.isDirecta && hasDirectaDeposit) {
+      <!-- Rendición directa iniciada por Contabilidad: con saldo disponible -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
+        <!-- Total depositado -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Depositado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ directaDeposited | number:'1.2-2' }}</p>
+          @if (report.directaDeposit?.titular || report.directaDeposit?.operationNumber || report.directaDeposit?.operationDate || report.directaDeposit?.operationTime) {
+          <div class="mt-3 border-t border-gray-100 pt-2 space-y-1">
+            @if (report.directaDeposit?.titular) {
+            <div class="flex justify-between gap-2 text-xs"><span class="text-gray-400">Titular</span><span class="font-medium text-gray-700 text-right">{{ report.directaDeposit?.titular }}</span></div>
+            }
+            @if (report.directaDeposit?.operationNumber) {
+            <div class="flex justify-between gap-2 text-xs"><span class="text-gray-400">N° operación</span><span class="font-medium text-gray-700 text-right">{{ report.directaDeposit?.operationNumber }}</span></div>
+            }
+            @if (report.directaDeposit?.operationDate) {
+            <div class="flex justify-between gap-2 text-xs"><span class="text-gray-400">Fecha</span><span class="font-medium text-gray-700 text-right">{{ report.directaDeposit?.operationDate }}</span></div>
+            }
+            @if (report.directaDeposit?.operationTime) {
+            <div class="flex justify-between gap-2 text-xs"><span class="text-gray-400">Hora</span><span class="font-medium text-gray-700 text-right">{{ report.directaDeposit?.operationTime }}</span></div>
+            }
+          </div>
+          }
+        </div>
+        <!-- Total gastado -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-red-50 text-red-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Gastado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+        </div>
+        <!-- Saldo disponible -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-green-50 text-green-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Saldo Disponible</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-green-600': directaSaldo >= 0, 'text-red-600': directaSaldo < 0}">
+            S/ {{ directaSaldo | number:'1.2-2' }}
+          </p>
+        </div>
+      </div>
+      } @else if (report.isDirecta && hasPendingBalanceCredit) {
+      <!-- Rendición directa creada desde saldo heredado -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
+        <!-- Saldo heredado -->
+        <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Saldo Heredado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-blue-700 tabular-nums">S/ {{ pendingBalanceCreditAmount | number:'1.2-2' }}</p>
+          <p class="text-xs text-gray-400 mt-1">{{ pendingBalanceFromLabel }}</p>
+        </div>
+        <!-- Total gastado -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-red-50 text-red-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Gastado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+        </div>
+        <!-- Saldo disponible -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-green-50 text-green-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Saldo Disponible</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-green-600': saldoLibre >= 0, 'text-red-600': saldoLibre < 0}">
+            S/ {{ saldoLibre | number:'1.2-2' }}
+          </p>
+        </div>
+      </div>
+      } @else if (report.isDirecta || report.isCajaChica) {
+      @if (isSaldoUsadoEnOtraRendicion) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6 md:mb-8 w-full max-w-xl">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-red-50 text-red-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Gastado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+        </div>
+        <div class="rounded-xl shadow-sm border bg-amber-50 border-amber-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-amber-100 text-amber-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Saldo Disponible</p>
+          </div>
+          <p class="text-sm font-semibold text-amber-700">Saldo utilizado en otra solicitud (S/ {{ saldoLibre | number:'1.2-2' }}) trasladado a nueva solicitud</p>
+        </div>
+      </div>
+      } @else if (hasFinancingSaldos) {
+      <!-- Rendición directa financiada con saldo de la bolsa -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
+        <!-- Presupuesto (financiado con saldo) -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-blue-50 text-blue-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Presupuesto</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ financingSaldosTotal | number:'1.2-2' }}</p>
+          <div class="mt-3 border-t border-gray-100 pt-2 space-y-1.5">
+            <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Financiado con saldo</p>
+            @for (s of financingSaldos; track s._id) {
+            <div class="flex justify-between gap-2 text-xs">
+              <span class="text-gray-500 truncate">{{ financingSaldoTipo(s) }}@if (financingSaldoLabel(s)) { · {{ financingSaldoLabel(s) }} }</span>
+              <span class="font-medium text-gray-700 shrink-0 tabular-nums">S/ {{ s.amount | number:'1.2-2' }}</span>
+            </div>
+            }
+          </div>
+        </div>
+        <!-- Total gastado -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-red-50 text-red-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Gastado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+        </div>
+        <!-- Saldo disponible -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-green-50 text-green-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Saldo Disponible</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-green-600': financingSaldoDisponible >= 0, 'text-red-600': financingSaldoDisponible < 0}">
+            S/ {{ financingSaldoDisponible | number:'1.2-2' }}
+          </p>
+        </div>
+      </div>
+      } @else {
+      <div class="w-full max-w-xs mb-6 md:mb-8">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-red-50 text-red-600 rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-gray-500">Total Gastado</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+        </div>
+      </div>
+      }
+      } @else {
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
         <!-- Budget assigned -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
@@ -433,11 +684,26 @@
           </div>
           <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ totalAnticipado | number:'1.2-2' }}</p>
           @if (paidAdvances.length > 0) {
-            <ul class="mt-3 space-y-1 border-t border-gray-100 pt-2">
+            <ul class="mt-3 space-y-2 border-t border-gray-100 pt-2">
               @for (adv of paidAdvances; track adv._id) {
-                <li class="flex items-center justify-between gap-2 text-xs">
-                  <span class="text-gray-500 truncate">{{ adv.place || adv.description }}</span>
-                  <span class="tabular-nums font-medium text-gray-700 shrink-0">S/ {{ adv.amount | number:'1.2-2' }}</span>
+                <li class="text-xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-gray-500 truncate">{{ adv.place || adv.description }}</span>
+                    <span class="tabular-nums font-medium text-gray-700 shrink-0">S/ {{ advancePaidAmount(adv) | number:'1.2-2' }}</span>
+                  </div>
+                  @if (advancePayments(adv).length > 1) {
+                    <ul class="mt-1 ml-2 pl-2 border-l border-gray-100 space-y-0.5">
+                      @for (p of advancePayments(adv); track $index) {
+                        <li class="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                          <span>Pago {{ $index + 1 }}@if (p.transferDate) { · {{ p.transferDate | date:'dd/MM/yyyy' }} }</span>
+                          <span class="tabular-nums shrink-0">S/ {{ p.amount | number:'1.2-2' }}</span>
+                        </li>
+                      }
+                    </ul>
+                  }
+                  @if (advancePaidAmount(adv) < adv.amount) {
+                    <p class="mt-0.5 text-[11px] text-amber-600">Pago parcial · falta S/ {{ (adv.amount - advancePaidAmount(adv)) | number:'1.2-2' }}</p>
+                  }
                 </li>
               }
             </ul>
@@ -458,20 +724,32 @@
         </div>
 
         <!-- Remaining balance -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+        <div class="rounded-xl shadow-sm border p-4 sm:p-6"
+          [ngClass]="isSaldoUsadoEnOtraRendicion ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'">
           <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-green-50 text-green-600 rounded-lg">
+            <div class="p-2 rounded-lg" [ngClass]="isSaldoUsadoEnOtraRendicion ? 'bg-amber-100 text-amber-600' : 'bg-green-50 text-green-600'">
+              @if (isSaldoUsadoEnOtraRendicion) {
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+              </svg>
+              } @else {
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
+              }
             </div>
             <p class="font-medium text-gray-500">Saldo Disponible</p>
           </div>
+          @if (isSaldoUsadoEnOtraRendicion) {
+          <p class="text-sm font-semibold text-amber-700">Saldo utilizado en otra solicitud (S/ {{ saldoLibre | number:'1.2-2' }}) trasladado a nueva solicitud</p>
+          } @else {
           <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-green-600': saldoLibre >= 0, 'text-red-600': saldoLibre < 0}">
             S/ {{ saldoLibre | number:'1.2-2' }}
           </p>
+          }
         </div>
       </div>
+      }
 
       <!-- Datos de Solicitud -->
       @if (report.accountNumber || report.location || (report.items && report.items.length > 0)) {
@@ -663,8 +941,24 @@
           Reembolso registrado
         </h3>
         <p class="text-sm text-gray-700 mb-3">
-          El pago al colaborador fue registrado por tesorería. Podés descargar el comprobante también desde <a routerLink="/mis-documentos" class="text-primary font-semibold underline-offset-2 hover:underline">Mis documentos</a>.
+          El pago al colaborador fue registrado por tesorería.
         </p>
+        @if (report.reimbursementPaymentInfo.titular || report.reimbursementPaymentInfo.operationNumber || report.reimbursementPaymentInfo.operationDate || report.reimbursementPaymentInfo.scannedAmount) {
+        <div class="text-sm text-gray-700 space-y-1 mb-3">
+          @if (report.reimbursementPaymentInfo.titular) {
+            <p><span class="text-gray-500">Titular:</span> {{ report.reimbursementPaymentInfo.titular }}</p>
+          }
+          @if (report.reimbursementPaymentInfo.operationNumber) {
+            <p><span class="text-gray-500">N° Operación:</span> {{ report.reimbursementPaymentInfo.operationNumber }}</p>
+          }
+          @if (report.reimbursementPaymentInfo.operationDate) {
+            <p><span class="text-gray-500">Fecha/hora operación:</span> {{ report.reimbursementPaymentInfo.operationDate }}@if (report.reimbursementPaymentInfo.operationTime) { · {{ report.reimbursementPaymentInfo.operationTime }} }</p>
+          }
+          @if (report.reimbursementPaymentInfo.scannedAmount) {
+            <p><span class="text-gray-500">Monto detectado:</span> S/ {{ report.reimbursementPaymentInfo.scannedAmount | number:'1.2-2' }}</p>
+          }
+        </div>
+        }
         <div class="flex flex-wrap gap-3 text-sm">
           <a [href]="report.reimbursementPaymentInfo.paymentReceiptUrl" target="_blank" rel="noopener noreferrer"
             class="inline-flex items-center px-4 py-2 rounded-lg bg-emerald-700 text-white font-semibold hover:bg-emerald-800">
@@ -695,6 +989,15 @@
           }
           @if (report.returnVoucher.operationNumber) {
             <p><span class="text-gray-500">N° Operación:</span> {{ report.returnVoucher.operationNumber }}</p>
+          }
+          @if (report.returnVoucher.titular) {
+            <p><span class="text-gray-500">Titular:</span> {{ report.returnVoucher.titular }}</p>
+          }
+          @if (report.returnVoucher.operationDate) {
+            <p><span class="text-gray-500">Fecha/hora operación:</span> {{ report.returnVoucher.operationDate }}@if (report.returnVoucher.operationTime) { · {{ report.returnVoucher.operationTime }} }</p>
+          }
+          @if (report.returnVoucher.scannedAmount) {
+            <p><span class="text-gray-500">Monto detectado:</span> S/ {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
           }
           <p><span class="text-gray-500">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
         </div>
@@ -919,6 +1222,7 @@
               <!-- Row 3: concepto -->
               <p class="text-xs text-gray-600 mt-1 leading-snug line-clamp-2">{{ getExpenseConcepto(expense) }}</p>
               <!-- Row 4: estado cont (+ coord en flujo normal) -->
+              @if (!report.isCajaChica) {
               <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                 <!-- Est. Cont.: "Revisado" en directa, "Aprobado/Rechazado" en normal -->
                 <div class="flex items-center gap-1">
@@ -966,6 +1270,7 @@
                 </div>
                 }
               </div>
+              }
               <!-- Row 5: acciones -->
               <div class="mt-3 flex flex-wrap gap-2">
                 <button type="button" (click)="openExpenseDetail(expense)"
@@ -1110,9 +1415,13 @@
                   <th class="px-3 py-3 whitespace-nowrap">N° Documento</th>
                   <th class="px-3 py-3 whitespace-nowrap">Proveedor</th>
                   <th class="px-3 py-3">Concepto</th>
+                  <th class="px-3 py-3 whitespace-nowrap">Proyecto</th>
+                  <th class="px-3 py-3 whitespace-nowrap">Categoria</th>
                   <th class="px-3 py-3 text-right whitespace-nowrap">Monto</th>
+                  @if (!report.isCajaChica) {
                   <th class="px-3 py-3 text-center whitespace-nowrap text-teal-600">{{ report.isDirecta ? 'Revisado Cont.' : 'Est. Cont.' }}</th>
-                  @if (!report.isDirecta) {
+                  }
+                  @if (!report.isDirecta && !report.isCajaChica) {
                   <th class="px-3 py-3 text-center whitespace-nowrap text-indigo-600">Est. Coord.</th>
                   }
                   <th class="px-3 py-3 text-center whitespace-nowrap">Opciones</th>
@@ -1153,6 +1462,14 @@
                   <td class="px-3 py-3 text-gray-700 max-w-[200px]">
                     <span class="block truncate" [title]="getExpenseConcepto(expense)">{{ getExpenseConcepto(expense) }}</span>
                   </td>
+                  <!-- Proyecto -->
+                  <td class="px-3 py-3 text-gray-700 max-w-[140px]">
+                    <span class="block truncate text-xs" [title]="getExpenseProjectName(expense)">{{ getExpenseProjectName(expense) || '—' }}</span>
+                  </td>
+                  <!-- Categoria -->
+                  <td class="px-3 py-3 text-gray-700 max-w-[120px]">
+                    <span class="block truncate text-xs" [title]="getPopulatedName(expense['categoryId'])">{{ getPopulatedName(expense['categoryId']) }}</span>
+                  </td>
                   <!-- Monto -->
                   <td class="px-3 py-3 text-right whitespace-nowrap font-medium tabular-nums">
                     <div class="flex items-center justify-end gap-1">
@@ -1181,6 +1498,7 @@
                     </div>
                   </td>
                   <!-- Estado Contabilidad -->
+                  @if (!report.isCajaChica) {
                   <td class="px-3 py-3 text-center">
                     <div class="flex flex-col items-center gap-1">
                       @switch (getExpenseApprovalCont(expense).status) {
@@ -1228,8 +1546,9 @@
                       }
                     </div>
                   </td>
-                  <!-- Estado Coordinador (oculto en rendicion directa) -->
-                  @if (!report.isDirecta) {
+                  }
+                  <!-- Estado Coordinador (oculto en rendicion directa y caja chica) -->
+                  @if (!report.isDirecta && !report.isCajaChica) {
                   <td class="px-3 py-3 text-center">
                     <div class="flex flex-col items-center gap-1">
                       @switch (getExpenseApprovalCoord(expense).status) {
@@ -1366,7 +1685,7 @@
                 </tr>
                 @if (expense['expenseType'] === 'planilla_movilidad' && isMobilityExpanded(expense._id)) {
                 <tr class="border-t-0">
-                  <td colspan="9" class="p-0">
+                  <td colspan="11" class="p-0">
                     <div class="bg-amber-50/40 border-b border-amber-100 px-6 py-3">
                       <table class="w-full text-xs">
                         <thead class="text-left">
@@ -1460,6 +1779,7 @@
     </svg>
     Añadir Gasto
   </button>
+  @if (!report.isCajaChica) {
   <div class="relative group/submit flex-1">
     <button
       type="button"
@@ -1478,6 +1798,7 @@
     </div>
     }
   </div>
+  }
 </div>
 }
 
@@ -1887,22 +2208,39 @@
     <div class="px-6 py-4 overflow-y-auto flex-1">
 
       <div class="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
+        @if (!report.isDirecta) {
         <div class="flex justify-between text-sm">
           <span class="text-gray-500">Presupuesto asignado</span>
           <span class="font-semibold text-gray-900">S/ {{ totalAnticipado | number:'1.2-2' }}</span>
         </div>
+        }
+        @if (hasDirectaDeposit) {
+        <div class="flex justify-between text-sm">
+          <span class="text-gray-500">Total depositado</span>
+          <span class="font-semibold text-gray-900">S/ {{ directaDeposited | number:'1.2-2' }}</span>
+        </div>
+        }
         <div class="flex justify-between text-sm">
           <span class="text-gray-500">Total gastado</span>
-          <span class="font-semibold" [class.text-red-600]="totalGastado > totalAnticipado" [class.text-gray-900]="totalGastado <= totalAnticipado">
+          <span class="font-semibold" [class.text-red-600]="!report.isDirecta && totalGastado > totalAnticipado" [class.text-gray-900]="report.isDirecta || totalGastado <= totalAnticipado">
             S/ {{ totalGastado | number:'1.2-2' }}
           </span>
         </div>
+        @if (!report.isDirecta) {
         <div class="flex justify-between text-sm border-t border-gray-200 pt-2 mt-2">
           <span class="text-gray-500">Saldo</span>
           <span class="font-bold" [class.text-green-600]="saldoLibre >= 0" [class.text-red-600]="saldoLibre < 0">
             S/ {{ saldoLibre | number:'1.2-2' }}
           </span>
         </div>
+        } @else if (hasDirectaDeposit) {
+        <div class="flex justify-between text-sm border-t border-gray-200 pt-2 mt-2">
+          <span class="text-gray-500">Saldo disponible</span>
+          <span class="font-bold" [class.text-green-600]="directaSaldo >= 0" [class.text-red-600]="directaSaldo < 0">
+            S/ {{ directaSaldo | number:'1.2-2' }}
+          </span>
+        </div>
+        }
       </div>
 
       @if(report.expenseIds && report.expenseIds.length > 0) {
@@ -2566,6 +2904,62 @@
   </div>
   }
 
+<!-- Modal: Nueva rendición directa con saldo -->
+@if (showNuevaDirectaConSaldoModal()) {
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showNuevaDirectaConSaldoModal.set(false)">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
+    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
+      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Nueva rendición directa</h3>
+        <p class="text-xs text-gray-500">Saldo disponible: S/ {{ saldoLibre | number:'1.2-2' }}</p>
+      </div>
+    </div>
+    <div class="px-6 py-4">
+      <p class="text-sm text-gray-600 mb-4">
+        Se creará una nueva rendición directa usando el saldo de <strong>S/ {{ saldoLibre | number:'1.2-2' }}</strong> disponible en esta rendición.
+      </p>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Gestión <span class="text-red-500">*</span></label>
+      <input
+        type="text"
+        [value]="nuevaDirectaGestion()"
+        (input)="nuevaDirectaGestion.set($any($event.target).value)"
+        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400"
+        placeholder="Ej: Viaje a Arequipa - Julio 2026"
+        [disabled]="isCreatingDirectaConSaldo()"
+      />
+    </div>
+    <div class="px-6 pb-6 flex gap-3">
+      <button
+        type="button"
+        class="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        [disabled]="isCreatingDirectaConSaldo()"
+        (click)="showNuevaDirectaConSaldoModal.set(false)"
+      >
+        Volver
+      </button>
+      <button
+        type="button"
+        class="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        [disabled]="isCreatingDirectaConSaldo() || !nuevaDirectaGestion().trim()"
+        (click)="createNuevaDirectaConSaldo()"
+      >
+        @if (isCreatingDirectaConSaldo()) {
+          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
+          Creando...
+        } @else {
+          Crear rendición
+        }
+      </button>
+    </div>
+  </div>
+</div>
+}
+
 <!-- Modal: Adjuntar comprobante de devolución de saldo (colaborador, rendición cerrada) -->
 @if (showReturnVoucherModal()) {
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showReturnVoucherModal.set(false)">
@@ -2575,6 +2969,44 @@
     <p class="text-sm text-gray-500 mb-4">Adjunta el comprobante del depósito que realizaste a la cuenta de la empresa.</p>
 
     <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Comprobante (PDF, JPG, PNG — máx 10MB) *</label>
+        @if (returnVoucherFileName()) {
+          <p class="text-xs text-green-600 font-medium mb-1">Archivo cargado: {{ returnVoucherFileName() }}</p>
+        }
+        <label class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" (change)="onReturnVoucherFileSelected($event)">
+          @if (isUploadingReturnVoucher()) {
+            <span class="inline-block w-4 h-4 border-2 border-gray-400/40 border-t-gray-700 rounded-full animate-spin"></span>
+            Subiendo...
+          } @else {
+            Seleccionar archivo
+          }
+        </label>
+        @if (isScanningReturnVoucher()) {
+          <p class="text-xs text-gray-500 flex items-center gap-1.5 mt-1">
+            <span class="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
+            Escaneando comprobante...
+          </p>
+        }
+      </div>
+      @if (returnVoucherHasDetectedData) {
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
+        <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Datos detectados del comprobante</p>
+        @if (returnVoucherTitular()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Titular</span><span class="font-medium text-gray-700 text-right">{{ returnVoucherTitular() }}</span></div>
+        }
+        @if (returnVoucherOperationDate()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Fecha</span><span class="font-medium text-gray-700 text-right">{{ returnVoucherOperationDate() }}</span></div>
+        }
+        @if (returnVoucherOperationTime()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Hora</span><span class="font-medium text-gray-700 text-right">{{ returnVoucherOperationTime() }}</span></div>
+        }
+        @if (returnVoucherScannedAmount()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Monto</span><span class="font-medium text-gray-700 text-right">S/ {{ returnVoucherScannedAmount() | number:'1.2-2' }}</span></div>
+        }
+      </div>
+      }
       <div>
         <label class="block text-xs font-medium text-gray-700 mb-1">Fecha del depósito *</label>
         <input type="date" [value]="returnVoucherDepositDate()"
@@ -2595,21 +3027,6 @@
           (input)="returnVoucherOperation.set($any($event.target).value)"
           placeholder="Número de operación o referencia"
           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-700 mb-1">Comprobante (PDF, JPG, PNG — máx 10MB) *</label>
-        @if (returnVoucherFileName()) {
-          <p class="text-xs text-green-600 font-medium mb-1">Archivo cargado: {{ returnVoucherFileName() }}</p>
-        }
-        <label class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" (change)="onReturnVoucherFileSelected($event)">
-          @if (isUploadingReturnVoucher()) {
-            <span class="inline-block w-4 h-4 border-2 border-gray-400/40 border-t-gray-700 rounded-full animate-spin"></span>
-            Subiendo...
-          } @else {
-            Seleccionar archivo
-          }
-        </label>
       </div>
     </div>
 
@@ -2643,6 +3060,51 @@
 
     <div class="space-y-3">
       <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">
+          Comprobante (PDF, JPG, PNG — máx 10MB)
+          @if (adminReembolsoMethod() !== 'efectivo') {
+            *
+          } @else {
+            <span class="text-gray-400 font-normal">(opcional)</span>
+          }
+        </label>
+        @if (adminReembolsoFileName()) {
+          <p class="text-xs text-green-600 font-medium mb-1">Archivo cargado: {{ adminReembolsoFileName() }}</p>
+        }
+        <label class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" (change)="onAdminReembolsoFileSelected($event)">
+          @if (isUploadingAdminReembolso()) {
+            <span class="inline-block w-4 h-4 border-2 border-gray-400/40 border-t-gray-700 rounded-full animate-spin"></span>
+            Subiendo...
+          } @else {
+            Seleccionar archivo
+          }
+        </label>
+        @if (isScanningAdminReembolso()) {
+          <p class="text-xs text-gray-500 flex items-center gap-1.5 mt-1">
+            <span class="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
+            Escaneando comprobante...
+          </p>
+        }
+      </div>
+      @if (adminReembolsoHasDetectedData) {
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
+        <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Datos detectados del comprobante</p>
+        @if (adminReembolsoTitular()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Titular</span><span class="font-medium text-gray-700 text-right">{{ adminReembolsoTitular() }}</span></div>
+        }
+        @if (adminReembolsoOperationDate()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Fecha</span><span class="font-medium text-gray-700 text-right">{{ adminReembolsoOperationDate() }}</span></div>
+        }
+        @if (adminReembolsoOperationTime()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Hora</span><span class="font-medium text-gray-700 text-right">{{ adminReembolsoOperationTime() }}</span></div>
+        }
+        @if (adminReembolsoScannedAmount()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Monto</span><span class="font-medium text-gray-700 text-right">S/ {{ adminReembolsoScannedAmount() | number:'1.2-2' }}</span></div>
+        }
+      </div>
+      }
+      <div>
         <label class="block text-xs font-medium text-gray-700 mb-1">Método de pago</label>
         <select [value]="adminReembolsoMethod()"
           (change)="adminReembolsoMethod.set($any($event.target).value)"
@@ -2671,28 +3133,6 @@
           (input)="adminReembolsoRef.set($any($event.target).value)"
           placeholder="Número de referencia"
           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-700 mb-1">
-          Comprobante (PDF, JPG, PNG — máx 10MB)
-          @if (adminReembolsoMethod() !== 'efectivo') {
-            *
-          } @else {
-            <span class="text-gray-400 font-normal">(opcional)</span>
-          }
-        </label>
-        @if (adminReembolsoFileName()) {
-          <p class="text-xs text-green-600 font-medium mb-1">Archivo cargado: {{ adminReembolsoFileName() }}</p>
-        }
-        <label class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" class="hidden" (change)="onAdminReembolsoFileSelected($event)">
-          @if (isUploadingAdminReembolso()) {
-            <span class="inline-block w-4 h-4 border-2 border-gray-400/40 border-t-gray-700 rounded-full animate-spin"></span>
-            Subiendo...
-          } @else {
-            Seleccionar archivo
-          }
-        </label>
       </div>
     </div>
 
@@ -2724,6 +3164,42 @@
     <h3 class="text-lg font-bold text-gray-900 mb-1">Cargar comprobante de deposito</h3>
     <p class="text-sm text-gray-500 mb-4">Adjunta el comprobante del deposito que realizaste para devolver el saldo del viático.</p>
     <div class="space-y-3">
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-600">Comprobante adjunto <span class="text-red-500">*</span></label>
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+          (change)="onReturnProofFileSelected($event)"
+          class="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700" />
+        @if (isUploadingReturnProof()) {
+        <p class="text-xs text-blue-600">Subiendo...</p>
+        } @else if (returnProofFileName()) {
+        <p class="text-xs text-green-700">Adjunto: {{ returnProofFileName() }}</p>
+        } @else {
+        <p class="text-xs text-gray-400">PDF/JPG/PNG (max 10MB)</p>
+        }
+        @if (isScanningReturnProof()) {
+          <p class="text-xs text-gray-500 flex items-center gap-1.5 mt-1">
+            <span class="inline-block w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
+            Escaneando comprobante...
+          </p>
+        }
+      </div>
+      @if (returnProofHasDetectedData) {
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1.5">
+        <p class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Datos detectados del comprobante</p>
+        @if (returnProofTitular()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Titular</span><span class="font-medium text-gray-700 text-right">{{ returnProofTitular() }}</span></div>
+        }
+        @if (returnProofOperationDate()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Fecha</span><span class="font-medium text-gray-700 text-right">{{ returnProofOperationDate() }}</span></div>
+        }
+        @if (returnProofOperationTime()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Hora</span><span class="font-medium text-gray-700 text-right">{{ returnProofOperationTime() }}</span></div>
+        }
+        @if (returnProofScannedAmount()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-gray-400">Monto</span><span class="font-medium text-gray-700 text-right">S/ {{ returnProofScannedAmount() | number:'1.2-2' }}</span></div>
+        }
+      </div>
+      }
       <div class="grid grid-cols-2 gap-3">
         <div class="flex flex-col gap-1">
           <label class="text-xs font-medium text-gray-600">Fecha de deposito <span class="text-red-500">*</span></label>
@@ -2751,19 +3227,6 @@
         <textarea [value]="returnProofNote()" (input)="returnProofNote.set($any($event.target).value)"
           rows="2" class="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none"></textarea>
       </div>
-      <div class="flex flex-col gap-1">
-        <label class="text-xs font-medium text-gray-600">Comprobante adjunto <span class="text-red-500">*</span></label>
-        <input type="file" accept=".pdf,.jpg,.jpeg,.png"
-          (change)="onReturnProofFileSelected($event)"
-          class="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700" />
-        @if (isUploadingReturnProof()) {
-        <p class="text-xs text-blue-600">Subiendo...</p>
-        } @else if (returnProofFileName()) {
-        <p class="text-xs text-green-700">Adjunto: {{ returnProofFileName() }}</p>
-        } @else {
-        <p class="text-xs text-gray-400">PDF/JPG/PNG (max 10MB)</p>
-        }
-      </div>
     </div>
     <div class="flex gap-3 mt-5">
       <button type="button" (click)="showReturnProofModal.set(false)"
@@ -2777,6 +3240,88 @@
         {{ isSubmittingReturnProof() ? 'Enviando...' : 'Enviar comprobante' }}
       </button>
     </div>
+  </div>
+</div>
+}
+
+<!-- Modal: Progreso de generación de asientos contables -->
+@if (asientosModalOpen()) {
+<div class="fixed inset-0 z-[70] flex items-center justify-center p-4"
+     (click)="closeAsientosModal()" role="dialog" aria-modal="true">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+  <div class="relative bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+       (click)="$event.stopPropagation()">
+    <!-- Cabecera -->
+    <div class="px-6 pt-6 pb-4 border-b border-gray-100 flex items-center gap-3">
+      <div class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
+           [class]="asientosError() ? 'bg-red-100' : asientosDone() ? 'bg-green-100' : 'bg-blue-100'">
+        @if (asientosError()) {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 text-red-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+        </svg>
+        } @else if (asientosDone()) {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 text-green-600">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+        </svg>
+        } @else {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-600 animate-spin">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+        }
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">
+          {{ asientosError() ? 'No se pudieron generar' : asientosDone() ? 'Asientos generados' : 'Generando asientos contables' }}
+        </h3>
+        <p class="text-xs text-gray-500">
+          {{ asientosError() ? 'Revisa el detalle e inténtalo de nuevo' : asientosDone() ? 'La descarga comenzará en un momento' : 'Esto puede tardar unos segundos' }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Cuerpo -->
+    <div class="px-6 py-5">
+      @if (asientosError()) {
+      <div class="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-700">
+        {{ asientosError() }}
+      </div>
+      } @else {
+      <ol class="space-y-3">
+        @for (step of asientosSteps(); track step.label) {
+        <li class="flex items-center gap-3">
+          <span class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center"
+                [class]="step.status === 'done' ? 'bg-green-100' : step.status === 'active' ? 'bg-blue-100' : 'bg-gray-100'">
+            @if (step.status === 'done') {
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3.5 h-3.5 text-green-600">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+            } @else if (step.status === 'active') {
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5 text-blue-600 animate-spin">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+            } @else {
+            <span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+            }
+          </span>
+          <span class="text-sm"
+                [class]="step.status === 'pending' ? 'text-gray-400' : 'text-gray-800 font-medium'">
+            {{ step.label }}
+          </span>
+        </li>
+        }
+      </ol>
+      }
+    </div>
+
+    <!-- Pie: solo botón de cerrar cuando hay error (durante la carga no se puede cerrar) -->
+    @if (asientosError()) {
+    <div class="px-6 pb-6">
+      <button type="button" (click)="closeAsientosModal()"
+        class="w-full py-2 bg-gray-100 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200">
+        Cerrar
+      </button>
+    </div>
+    }
   </div>
 </div>
 }

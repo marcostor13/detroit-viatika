@@ -1,9 +1,9 @@
-<div class="p-5 max-w-5xl mx-auto">
+<div class="px-4 sm:px-6 py-6">
 
   <!-- ── Greeting ──────────────────────────────────────────────── -->
   <div class="mb-7">
     <h1 class="text-2xl font-bold text-secondary">{{ greeting }}, {{ userName }} 👋</h1>
-    <p class="text-sm text-tertiary mt-1">Aquí tienes un resumen de tu actividad.</p>
+    <p class="text-sm text-tertiary mt-1">{{ subtitle }}</p>
   </div>
 
   @if (isLoading()) {
@@ -12,286 +12,228 @@
   </div>
   } @else {
 
-  <!-- ── Anticipos pagados: CTA registrar gastos ──────────────── -->
-  @if (paidAdvances().length > 0) {
-  <div class="mb-7 rounded-2xl border border-primary/30 bg-primary/5 p-5">
-    <div class="flex items-start gap-4">
-      <div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-primary">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-        </svg>
-      </div>
-      <div class="flex-1">
-        <p class="text-sm font-bold text-secondary">
-          {{ paidAdvances().length === 1 ? 'Tu viático fue pagado' : paidAdvances().length + ' viáticos fueron pagados' }} — ya puedes registrar tus gastos
-        </p>
-        <p class="text-xs text-tertiary mt-1">Revisa cada rendición y añade los comprobantes de gasto correspondientes.</p>
-        <div class="flex flex-col gap-2 mt-3">
-          @for (adv of paidAdvances(); track adv._id) {
-          <button
-            (click)="navigateToExpenseReport(adv)"
-            class="flex items-center justify-between w-full sm:w-auto sm:inline-flex gap-3 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
-          >
-            <span>Registrar gastos — S/. {{ adv.amount | number:'1.2-2' }}</span>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-            </svg>
-          </button>
-          }
-        </div>
-      </div>
-    </div>
-  </div>
-  }
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!--  COORDINADOR                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @if (isCoordinador) {
 
-  <!-- ── KPI Cards ──────────────────────────────────────────────── -->
-  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <!-- ── Sección: Aprobaciones de mi equipo ───────────────────────── -->
+  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Aprobaciones de mi equipo</h2>
 
-    <!-- Rendiciones activas -->
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3">
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+
+    <!-- Solicitudes por aprobar (PRIMERO) -->
+    <a routerLink="/rendiciones"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
       <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Rendiciones activas</span>
-        <div class="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-blue-600">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-          </svg>
-        </div>
-      </div>
-      <p class="text-3xl font-bold text-secondary">{{ kpiRendicionesActivas() }}</p>
-      <p class="text-xs text-tertiary">de {{ reports().length }} en total</p>
-    </div>
-
-    <!-- Presupuesto total -->
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Presupuesto total</span>
-        <div class="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-primary">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-          </svg>
-        </div>
-      </div>
-      <p class="text-3xl font-bold text-secondary">S/. {{ kpiPresupuestoTotal() | number:'1.0-0' }}</p>
-      <p class="text-xs text-tertiary">Saldo libre: S/. {{ saldoLibreTotal | number:'1.0-0' }}</p>
-    </div>
-
-    <!-- Comprobantes -->
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Comprobantes</span>
-        <div class="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 text-green-600">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Solicitudes por aprobar</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiSolicitudesPendientes() > 0 ? 'bg-red-100' : 'bg-gray-100'">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
+            class="w-4 h-4" [class]="kpiSolicitudesPendientes() > 0 ? 'text-red-600' : 'text-tertiary'">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
           </svg>
         </div>
       </div>
-      <p class="text-3xl font-bold text-secondary">{{ kpiComprobantes() }}</p>
-      <p class="text-xs text-tertiary">subidos en total</p>
-    </div>
-
-    <!-- Anticipos pendientes -->
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Viáticos</span>
-        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
-          [class]="kpiAnticiposPendientes() > 0 ? 'bg-yellow-100' : 'bg-gray-100'">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
-            class="w-4 h-4" [class]="kpiAnticiposPendientes() > 0 ? 'text-yellow-600' : 'text-tertiary'">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-          </svg>
-        </div>
-      </div>
-      <p class="text-3xl font-bold text-secondary">{{ kpiAnticiposPendientes() }}</p>
+      <p class="text-3xl font-bold text-secondary">{{ kpiSolicitudesPendientes() }}</p>
       <p class="text-xs text-tertiary">
-        @if (kpiAnticiposPendientes() > 0) { pendiente{{ kpiAnticiposPendientes() !== 1 ? 's' : '' }} de aprobación }
-        @else { sin pendientes }
+        @if (kpiSolicitudesPendientes() > 0) { solicitud{{ kpiSolicitudesPendientes() !== 1 ? 'es' : '' }} de viáticos por aprobar }
+        @else { sin solicitudes pendientes }
       </p>
-    </div>
+    </a>
+
+    <!-- Rendiciones por aprobar -->
+    <a routerLink="/rendiciones"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Rendiciones por aprobar</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiRendicionesPorAprobar() > 0 ? 'bg-blue-100' : 'bg-gray-100'">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
+            class="w-4 h-4" [class]="kpiRendicionesPorAprobar() > 0 ? 'text-blue-600' : 'text-tertiary'">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">{{ kpiRendicionesPorAprobar() }}</p>
+      <p class="text-xs text-tertiary">
+        @if (kpiRendicionesPorAprobar() > 0) { rendición{{ kpiRendicionesPorAprobar() !== 1 ? 'es' : '' }} esperando revisión }
+        @else { sin rendiciones por aprobar }
+      </p>
+    </a>
 
   </div>
 
-  <!-- ── Barra de ejecución de presupuesto ─────────────────────── -->
-  @if (kpiPresupuestoTotal() > 0) {
-  <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 mb-8">
-    <div class="flex items-center justify-between mb-3">
-      <span class="text-sm font-semibold text-secondary">Ejecución de presupuesto</span>
-      <span class="text-sm font-bold" [class]="porcentajeEjecutado > 80 ? 'text-error' : 'text-primary'">
-        {{ porcentajeEjecutado }}%
-      </span>
-    </div>
-    <div class="w-full bg-background rounded-full h-2.5 overflow-hidden">
-      <div
-        class="h-2.5 rounded-full transition-all duration-700"
-        [class]="porcentajeEjecutado > 80 ? 'bg-error' : porcentajeEjecutado > 50 ? 'bg-yellow-400' : 'bg-primary'"
-        [style.width.%]="porcentajeEjecutado"
-      ></div>
-    </div>
-    <div class="flex justify-between mt-2 text-xs text-tertiary">
-      <span>Gastado: S/. {{ kpiGastado() | number:'1.2-2' }}</span>
-      <span>Total: S/. {{ kpiPresupuestoTotal() | number:'1.2-2' }}</span>
-    </div>
+  <!-- Listados -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Solicitudes por aprobar',
+      rows: visibleSolicitudes(),
+      total: solicitudesRows().length,
+      showAllSig: showAllAprobaciones,
+      empty: 'No hay solicitudes de viáticos por aprobar.',
+      showUser: true,
+      approveKind: 'solicitud'
+    }"></ng-container>
+
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Rendiciones por aprobar',
+      rows: visibleRendicionesAprob(),
+      total: rendicionesRows().length,
+      showAllSig: showAllPersonal,
+      empty: 'No hay rendiciones de viáticos por aprobar.',
+      showUser: true,
+      approveKind: 'rendicion'
+    }"></ng-container>
   </div>
+
+  <!-- ── Sección: Mi actividad (rendiciones propias del coordinador) ── -->
+  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mt-9 mb-3">Mi actividad</h2>
+  <ng-container *ngTemplateOutlet="miActividad"></ng-container>
+
   }
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!--  COLABORADOR                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @else {
 
-  <!-- ── Grid inferior: Rendiciones + Anticipos ────────────────── -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+  <ng-container *ngTemplateOutlet="miActividad"></ng-container>
 
-    <!-- Rendiciones recientes -->
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 flex flex-col">
-      <div class="flex items-center justify-between px-5 py-4 border-b border-tertiary/20">
-        <h2 class="font-bold text-secondary">Mis Rendiciones</h2>
-        <a routerLink="/mis-rendiciones" class="text-xs font-medium text-primary hover:underline">Ver todas</a>
-      </div>
-
-      @if (recentReports().length === 0) {
-      <div class="flex flex-col items-center py-10 text-center px-6">
-        <div class="w-10 h-10 rounded-xl bg-background flex items-center justify-center mb-3">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-tertiary">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12H9m1.5-12H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-          </svg>
-        </div>
-        <p class="text-sm text-tertiary">Aún no tienes rendiciones asignadas.</p>
-      </div>
-      } @else {
-      <div class="divide-y divide-tertiary/10">
-        @for (report of recentReports(); track report._id) {
-        <button
-          (click)="goToRendicion(report._id)"
-          class="w-full flex items-center gap-4 px-5 py-4 hover:bg-background/60 transition-colors text-left"
-        >
-          <div class="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-primary">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-            </svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-secondary truncate">{{ report.title }}</p>
-            <p class="text-xs text-tertiary mt-0.5">
-              S/. {{ report.budget | number:'1.2-2' }} · {{ report.expenseIds.length || 0 }} comprobante{{ (report.expenseIds.length || 0) !== 1 ? 's' : '' }}
-            </p>
-          </div>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0" [ngClass]="getReportStatusColor(report.status)">
-            {{ getReportStatusLabel(report.status) }}
-          </span>
-        </button>
-        }
-      </div>
-      }
-    </div>
-
-    <!-- Anticipos recientes -->
-    <div class="bg-quaternary rounded-2xl border border-tertiary/20 flex flex-col">
-      <div class="flex items-center justify-between px-5 py-4 border-b border-tertiary/20">
-        <h2 class="font-bold text-secondary">Mis Viáticos</h2>
-        <a routerLink="/mis-rendiciones" class="text-xs font-medium text-primary hover:underline">Ver rendiciones</a>
-      </div>
-
-      @if (recentAdvances().length === 0) {
-      <div class="flex flex-col items-center py-10 text-center px-6">
-        <div class="w-10 h-10 rounded-xl bg-background flex items-center justify-center mb-3">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-tertiary">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-          </svg>
-        </div>
-        <p class="text-sm text-tertiary">No has solicitado viáticos aún.</p>
-        <p class="text-xs text-tertiary mt-1">Puedes solicitarlos desde el detalle de una rendición.</p>
-      </div>
-      } @else {
-      <div class="divide-y divide-tertiary/10">
-        @for (advance of recentAdvances(); track advance._id) {
-        @if (advance.status === 'paid') {
-        <button
-          (click)="navigateToExpenseReport(advance)"
-          class="w-full flex items-center gap-4 px-5 py-4 hover:bg-background/60 transition-colors text-left"
-        >
-          <div class="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-primary">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-secondary">S/. {{ advance.amount | number:'1.2-2' }}</p>
-            <p class="text-xs text-tertiary truncate mt-0.5">{{ getAdvanceReportTitle(advance) }}</p>
-          </div>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 bg-primary/10 text-primary">
-            En Progreso — Registrando gastos
-          </span>
-        </button>
-        } @else {
-        <div class="flex items-center gap-4 px-5 py-4">
-          <div class="w-9 h-9 rounded-xl bg-yellow-50 flex items-center justify-center flex-shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-yellow-600">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-            </svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-semibold text-secondary">S/. {{ advance.amount | number:'1.2-2' }}</p>
-            <p class="text-xs text-tertiary truncate mt-0.5">{{ getAdvanceReportTitle(advance) }}</p>
-          </div>
-          <span class="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0" [ngClass]="STATUS_COLORS[advance.status]">
-            {{ STATUS_LABELS[advance.status] }}
-          </span>
-        </div>
-        }
-        }
-      </div>
-      }
-    </div>
-
-  </div>
-
-  <!-- ── Acciones rápidas ───────────────────────────────────────── -->
-  <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-5">
-    <h2 class="font-bold text-secondary mb-4">Acciones rápidas</h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-      <a
-        routerLink="/mis-rendiciones"
-        class="flex items-center gap-4 p-4 rounded-xl border border-tertiary/20 hover:border-primary/40 hover:bg-primary/5 transition-all group"
-      >
-        <div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center flex-shrink-0 group-hover:bg-primary group-hover:text-white transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-600 group-hover:text-white transition-colors">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-secondary group-hover:text-primary transition-colors">Ver mis rendiciones</p>
-          <p class="text-xs text-tertiary mt-0.5">Gestiona tus presupuestos asignados</p>
-        </div>
-      </a>
-
-      @if (recentReports().length > 0) {
-      <button
-        (click)="goToRendicion(recentReports()[0]._id)"
-        class="flex items-center gap-4 p-4 rounded-xl border border-tertiary/20 hover:border-primary/40 hover:bg-primary/5 transition-all group text-left"
-      >
-        <div class="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0 group-hover:bg-primary transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-green-600 group-hover:text-white transition-colors">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-secondary group-hover:text-primary transition-colors">Añadir gasto</p>
-          <p class="text-xs text-tertiary mt-0.5 truncate max-w-[180px]">{{ recentReports()[0].title }}</p>
-        </div>
-      </button>
-      } @else {
-      <div class="flex items-center gap-4 p-4 rounded-xl border border-tertiary/20 bg-background/40 opacity-60 cursor-not-allowed">
-        <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-tertiary">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-tertiary">Añadir gasto</p>
-          <p class="text-xs text-tertiary mt-0.5">Necesitas una rendición activa</p>
-        </div>
-      </div>
-      }
-
-    </div>
-  </div>
+  }
 
   } <!-- end @else isLoading -->
 
 </div>
+
+<!-- ── Plantilla reutilizable de listado (5 + expandir) ──────────── -->
+<ng-template #listCard let-title="title" let-rows="rows" let-total="total" let-showAllSig="showAllSig"
+  let-empty="empty" let-showUser="showUser" let-approveKind="approveKind">
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 overflow-hidden">
+    <div class="px-5 py-4 border-b border-tertiary/10 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-secondary">{{ title }}</h2>
+      <span class="text-xs text-tertiary">{{ total }}</span>
+    </div>
+
+    @if (rows.length === 0) {
+    <p class="px-5 py-10 text-center text-sm text-tertiary">{{ empty }}</p>
+    } @else {
+    <ul class="divide-y divide-tertiary/10">
+      @for (row of rows; track row._id) {
+      <li (click)="goToRow(row)"
+        class="px-5 py-3 flex items-center gap-3 hover:bg-primary/5 cursor-pointer transition-colors">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-secondary truncate">{{ row.title }}</p>
+          <p class="text-xs text-tertiary truncate">
+            @if (showUser) {<span class="font-medium text-secondary/70">{{ row.userName }}</span> · }@if (row.project) {{{ row.project }} · }{{ row.createdAt | date:'dd/MM/yyyy' }}
+          </p>
+        </div>
+        <span class="text-sm font-semibold text-secondary whitespace-nowrap">S/. {{ row.amount | number:'1.2-2' }}</span>
+        <span class="text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap" [class]="row.statusColor">{{ row.statusLabel }}</span>
+        @if (approveKind && canApproveRow(row, approveKind)) {
+        <button (click)="approveRow(row, approveKind, $event)" [disabled]="acting() === row._id"
+          class="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 whitespace-nowrap transition-colors">
+          {{ acting() === row._id ? '...' : (approveKind === 'rendicion' ? 'Aprobar rendición' : 'Aprobar') }}
+        </button>
+        }
+      </li>
+      }
+    </ul>
+
+    @if (total > PREVIEW) {
+    <button (click)="showAllSig.set(!showAllSig())"
+      class="w-full px-5 py-3 text-xs font-semibold text-primary hover:bg-primary/5 transition-colors border-t border-tertiary/10">
+      {{ showAllSig() ? 'Ver menos' : 'Expandir (' + (total - PREVIEW) + ' más)' }}
+    </button>
+    }
+    }
+  </div>
+</ng-template>
+
+<!-- ── Tarjeta KPI reutilizable ──────────────────────────────────── -->
+<ng-template #kpiCard let-title="title" let-value="value" let-hint="hint" let-link="link"
+  let-qp="qp" let-accent="accent" let-money="money">
+  <a [routerLink]="link" [queryParams]="qp || {}"
+    class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">{{ title }}</span>
+      <div class="w-8 h-8 rounded-xl flex items-center justify-center" [class]="iconBg(accent, value > 0)">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+          stroke="currentColor" class="w-4 h-4" [class]="iconText(accent, value > 0)">
+          @if (money) {
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          } @else {
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          }
+        </svg>
+      </div>
+    </div>
+    <p class="text-3xl font-bold text-secondary">@if (money) {S/. {{ value | number:'1.2-2' }}} @else {{{ value }}}</p>
+    <p class="text-xs text-tertiary">{{ hint }}</p>
+  </a>
+</ng-template>
+
+<!-- ── "Mi actividad" reutilizable (colaborador + coordinador) ───── -->
+<!-- Separa VIÁTICOS (solicitudes + rendiciones) de RENDICIONES DIRECTAS. -->
+<ng-template #miActividad>
+  <!-- Bolsa (siempre) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-2">
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Bolsa total disponible', value: saldoService.total(), money: true, accent: 'primary',
+      link: '/saldo', hint: saldoService.total() > 0 ? 'disponible para usar' : 'sin saldo disponible'
+    }"></ng-container>
+  </div>
+
+  <!-- VIÁTICOS -->
+  @if (canSeeViaticos) {
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Viáticos</h3>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Solicitudes de viáticos', value: kpiSolicitudesViaticos(), accent: 'yellow',
+      link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'pendientes de aprobación'
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Rendiciones de viáticos', value: kpiRendicionesViaticos(), accent: 'blue',
+      link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'por rendir'
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Rendiciones cerradas', value: kpiViaticosCerradas(), accent: 'green',
+      link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'finalizadas'
+    }"></ng-container>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Mis solicitudes de viáticos', rows: visibleSolViaticos(),
+      total: misSolicitudesViaticosRows().length, showAllSig: showAllViaticos,
+      empty: 'No tienes solicitudes de viáticos.', showUser: false
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Mis rendiciones de viáticos', rows: visibleRendViaticos(),
+      total: misRendicionesViaticosRows().length, showAllSig: showAllRendiciones,
+      empty: 'No tienes rendiciones de viáticos.', showUser: false
+    }"></ng-container>
+  </div>
+  }
+
+  <!-- RENDICIONES DIRECTAS -->
+  @if (canSeeRendiciones) {
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Rendiciones directas</h3>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Rendiciones directas', value: kpiDirectasSinCerrar(), accent: 'purple',
+      link: '/mis-rendiciones', qp: { tab: 'directas' }, hint: 'sin cerrar'
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Por enviar a revisión', value: kpiPendientesDirectas(), accent: 'red',
+      link: '/mis-rendiciones', qp: { tab: 'directas' }, hint: 'con gastos por subir o enviar'
+    }"></ng-container>
+  </div>
+  <div class="grid grid-cols-1 gap-4 mt-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Mis rendiciones directas', rows: visibleDirectasPropias(),
+      total: misDirectasRows().length, showAllSig: showAllDirectas,
+      empty: 'No tienes rendiciones directas.', showUser: false
+    }"></ng-container>
+  </div>
+  }
+</ng-template>

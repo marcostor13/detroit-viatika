@@ -63,7 +63,12 @@ export interface IUserPermissions {
   modules: string[];
   canApproveL1: boolean;
   canApproveL2: boolean;
+  /** Categorías sueltas asignadas directamente (independientes de los perfiles). */
   categoryIds?: string[];
+  /** @deprecated usar categoryProfileIds. */
+  categoryProfileId?: string | null;
+  /** Perfiles de categoría asignados (deriva centros de costo y categorías visibles). */
+  categoryProfileIds?: string[];
 }
 
 export interface IUserResponse {

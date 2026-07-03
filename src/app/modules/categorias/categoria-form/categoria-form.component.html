@@ -32,16 +32,28 @@
         <p class="text-xs text-tertiary">Nombre único que identifica a esta categoría de gasto.</p>
       </div>
 
-      <!-- Cuenta -->
+      <!-- Cuenta analítica 9X -->
       <div class="flex flex-col gap-1.5">
-        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Cuenta Contable</label>
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Cuenta Analítica 9X</label>
         <input
           type="text"
           [(ngModel)]="form.cuenta"
-          placeholder="Ej. 6310"
+          placeholder="Ej. 91.3.1.410"
           class="h-[44px] px-4 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
         />
-        <p class="text-xs text-tertiary">Número de cuenta del plan contable (opcional).</p>
+        <p class="text-xs text-tertiary">Cuenta analítica (clase 9) usada en los asientos contables (opcional).</p>
+      </div>
+
+      <!-- Cuenta destino 6X -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Cuenta Destino 6X</label>
+        <input
+          type="text"
+          [(ngModel)]="form.cuentaDestino6x"
+          placeholder="Ej. 63.1.4.100"
+          class="h-[44px] px-4 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+        />
+        <p class="text-xs text-tertiary">Cuenta destino (gasto por naturaleza, clase 6) para los asientos (opcional).</p>
       </div>
 
       <!-- Descripción -->
@@ -77,6 +89,25 @@
           class="h-[44px] px-4 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
         />
         <p class="text-xs text-tertiary">Al superar este monto el sistema mostrará una advertencia. Dejar vacío para sin límite.</p>
+      </div>
+
+      <!-- Perfiles de Categoría -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Perfiles de Categoría</label>
+        <p class="text-xs text-tertiary">Selecciona los perfiles a los que pertenece esta categoría. Una categoría puede estar en varios perfiles.</p>
+        @if (perfiles.length === 0) {
+          <p class="text-sm text-tertiary py-2">No hay perfiles. Créalos en Configuración → Perfiles de Categoría.</p>
+        } @else {
+          <div class="max-h-48 overflow-y-auto rounded-xl border border-tertiary/20 divide-y divide-tertiary/10 mt-1">
+            @for (p of perfiles; track p._id) {
+            <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-background cursor-pointer transition-colors">
+              <input type="checkbox" class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
+                [checked]="isPerfilChecked(p._id!)" (change)="togglePerfil(p._id!, $any($event.target).checked)" />
+              <span class="text-sm text-secondary">{{ p.name }}</span>
+            </label>
+            }
+          </div>
+        }
       </div>
 
     </div>

@@ -50,6 +50,7 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/config',
     '/logo',
     '/api/client',
+    '/dashboard',
     '/expense-report',
     '/advance',
     '/role',
@@ -58,6 +59,12 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/notifications',
     '/notifications/',
     '/bulk-import',
+    '/caja-chica-report',
+    '/saldo',
+    '/saldo/',
+    '/accounting-entries',
+    '/upload',
+    '/upload/',
   ];
 
   const isExcludedEndpoint = excludedEndpoints.some(
@@ -103,9 +110,10 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
       req.url.includes(`/expense-report/user/`) ||
       req.url.includes(`/user/client/${companyId}`);
 
-    if (shouldAddClientId && !req.url.endsWith(companyId) && !alreadyContainsClientIdInPath) {
-       // Only append if it's not already there
-       req = req.clone({ url: `${req.url}/${companyId}` });
+    const urlPath = req.url.split('?')[0];
+    const urlSearch = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    if (shouldAddClientId && !urlPath.endsWith(companyId) && !alreadyContainsClientIdInPath) {
+      req = req.clone({ url: `${urlPath}/${companyId}${urlSearch}` });
     }
   }
 
