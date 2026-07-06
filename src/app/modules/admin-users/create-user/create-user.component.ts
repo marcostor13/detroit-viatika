@@ -64,10 +64,6 @@ export class CreateUserComponent implements OnInit {
   step = 1;
   roles: IRoleResponse[] = [];
   enumRoles = ERoles;
-  /** Candidatos a aprobador: usuarios activos con rol Coordinador. */
-  coordinatorCandidates: IUserResponse[] = [];
-  /** Cadena ordenada de aprobadores (ids), en el orden en que deben aprobar. */
-  approverIds: string[] = [];
   temporaryPassword: string = '';
   showPasswordModal: boolean = false;
   passwordCopied: boolean = false;
@@ -97,63 +93,11 @@ export class CreateUserComponent implements OnInit {
   };
 
   ngOnInit() {
-    this.loadCoordinatorCandidates();
     if (this.id) {
       this.getUser();
     }
     this.getRoles();
     this.loadCategoryData();
-  }
-
-  loadCoordinatorCandidates(): void {
-    this.adminUsersService.getUsers().subscribe({
-      next: (users) => {
-        const exclude = this.id;
-        this.coordinatorCandidates = users.filter((u) => {
-          if (!u.isActive) return false;
-          if (exclude && u._id === exclude) return false;
-          return u.role?.name === 'Coordinador';
-        });
-      },
-      error: () => {
-        this.coordinatorCandidates = [];
-      },
-    });
-  }
-
-  /** Candidatos aún no agregados a la cadena de aprobadores. */
-  get availableApproverCandidates(): IUserResponse[] {
-    return this.coordinatorCandidates.filter(
-      (u) => !this.approverIds.includes(u._id),
-    );
-  }
-
-  approverName(id: string): string {
-    const u = this.coordinatorCandidates.find((c) => c._id === id);
-    return u ? `${u.name} — ${u.email}` : id;
-  }
-
-  addApprover(id: string): void {
-    if (!id || this.approverIds.includes(id)) return;
-    this.approverIds = [...this.approverIds, id];
-  }
-
-  removeApprover(index: number): void {
-    this.approverIds = this.approverIds.filter((_, i) => i !== index);
-  }
-
-  moveApproverUp(index: number): void {
-    if (index <= 0) return;
-    const arr = [...this.approverIds];
-    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
-    this.approverIds = arr;
-  }
-
-  moveApproverDown(index: number): void {
-    if (index >= this.approverIds.length - 1) return;
-    const arr = [...this.approverIds];
-    [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
-    this.approverIds = arr;
   }
 
   get selectedRoleIsCollaborador(): boolean {
@@ -169,7 +113,7 @@ export class CreateUserComponent implements OnInit {
 
   get selectedRoleNeedsPermissions(): boolean {
     const n = this.selectedRoleName;
-    return n === 'Colaborador' || n === 'Coordinador' || n === 'Contabilidad' || n === 'Administrador';
+    return n === 'Colaborador' || n === 'Coordinador' || n === 'Contabilidad' || n === 'Administrador' || n === 'Tesoreria';
   }
 
   get step2Modules(): ModuleOption[] {
@@ -199,6 +143,8 @@ export class CreateUserComponent implements OnInit {
       this.permissions = { modules: ['rendiciones', 'viaticos', 'tesoreria'], canApproveL1: true, canApproveL2: false, categoryIds: [] };
     } else if (name === 'Contabilidad') {
       this.permissions = { modules: allStep2, canApproveL1: true, canApproveL2: true, categoryIds: [] };
+    } else if (name === 'Tesoreria') {
+      this.permissions = { modules: ['tesoreria'], canApproveL1: false, canApproveL2: false, categoryIds: [] };
     } else if (name === 'Administrador') {
       this.permissions = { modules: allStep2, canApproveL1: false, canApproveL2: false, categoryIds: [] };
     }
@@ -222,13 +168,6 @@ export class CreateUserComponent implements OnInit {
     this.permissions = { modules: [], canApproveL1: false, canApproveL2: false, categoryIds: [] };
   }
 
-  private approverIdsFromUser(user: IUserResponse): string[] {
-    const list = user.approverIds ?? [];
-    return list.map((c) =>
-      typeof c === 'object' && c !== null && '_id' in c ? c._id : String(c),
-    );
-  }
-
   getRoleName(roleId: string) {
     return this.enumRoles[
       this.roles.find((role) => role._id === roleId)
@@ -236,7 +175,7 @@ export class CreateUserComponent implements OnInit {
     ];
   }
 
-  readonly allowedRoles = ['Administrador', 'Colaborador', 'Coordinador', 'Contabilidad'];
+  readonly allowedRoles = ['Administrador', 'Colaborador', 'Coordinador', 'Contabilidad', 'Tesoreria'];
 
   getRoles() {
     this.adminUsersService.getRoles().subscribe((roles) => {
@@ -264,7 +203,6 @@ export class CreateUserComponent implements OnInit {
       cci: user.bankAccount?.cci || '',
       accountType: user.bankAccount?.accountType || '',
     });
-    this.approverIds = this.approverIdsFromUser(user);
   }
 
   getUser() {
@@ -277,9 +215,6 @@ export class CreateUserComponent implements OnInit {
     if (this.form.valid) {
       const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
       const payload: any = { ...rest };
-      if (this.selectedRoleIsCollaborador) {
-        payload.approverIds = this.approverIds;
-      }
       if (bankName || accountNumber || cci) {
         payload.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };
       }
@@ -310,10 +245,6 @@ export class CreateUserComponent implements OnInit {
       const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
       const updateData: any = { ...rest };
       delete updateData['password'];
-
-      if (this.selectedRoleIsCollaborador) {
-        updateData['approverIds'] = this.approverIds;
-      }
 
       if (bankName || accountNumber || cci) {
         updateData.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };

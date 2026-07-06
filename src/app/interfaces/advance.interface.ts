@@ -176,17 +176,7 @@ export interface IAdvanceStats {
   totalApprovedAmount: number;
 }
 
-export interface IAdvanceLinePayload {
-  categoryId: string;
-  detalle?: string;
-  importe: number;
-  peopleCount: number;
-  glpPerDay: number;
-  days: number;
-  lineTotal: number;
-}
-
-/** Legacy: solo amount + description. Fase 2: lugar, fechas, proyecto, líneas y total coherente. */
+/** Legacy: solo amount + description. Fase 2: lugar, fechas, proyecto y monto requerido. */
 export interface ICreateAdvancePayload {
   amount: number;
   description: string;
@@ -197,7 +187,6 @@ export interface ICreateAdvancePayload {
   startDate?: string;
   endDate?: string;
   projectId?: string;
-  lines?: IAdvanceLinePayload[];
   observations?: string;
   pendingBalanceFromReportId?: string;
   pendingBalanceAmount?: number;

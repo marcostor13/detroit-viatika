@@ -7,9 +7,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
-  FormArray,
   FormBuilder,
-  FormGroup,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
@@ -19,8 +17,6 @@ import { ExpenseReportsService } from '../../../services/expense-reports.service
 import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
-import { CategoriaService } from '../../../services/categoria.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { SaldoService } from '../../../services/saldo.service';
 import { ISaldo } from '../../../interfaces/saldo.interface';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
@@ -31,20 +27,11 @@ import {
 } from '../../../directives/places-autocomplete.directive';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
-import { ICategory } from '../../invoices/interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import {
   ICreateAdvancePayload,
-  IAdvanceLinePayload,
   IAdvance,
 } from '../../../interfaces/advance.interface';
 import { ICreateViaticoPayload, IResubmitViaticoPayload, IExpenseReport } from '../../../interfaces/expense-report.interface';
-import {
-  coerceViaticoLineNumber,
-  computeViaticoLineTotal,
-  optionalViaticoLineNumber,
-  validateViaticoLineFields,
-} from '../viatico-line.util';
 
 @Component({
   selector: 'app-solicitud-viaticos',
@@ -66,8 +53,6 @@ export class SolicitudViaticosComponent implements OnInit {
   private notifications = inject(NotificationService);
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
-  private categoriaService = inject(CategoriaService);
-  private categoryGroupService = inject(CategoryGroupService);
   private saldoService = inject(SaldoService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
 
@@ -104,10 +89,10 @@ export class SolicitudViaticosComponent implements OnInit {
   }
 
   // El saldo heredado de otra rendición (pendingBalance) prefinancia el viático igual
-  // que un saldo de la bolsa: cubre el costo de las líneas, contabilidad deposita solo
+  // que un saldo de la bolsa: cubre el monto requerido, contabilidad deposita solo
   // la diferencia y, si el saldo supera el costo, el sobrante vuelve a la bolsa.
 
-  /** Monto del saldo heredado realmente aplicado (nunca más que el costo de las líneas). */
+  /** Monto del saldo heredado realmente aplicado (nunca más que el monto requerido). */
   pendingUsed(): number {
     return Math.round(Math.min(this.pendingBalanceAmount(), this.totalGeneral()) * 100) / 100;
   }
@@ -133,38 +118,11 @@ export class SolicitudViaticosComponent implements OnInit {
   }
   loading = signal(false);
   projects = signal<IProject[]>([]);
-  categories = signal<ICategory[]>([]);
-  /** Perfiles de categoría (category-groups). El centro de costo referencia uno y de él se derivan sus categorías. */
-  categoryGroups = signal<ICategoryGroup[]>([]);
-  /** ID del centro de costo elegido; espeja el control `projectId` para alimentar los computeds. */
+  /** ID del centro de costo elegido; espeja el control `projectId`. */
   selectedProjectId = signal<string>('');
   advanceToResubmit = signal<IAdvance | null>(null);
   /** Viático unificado (ExpenseReport) en edición/reenvío. */
   viaticoToResubmit = signal<IExpenseReport | null>(null);
-
-  /**
-   * IDs de categoría permitidas por el perfil del centro de costo elegido, o
-   * `null` cuando no aplica filtro (sin proyecto, proyecto sin perfil, o perfil
-   * sin categorías) — en cuyo caso se muestran todas.
-   */
-  private allowedCategoryIdSet = computed<Set<string> | null>(() => {
-    const pid = this.selectedProjectId();
-    if (!pid) return null;
-    const project = this.projects().find((p) => String(p._id) === String(pid));
-    const groupId = project?.categoryGroupId;
-    if (!groupId) return null;
-    const group = this.categoryGroups().find((g) => String(g._id) === String(groupId));
-    const ids = (group?.categoryIds ?? []).map(String);
-    if (!ids.length) return null;
-    return new Set(ids);
-  });
-
-  /** Categorías del perfil del proyecto (lista base compartida por todas las líneas). */
-  private perfilCategories = computed<ICategory[]>(() => {
-    const allowed = this.allowedCategoryIdSet();
-    if (!allowed) return this.categories();
-    return this.categories().filter((c) => allowed.has(String(c._id)));
-  });
 
   private selectedLat: number | undefined;
   private selectedLng: number | undefined;
@@ -184,7 +142,7 @@ export class SolicitudViaticosComponent implements OnInit {
     bankName: [''],
     accountNumber: [''],
     cci: [''],
-    lines: this.fb.array([this.createLineGroup()]),
+    amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
   });
 
   get isResubmit(): boolean {
@@ -212,27 +170,22 @@ export class SolicitudViaticosComponent implements OnInit {
       : 'Nueva solicitud de viáticos';
   }
 
-  /** Total de las líneas del formulario (monto adicional). */
+  /** Monto requerido ingresado por el colaborador (monto adicional, sin saldo heredado). */
   totalGeneral(): number {
-    let sum = 0;
-    for (let i = 0; i < this.lines.length; i++) {
-      sum += this.lineTotal(this.lines.at(i) as FormGroup);
-    }
-    return Math.round(sum * 100) / 100;
+    const n = Number(this.form.value.amount);
+    return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
   }
 
-  /** Total del anticipo = saldo pendiente + líneas adicionales. */
+  /** Total del anticipo = saldo pendiente + monto requerido. */
   totalAnticipo(): number {
     return Math.round((this.pendingBalanceAmount() + this.totalGeneral()) * 100) / 100;
   }
 
   ngOnInit(): void {
-    // Espeja el centro de costo elegido y, al cambiarlo, limpia las categorías
-    // de línea que no pertenezcan a su perfil. (En restauración se actualiza el
-    // signal sin emitir, por lo que esto no borra las líneas precargadas.)
+    // Espeja el centro de costo elegido para alimentar la carga de saldos elegibles.
+    // (En restauración se actualiza el signal sin emitir evento.)
     this.form.get('projectId')?.valueChanges.subscribe((pid) => {
       this.selectedProjectId.set(pid ?? '');
-      this.clearInvalidLineCategories();
       this.loadEligibleSaldos(pid ?? '');
     });
 
@@ -360,14 +313,6 @@ export class SolicitudViaticosComponent implements OnInit {
       next: (list) => this.projects.set((list || []).filter((p) => p.isActive !== false)),
       error: () => this.projects.set([]),
     });
-    this.categoriaService.getAllFlat().subscribe({
-      next: (res) => this.categories.set((res || []).filter((c) => c.isActive !== false)),
-      error: () => this.categories.set([]),
-    });
-    this.categoryGroupService.getAll().subscribe({
-      next: (groups) => this.categoryGroups.set(groups ?? []),
-      error: () => this.categoryGroups.set([]),
-    });
     this.ordenTrabajoService.getAll().subscribe({
       next: (list) => this.ordenesTrabajo.set((list || []).filter((o) => o.isActive !== false)),
       error: () => this.ordenesTrabajo.set([]),
@@ -375,21 +320,10 @@ export class SolicitudViaticosComponent implements OnInit {
   }
 
   private bootstrapFromAdvance(adv: IAdvance): void {
-    while (this.lines.length) this.lines.removeAt(0);
-
-    for (const ln of adv.lines?.length ? adv.lines : []) {
-      const g = this.createLineGroup();
-      g.patchValue({
-        categoryId: this.categoryIdFromLine(ln),
-        detalle: ln.detalle ?? '',
-        importe: ln.importe,
-        peopleCount: ln.peopleCount,
-        glpPerDay: ln.glpPerDay,
-        days: ln.days,
-      });
-      this.lines.push(g);
-    }
-    if (!this.lines.length) this.lines.push(this.createLineGroup());
+    // El monto requerido equivale al costo que antes se armaba con el detalle por
+    // categoría: `additionalAmount` cuando la solicitud incorporó un saldo heredado,
+    // o `amount` completo en caso contrario.
+    this.form.patchValue({ amount: adv.additionalAmount ?? adv.amount });
 
     const pid =
       typeof adv.projectId === 'object' && adv.projectId
@@ -406,8 +340,7 @@ export class SolicitudViaticosComponent implements OnInit {
       this.useCustomBank.set(true);
       this.form.patchValue({ bankName: adv.requestBankName ?? '', accountNumber: adv.requestAccountNumber, cci: adv.requestCci ?? '' });
     }
-    // Sin emitir: evita que el listener de `projectId` borre las categorías
-    // de las líneas que acabamos de restaurar.
+    // Sin emitir: evita relanzar la carga de saldos elegibles antes de tiempo.
     this.form.get('projectId')?.setValue(pid, { emitEvent: false });
     this.selectedProjectId.set(pid);
 
@@ -416,22 +349,9 @@ export class SolicitudViaticosComponent implements OnInit {
 
   /** Precarga el formulario desde un viático unificado (ExpenseReport) en edición. */
   private bootstrapFromViatico(report: IExpenseReport): void {
-    while (this.lines.length) this.lines.removeAt(0);
-
-    const reportLines = (report.viaticoLines as any[]) ?? [];
-    for (const ln of reportLines) {
-      const g = this.createLineGroup();
-      g.patchValue({
-        categoryId: this.categoryIdFromLine(ln),
-        detalle: ln.detalle ?? '',
-        importe: ln.importe,
-        peopleCount: ln.peopleCount,
-        glpPerDay: ln.glpPerDay,
-        days: ln.days,
-      });
-      this.lines.push(g);
-    }
-    if (!this.lines.length) this.lines.push(this.createLineGroup());
+    // `viaticoAmount` es el monto requerido (sin el saldo heredado, que se restaura
+    // aparte más abajo).
+    this.form.patchValue({ amount: report.viaticoAmount ?? null });
 
     const pid =
       typeof report.projectId === 'object' && report.projectId
@@ -480,14 +400,6 @@ export class SolicitudViaticosComponent implements OnInit {
     return String(value).length >= 10 ? String(value).slice(0, 10) : String(value);
   }
 
-  private categoryIdFromLine(line: { categoryId: unknown }): string {
-    const c = line.categoryId;
-    if (c && typeof c === 'object' && '_id' in (c as object)) {
-      return String((c as { _id: string })._id);
-    }
-    return String(c ?? '');
-  }
-
   private resolveCompanyId(): string {
     const u = this.userState.getUser() as Record<string, unknown> | null;
     if (!u) return '';
@@ -498,65 +410,6 @@ export class SolicitudViaticosComponent implements OnInit {
       (typeof u['clientId'] === 'string' ? (u['clientId'] as string) : '') ||
       ''
     );
-  }
-
-  createLineGroup(): FormGroup {
-    return this.fb.group({
-      categoryId: ['', Validators.required],
-      detalle: [''],
-      importe: [null, [Validators.min(0)]],
-      peopleCount: [null],
-      glpPerDay: [null],
-      days: [null, [Validators.min(0)]],
-    });
-  }
-
-  get lines(): FormArray {
-    return this.form.get('lines') as FormArray;
-  }
-
-  lineTotal(ctrl: FormGroup): number {
-    const v = ctrl.value;
-    return computeViaticoLineTotal(
-      Number(v.importe),
-      Number(v.glpPerDay),
-      Number(v.days),
-      Number(v.peopleCount)
-    );
-  }
-
-  /**
-   * Categorías visibles en una línea: las del perfil del proyecto, más la propia
-   * categoría ya elegida (para no ocultar selecciones previas al corregir/reenviar).
-   */
-  categoriesForLine(ctrl: FormGroup): ICategory[] {
-    const base = this.perfilCategories();
-    const selected = ctrl.get('categoryId')?.value;
-    if (!selected || base.some((c) => String(c._id) === String(selected))) {
-      return base;
-    }
-    const own = this.categories().find((c) => String(c._id) === String(selected));
-    return own ? [...base, own] : base;
-  }
-
-  /** Limpia las categorías de línea que no pertenezcan al perfil del proyecto actual. */
-  private clearInvalidLineCategories(): void {
-    const allowed = this.allowedCategoryIdSet();
-    if (!allowed) return;
-    for (let i = 0; i < this.lines.length; i++) {
-      const ctrl = this.lines.at(i).get('categoryId');
-      const val = ctrl?.value;
-      if (val && !allowed.has(String(val))) ctrl?.setValue('');
-    }
-  }
-
-  addLine(): void {
-    this.lines.push(this.createLineGroup());
-  }
-
-  removeLine(index: number): void {
-    if (this.lines.length <= 1) return;
-    this.lines.removeAt(index);
   }
 
   onPlaceSelected(ev: PlaceResult): void {
@@ -581,41 +434,11 @@ export class SolicitudViaticosComponent implements OnInit {
     }
   }
 
-  private normalizeLineNumericFields(): void {
-    for (let i = 0; i < this.lines.length; i++) {
-      const g = this.lines.at(i) as FormGroup;
-      const v = g.value;
-      g.patchValue(
-        {
-          importe: optionalViaticoLineNumber(v.importe),
-          peopleCount: optionalViaticoLineNumber(v.peopleCount),
-          glpPerDay: optionalViaticoLineNumber(v.glpPerDay),
-          days: optionalViaticoLineNumber(v.days),
-        },
-        { emitEvent: false }
-      );
-    }
-    this.form.updateValueAndValidity();
-  }
-
   submit(): void {
-    this.normalizeLineNumericFields();
-
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.notifications.show('Complete los campos obligatorios', 'error');
       return;
-    }
-
-    for (let i = 0; i < this.lines.length; i++) {
-      const lineError = validateViaticoLineFields(
-        (this.lines.at(i) as FormGroup).value
-      );
-      if (lineError) {
-        this.form.markAllAsTouched();
-        this.notifications.show(lineError, 'error');
-        return;
-      }
     }
 
     const startStr = this.form.value.startDate as string;
@@ -643,23 +466,7 @@ export class SolicitudViaticosComponent implements OnInit {
     // y los controles deshabilitados no aparecen en form.value.
     const projectId = (this.form.getRawValue().projectId as string) ?? '';
     const ordenTrabajoId = (this.form.value.ordenTrabajoId as string) || undefined;
-    const linesPayload: IAdvanceLinePayload[] = [];
-
-    for (let i = 0; i < this.lines.length; i++) {
-      const g = this.lines.at(i) as FormGroup;
-      const v = g.value;
-      linesPayload.push({
-        categoryId: v.categoryId,
-        detalle: (v.detalle || '').trim() || undefined,
-        importe: Number(v.importe),
-        peopleCount: Number(v.peopleCount),
-        glpPerDay: Number(v.glpPerDay),
-        days: Number(v.days),
-        lineTotal: this.lineTotal(g),
-      });
-    }
-
-    const linesTotal = this.totalGeneral();
+    const montoRequerido = this.totalGeneral();
     const fromReportId = this.pendingBalanceFromReportId();
     const pendingAmt = this.pendingBalanceAmount();
     const hasPending = !!(fromReportId && pendingAmt > 0);
@@ -682,9 +489,9 @@ export class SolicitudViaticosComponent implements OnInit {
     const viatico = this.viaticoToResubmit();
     if (viatico) {
       const resubmitPayload: IResubmitViaticoPayload = {
-        // El costo del viático son sus líneas. El saldo heredado lo prefinancia en el
-        // backend (no se suma al anticipo), igual que un saldo de la bolsa.
-        amount: linesTotal,
+        // El saldo heredado prefinancia el monto requerido en el backend
+        // (no se suma al anticipo), igual que un saldo de la bolsa.
+        amount: montoRequerido,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
         ...(this.selectedLng != null && { lng: this.selectedLng }),
@@ -692,7 +499,6 @@ export class SolicitudViaticosComponent implements OnInit {
         endDate: `${endStr}T12:00:00.000Z`,
         projectId,
         ordenTrabajoId,
-        lines: linesPayload,
         observations: (this.form.value.observations || '').trim() || undefined,
         ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
         ...customBank,
@@ -709,7 +515,7 @@ export class SolicitudViaticosComponent implements OnInit {
     if (adv) {
       // Resubmit of a legacy Advance (old system)
       const legacyPayload: ICreateAdvancePayload = {
-        amount: hasPending ? this.totalAnticipo() : linesTotal,
+        amount: hasPending ? this.totalAnticipo() : montoRequerido,
         description: `Viático: ${place} (${startStr} → ${endStr})`,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
@@ -717,12 +523,11 @@ export class SolicitudViaticosComponent implements OnInit {
         startDate: `${startStr}T12:00:00.000Z`,
         endDate: `${endStr}T12:00:00.000Z`,
         projectId,
-        lines: linesPayload,
         observations: (this.form.value.observations || '').trim() || undefined,
         ...(hasPending && {
           pendingBalanceFromReportId: fromReportId!,
           pendingBalanceAmount: pendingAmt,
-          additionalAmount: linesTotal,
+          additionalAmount: montoRequerido,
         }),
         ...customBank,
       };
@@ -735,9 +540,9 @@ export class SolicitudViaticosComponent implements OnInit {
 
     // New unified viatico (ExpenseReport type='viatico')
     const viaticoPayload: ICreateViaticoPayload = {
-      // El costo del viático son sus líneas; el saldo heredado lo prefinancia en el
-      // backend (no se suma al anticipo), igual que un saldo de la bolsa.
-      amount: linesTotal,
+      // El saldo heredado prefinancia el monto requerido en el backend
+      // (no se suma al anticipo), igual que un saldo de la bolsa.
+      amount: montoRequerido,
       place,
       ...(this.selectedLat != null && { lat: this.selectedLat }),
       ...(this.selectedLng != null && { lng: this.selectedLng }),
@@ -745,12 +550,11 @@ export class SolicitudViaticosComponent implements OnInit {
       endDate: `${endStr}T12:00:00.000Z`,
       projectId,
       ordenTrabajoId,
-      lines: linesPayload,
       observations: (this.form.value.observations || '').trim() || undefined,
       ...(hasPending && {
         pendingBalanceFromReportId: fromReportId!,
         pendingBalanceAmount: pendingAmt,
-        additionalAmount: linesTotal,
+        additionalAmount: montoRequerido,
       }),
       ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
       ...customBank,

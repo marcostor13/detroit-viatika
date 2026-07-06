@@ -37,6 +37,8 @@ type UnifiedSolicitudItem = {
   /** Es el turno del usuario actual para aprobar (o es Superadmin). */
   canApproveNow: boolean;
   canReject: boolean;
+  /** true cuando el paso pendiente es el gate final de Contabilidad (no la cadena de centro de costo). */
+  isContabilidadGate: boolean;
   /** Nombre del aprobador cuyo turno es actualmente, para mostrar en la lista. */
   pendingApproverName: string;
   approvalLevel: number;
@@ -66,6 +68,7 @@ export class ViaticosComponent implements OnInit {
   readonly ALL_STATUSES = [
     { value: 'all', label: 'Todos los estados' },
     { value: 'pending_l1', label: 'Pendiente aprobación' },
+    { value: 'pending_contabilidad', label: 'Pendiente de Contabilidad' },
     { value: 'viatico_approved', label: 'Aprobado' },
     { value: 'partially_paid', label: 'Pago parcial' },
     { value: 'open', label: 'Registrando gastos' },
@@ -168,6 +171,7 @@ export class ViaticosComponent implements OnInit {
           (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
         canReject: a.status === 'pending_l1' &&
           (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
+        isContabilidadGate: false,
         pendingApproverName: this.approverNameAt(a.approverChain, a.approvalLevel),
         approvalLevel: a.approvalLevel,
         requiredLevels: a.requiredLevels,
@@ -200,11 +204,14 @@ export class ViaticosComponent implements OnInit {
         statusLabel,
         statusColor,
         createdAt: v.createdAt,
-        canApproveNow: v.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId),
-        canReject: v.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId),
-        pendingApproverName: this.approverNameAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0),
+        canApproveNow: (v.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+          (v.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userState.isContabilidad())),
+        canReject: (v.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+          (v.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userState.isContabilidad())),
+        isContabilidadGate: v.status === 'pending_contabilidad',
+        pendingApproverName: v.status === 'pending_contabilidad' ? 'Contabilidad' : this.approverNameAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0),
         approvalLevel: v.viaticoApprovalLevel ?? 0,
         requiredLevels: v.viaticoRequiredLevels ?? 1,
         raw: v,
@@ -312,12 +319,17 @@ export class ViaticosComponent implements OnInit {
     this.isActing.set(true);
     const action$: Observable<unknown> = item.source === 'advance'
       ? this.advanceService.approve(item._id, {})
-      : this.expenseReportsService.approveViatico(item._id);
+      : item.isContabilidadGate
+        ? this.expenseReportsService.approveViaticoContabilidad(item._id)
+        : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
         this.isActing.set(false);
-        this.notifications.show(`Solicitud aprobada (nivel ${item.approvalLevel + 1} de ${item.requiredLevels})`, 'success');
+        const msg = item.isContabilidadGate
+          ? 'Solicitud aprobada por Contabilidad — lista para pago'
+          : `Solicitud aprobada (nivel ${item.approvalLevel + 1} de ${item.requiredLevels})`;
+        this.notifications.show(msg, 'success');
         this.reloadAll();
       },
       error: (e: any) => {

@@ -208,6 +208,11 @@ export class ExpenseReportsService {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve`, {});
   }
 
+  /** Aprobación final de Contabilidad, tras completarse la cadena de centro de costo. */
+  approveViaticoContabilidad(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/contabilidad-approve`, {});
+  }
+
   rejectViatico(id: string, rejectionReason: string): Observable<IExpenseReport> {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/reject`, { rejectionReason });
   }

@@ -4,4 +4,5 @@ export enum ERoles {
     Colaborador = 'Colaborador',
     Coordinador = 'Coordinador',
     Contabilidad = 'Contabilidad',
+    Tesoreria = 'Tesoreria',
 }
