@@ -5,18 +5,8 @@ export type ExpenseReportType = 'rendicion' | 'viatico' | 'directa' | 'caja_chic
 export type IExpenseReportStatus =
   | 'solicited' | 'open' | 'submitted' | 'pending_accounting'
   | 'approved' | 'rejected' | 'reimbursed' | 'closed' | 'cancelled'
-  | 'pending_l1' | 'pending_l2' | 'viatico_approved'
+  | 'pending_l1' | 'pending_l2' | 'pending_contabilidad' | 'viatico_approved'
   | 'partially_paid' | 'paid' | 'settled' | 'returned';
-
-export interface IViaticoLinePayload {
-  categoryId: string;
-  detalle?: string;
-  importe: number;
-  peopleCount: number;
-  glpPerDay: number;
-  days: number;
-  lineTotal: number;
-}
 
 export interface ICreateViaticoPayload {
   amount: number;
@@ -28,7 +18,6 @@ export interface ICreateViaticoPayload {
   projectId: string;
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
-  lines: IViaticoLinePayload[];
   observations?: string;
   pendingBalanceFromReportId?: string;
   pendingBalanceAmount?: number;
@@ -51,7 +40,6 @@ export interface IResubmitViaticoPayload {
   projectId: string;
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
-  lines: IViaticoLinePayload[];
   observations?: string;
   /** Saldos de la bolsa re-seleccionados al corregir (si el viático no tiene ya uno). */
   saldoIds?: string[];
@@ -64,6 +52,7 @@ export interface IResubmitViaticoPayload {
 export const VIATICO_REPORT_STATUS_LABELS: Partial<Record<IExpenseReportStatus, string>> = {
   pending_l1: 'En solicitud',
   pending_l2: 'Aprobada por coordinador',
+  pending_contabilidad: 'Pendiente de Contabilidad',
   viatico_approved: 'Aprobada',
   partially_paid: 'Pago parcial',
   open: 'Registrando gastos',
@@ -81,6 +70,7 @@ export const VIATICO_REPORT_STATUS_LABELS: Partial<Record<IExpenseReportStatus, 
 export const VIATICO_REPORT_STATUS_COLORS: Partial<Record<IExpenseReportStatus, string>> = {
   pending_l1: 'bg-yellow-100 text-yellow-700',
   pending_l2: 'bg-orange-100 text-orange-700',
+  pending_contabilidad: 'bg-orange-100 text-orange-700',
   viatico_approved: 'bg-blue-100 text-blue-700',
   partially_paid: 'bg-cyan-100 text-cyan-700',
   open: 'bg-emerald-100 text-emerald-700',
@@ -167,6 +157,8 @@ export interface IExpenseReport {
   viaticoApproverChain?: ({ _id: string; name: string; email: string } | string)[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
   viaticoRejectionReason?: string;
+  /** Quién rechazó: aprobador de centro de costo, o Contabilidad (gate final). */
+  viaticoRejectedByRole?: 'centro_costo' | 'contabilidad';
   viaticoObservations?: string;
   viaticoSolicitudVersion?: number;
   viaticoBankName?: string;

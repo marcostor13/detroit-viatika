@@ -338,7 +338,11 @@
         <div>
           <h2 class="text-base font-bold text-secondary">Confirmar aprobación</h2>
           <p class="text-xs text-tertiary mt-0.5">
-            Nivel {{ (pendingApproveItem()?.approvalLevel ?? 0) + 1 }} de {{ pendingApproveItem()?.requiredLevels ?? 1 }}
+            @if (pendingApproveItem()?.isContabilidadGate) {
+              Aprobación final (Contabilidad)
+            } @else {
+              Nivel {{ (pendingApproveItem()?.approvalLevel ?? 0) + 1 }} de {{ pendingApproveItem()?.requiredLevels ?? 1 }}
+            }
           </p>
         </div>
       </div>

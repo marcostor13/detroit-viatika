@@ -27,6 +27,10 @@ export interface IProject {
   area?: string;
   /** Marca si el centro de costo es administrativo. */
   esAdministrativo?: boolean;
+  /** Aprobador de las solicitudes de viático imputadas a este centro de costo (id) */
+  approverId?: string;
+  /** Aprobador poblado (nombre/email) cuando el API lo devuelve */
+  approver?: { _id?: string; name?: string; email?: string };
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -156,6 +156,7 @@ export class UserStateService {
   isSuperAdmin() { return this.getRole() === 'Superadministrador'; }
   isContabilidad() { return this.getRole() === 'Contabilidad'; }
   isCoordinador() { return this.getRole() === 'Coordinador'; }
+  isTesoreria() { return this.getRole() === 'Tesoreria'; }
 
   isAnyAdmin() {
     return this.isAdmin() || this.isSuperAdmin() || this.isContabilidad();
@@ -183,7 +184,7 @@ export class UserStateService {
   }
 
   canAccessTesoreria(): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin() || this.isTesoreria() || this.isContabilidad() || this.isAdmin()) return true;
     const perms = this.getPermissions();
     return perms.modules?.includes('tesoreria') ?? false;
   }

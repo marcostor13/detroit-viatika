@@ -1,14 +1,16 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AdminUsersService } from '../services/admin-users.service';
 import { NotificationService } from '../../../services/notification.service';
 import { CategoriaService } from '../../../services/categoria.service';
 import { CategoryGroupService } from '../../../services/category-group.service';
+import { UserStateService } from '../../../services/user-state.service';
+import { InvoicesService } from '../../invoices/services/invoices.service';
 import { IUserResponse, IUserPermissions } from '../../../interfaces/user.interface';
 import { ICategory } from '../../invoices/interfaces/category.interface';
 import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
+import { IProject } from '../../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { CardComponent } from '../../../design-system/card/card.component';
@@ -22,7 +24,7 @@ interface ModuleOption {
 @Component({
   selector: 'app-user-permissions',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, CardComponent],
+  imports: [CommonModule, ButtonComponent, IconComponent, CardComponent],
   templateUrl: './user-permissions.component.html',
   styleUrls: ['./user-permissions.component.scss'],
 })
@@ -33,6 +35,8 @@ export class UserPermissionsComponent implements OnInit {
   private notification = inject(NotificationService);
   private categoriaService = inject(CategoriaService);
   private groupService = inject(CategoryGroupService);
+  private userState = inject(UserStateService);
+  private invoicesService = inject(InvoicesService);
 
   id: string = this.route.snapshot.params['id'];
   user: IUserResponse | null = null;
@@ -42,6 +46,8 @@ export class UserPermissionsComponent implements OnInit {
   groups = signal<ICategoryGroup[]>([]);
   categorySearch = signal('');
   categoriesLoading = signal(false);
+  /** Catálogo de centros de costo de la empresa. */
+  allProjects = signal<IProject[]>([]);
 
   readonly availableModules: ModuleOption[] = [
     { key: 'colaboradores', label: 'Colaboradores', description: 'Gestionar usuarios y permisos de la empresa' },
@@ -62,11 +68,13 @@ export class UserPermissionsComponent implements OnInit {
     canApproveL1: false,
     canApproveL2: false,
     categoryIds: [],
+    projectIds: [],
   };
 
   ngOnInit(): void {
     this.loadUser();
     this.loadCategoryData();
+    this.loadProjects();
   }
 
   loadUser() {
@@ -78,11 +86,78 @@ export class UserPermissionsComponent implements OnInit {
           canApproveL1: user.permissions?.canApproveL1 ?? false,
           canApproveL2: user.permissions?.canApproveL2 ?? false,
           categoryIds: user.permissions?.categoryIds ?? [],
+          projectIds: user.permissions?.projectIds ?? [],
         };
         this.maybeApplyDefault();
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
     });
+  }
+
+  private resolveCompanyId(): string {
+    const u = this.userState.getUser() as Record<string, unknown> | null;
+    if (!u) return '';
+    return (
+      (u['companyId'] as string) ||
+      ((u['client'] as { _id?: string })?._id ?? '') ||
+      ((u['clientId'] as { _id?: string })?._id ?? '') ||
+      (typeof u['clientId'] === 'string' ? (u['clientId'] as string) : '') ||
+      ''
+    );
+  }
+
+  loadProjects() {
+    const clientId = this.resolveCompanyId();
+    if (!clientId) return;
+    this.invoicesService.getProjects(clientId).subscribe({
+      next: (list) => this.allProjects.set((list || []).filter((p) => p.isActive !== false)),
+      error: () => this.allProjects.set([]),
+    });
+  }
+
+  // --- Centros de costo asignados (ordenados; el primero es el principal) ---
+
+  get assignedProjects(): IProject[] {
+    const ids = this.permissions.projectIds ?? [];
+    const byId = new Map(this.allProjects().map((p) => [String(p._id), p]));
+    return ids.map((id) => byId.get(id)).filter((p): p is IProject => !!p);
+  }
+
+  /** Centros de costo aún no agregados a la lista asignada. */
+  get availableProjectCandidates(): IProject[] {
+    const assigned = new Set(this.permissions.projectIds ?? []);
+    return this.allProjects().filter((p) => !assigned.has(String(p._id)));
+  }
+
+  addProject(id: string) {
+    if (!id) return;
+    const current = this.permissions.projectIds ?? [];
+    if (current.includes(id)) return;
+    this.permissions.projectIds = [...current, id];
+  }
+
+  removeProject(index: number) {
+    const current = this.permissions.projectIds ?? [];
+    this.permissions.projectIds = current.filter((_, i) => i !== index);
+  }
+
+  moveProjectUp(index: number) {
+    if (index <= 0) return;
+    const arr = [...(this.permissions.projectIds ?? [])];
+    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
+    this.permissions.projectIds = arr;
+  }
+
+  moveProjectDown(index: number) {
+    const current = this.permissions.projectIds ?? [];
+    if (index >= current.length - 1) return;
+    const arr = [...current];
+    [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
+    this.permissions.projectIds = arr;
+  }
+
+  projectLabel(p: IProject): string {
+    return p.code ? `${p.code} — ${p.name}` : p.name;
   }
 
   loadCategoryData() {

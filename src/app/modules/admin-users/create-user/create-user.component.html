@@ -207,47 +207,6 @@
           </select>
         </div>
 
-        <!-- Cadena de aprobadores (solo si el rol es Colaborador) -->
-        @if (selectedRoleIsCollaborador) {
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Aprobadores (en orden)</label>
-
-            @if (approverIds.length > 0) {
-              <ol class="flex flex-col gap-1.5 mb-1">
-                @for (aid of approverIds; track aid; let i = $index) {
-                  <li class="flex items-center gap-2 px-3 py-2 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary">
-                    <span class="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">{{ i + 1 }}</span>
-                    <span class="flex-1 truncate">{{ approverName(aid) }}</span>
-                    <button type="button" class="text-tertiary hover:text-primary disabled:opacity-30" [disabled]="i === 0" (click)="moveApproverUp(i)" title="Subir">
-                      <app-icon name="chevron-up" size="sm" />
-                    </button>
-                    <button type="button" class="text-tertiary hover:text-primary disabled:opacity-30" [disabled]="i === approverIds.length - 1" (click)="moveApproverDown(i)" title="Bajar">
-                      <app-icon name="chevron-down" size="sm" />
-                    </button>
-                    <button type="button" class="text-tertiary hover:text-error" (click)="removeApprover(i)" title="Quitar">
-                      <app-icon name="close" size="sm" />
-                    </button>
-                  </li>
-                }
-              </ol>
-            }
-
-            @if (availableApproverCandidates.length > 0) {
-              <select
-                #approverSelect
-                (change)="addApprover(approverSelect.value); approverSelect.value = ''"
-                class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-              >
-                <option value="">Añadir aprobador...</option>
-                @for (u of availableApproverCandidates; track u._id) {
-                  <option [value]="u._id">{{ u.name }} — {{ u.email }}</option>
-                }
-              </select>
-            }
-            <p class="text-xs text-tertiary">Solo usuarios con rol Coordinador pueden ser aprobadores. Aprueban en el orden mostrado: el primero, luego el segundo, etc. El colaborador necesita al menos uno para poder solicitar anticipos/viáticos.</p>
-          </div>
-        }
-
         <!-- Acciones -->
         <div class="flex gap-3 pt-1">
           @if (!id && selectedRoleNeedsPermissions) {

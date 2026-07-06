@@ -75,6 +75,25 @@
         </select>
       </div>
 
+      <!-- Aprobador -->
+      <div class="flex flex-col gap-1.5">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">
+          Aprobador <span class="text-tertiary/60 font-normal normal-case">(opcional)</span>
+        </label>
+        <select
+          [(ngModel)]="form.approverId"
+          class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+        >
+          <option value="">Sin aprobador</option>
+          @for (u of approverCandidates; track u._id) {
+          <option [value]="u._id">{{ u.name }} ({{ u.email }})</option>
+          }
+        </select>
+        <p class="text-xs text-tertiary">
+          Usuario que debe aprobar las solicitudes de viático imputadas a este centro de costo.
+        </p>
+      </div>
+
       <!-- Mapeo contable (asientos Contanet) -->
       <div class="border-t border-tertiary/20 pt-5 mt-1">
         <p class="text-sm font-semibold text-secondary mb-1">Mapeo contable (Asientos Contanet)</p>

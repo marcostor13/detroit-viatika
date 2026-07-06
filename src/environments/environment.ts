@@ -4,5 +4,5 @@ export const environment = {
   "api": "http://localhost:3040/api",
   "storage": "user-data-ls-gastos",
   "storagePath": "gastos-images",
-  "googleMapsApiKey": "AIzaSyDvILFGiBn2pM9dWRQC7sZvzUS9s87QQoA"
+  "googleMapsApiKey": "AIzaSyCzLupN0MbYXW1bvtbw6d0zhYxOKZqR24o"
 };

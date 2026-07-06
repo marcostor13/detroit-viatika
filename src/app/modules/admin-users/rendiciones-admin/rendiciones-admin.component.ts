@@ -29,6 +29,7 @@ const REPORT_STATUS_LABELS: Record<string, string> = {
   // Fases de viático (estados iniciales = solicitud)
   pending_l1: 'En solicitud',
   pending_l2: 'Aprobada por coordinador',
+  pending_contabilidad: 'Pendiente de Contabilidad',
   viatico_approved: 'Aprobada',
   partially_paid: 'Pago parcial',
   settled: 'Liquidada',
@@ -47,6 +48,7 @@ const REPORT_STATUS_COLORS: Record<string, string> = {
   cancelled: 'bg-gray-100 text-gray-500',
   pending_l1: 'bg-yellow-100 text-yellow-800',
   pending_l2: 'bg-orange-100 text-orange-700',
+  pending_contabilidad: 'bg-orange-100 text-orange-700',
   viatico_approved: 'bg-blue-100 text-blue-800',
   partially_paid: 'bg-amber-100 text-amber-700',
   settled: 'bg-emerald-100 text-emerald-800',
@@ -70,6 +72,8 @@ export type UnifiedRendicionItem = {
   /** Es el turno del usuario actual para aprobar (o es Superadmin). Solo aplica a viáticos/anticipos. */
   canApproveNow: boolean;
   canReject: boolean;
+  /** true cuando el paso pendiente es el gate final de Contabilidad (no la cadena de centro de costo). */
+  isContabilidadGate: boolean;
   approvalLevel: number;
   requiredLevels: number;
   raw: IExpenseReport | IAdvance;
@@ -243,10 +247,17 @@ export class RendicionesAdminComponent implements OnInit {
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
-        canApproveNow: isViatico && r.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
-        canReject: isViatico && r.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        canApproveNow: isViatico && (
+          (r.status === 'pending_l1' &&
+            (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+          (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
+        ),
+        canReject: isViatico && (
+          (r.status === 'pending_l1' &&
+            (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+          (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
+        ),
+        isContabilidadGate: r.status === 'pending_contabilidad',
         approvalLevel: r.viaticoApprovalLevel ?? 0,
         requiredLevels: r.viaticoRequiredLevels ?? 1,
         raw: r,
@@ -279,6 +290,7 @@ export class RendicionesAdminComponent implements OnInit {
           (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
         canReject: a.status === 'pending_l1' &&
           (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
+        isContabilidadGate: false,
         approvalLevel: a.approvalLevel,
         requiredLevels: a.requiredLevels,
         raw: a,
@@ -343,12 +355,17 @@ export class RendicionesAdminComponent implements OnInit {
     this.isActing.set(true);
     const action$: Observable<unknown> = item.source === 'advance'
       ? this.advanceService.approve(item._id, {})
-      : this.expenseReportsService.approveViatico(item._id);
+      : item.isContabilidadGate
+        ? this.expenseReportsService.approveViaticoContabilidad(item._id)
+        : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
         this.isActing.set(false);
-        this.notifications.show(`Solicitud aprobada (nivel ${item.approvalLevel + 1} de ${item.requiredLevels})`, 'success');
+        const msg = item.isContabilidadGate
+          ? 'Solicitud aprobada por Contabilidad — lista para pago'
+          : `Solicitud aprobada (nivel ${item.approvalLevel + 1} de ${item.requiredLevels})`;
+        this.notifications.show(msg, 'success');
         this.loadData();
       },
       error: (e: any) => {
