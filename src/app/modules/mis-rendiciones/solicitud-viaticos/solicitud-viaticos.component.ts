@@ -20,7 +20,7 @@ import { InvoicesService } from '../../invoices/services/invoices.service';
 import { SaldoService } from '../../../services/saldo.service';
 import { ISaldo } from '../../../interfaces/saldo.interface';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo, otDepartamentoLabel } from '../../../interfaces/orden-trabajo.interface';
+import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 import {
   PlacesAutocompleteDirective,
   PlaceResult,
@@ -56,7 +56,6 @@ export class SolicitudViaticosComponent implements OnInit {
   private saldoService = inject(SaldoService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
 
-  readonly departamentoLabel = otDepartamentoLabel;
   ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
 
   submitting = signal(false);

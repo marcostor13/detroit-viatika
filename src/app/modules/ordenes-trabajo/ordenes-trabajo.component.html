@@ -3,7 +3,7 @@
     <div>
       <h1 class="text-3xl font-bold text-secondary mb-2">Órdenes de Trabajo</h1>
       <p class="text-tertiary">
-        Gestiona las OT usadas para imputar el gasto de una factura por departamento.
+        Gestiona las OT y su relación con el centro de costo al que se imputa el gasto.
       </p>
     </div>
     <app-button label="Nueva OT" variant="primary" size="md" (clicked)="navigateToForm()">
@@ -19,18 +19,18 @@
           type="text"
           [ngModel]="search()"
           (ngModelChange)="onSearch($event)"
-          placeholder="Buscar por código o descripción..."
+          placeholder="Buscar por nombre de OT..."
           class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
         />
       </div>
       <select
-        [ngModel]="filterDepartamento()"
-        (ngModelChange)="onFilterDepartamento($event)"
+        [ngModel]="filterCostCenter()"
+        (ngModelChange)="onFilterCostCenter($event)"
         class="px-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
       >
-        <option value="">Todos los departamentos</option>
-        @for (dept of departamentos; track dept.code) {
-          <option [value]="dept.code">{{ dept.label }}</option>
+        <option value="">Todos los centros de costo</option>
+        @for (cc of centrosCosto(); track cc._id) {
+          <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
         }
       </select>
     </div>
@@ -50,16 +50,12 @@
     </app-empty-state>
   } @else {
     <app-data-table [items]="result().data">
-      <ng-container *appColumn="'codigo'; header: 'Código'; let row">
-        <span class="font-mono font-semibold text-secondary tabular-nums">{{ row.codigo }}</span>
+      <ng-container *appColumn="'nombre'; header: 'Nombre'; let row">
+        <span class="font-mono font-semibold text-secondary">{{ row.nombre }}</span>
       </ng-container>
 
-      <ng-container *appColumn="'departamento'; header: 'Departamento'; let row">
-        <span class="text-sm text-secondary">{{ departamentoLabel(row.departamento) }}</span>
-      </ng-container>
-
-      <ng-container *appColumn="'descripcion'; header: 'Descripción'; let row">
-        <span class="text-sm text-tertiary">{{ row.descripcion || '—' }}</span>
+      <ng-container *appColumn="'centroCosto'; header: 'Centro de costo'; let row">
+        <span class="text-sm text-secondary">{{ centroCostoLabel(row) || '—' }}</span>
       </ng-container>
 
       <ng-container *appColumn="'estado'; header: 'Estado'; align: 'center'; let row">

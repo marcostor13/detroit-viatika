@@ -36,7 +36,7 @@ import { CompanyConfigService } from '../../../services/company-config.service';
 import { CategoryGroupService } from '../../../services/category-group.service';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo, otDepartamentoLabel } from '../../../interfaces/orden-trabajo.interface';
+import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 
 function findDepartamento(label: string): Departamento | undefined {
   return PERU_LOCATIONS.find(d => d.label === label);
@@ -75,7 +75,6 @@ export default class AddInvoiceComponent implements OnInit {
   proyects: IProject[] = [];
   /** Órdenes de Trabajo activas, requeridas en planilla de movilidad (formato ADF-FOR-005). */
   ordenesTrabajo: IOrdenTrabajo[] = [];
-  readonly departamentoLabel = otDepartamentoLabel;
   /** Trabajadores del cliente, para el selector de colaborador por fila de la planilla. */
   workers: WorkerOption[] = [];
   previewImage: SafeUrl | null = null;

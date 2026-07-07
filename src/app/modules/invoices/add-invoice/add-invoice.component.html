@@ -115,7 +115,7 @@
       >
         <option value="">Seleccione una OT</option>
         @for (ot of ordenesTrabajo; track ot._id) {
-        <option [value]="ot._id">{{ ot.codigo }} — {{ departamentoLabel(ot.departamento) }}</option>
+        <option [value]="ot._id">{{ ot.nombre }}</option>
         }
       </select>
       <p class="text-xs text-tertiary">Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005).</p>
