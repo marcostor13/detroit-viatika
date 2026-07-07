@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
-import { ExpenseReportsService } from '../../../services/expense-reports.service';
+import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -120,6 +120,8 @@ export class RendicionesAdminComponent implements OnInit {
   isExpanded(id: string): boolean { return this.expandedRows().has(id); }
   reportToDelete: IExpenseReport | null = null;
   isDeleting = false;
+  loadingDeletionPreview = signal(false);
+  deletionPreview = signal<IExpenseReportDeletionPreview | null>(null);
 
   filterUserId = '';
   filterProjectId = '';
@@ -409,13 +411,25 @@ export class RendicionesAdminComponent implements OnInit {
   // ─── Delete ───────────────────────────────────────────────────────────────────
 
   openDeleteModal(item: UnifiedRendicionItem): void {
-    if (item.source === 'report' && item.canDeleteItem) {
-      this.reportToDelete = item.raw as IExpenseReport;
-    }
+    if (item.source !== 'report' || !item.canDeleteItem) return;
+    this.reportToDelete = item.raw as IExpenseReport;
+    this.deletionPreview.set(null);
+    this.loadingDeletionPreview.set(true);
+    this.expenseReportsService.getDeletionPreview(this.reportToDelete._id).subscribe({
+      next: (preview) => {
+        this.loadingDeletionPreview.set(false);
+        this.deletionPreview.set(preview);
+      },
+      error: () => {
+        this.loadingDeletionPreview.set(false);
+        // Sin preview el usuario aún puede intentar eliminar; el backend valida igual.
+      },
+    });
   }
 
   cancelDelete(): void {
     this.reportToDelete = null;
+    this.deletionPreview.set(null);
   }
 
   confirmDelete(): void {
@@ -427,6 +441,7 @@ export class RendicionesAdminComponent implements OnInit {
         this.allReports = this.allReports.filter(r => r._id !== id);
         this.applyFilters();
         this.reportToDelete = null;
+        this.deletionPreview.set(null);
         this.isDeleting = false;
         this.notifications.show('Rendicion eliminada.', 'success');
       },
@@ -438,8 +453,14 @@ export class RendicionesAdminComponent implements OnInit {
     });
   }
 
+  /**
+   * Contabilidad puede eliminar cualquier rendición (el backend valida caso a
+   * caso: aprobaciones, anticipos pagados, caja chica ya consolidada, etc., y
+   * devuelve un mensaje claro si no procede). Los demás roles solo ven el botón
+   * cuando la rendición todavía no tiene comprobantes cargados.
+   */
   private canDeleteReport(report: IExpenseReport): boolean {
-    if (this.userStateService.isContabilidad()) return false;
+    if (this.userStateService.isContabilidad()) return true;
     return report.expenseIds.length === 0;
   }
 
@@ -468,5 +489,9 @@ export class RendicionesAdminComponent implements OnInit {
   }
   getDeleteItemTitle(): string {
     return this.reportToDelete?.title ?? '—';
+  }
+
+  advanceStatusLabel(status: string): string {
+    return ADVANCE_STATUS_LABELS[status as keyof typeof ADVANCE_STATUS_LABELS] ?? status;
   }
 }

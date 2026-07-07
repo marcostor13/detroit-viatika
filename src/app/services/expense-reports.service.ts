@@ -12,6 +12,20 @@ import {
 } from '../interfaces/expense-report.interface';
 import { Observable } from 'rxjs';
 
+export interface IExpenseReportDeletionPreview {
+  allowed: boolean;
+  reason?: string;
+  type?: string;
+  isDirecta: boolean;
+  isCajaChica: boolean;
+  budget: number;
+  expensesCount: number;
+  expensesTotal: number;
+  filesCount: number;
+  linkedAdvances: { amount: number; status: string }[];
+  cajaChicaReferenced: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -41,6 +55,13 @@ export class ExpenseReportsService {
 
   delete(id: string): Observable<any> {
     return this.http.delete(`${this.apiUrl}/expense-report/${id}`);
+  }
+
+  /** Vista previa de lo que se eliminaría (comprobantes, anticipos, caja chica) antes de confirmar el borrado. */
+  getDeletionPreview(id: string): Observable<IExpenseReportDeletionPreview> {
+    return this.http.get<IExpenseReportDeletionPreview>(
+      `${this.apiUrl}/expense-report/${id}/deletion-preview`
+    );
   }
 
   findPendingReimbursements(clientId: string): Observable<IExpenseReport[]> {

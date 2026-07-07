@@ -199,23 +199,6 @@ export class UserPermissionsComponent implements OnInit {
     this.permissions.categoryIds = Array.from(ids);
   }
 
-  /** Categorías agrupadas por perfil (+ "Otras" sin perfil) para la UI. */
-  get perfilSections(): { name: string; group: ICategoryGroup | null; cats: ICategory[] }[] {
-    const all = this.allCategories();
-    const used = new Set<string>();
-    const sections: { name: string; group: ICategoryGroup | null; cats: ICategory[] }[] = this.groups()
-      .map((g) => {
-        const ids = new Set((g.categoryIds ?? []).map(String));
-        const cats = all.filter((c) => ids.has(String(c._id)));
-        cats.forEach((c) => used.add(String(c._id)));
-        return { name: g.name, group: g as ICategoryGroup | null, cats };
-      })
-      .filter((s) => s.cats.length > 0);
-    const otras = all.filter((c) => !used.has(String(c._id)));
-    if (otras.length) sections.push({ name: 'Otras', group: null, cats: otras });
-    return sections;
-  }
-
   // --- Módulos ---
 
   hasModule(key: string): boolean {
@@ -265,31 +248,29 @@ export class UserPermissionsComponent implements OnInit {
     this.permissions.categoryIds = [];
   }
 
-  // --- Grupos rápidos ---
+  // --- Perfiles (grupos rápidos) ---
+  // Un solo listado de categorías para todo el usuario. Clicar un perfil
+  // siempre AGREGA sus categorías a la selección (no la quita si ya estaba
+  // seleccionado), así seleccionar varios perfiles seguidos es acumulativo.
+  // Para deseleccionar todo se usa el botón "Quitar todos" (clearAllCategories).
 
   groupIsFullySelected(group: ICategoryGroup): boolean {
     const ids = this.permissions.categoryIds ?? [];
-    return (group.categoryIds ?? []).length > 0 && (group.categoryIds ?? []).every((id) => ids.includes(id));
+    const catIds = group.categoryIds ?? [];
+    return catIds.length > 0 && catIds.every((id) => ids.includes(id));
   }
 
   groupIsPartiallySelected(group: ICategoryGroup): boolean {
     const ids = this.permissions.categoryIds ?? [];
-    return !this.groupIsFullySelected(group) && (group.categoryIds ?? []).some((id) => ids.includes(id));
+    const catIds = group.categoryIds ?? [];
+    return !this.groupIsFullySelected(group) && catIds.some((id) => ids.includes(id));
   }
 
-  toggleGroup(group: ICategoryGroup) {
-    const groupCatIds = group.categoryIds ?? [];
-    if (this.groupIsFullySelected(group)) {
-      // quitar todas del grupo
-      this.permissions.categoryIds = (this.permissions.categoryIds ?? []).filter(
-        (id) => !groupCatIds.includes(id)
-      );
-    } else {
-      // agregar las que faltan
-      const current = new Set(this.permissions.categoryIds ?? []);
-      groupCatIds.forEach((id) => current.add(id));
-      this.permissions.categoryIds = Array.from(current);
-    }
+  selectGroup(group: ICategoryGroup) {
+    const catIds = group.categoryIds ?? [];
+    const current = new Set(this.permissions.categoryIds ?? []);
+    catIds.forEach((id) => current.add(id));
+    this.permissions.categoryIds = Array.from(current);
   }
 
   get selectedCount(): number {
