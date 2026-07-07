@@ -150,14 +150,6 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('rendiciones')],
       },
       {
-        path: 'invoice-approval',
-        loadComponent: () =>
-          import('./modules/invoice-approval/invoice-approval.component').then(
-            (m) => m.InvoiceApprovalComponent
-          ),
-        canActivate: [authModuleGuard('invoice-approval')],
-      },
-      {
         path: 'configuracion',
         loadComponent: () =>
           import('./modules/configuracion/configuracion.component').then(
