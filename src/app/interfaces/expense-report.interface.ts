@@ -164,8 +164,8 @@ export interface IExpenseReport {
   viaticoBankName?: string;
   viaticoAccountNumber?: string;
   viaticoCci?: string;
-  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, codigo, departamento, descripcion}). */
-  viaticoOrdenTrabajoId?: { _id: string; codigo: string; departamento: string; descripcion?: string } | string;
+  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, nombre, costCenterId}). */
+  viaticoOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string } | string;
   /** Motivo indicado por el administrador al rechazar */
   rejectionReason?: string;
   /** Quién rechazó: coordinador (revisión inicial) o contabilidad (aprobación final). */

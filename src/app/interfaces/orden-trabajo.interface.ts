@@ -1,25 +1,28 @@
-/** Departamentos válidos para la OT y su código de 3 letras (LIM-{código}-{correlativo}). */
-export const OT_DEPARTAMENTOS: { code: string; label: string }[] = [
-  { code: 'TAL', label: 'Taller' },
-  { code: 'SCA', label: 'Servicios de Campo' },
-  { code: 'SMI', label: 'Servicios de Minería' },
-  { code: 'ICO', label: 'Ingeniería y Confiabilidad' },
-  { code: 'ABA', label: 'Abastecimientos' },
-  { code: 'COM', label: 'Departamento Comercial' },
-];
-
-export function otDepartamentoLabel(code: string): string {
-  return OT_DEPARTAMENTOS.find((d) => d.code === code)?.label ?? code;
+/** Centro de costo poblado que el API adjunta a la OT (populate 'code name isActive'). */
+export interface IOrdenTrabajoCentroCosto {
+  _id?: string;
+  code?: string;
+  name?: string;
+  isActive?: boolean;
 }
 
 export interface IOrdenTrabajo {
   _id?: string;
-  departamento: string;
-  correlativo: number;
-  codigo: string;
-  descripcion?: string;
+  /** Nombre/código de la OT (ej. "Lim-Com-1"). Único por empresa. */
+  nombre: string;
+  /** Centro de costo padre: id plano al crear/editar, u objeto poblado al leer. */
+  costCenterId: string | IOrdenTrabajoCentroCosto;
   isActive?: boolean;
   clientId?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** Texto legible del centro de costo de una OT (soporta id plano o poblado). */
+export function otCentroCostoLabel(ot: IOrdenTrabajo): string {
+  const cc = ot?.costCenterId;
+  if (cc && typeof cc === 'object') {
+    return cc.code ? `${cc.code} — ${cc.name ?? ''}`.trim() : (cc.name ?? '');
+  }
+  return '';
 }

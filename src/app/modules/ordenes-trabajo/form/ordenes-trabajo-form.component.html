@@ -8,7 +8,7 @@
         {{ isEditMode() ? 'Editar Orden de Trabajo' : 'Nueva Orden de Trabajo' }}
       </h1>
       <p class="text-tertiary text-sm mt-0.5">
-        Estructura: LIM-[departamento]-[correlativo de 6 dígitos]
+        Relaciona la OT con un centro de costo y dale un nombre único (ej. Lim-Com-1).
       </p>
     </div>
   </div>
@@ -20,45 +20,39 @@
   } @else {
     <app-card padding="lg">
       <div class="flex flex-col gap-6">
-        @if (isEditMode()) {
-          <div>
-            <span class="block text-xs font-medium text-secondary mb-1">Código de OT</span>
-            <p class="font-mono text-lg font-semibold text-primary">{{ codigo() }}</p>
-            <p class="text-xs text-tertiary mt-1">
-              El departamento y el correlativo no se pueden modificar una vez creada la OT.
-            </p>
-          </div>
-          <div>
-            <span class="block text-xs font-medium text-secondary mb-1">Departamento</span>
-            <p class="text-sm text-secondary">{{ departamentoLabel(departamento()) }}</p>
-          </div>
-        } @else {
-          <app-form-field #deptField label="Departamento" [required]="true" [error]="departamentoError()">
-            <select
-              [id]="deptField.fieldId"
-              [attr.aria-describedby]="deptField.describedBy()"
-              [ngModel]="departamento()"
-              (ngModelChange)="onDepartamentoChange($event)"
-              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              [class]="departamentoError() ? 'border-error' : 'border-tertiary/30'"
-            >
-              <option value="" disabled>Selecciona un departamento</option>
-              @for (dept of departamentos; track dept.code) {
-                <option [value]="dept.code">{{ dept.label }} ({{ dept.code }})</option>
-              }
-            </select>
-          </app-form-field>
-          <p class="text-xs text-tertiary -mt-4">
-            El código se genera automáticamente: LIM-{{ departamento() || 'XXX' }}-NNNNNN.
-          </p>
-        }
+        <app-form-field #ccField label="Centro de costo" [required]="true" [error]="costCenterError()">
+          <select
+            [id]="ccField.fieldId"
+            [attr.aria-describedby]="ccField.describedBy()"
+            [ngModel]="costCenterId()"
+            (ngModelChange)="onCostCenterChange($event)"
+            class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            [class]="costCenterError() ? 'border-error' : 'border-tertiary/30'"
+          >
+            <option value="" disabled>Selecciona un centro de costo</option>
+            @for (cc of centrosCosto(); track cc._id) {
+              <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
+            }
+          </select>
+        </app-form-field>
 
-        <app-input
-          label="Descripción (opcional)"
-          placeholder="Ej: Mantenimiento correctivo planta Lima"
-          [value]="descripcion()"
-          (valueChange)="descripcion.set($event)"
-        />
+        <div>
+          <app-form-field #nombreField label="Nombre de la OT" [required]="true" [error]="nombreError()">
+            <input
+              type="text"
+              [id]="nombreField.fieldId"
+              [attr.aria-describedby]="nombreField.describedBy()"
+              [ngModel]="nombre()"
+              (ngModelChange)="onNombreChange($event)"
+              placeholder="Ej: Lim-Com-1"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              [class]="nombreError() ? 'border-error' : 'border-tertiary/30'"
+            />
+          </app-form-field>
+          <p class="text-xs text-tertiary mt-1">
+            El nombre debe ser único dentro de tu empresa.
+          </p>
+        </div>
 
         <label class="flex items-center gap-2 cursor-pointer">
           <input
