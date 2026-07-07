@@ -52,7 +52,6 @@ export class UserPermissionsComponent implements OnInit {
   readonly availableModules: ModuleOption[] = [
     { key: 'colaboradores', label: 'Colaboradores', description: 'Gestionar usuarios y permisos de la empresa' },
     { key: 'rendiciones', label: 'Rendiciones', description: 'Ver y gestionar rendiciones de todos los colaboradores' },
-    { key: 'invoice-approval', label: 'Aprobación de Facturas', description: 'Aprobar o rechazar comprobantes y rendiciones enviadas por otros colaboradores' },
     { key: 'mis-rendiciones', label: 'Mis Rendiciones', description: 'Ver y gestionar rendiciones propias' },
     { key: 'nueva-rendicion', label: 'Rendición directa', description: 'Crear nuevas rendiciones directas desde la pantalla de Tesorería' },
     { key: 'viaticos', label: 'Viáticos', description: 'Acceder a la gestión y seguimiento de anticipos de viáticos' },

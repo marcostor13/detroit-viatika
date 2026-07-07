@@ -13,6 +13,19 @@
     <!-- Navigation -->
     <nav class="flex-1 p-4 space-y-1">
 
+      <!-- Dashboard: primero cuando el usuario tiene acceso (fuera del contexto Admin/Contabilidad, que lo muestra tras "Volver al Hub") -->
+      @if (!isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
+      <a
+        [routerLink]="['/dashboard']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/dashboard')"
+        [class.text-quaternary]="isSelected('/dashboard')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Dashboard</span>
+      </a>
+      }
+
       <!-- Colaborador: páginas fijas -->
       @if (isColaborador()) {
       <a
@@ -74,6 +87,17 @@
         <span class="font-medium">Inicio</span>
       </a>
       }
+      @if (isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
+      <a
+        [routerLink]="['/dashboard']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/dashboard')"
+        [class.text-quaternary]="isSelected('/dashboard')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Dashboard</span>
+      </a>
+      }
       @if ((isAdmin() && hasModulePermission('colaboradores')) || isContabilidadInCompany()) {
       <a
         [routerLink]="['/admin-users']"
@@ -94,17 +118,6 @@
         class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
       >
         <span class="font-medium">Rendiciones</span>
-      </a>
-      }
-      @if (isAdmin() && hasModulePermission('invoice-approval')) {
-      <a
-        [routerLink]="['/invoice-approval']"
-        routerLinkActive="bg-primary text-white"
-        [class.bg-primary]="isSelected('/invoice-approval')"
-        [class.text-quaternary]="isSelected('/invoice-approval')"
-        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-      >
-        <span class="font-medium">Aprobación de Facturas</span>
       </a>
       }
       }
@@ -229,28 +242,6 @@
         class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
       >
         <span class="font-medium">Rendiciones</span>
-      </a>
-      }
-      @if (isColaborador() && hasModulePermission('invoice-approval')) {
-      <a
-        [routerLink]="['/invoice-approval']"
-        routerLinkActive="bg-primary text-white"
-        [class.bg-primary]="isSelected('/invoice-approval')"
-        [class.text-quaternary]="isSelected('/invoice-approval')"
-        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-      >
-        <span class="font-medium">Aprobación de Facturas</span>
-      </a>
-      }
-      @if (!isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
-      <a
-        [routerLink]="['/dashboard']"
-        routerLinkActive="bg-primary text-white"
-        [class.bg-primary]="isSelected('/dashboard')"
-        [class.text-quaternary]="isSelected('/dashboard')"
-        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-      >
-        <span class="font-medium">Dashboard</span>
       </a>
       }
       @if (!isSuper() && !isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('configuracion')) {
@@ -441,6 +432,19 @@
       <!-- Mobile Navigation -->
       <nav class="flex-1 p-6 space-y-2 overflow-y-auto">
 
+        <!-- Dashboard: primero cuando el usuario tiene acceso (fuera del contexto Admin/Contabilidad, que lo muestra tras "Volver al Hub") -->
+        @if (!isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
+        <a
+          [routerLink]="['/dashboard']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/dashboard')"
+          [class.text-quaternary]="isSelected('/dashboard')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Dashboard</span>
+        </a>
+        }
+
         <!-- Colaborador: páginas fijas -->
         @if (isColaborador()) {
         <a
@@ -504,6 +508,17 @@
           class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
         >
           <span class="font-medium text-lg">Inicio</span>
+        </a>
+        }
+        @if (isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
+        <a
+          [routerLink]="['/dashboard']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/dashboard')"
+          [class.text-quaternary]="isSelected('/dashboard')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Dashboard</span>
         </a>
         }
         @if ((isAdmin() && hasModulePermission('colaboradores')) || isContabilidadInCompany()) {
@@ -650,17 +665,6 @@
           class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
         >
           <span class="font-medium text-lg">Rendiciones</span>
-        </a>
-        }
-        @if (!isContabilidadInCompany() && hasModulePermission('consolidated-invoices')) {
-        <a
-          [routerLink]="['/dashboard']"
-          (click)="toggleSidebar()"
-          [class.bg-primary]="isSelected('/dashboard')"
-          [class.text-quaternary]="isSelected('/dashboard')"
-          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-        >
-          <span class="font-medium text-lg">Dashboard</span>
         </a>
         }
         @if (!isSuper() && !isAdminInCompany() && !isContabilidadInCompany() && hasModulePermission('configuracion')) {

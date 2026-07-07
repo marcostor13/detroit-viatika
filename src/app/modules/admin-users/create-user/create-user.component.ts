@@ -76,7 +76,6 @@ export class CreateUserComponent implements OnInit {
     { key: 'mis-rendiciones', label: 'Mis Rendiciones', description: 'Ver y gestionar rendiciones propias' },
     { key: 'nueva-rendicion', label: 'Nueva Rendición', description: 'Crear nuevas rendiciones' },
     { key: 'rendiciones', label: 'Rendiciones (todas)', description: 'Ver rendiciones de todos los colaboradores' },
-    { key: 'invoice-approval', label: 'Aprobación de Facturas', description: 'Aprobar o rechazar comprobantes y rendiciones enviadas por otros colaboradores' },
     { key: 'viaticos', label: 'Viáticos', description: 'Gestión y seguimiento de anticipos' },
     { key: 'consolidated-invoices', label: 'Dashboard', description: 'Dashboard con KPIs y reportes consolidados de gastos' },
     { key: 'tesoreria', label: 'Pagos', description: 'Registrar comprobantes de pago' },
