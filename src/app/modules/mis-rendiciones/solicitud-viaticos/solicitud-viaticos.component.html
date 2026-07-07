@@ -188,11 +188,17 @@
               class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow"
             >
               <option value="">Sin Orden de Trabajo</option>
-              @for (ot of ordenesTrabajo(); track ot._id) {
+              @for (ot of filteredOrdenesTrabajo(); track ot._id) {
                 <option [value]="ot._id">{{ ot.nombre }}</option>
               }
             </select>
-            <p class="text-xs text-gray-500">Orden de trabajo a la que se imputará el gasto de este viático, si corresponde.</p>
+            @if (!selectedProjectId()) {
+              <p class="text-xs text-gray-500">Elige primero un centro de costo para ver sus órdenes de trabajo.</p>
+            } @else if (filteredOrdenesTrabajo().length === 0) {
+              <p class="text-xs text-amber-600">Este centro de costo no tiene órdenes de trabajo activas.</p>
+            } @else {
+              <p class="text-xs text-gray-500">Orden de trabajo (del centro de costo elegido) a la que se imputará el gasto, si corresponde.</p>
+            }
           </div>
 
           <!-- Monto requerido -->

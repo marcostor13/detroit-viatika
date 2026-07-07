@@ -306,11 +306,21 @@ export default class AddInvoiceComponent implements OnInit {
     this.loadOrdenesTrabajo();
     this.loadClientUsers();
     // Al cambiar de proyecto, si la categoría elegida no pertenece a su perfil, se limpia.
-    this.form.get('proyectId')?.valueChanges.subscribe(() => {
+    this.form.get('proyectId')?.valueChanges.subscribe((pid) => {
       const allowed = this.allowedCategoryIds();
       const selected = this.form.get('categoryId')?.value;
       if (allowed && selected && !allowed.has(String(selected))) {
         this.form.get('categoryId')?.setValue('');
+      }
+      // La OT depende del centro de costo: si la elegida no pertenece al nuevo, se limpia.
+      const otId = this.form.get('ordenTrabajoId')?.value;
+      if (
+        otId &&
+        !this.ordenesTrabajo.some(
+          (ot) => ot._id === otId && this.otCostCenterId(ot) === (pid ?? '')
+        )
+      ) {
+        this.form.get('ordenTrabajoId')?.setValue('');
       }
     });
     this.route.queryParamMap.subscribe(params => {
@@ -2066,6 +2076,19 @@ export default class AddInvoiceComponent implements OnInit {
 
   get proyectId() {
     return this.form.get('proyectId');
+  }
+
+  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
+  private otCostCenterId(ot: IOrdenTrabajo): string {
+    const cc = ot.costCenterId;
+    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
+  }
+
+  /** OTs a mostrar: solo las del centro de costo (proyecto) elegido. */
+  get filteredOrdenesTrabajo(): IOrdenTrabajo[] {
+    const pid = this.form.get('proyectId')?.value;
+    if (!pid) return [];
+    return this.ordenesTrabajo.filter((ot) => this.otCostCenterId(ot) === pid);
   }
 
   get imageUrl() {

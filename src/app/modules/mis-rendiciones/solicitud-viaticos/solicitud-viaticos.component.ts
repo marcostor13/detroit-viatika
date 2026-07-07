@@ -119,6 +119,16 @@ export class SolicitudViaticosComponent implements OnInit {
   projects = signal<IProject[]>([]);
   /** ID del centro de costo elegido; espeja el control `projectId`. */
   selectedProjectId = signal<string>('');
+
+  /**
+   * OTs a mostrar en el desplegable: solo las del centro de costo elegido.
+   * Sin centro de costo seleccionado no se ofrece ninguna OT.
+   */
+  filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
+    const pid = this.selectedProjectId();
+    if (!pid) return [];
+    return this.ordenesTrabajo().filter((ot) => this.otCostCenterId(ot) === pid);
+  });
   advanceToResubmit = signal<IAdvance | null>(null);
   /** Viático unificado (ExpenseReport) en edición/reenvío. */
   viaticoToResubmit = signal<IExpenseReport | null>(null);
@@ -186,6 +196,8 @@ export class SolicitudViaticosComponent implements OnInit {
     this.form.get('projectId')?.valueChanges.subscribe((pid) => {
       this.selectedProjectId.set(pid ?? '');
       this.loadEligibleSaldos(pid ?? '');
+      // Si la OT elegida no pertenece al nuevo centro de costo, se limpia.
+      this.clearOtIfNotInCostCenter(pid ?? '');
     });
 
     const id = this.route.snapshot.paramMap.get('id');
@@ -246,6 +258,24 @@ export class SolicitudViaticosComponent implements OnInit {
         this.loadingSaldos.set(false);
       },
     });
+  }
+
+  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
+  private otCostCenterId(ot: IOrdenTrabajo): string {
+    const cc = ot.costCenterId;
+    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
+  }
+
+  /** Limpia la OT seleccionada si no pertenece al centro de costo indicado. */
+  private clearOtIfNotInCostCenter(projectId: string): void {
+    const otId = this.form.get('ordenTrabajoId')?.value;
+    if (!otId) return;
+    const stillValid = this.ordenesTrabajo().some(
+      (ot) => ot._id === otId && this.otCostCenterId(ot) === projectId
+    );
+    if (!stillValid) {
+      this.form.get('ordenTrabajoId')?.setValue('');
+    }
   }
 
   isSaldoSelected(id: string): boolean {
