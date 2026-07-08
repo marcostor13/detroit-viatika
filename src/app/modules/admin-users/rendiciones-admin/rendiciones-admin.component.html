@@ -112,6 +112,7 @@
         <tr class="bg-background border-b border-tertiary/15">
           <th class="px-2 py-3.5 w-8"></th>
           <th class="text-left px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Colaborador</th>
+          <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Tipo</th>
           <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Título</th>
           <th class="text-right px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Presupuesto</th>
           <th class="text-center px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Estado</th>
@@ -149,6 +150,13 @@
                 {{ item.userName }}
               </button>
             </div>
+          </td>
+
+          <!-- Tipo -->
+          <td class="px-4 py-3.5">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap" [class]="item.kindColor">
+              {{ item.kindLabel }}
+            </span>
           </td>
 
           <!-- Título -->
@@ -220,7 +228,7 @@
         </tr>
         @if (isExpanded(item._id)) {
         <tr class="bg-background/60">
-          <td class="px-4 pb-3.5 pt-0" colspan="6">
+          <td class="px-4 pb-3.5 pt-0" colspan="7">
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 pl-8">
               <div>
                 <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Centro de Costo</span>
@@ -259,7 +267,12 @@
                 >
                   {{ item.userName }}
                 </button>
-                <p class="text-xs text-secondary mt-0.5 truncate font-medium" [title]="item.title">{{ item.title }}</p>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap shrink-0" [class]="item.kindColor">
+                    {{ item.kindLabel }}
+                  </span>
+                  <p class="text-xs text-secondary truncate font-medium" [title]="item.title">{{ item.title }}</p>
+                </div>
                 <p class="text-xs text-tertiary mt-0.5 truncate">{{ item.projectName }}</p>
               </div>
               <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [class]="item.statusColor">

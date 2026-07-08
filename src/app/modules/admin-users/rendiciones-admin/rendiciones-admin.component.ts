@@ -57,6 +57,10 @@ const REPORT_STATUS_COLORS: Record<string, string> = {
 export type UnifiedRendicionItem = {
   _id: string;
   source: 'report' | 'advance';
+  /** Tipo de solicitud, para distinguirlas en la tabla. */
+  kind: 'viatico' | 'directa' | 'anticipo';
+  kindLabel: string;
+  kindColor: string;
   userName: string;
   userInitials: string;
   userId: string;
@@ -254,6 +258,9 @@ export class RendicionesAdminComponent implements OnInit {
       return {
         _id: r._id,
         source: 'report' as const,
+        kind: (isDirectaChain ? 'directa' : 'viatico') as UnifiedRendicionItem['kind'],
+        kindLabel: isDirectaChain ? 'Directa' : 'Viático',
+        kindColor: isDirectaChain ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
@@ -301,6 +308,9 @@ export class RendicionesAdminComponent implements OnInit {
       return {
         _id: a._id,
         source: 'advance' as const,
+        kind: 'anticipo' as UnifiedRendicionItem['kind'],
+        kindLabel: 'Anticipo',
+        kindColor: 'bg-violet-100 text-violet-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
