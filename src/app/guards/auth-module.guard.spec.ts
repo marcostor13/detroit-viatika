@@ -66,7 +66,7 @@ describe('authModuleGuard', () => {
     expect(router.createUrlTree).toHaveBeenCalledWith(['/tesoreria']);
   });
 
-  it('redirects coordinador to /viaticos when no permission', () => {
+  it('redirects coordinador to /rendiciones when no permission', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.hasModulePermission.and.returnValue(false);
     userState.isColaborador.and.returnValue(false);
@@ -74,7 +74,7 @@ describe('authModuleGuard', () => {
     userState.isContabilidad.and.returnValue(false);
     userState.isCoordinador.and.returnValue(true);
     run('tesoreria');
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/viaticos']);
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/rendiciones']);
   });
 
   it('redirects to /clients-admin as fallback', () => {

@@ -113,13 +113,17 @@ describe('AdminUsersService', () => {
   it('getRoles sends GET to /role/for-admin when not superadmin', () => {
     userState.isSuperAdmin.and.returnValue(false);
     service.getRoles().subscribe();
-    httpMock.expectOne(`${environment.api}/role/for-admin`).flush([]);
+    const req = httpMock.expectOne(`${environment.api}/role/for-admin`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
   });
 
   it('getRoles sends GET to /role when superadmin', () => {
     userState.isSuperAdmin.and.returnValue(true);
     service.getRoles().subscribe();
-    httpMock.expectOne(`${environment.api}/role`).flush([]);
+    const req = httpMock.expectOne(`${environment.api}/role`);
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
   });
 
   it('getClients sends GET to /client', () => {
