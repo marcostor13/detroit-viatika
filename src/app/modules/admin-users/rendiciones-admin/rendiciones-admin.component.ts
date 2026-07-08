@@ -178,7 +178,13 @@ export class RendicionesAdminComponent implements OnInit {
       advances: this.advanceService.findOrphaned(clientId),
     }).subscribe({
       next: ({ reports, advances }) => {
-        this.allReports = reports.filter((r) => !r.isDirecta);
+        // Para Coordinador, el backend (findAllByCoordinator) ya limita las
+        // directas a las que le corresponden en su directaApproverChain — se
+        // muestran aquí para que pueda aprobarlas/rechazarlas. Para el resto de
+        // roles (Admin/Contabilidad/SuperAdmin) se siguen ocultando: ya tienen
+        // su propia vista dedicada en /rendiciones?tab=directas.
+        const isCoordinador = this.userStateService.isCoordinador();
+        this.allReports = reports.filter((r) => !r.isDirecta || isCoordinador);
         this.allOrphanedAdvances = advances;
         this.applyFilters();
         this.isLoading = false;
@@ -244,6 +250,7 @@ export class RendicionesAdminComponent implements OnInit {
       const pid = typeof r.projectId === 'object' ? r.projectId?._id : r.projectId;
       const name = this.getReportUserName(r);
       const isViatico = r.type === 'viatico';
+      const isDirectaChain = r.isDirecta === true;
       return {
         _id: r._id,
         source: 'report' as const,
@@ -255,23 +262,29 @@ export class RendicionesAdminComponent implements OnInit {
         projectId: pid ?? '',
         amount: r.viaticoAmount ?? r.budget ?? 0,
         status: r.status,
-        statusLabel: REPORT_STATUS_LABELS[r.status] ?? r.status,
+        statusLabel: isDirectaChain && r.status === 'pending_l1'
+          ? 'En aprobación de centro de costo'
+          : (REPORT_STATUS_LABELS[r.status] ?? r.status),
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
-        canApproveNow: isViatico && (
+        canApproveNow: (isViatico && (
           (r.status === 'pending_l1' &&
             (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
+        )) || (isDirectaChain && r.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(r.directaApproverChain, r.directaApprovalLevel ?? 0) === this.currentUserId)
         ),
-        canReject: isViatico && (
+        canReject: (isViatico && (
           (r.status === 'pending_l1' &&
             (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
+        )) || (isDirectaChain && r.status === 'pending_l1' &&
+          (this.isSuperAdmin || this.approverIdAt(r.directaApproverChain, r.directaApprovalLevel ?? 0) === this.currentUserId)
         ),
         isContabilidadGate: r.status === 'pending_contabilidad',
-        approvalLevel: r.viaticoApprovalLevel ?? 0,
-        requiredLevels: r.viaticoRequiredLevels ?? 1,
+        approvalLevel: (isDirectaChain ? r.directaApprovalLevel : r.viaticoApprovalLevel) ?? 0,
+        requiredLevels: (isDirectaChain ? r.directaRequiredLevels : r.viaticoRequiredLevels) ?? 1,
         raw: r,
       };
     });
@@ -465,11 +478,14 @@ export class RendicionesAdminComponent implements OnInit {
     const item = this.pendingApproveItem();
     if (!item) return;
     this.isActing.set(true);
+    const isDirectaChain = item.source === 'report' && (item.raw as IExpenseReport).isDirecta === true;
     const action$: Observable<unknown> = item.source === 'advance'
       ? this.advanceService.approve(item._id, {})
-      : item.isContabilidadGate
-        ? this.expenseReportsService.approveViaticoContabilidad(item._id)
-        : this.expenseReportsService.approveViatico(item._id);
+      : isDirectaChain
+        ? this.expenseReportsService.approveDirecta(item._id)
+        : item.isContabilidadGate
+          ? this.expenseReportsService.approveViaticoContabilidad(item._id)
+          : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
@@ -501,9 +517,12 @@ export class RendicionesAdminComponent implements OnInit {
     if (!item || this.rejectForm.invalid) return;
     this.isActing.set(true);
     const reason: string = this.rejectForm.value.rejectionReason;
+    const isDirectaChain = item.source === 'report' && (item.raw as IExpenseReport).isDirecta === true;
     const action$: Observable<unknown> = item.source === 'advance'
       ? this.advanceService.reject(item._id, { rejectionReason: reason })
-      : this.expenseReportsService.rejectViatico(item._id, reason);
+      : isDirectaChain
+        ? this.expenseReportsService.rejectDirecta(item._id, reason)
+        : this.expenseReportsService.rejectViatico(item._id, reason);
     action$.subscribe({
       next: () => {
         this.notifications.show('Solicitud rechazada', 'success');

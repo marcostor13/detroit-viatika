@@ -78,8 +78,8 @@
           #otField
           label="Orden de Trabajo"
           [required]="true"
-          [error]="(form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched) ? 'Seleccione una orden de trabajo' : ''"
-          [helperText]="!form.get('projectId')?.value ? 'Seleccione primero un centro de costo.' : (filteredOrdenesTrabajo().length === 0 ? 'El centro de costo elegido no tiene órdenes de trabajo activas.' : '')"
+          [error]="otErrorMessage()"
+          [helperText]="!form.get('projectId')?.value ? 'Seleccione primero un centro de costo.' : ''"
         >
           <select
             [id]="otField.fieldId"

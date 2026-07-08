@@ -41,8 +41,12 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   // Órdenes de Trabajo: se eligen al crear (filtradas por el centro de costo) y
   // se heredan por todos los comprobantes de la rendición (ya no se elige por-comprobante).
   ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
+  // Espejo en signal del valor de `projectId`: un `computed()` solo reacciona a
+  // lecturas de OTRAS signals, no a `form.get(...).value` (no es reactivo), así
+  // que sin este signal el filtro quedaba "congelado" con el primer valor leído.
+  private selectedProjectId = signal<string>('');
   filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
-    const pid = this.form?.get('projectId')?.value;
+    const pid = this.selectedProjectId();
     if (!pid) return [];
     return this.ordenesTrabajo().filter(ot => this.otCostCenterId(ot) === pid);
   });
@@ -67,8 +71,10 @@ export class NuevaRendicionDirectaComponent implements OnInit {
       error: () => this.ordenesTrabajo.set([]),
     });
 
+    this.selectedProjectId.set(this.form.get('projectId')?.value ?? '');
     // Si cambia el centro de costo, limpia la OT si ya no pertenece a él.
     this.form.get('projectId')?.valueChanges.subscribe(pid => {
+      this.selectedProjectId.set(pid ?? '');
       const otId = this.form.get('ordenTrabajoId')?.value;
       if (!otId) return;
       const stillValid = this.ordenesTrabajo().some(
@@ -141,5 +147,20 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   isInvalid(field: string): boolean {
     const ctrl = this.form.get(field);
     return !!ctrl && ctrl.invalid && ctrl.touched;
+  }
+
+  /**
+   * Mensaje de error de la OT: si el centro de costo elegido no tiene ninguna
+   * OT activa, se prioriza esa explicación por sobre el error genérico de
+   * "campo requerido" (que aparece apenas se toca el select y, si no, tapaba
+   * la razón real de por qué el desplegable está vacío).
+   */
+  otErrorMessage(): string {
+    const projectId = this.form.get('projectId')?.value;
+    if (projectId && this.filteredOrdenesTrabajo().length === 0) {
+      return 'El centro de costo elegido no tiene órdenes de trabajo activas. Créalas en Configuración → Órdenes de Trabajo.';
+    }
+    const ctrl = this.form.get('ordenTrabajoId');
+    return ctrl?.invalid && ctrl?.touched ? 'Seleccione una orden de trabajo' : '';
   }
 }
