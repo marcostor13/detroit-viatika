@@ -134,22 +134,6 @@ export interface MobilitySheetExportData {
   signature?: string;
 }
 
-export interface CashVoucherExportData {
-  fileBaseName: string;
-  collaborator: string;
-  collaboratorDni?: string;
-  internalCode?: string;
-  entregadoA: string;
-  direccion?: string;
-  concepto: string;
-  monto: number;
-  generatedAt: string;
-  signature?: string;
-  projectName?: string;
-  clientName?: string;
-  fechaEmision?: string;
-}
-
 export interface ReceiptExportData {
   fileBaseName: string;
   collaborator: string;
@@ -197,7 +181,6 @@ export type ComprobantePage =
   | { type: 'factura_image'; url: string; label: string }
   | { type: 'factura_pdf'; url: string; label: string }
   | { type: 'mobility'; data: MobilitySheetExportData }
-  | { type: 'cash_voucher'; data: CashVoucherExportData }
   | { type: 'receipt'; data: ReceiptExportData }
   | { type: 'affidavit'; data: SingleExpenseAffidavitData };
 
@@ -1121,130 +1104,6 @@ export class RendicionExportService {
     }
   }
 
-  async exportCashVoucherToPdf(data: CashVoucherExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
-    data = { ...data, signature: await this.resolveSignature(data.signature) };
-    const isNew = !inDoc;
-    // Quarter A4: 105 x 148 mm
-    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: [105, 148] });
-    if (!isNew) doc.addPage([105, 148], 'portrait');
-    const pageW = 105;
-    const lm = 7;
-    const rm = 98;
-
-    // Title
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('COMPROBANTE DE CAJA', pageW / 2, 10, { align: 'center' });
-
-    // Logo + company name + N°
-    const logoB64 = await this.getLogoBase64();
-    const headerY = 19;
-    if (logoB64) {
-      doc.addImage(logoB64, 'PNG', lm, headerY - 5, 14, 8);
-    }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(data.clientName || '', logoB64 ? lm + 17 : lm, headerY);
-    doc.setTextColor(145, 47, 44);
-    doc.text(`Nº  ${data.internalCode || '-'}`, rm, headerY, { align: 'right' });
-    doc.setTextColor(0, 0, 0);
-
-    // Separator
-    doc.setLineWidth(0.3);
-    let y = headerY + 5;
-    doc.line(lm, y, rm, y);
-    y += 6;
-
-    // Entregado a / Dirección
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    const labelW = 24;
-    doc.text('Entregado a:', lm, y);
-    doc.text(data.entregadoA, lm + labelW, y);
-    doc.line(lm + labelW, y + 0.5, rm, y + 0.5);
-    y += 6;
-    doc.text('Dirección:', lm, y);
-    const direccionLines = (doc.splitTextToSize(data.direccion || '', rm - (lm + labelW)) as string[]).slice(0, 2);
-    doc.text(direccionLines[0] || '', lm + labelW, y);
-    doc.line(lm + labelW, y + 0.5, rm, y + 0.5);
-    y += 7;
-
-    // Segunda línea (si la dirección es larga) va sobre la línea separadora existente
-    if (direccionLines.length > 1) {
-      doc.text(direccionLines[1], lm, y - 1);
-    }
-    doc.line(lm, y, rm, y);
-    y += 5;
-
-    // He recibido de / concepto
-    doc.text(`He recibido de ${data.clientName || ''}`, lm, y);
-    y += 5;
-    const conceptoLabel = 'Por concepto de:  ';
-    doc.text(conceptoLabel, lm, y);
-    const conceptoX = lm + doc.getTextWidth(conceptoLabel);
-    const conceptoLines = (doc.splitTextToSize(data.concepto || '', rm - conceptoX) as string[]).slice(0, 2);
-    doc.text(conceptoLines[0] || '', conceptoX, y);
-    doc.line(conceptoX, y + 0.5, rm, y + 0.5);
-    y += 7;
-
-    // Segunda línea (si el concepto es largo) va sobre la línea separadora existente
-    if (conceptoLines.length > 1) {
-      doc.text(conceptoLines[1], lm, y - 1);
-    }
-    doc.line(lm, y, rm, y);
-    y += 5;
-
-    // La Suma de / Proyecto
-    const sumaLabel = 'La Suma de:  ';
-    doc.text(sumaLabel, lm, y);
-    const sumaX = lm + doc.getTextWidth(sumaLabel);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`S/ ${data.monto.toFixed(2)}`, sumaX, y);
-    doc.setFont('helvetica', 'normal');
-    doc.line(sumaX, y + 0.5, rm, y + 0.5);
-    y += 6;
-    const proyLabel = 'Proyecto:  ';
-    doc.text(proyLabel, lm, y);
-    const proyX = lm + doc.getTextWidth(proyLabel);
-    doc.text(data.projectName || '-', proyX, y);
-    doc.line(proyX, y + 0.5, rm, y + 0.5);
-    y += 12;
-
-    // Signature block (right side)
-    const sigX1 = 58;
-    const sigX2 = rm;
-    const sigCX = (sigX1 + sigX2) / 2;
-    if (data.signature) {
-      doc.addImage(data.signature, 'PNG', sigCX - 16, y - 10, 32, 10);
-    }
-    doc.line(sigX1, y, sigX2, y);
-    doc.setFontSize(7);
-    doc.text('Firma', sigCX, y + 4, { align: 'center' });
-    doc.text(`DNI: ${data.collaboratorDni || ''}`, sigCX, y + 8, { align: 'center' });
-    y += 14;
-
-    // Date
-    doc.setFontSize(8);
-    const dateObj = parseFechaEmisionInput(data.fechaEmision) ?? new Date();
-    const day = dateObj.getDate();
-    const month = dateObj.getMonth() + 1;
-    const year = dateObj.getFullYear();
-    doc.text(`Lima,   ${day}   de   ${month}   de   ${year}`, lm, y);
-
-    // Footer
-    doc.setLineWidth(0.2);
-    doc.line(lm, 140, rm, 140);
-    doc.setFontSize(6);
-    doc.setTextColor(100, 100, 100);
-    doc.text(data.clientName || '', pageW / 2, 144, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
-
-    if (isNew) {
-      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
-      doc.save(`${data.fileBaseName}.pdf`);
-    }
-  }
-
   async exportReceiptToPdf(data: ReceiptExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
     data = { ...data, signature: await this.resolveSignature(data.signature) };
     const isNew = !inDoc;
@@ -1658,9 +1517,6 @@ export class RendicionExportService {
         switch (page.type) {
           case 'mobility':
             bytes = (await this.exportMobilitySheetToPdf(page.data, undefined, true)) as Uint8Array ?? null;
-            break;
-          case 'cash_voucher':
-            bytes = (await this.exportCashVoucherToPdf(page.data, undefined, true)) as Uint8Array ?? null;
             break;
           case 'receipt':
             bytes = (await this.exportReceiptToPdf(page.data, undefined, true)) as Uint8Array ?? null;

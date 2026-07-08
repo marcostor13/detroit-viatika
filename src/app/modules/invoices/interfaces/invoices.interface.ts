@@ -5,8 +5,7 @@ export type ExpenseType =
   | 'factura'
   | 'planilla_movilidad'
   | 'otros_gastos'
-  | 'recibo_caja'
-  | 'comprobante_caja';
+  | 'recibo_caja';
 
 export interface IMobilityRowCoords {
   lat: number;
@@ -64,26 +63,6 @@ export interface ICreateCashReceiptPayload {
   data: string;
   fechaEmision: string;
   imageUrl: string;
-}
-
-export interface ICreateCashVoucherPayload {
-  proyectId: string;
-  categoryId: string;
-  expenseReportId?: string;
-  total: number;
-  data: string;
-  fechaEmision?: string;
-  /** URL del archivo escaneado (imagen/PDF) que se guarda como documento. */
-  imageUrl?: string;
-}
-
-/** Datos extraídos por OCR al escanear un comprobante de caja. */
-export interface ICashVoucherScanResult {
-  entregadoA?: string;
-  fecha?: string;
-  direccion?: string;
-  concepto?: string;
-  monto: number;
 }
 
 export interface IInvoice {

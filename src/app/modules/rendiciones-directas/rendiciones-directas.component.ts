@@ -14,7 +14,6 @@ import {
   RendicionExportService,
   RendicionExportData,
   MobilitySheetExportData,
-  CashVoucherExportData,
   ReceiptExportData,
 } from '../../services/rendicion-export.service';
 import {
@@ -311,7 +310,6 @@ export class RendicionesDirectasComponent implements OnInit {
     const t = e?.expenseType;
     if (t === 'planilla_movilidad') return 'planilla_movilidad';
     if (t === 'otros_gastos') return 'otros_gastos';
-    if (t === 'comprobante_caja') return 'comprobante_caja';
     if (t === 'recibo_caja') return 'recibo_caja';
     return 'factura';
   }
@@ -320,7 +318,6 @@ export class RendicionesDirectasComponent implements OnInit {
     if (this.isDeposito(e)) return 'DEP';
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = e?.subTipo ?? this.getData(e)['subTipo'];
@@ -406,7 +403,7 @@ export class RendicionesDirectasComponent implements OnInit {
 
   getDocNumber(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return (typeof e?.internalCode === 'string' && e.internalCode) ? e.internalCode : '-';
     }
     if (type === 'recibo_caja') {
@@ -425,14 +422,6 @@ export class RendicionesDirectasComponent implements OnInit {
   getProveedor(e: any): string {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
-    if (type === 'comprobante_caja') {
-      try {
-        const d = this.getData(e);
-        const raw = d['payload'];
-        const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
-        return String(obj['entregadoA'] || '-');
-      } catch { return '-'; }
-    }
     const d = this.getData(e);
     const r = d['razonSocial'];
     if (typeof r === 'string' && r.trim()) return r.trim();
@@ -444,7 +433,6 @@ export class RendicionesDirectasComponent implements OnInit {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') { const rows: any[] = e?.mobilityRows || []; const first = rows[0]; return first?.gestion || `${rows.length} filas`; }
     if (type === 'otros_gastos') return e?.description || 'DJ firmada';
-    if (type === 'comprobante_caja') { try { const d = this.getData(e); const raw = d['payload']; const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {}); return String(obj['concepto'] || ''); } catch { return ''; } }
     const d = this.getData(e);
     return String(d['concepto'] || e.description || '');
   }
@@ -466,18 +454,6 @@ export class RendicionesDirectasComponent implements OnInit {
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
   }
-
-  cashVoucherPayload(e: any): Record<string, unknown> {
-    const d = this.getData(e);
-    const raw = d['payload'];
-    let obj: any = {};
-    if (raw && typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { /**/ } }
-    else if (raw && typeof raw === 'object') { obj = raw; }
-    if (!obj['concepto'] && e['description']) { try { const p = JSON.parse(String(e['description'])); if (p?.concepto) obj = p; } catch { /**/ } }
-    return obj;
-  }
-
-  cashVoucherText(e: any, key: string): string { const v = this.cashVoucherPayload(e)[key]; if (v == null || v === '') return '—'; return String(v); }
 
   mobilityRows(e: any): any[] { const r = e?.mobilityRows; return Array.isArray(r) ? r : []; }
   mobilityRowTotal(row: any): number { const t = row?.total; if (typeof t === 'number') return t; const n = Number(t); return Number.isNaN(n) ? 0 : n; }
@@ -513,13 +489,6 @@ export class RendicionesDirectasComponent implements OnInit {
     const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
     const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToExcel(data);
-  }
-
-  async exportCashVoucherPdf(e: any, event: Event): Promise<void> {
-    event.stopPropagation();
-    const payload = this.cashVoucherPayload(e);
-    const data: CashVoucherExportData = { fileBaseName: `comprobante_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, entregadoA: String(payload['entregadoA'] || ''), direccion: String(payload['direccion'] || ''), concepto: String(payload['concepto'] || ''), monto: this.getTotal(e), generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), projectName: this.getProject(e), fechaEmision: this.emissionDateText(e) };
-    await this.exportService.exportCashVoucherToPdf(data);
   }
 
   async exportReceiptPdf(e: any, event: Event): Promise<void> {
