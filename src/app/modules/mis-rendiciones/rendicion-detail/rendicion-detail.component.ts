@@ -1471,6 +1471,24 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return '—';
   }
 
+  /** Coordinador que aprobó (para la firma en el PDF de planilla de movilidad, VD-33). */
+  private coordinatorApprover(): { name?: string; signature?: string; dni?: string } | null {
+    const u = (this.report as any)?.coordinatorApprovedBy;
+    return u && typeof u === 'object' ? u : null;
+  }
+
+  getCoordinatorName(): string | undefined {
+    return this.coordinatorApprover()?.name || undefined;
+  }
+
+  getCoordinatorSignature(): string | undefined {
+    return this.coordinatorApprover()?.signature || undefined;
+  }
+
+  getCoordinatorDni(): string | undefined {
+    return this.coordinatorApprover()?.dni || undefined;
+  }
+
   getCreatedByName(): string {
     const u = this.report?.createdBy;
     if (u == null) return '—';
@@ -1747,6 +1765,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       rows,
       total,
       signature: this.getCollaboratorSignature(),
+      coordinator: this.getCoordinatorName(),
+      coordinatorDni: this.getCoordinatorDni(),
+      coordinatorSignature: this.getCoordinatorSignature(),
     };
   }
 
