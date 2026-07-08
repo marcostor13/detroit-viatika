@@ -129,8 +129,11 @@ export class RendicionesAdminComponent implements OnInit {
 
   filterUserId = '';
   filterProjectId = '';
+  filterStatus = '';
   filterDateFrom = '';
   filterDateTo = '';
+  /** Estados presentes en la lista (para el filtro por estado). Se recalcula en applyFilters. */
+  statusOptions: { value: string; label: string }[] = [];
 
   // Approve modal
   showApproveModal = signal(false);
@@ -336,6 +339,20 @@ export class RendicionesAdminComponent implements OnInit {
 
     const items = [...reportItems, ...advanceItems];
 
+    // Opciones del filtro por estado: los estados realmente presentes en la lista
+    // ("los actuales"), sin duplicar, ordenados por etiqueta. VD-30.
+    const seenStatuses = new Map<string, string>();
+    for (const it of items) {
+      if (!seenStatuses.has(it.status)) seenStatuses.set(it.status, it.statusLabel);
+    }
+    this.statusOptions = [...seenStatuses.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    // Si el estado filtrado ya no existe en los datos, se limpia para no ocultar todo.
+    if (this.filterStatus && !seenStatuses.has(this.filterStatus)) {
+      this.filterStatus = '';
+    }
+
     let result = items;
 
     if (this.filterUserId) {
@@ -343,6 +360,9 @@ export class RendicionesAdminComponent implements OnInit {
     }
     if (this.filterProjectId) {
       result = result.filter(i => i.projectId === this.filterProjectId);
+    }
+    if (this.filterStatus) {
+      result = result.filter(i => i.status === this.filterStatus);
     }
     if (this.filterDateFrom) {
       const from = new Date(this.filterDateFrom).getTime();
@@ -362,13 +382,14 @@ export class RendicionesAdminComponent implements OnInit {
   clearFilters(): void {
     this.filterUserId = '';
     this.filterProjectId = '';
+    this.filterStatus = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
     this.applyFilters();
   }
 
   get hasActiveFilters(): boolean {
-    return !!(this.filterUserId || this.filterProjectId || this.filterDateFrom || this.filterDateTo);
+    return !!(this.filterUserId || this.filterProjectId || this.filterStatus || this.filterDateFrom || this.filterDateTo);
   }
 
   goToDetail(item: UnifiedRendicionItem): void {
