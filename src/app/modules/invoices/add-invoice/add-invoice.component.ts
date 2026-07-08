@@ -86,6 +86,8 @@ export default class AddInvoiceComponent implements OnInit {
   isDirectaMode = false;
   /** True cuando la rendición asociada es directa (report.isDirecta), aunque no venga `mode=directa` en la URL. */
   isDirectaReport = signal<boolean>(false);
+  /** True cuando la rendición directa ya tiene una OT propia heredada (rendiciones creadas tras esta funcionalidad). */
+  directaOrdenTrabajoInherited = signal<boolean>(false);
   fromContabilidad = false;
 
   expenseType = signal<ExpenseType>('factura');
@@ -488,6 +490,17 @@ export default class AddInvoiceComponent implements OnInit {
           // El centro de costo lo fija la rendición (normal o directa): no se elige por comprobante.
           this.form.get('proyectId')?.disable();
         }
+        // Rendición directa: la OT (planilla de movilidad) se fija al crear la
+        // rendición y la heredan todos sus comprobantes; no se elige por comprobante.
+        // Rendiciones directas creadas antes de esta funcionalidad no tienen OT propia:
+        // en ese caso se sigue pidiendo por comprobante (ver directaOrdenTrabajoInherited).
+        const otRef = (report as any)?.directaOrdenTrabajoId;
+        if (isDirecta && otRef) {
+          const otId = typeof otRef === 'string' ? otRef : otRef._id;
+          this.form.patchValue({ ordenTrabajoId: otId });
+          this.form.get('ordenTrabajoId')?.disable();
+          this.directaOrdenTrabajoInherited.set(true);
+        }
         // El flag directa puede llegar después de que el usuario ya agregó filas:
         // re-sincroniza validadores del proyecto (superior y por fila).
         this.syncMobilityRowValidators();
@@ -757,6 +770,14 @@ export default class AddInvoiceComponent implements OnInit {
 
   isDirectaPlanilla(): boolean {
     return this.isDirectaContext() && this.expenseType() === 'planilla_movilidad';
+  }
+
+  /**
+   * Rendiciones directas creadas antes de tener OT propia: no hay OT que heredar,
+   * así que se sigue pidiendo en el formulario del comprobante (fallback legado).
+   */
+  needsFallbackOt(): boolean {
+    return this.isDirectaPlanilla() && !this.directaOrdenTrabajoInherited();
   }
 
   /**

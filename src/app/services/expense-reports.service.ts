@@ -73,10 +73,13 @@ export class ExpenseReportsService {
   /** Contabilidad: crea una rendición directa con depósito inicial para un colaborador/coordinador. */
   createDirectaDeposit(payload: {
     userId: string;
+    projectId: string;
+    ordenTrabajoId: string;
     gestion?: string;
     amount: number;
+    metodoPago?: 'deposito' | 'efectivo';
     scannedAmount?: number;
-    receiptUrl: string;
+    receiptUrl?: string;
     receiptFileName?: string;
     receiptMimeType?: string;
     receiptSizeBytes?: number;

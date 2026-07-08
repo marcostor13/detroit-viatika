@@ -10,10 +10,10 @@ import { Router } from '@angular/router';
 import { ExpenseReportsService } from '../../../services/expense-reports.service';
 import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
-import { SaldoService } from '../../../services/saldo.service';
-import { ISaldo, SaldoType } from '../../../interfaces/saldo.interface';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { IProject } from '../../invoices/interfaces/project.interface';
+import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
+import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 import { FormFieldComponent } from '../../../design-system/form-field/form-field.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 
@@ -29,40 +29,31 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   private expenseReportsService = inject(ExpenseReportsService);
   private notifications = inject(NotificationService);
   private userState = inject(UserStateService);
-  private saldoService = inject(SaldoService);
   private invoicesService = inject(InvoicesService);
+  private ordenTrabajoService = inject(OrdenTrabajoService);
 
   submitting = signal(false);
-
-  // Saldos elegibles (rendición directa + pago) y selección.
-  saldos = signal<ISaldo[]>([]);
-  loadingSaldos = signal<boolean>(true);
-  selectedIds = signal<Set<string>>(new Set());
 
   // Centros de costo asignables: el colaborador elige uno al crear la rendición;
   // sus documentos heredarán ese centro de costo (ya no se elige por-comprobante).
   projects = signal<IProject[]>([]);
 
-  selectedTotal = computed(() =>
-    this.saldos()
-      .filter(s => this.selectedIds().has(s._id))
-      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
-  );
+  // Órdenes de Trabajo: se eligen al crear (filtradas por el centro de costo) y
+  // se heredan por todos los comprobantes de la rendición (ya no se elige por-comprobante).
+  ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
+  filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
+    const pid = this.form?.get('projectId')?.value;
+    if (!pid) return [];
+    return this.ordenesTrabajo().filter(ot => this.otCostCenterId(ot) === pid);
+  });
 
   form: FormGroup = this.fb.group({
     gestion: ['', [Validators.required, Validators.minLength(3)]],
     projectId: ['', Validators.required],
+    ordenTrabajoId: ['', Validators.required],
   });
 
   ngOnInit(): void {
-    this.saldoService.getEligible('rendicion_directa').subscribe({
-      next: rows => {
-        this.saldos.set(rows ?? []);
-        this.loadingSaldos.set(false);
-      },
-      error: () => this.loadingSaldos.set(false),
-    });
-
     const clientId = this.resolveClientId();
     if (clientId) {
       this.invoicesService.getProjects(clientId).subscribe({
@@ -70,6 +61,27 @@ export class NuevaRendicionDirectaComponent implements OnInit {
         error: () => this.projects.set([]),
       });
     }
+
+    this.ordenTrabajoService.getAll().subscribe({
+      next: list => this.ordenesTrabajo.set((list || []).filter(o => o.isActive !== false)),
+      error: () => this.ordenesTrabajo.set([]),
+    });
+
+    // Si cambia el centro de costo, limpia la OT si ya no pertenece a él.
+    this.form.get('projectId')?.valueChanges.subscribe(pid => {
+      const otId = this.form.get('ordenTrabajoId')?.value;
+      if (!otId) return;
+      const stillValid = this.ordenesTrabajo().some(
+        ot => ot._id === otId && this.otCostCenterId(ot) === pid
+      );
+      if (!stillValid) this.form.get('ordenTrabajoId')?.setValue('');
+    });
+  }
+
+  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
+  private otCostCenterId(ot: IOrdenTrabajo): string {
+    const cc = ot.costCenterId;
+    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
   }
 
   private resolveClientId(): string {
@@ -80,40 +92,6 @@ export class NuevaRendicionDirectaComponent implements OnInit {
       (typeof user?.clientId === 'string' ? user.clientId : user?.clientId?._id) ||
       ''
     );
-  }
-
-  isSelected(id: string): boolean {
-    return this.selectedIds().has(id);
-  }
-
-  toggleSaldo(id: string): void {
-    const next = new Set(this.selectedIds());
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    this.selectedIds.set(next);
-  }
-
-  typeLabel(type: SaldoType): string {
-    return type === 'pago' ? 'Pago' : 'Rendición directa';
-  }
-
-  /** Gestión / motivo del saldo, o su origen (rendición / N° operación). */
-  saldoDescripcion(s: ISaldo): string {
-    if (s.concepto?.trim()) return s.concepto.trim();
-    const r = s.sourceReportId;
-    if (r && typeof r !== 'string') return r.codigo || r.title || '';
-    if (s.type === 'pago' && s.deposit?.operationNumber) return `Op. ${s.deposit.operationNumber}`;
-    return '';
-  }
-
-  centroCosto(s: ISaldo): string {
-    const p = s.projectId;
-    if (!p || typeof p === 'string') return '';
-    const code = p.code ? `${p.code} - ` : '';
-    return `${code}${p.name ?? ''}`.trim();
   }
 
   goBack(): void {
@@ -135,8 +113,6 @@ export class NuevaRendicionDirectaComponent implements OnInit {
       return;
     }
 
-    const saldoIds = Array.from(this.selectedIds());
-
     this.submitting.set(true);
     this.expenseReportsService
       .create({
@@ -145,12 +121,11 @@ export class NuevaRendicionDirectaComponent implements OnInit {
         userId,
         clientId,
         projectId: this.form.value.projectId,
-        ...(saldoIds.length > 0 && { saldoIds }),
+        ordenTrabajoId: this.form.value.ordenTrabajoId,
       })
       .subscribe({
         next: (report) => {
           this.submitting.set(false);
-          this.saldoService.refreshTotal();
           this.notifications.show('Rendición creada correctamente.', 'success');
           this.router.navigate(['/mis-rendiciones', report._id, 'detalle']);
         },

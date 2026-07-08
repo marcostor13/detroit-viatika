@@ -6,7 +6,6 @@ import { catchError } from 'rxjs/operators';
 import { UserStateService } from '../../services/user-state.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { AdvanceService } from '../../services/advance.service';
-import { SaldoService } from '../../services/saldo.service';
 import { NotificationService } from '../../services/notification.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
@@ -40,7 +39,6 @@ export class InicioComponent implements OnInit {
   private expenseReportsService = inject(ExpenseReportsService);
   private advanceService = inject(AdvanceService);
   private notifications = inject(NotificationService);
-  saldoService = inject(SaldoService);
   private router = inject(Router);
 
   isLoading = signal(true);
@@ -284,7 +282,6 @@ export class InicioComponent implements OnInit {
 
   // ─── Carga ────────────────────────────────────────────────────────
   ngOnInit() {
-    this.saldoService.refreshTotal();
     // Trae los permisos vigentes del servidor (los de localStorage pueden estar
     // desactualizados si se cambiaron en otra sesión) para gatear bien las tarjetas.
     this.userState.refreshPermissions().subscribe();

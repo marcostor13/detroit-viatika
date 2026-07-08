@@ -91,64 +91,32 @@
           />
         </app-form-field>
       </div>
-    </form>
 
-    <!-- Saldos disponibles -->
-    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-      <div class="p-5 border-b border-gray-100">
-        <h2 class="text-sm font-semibold text-gray-800">Financiar con saldo (opcional)</h2>
-        <p class="text-xs text-gray-500 mt-0.5">
-          Selecciona saldos de rendiciones directas o pagos de contabilidad. El presupuesto sera la suma de los saldos elegidos.
-        </p>
-      </div>
-
-      <div class="p-5">
-        @if (loadingSaldos()) {
-          <p class="text-sm text-gray-400">Cargando saldos...</p>
-        } @else if (saldos().length === 0) {
-          <p class="text-sm text-gray-400">No tienes saldos disponibles para rendiciones directas.</p>
-        } @else {
-          <div class="space-y-2">
-            @for (s of saldos(); track s._id) {
-            <label
-              class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
-              [class.border-primary]="isSelected(s._id)"
-              [class.bg-blue-50]="isSelected(s._id)"
-              [class.border-gray-200]="!isSelected(s._id)"
-            >
-              <input
-                type="checkbox"
-                [checked]="isSelected(s._id)"
-                (change)="toggleSaldo(s._id)"
-                class="w-4 h-4 accent-primary"
-              />
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-gray-800">
-                  {{ typeLabel(s.type) }}
-                  @if (centroCosto(s)) {
-                    <span class="text-gray-400 font-normal">· {{ centroCosto(s) }}</span>
-                  }
-                </div>
-                @if (saldoDescripcion(s)) {
-                  <div class="text-xs text-gray-500 truncate">{{ saldoDescripcion(s) }}</div>
-                }
-              </div>
-              <div class="text-sm font-semibold text-gray-900 shrink-0">
-                S/ {{ s.amount | number: '1.2-2' }}
-              </div>
-            </label>
+      <!-- Orden de Trabajo: los comprobantes de planilla de movilidad la heredaran (formato ADF-FOR-005) -->
+      <div class="px-5 pb-5">
+        <app-form-field
+          #otField
+          label="Orden de Trabajo"
+          [required]="true"
+          [error]="(form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched) ? 'Seleccione una orden de trabajo' : ''"
+          [helperText]="!form.get('projectId')?.value ? 'Seleccione primero un centro de costo.' : (filteredOrdenesTrabajo().length === 0 ? 'El centro de costo elegido no tiene órdenes de trabajo activas.' : '')"
+        >
+          <select
+            [id]="otField.fieldId"
+            [attr.aria-describedby]="otField.describedBy()"
+            formControlName="ordenTrabajoId"
+            class="w-full h-[42px] px-3.5 rounded-xl border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
+            [class.border-red-400]="form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched"
+            [class.border-gray-300]="!(form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched)"
+          >
+            <option value="">Seleccione una OT</option>
+            @for (ot of filteredOrdenesTrabajo(); track ot._id) {
+              <option [value]="ot._id">{{ ot.nombre }}</option>
             }
-          </div>
-
-          @if (selectedTotal() > 0) {
-          <div class="mt-4 flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
-            <span class="text-sm font-medium text-emerald-700">Presupuesto (saldo seleccionado)</span>
-            <span class="text-base font-bold text-emerald-700">S/ {{ selectedTotal() | number: '1.2-2' }}</span>
-          </div>
-          }
-        }
+          </select>
+        </app-form-field>
       </div>
-    </div>
+    </form>
 
     <!-- Boton mobile -->
     <div class="sm:hidden">

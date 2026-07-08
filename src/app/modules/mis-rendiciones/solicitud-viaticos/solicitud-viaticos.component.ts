@@ -17,8 +17,6 @@ import { ExpenseReportsService } from '../../../services/expense-reports.service
 import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
-import { SaldoService } from '../../../services/saldo.service';
-import { ISaldo } from '../../../interfaces/saldo.interface';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
 import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 import {
@@ -53,7 +51,6 @@ export class SolicitudViaticosComponent implements OnInit {
   private notifications = inject(NotificationService);
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
-  private saldoService = inject(SaldoService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
 
   ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
@@ -61,40 +58,6 @@ export class SolicitudViaticosComponent implements OnInit {
   submitting = signal(false);
   useCustomBank = signal(false);
 
-  // Saldos de viáticos del mismo centro de costo (bolsa).
-  saldos = signal<ISaldo[]>([]);
-  loadingSaldos = signal<boolean>(false);
-  selectedSaldoIds = signal<Set<string>>(new Set());
-
-  selectedSaldoTotal = computed(() =>
-    this.saldos()
-      .filter(s => this.selectedSaldoIds().has(s._id))
-      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
-  );
-
-  /** Monto del saldo realmente aplicado al viático (nunca más que el total). */
-  saldoUsed(): number {
-    return Math.min(this.selectedSaldoTotal(), this.totalGeneral());
-  }
-
-  /** Sobrante del saldo que volverá a la bolsa (cuando el saldo cubre todo el viático). */
-  saldoExcess(): number {
-    return Math.round(Math.max(0, this.selectedSaldoTotal() - this.totalGeneral()) * 100) / 100;
-  }
-
-  /** Diferencia que deposita contabilidad (cuando el total del viático supera el saldo). */
-  contabilidadDeposita(): number {
-    return Math.round(Math.max(0, this.totalGeneral() - this.selectedSaldoTotal()) * 100) / 100;
-  }
-
-  /** Solo se ofrece la bolsa de saldos en solicitudes nuevas (no reenvío). */
-  get canUseSaldoBag(): boolean {
-    if (!this.isResubmit) return true;
-    // En corrección solo se permite re-seleccionar saldo si el viático no tiene ya
-    // uno aplicado (caso típico: fue rechazado y su saldo se devolvió a la bolsa).
-    const v = this.viaticoToResubmit();
-    return !!v && !(Array.isArray(v.saldoIds) && v.saldoIds.length > 0);
-  }
   loading = signal(false);
   projects = signal<IProject[]>([]);
   /** ID del centro de costo elegido; espeja el control `projectId`. */
@@ -155,11 +118,8 @@ export class SolicitudViaticosComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    // Espeja el centro de costo elegido para alimentar la carga de saldos elegibles.
-    // (En restauración se actualiza el signal sin emitir evento.)
     this.form.get('projectId')?.valueChanges.subscribe((pid) => {
       this.selectedProjectId.set(pid ?? '');
-      this.loadEligibleSaldos(pid ?? '');
       // Si la OT elegida no pertenece al nuevo centro de costo, se limpia.
       this.clearOtIfNotInCostCenter(pid ?? '');
     });
@@ -170,26 +130,6 @@ export class SolicitudViaticosComponent implements OnInit {
     } else {
       this.loadCatalogues();
     }
-  }
-
-  /** Carga los saldos de viáticos elegibles (mismo centro de costo) y limpia la selección. */
-  private loadEligibleSaldos(projectId: string): void {
-    this.selectedSaldoIds.set(new Set());
-    if (!this.canUseSaldoBag || !projectId) {
-      this.saldos.set([]);
-      return;
-    }
-    this.loadingSaldos.set(true);
-    this.saldoService.getEligible('viatico', projectId).subscribe({
-      next: rows => {
-        this.saldos.set(rows ?? []);
-        this.loadingSaldos.set(false);
-      },
-      error: () => {
-        this.saldos.set([]);
-        this.loadingSaldos.set(false);
-      },
-    });
   }
 
   /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
@@ -208,29 +148,6 @@ export class SolicitudViaticosComponent implements OnInit {
     if (!stillValid) {
       this.form.get('ordenTrabajoId')?.setValue('');
     }
-  }
-
-  isSaldoSelected(id: string): boolean {
-    return this.selectedSaldoIds().has(id);
-  }
-
-  /** Gestión / motivo del saldo, o su origen (rendición / N° operación). */
-  saldoDescripcion(s: ISaldo): string {
-    if (s.concepto?.trim()) return s.concepto.trim();
-    const r = s.sourceReportId;
-    if (r && typeof r !== 'string') return r.codigo || r.title || '';
-    if (s.type === 'pago' && s.deposit?.operationNumber) return `Op. ${s.deposit.operationNumber}`;
-    return '';
-  }
-
-  toggleSaldo(id: string): void {
-    const next = new Set(this.selectedSaldoIds());
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    this.selectedSaldoIds.set(next);
   }
 
   private loadForResubmit(id: string): void {
@@ -298,7 +215,6 @@ export class SolicitudViaticosComponent implements OnInit {
       this.useCustomBank.set(true);
       this.form.patchValue({ bankName: adv.requestBankName ?? '', accountNumber: adv.requestAccountNumber, cci: adv.requestCci ?? '' });
     }
-    // Sin emitir: evita relanzar la carga de saldos elegibles antes de tiempo.
     this.form.get('projectId')?.setValue(pid, { emitEvent: false });
     this.selectedProjectId.set(pid);
 
@@ -307,8 +223,6 @@ export class SolicitudViaticosComponent implements OnInit {
 
   /** Precarga el formulario desde un viático unificado (ExpenseReport) en edición. */
   private bootstrapFromViatico(report: IExpenseReport): void {
-    // `viaticoAmount` es el monto requerido (sin el saldo heredado, que se restaura
-    // aparte más abajo).
     this.form.patchValue({ amount: report.viaticoAmount ?? null });
 
     const pid =
@@ -339,10 +253,6 @@ export class SolicitudViaticosComponent implements OnInit {
     const rLng = (report as { viaticoLng?: number }).viaticoLng;
     if (rLat != null) this.selectedLat = rLat;
     if (rLng != null) this.selectedLng = rLng;
-
-    // Como el projectId se fija sin emitir evento, cargamos los saldos elegibles a
-    // mano: en una corrección sin saldo aplicado permite re-seleccionar de la bolsa.
-    this.loadEligibleSaldos(pid);
 
     this.loadCatalogues();
   }
@@ -421,12 +331,6 @@ export class SolicitudViaticosComponent implements OnInit {
 
     this.submitting.set(true);
 
-    // Saldos de la bolsa: prefinancian el viático. El saldo nunca cubre más que el
-    // total: si lo supera, solo se usa lo necesario y el sobrante vuelve a la bolsa
-    // (contabilidad no deposita nada); si el total lo supera, contabilidad deposita
-    // la diferencia. Ambos casos son válidos, así que no hay restricción de monto.
-    const saldoIds = Array.from(this.selectedSaldoIds());
-
     // Reenvío/edición de un viático unificado (ExpenseReport).
     const viatico = this.viaticoToResubmit();
     if (viatico) {
@@ -440,7 +344,6 @@ export class SolicitudViaticosComponent implements OnInit {
         projectId,
         ordenTrabajoId,
         observations: (this.form.value.observations || '').trim() || undefined,
-        ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
         ...customBank,
       };
       this.expenseReportsService.resubmitViatico(viatico._id, resubmitPayload).subscribe({
@@ -484,7 +387,6 @@ export class SolicitudViaticosComponent implements OnInit {
       projectId,
       ordenTrabajoId,
       observations: (this.form.value.observations || '').trim() || undefined,
-      ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
       ...customBank,
     };
     this.expenseReportsService.createViatico(viaticoPayload).subscribe({
@@ -500,7 +402,6 @@ export class SolicitudViaticosComponent implements OnInit {
       : 'Solicitud de viáticos enviada correctamente';
     this.notifications.show(msg, 'success');
     this.submitting.set(false);
-    this.saldoService.refreshTotal();
     this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'viaticos' } });
   }
 

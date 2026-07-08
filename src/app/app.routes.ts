@@ -262,14 +262,6 @@ export const routes: Routes = [
         canActivate: [AuthColaboradorGuard],
       },
       {
-        path: 'saldo',
-        loadComponent: () =>
-          import('./modules/saldo/saldo.component').then(
-            (m) => m.SaldoComponent
-          ),
-        canActivate: [AuthColaboradorGuard],
-      },
-      {
         path: 'mis-rendiciones/nueva',
         loadComponent: () =>
           import('./modules/mis-rendiciones/nueva-rendicion-directa/nueva-rendicion-directa.component').then(

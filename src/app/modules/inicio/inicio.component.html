@@ -168,14 +168,6 @@
 <!-- ── "Mi actividad" reutilizable (colaborador + coordinador) ───── -->
 <!-- Separa VIÁTICOS (solicitudes + rendiciones) de RENDICIONES DIRECTAS. -->
 <ng-template #miActividad>
-  <!-- Bolsa (siempre) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-2">
-    <ng-container *ngTemplateOutlet="kpiCard; context: {
-      title: 'Bolsa total disponible', value: saldoService.total(), money: true, accent: 'primary',
-      link: '/saldo', hint: saldoService.total() > 0 ? 'disponible para usar' : 'sin saldo disponible'
-    }"></ng-container>
-  </div>
-
   <!-- VIÁTICOS -->
   @if (canSeeViaticos) {
   <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Viáticos</h3>

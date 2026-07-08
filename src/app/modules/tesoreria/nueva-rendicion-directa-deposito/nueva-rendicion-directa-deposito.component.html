@@ -31,7 +31,7 @@
   <div class="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
 
     <div class="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-sm text-primary">
-      Asigna un saldo a un colaborador o coordinador. Si fue por depósito o transferencia, adjunta el comprobante y el monto se detecta automáticamente. Si fue en efectivo, el comprobante es opcional.
+      Crea una rendición directa para un colaborador o coordinador con este depósito ya vinculado. Si fue por depósito o transferencia, adjunta el comprobante y el monto se detecta automáticamente. Si fue en efectivo, el comprobante es opcional.
     </div>
 
     <form [formGroup]="form" class="bg-quaternary rounded-2xl border border-divider shadow-soft overflow-hidden divide-y divide-divider">
@@ -51,6 +51,49 @@
         @if (isInvalid('userId')) {
           <p class="mt-1 text-xs text-error">Selecciona un destinatario.</p>
         }
+      </div>
+
+      <!-- Centro de costo -->
+      <div class="p-5">
+        <app-form-field
+          #projectField
+          label="Centro de costo"
+          [required]="true"
+          [error]="(form.get('projectId')?.invalid && form.get('projectId')?.touched) ? 'Seleccione un centro de costo' : ''"
+        >
+          <app-project-select
+            [id]="projectField.fieldId"
+            [attr.aria-describedby]="projectField.describedBy()"
+            formControlName="projectId"
+            [projects]="projects()"
+            placeholder="Seleccione centro de costo…"
+            [invalid]="!!(form.get('projectId')?.invalid && form.get('projectId')?.touched)"
+          />
+        </app-form-field>
+      </div>
+
+      <!-- Orden de Trabajo -->
+      <div class="p-5">
+        <app-form-field
+          #otField
+          label="Orden de Trabajo"
+          [required]="true"
+          [error]="(form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched) ? 'Seleccione una orden de trabajo' : ''"
+          [helperText]="!form.get('projectId')?.value ? 'Seleccione primero un centro de costo.' : (filteredOrdenesTrabajo().length === 0 ? 'El centro de costo elegido no tiene órdenes de trabajo activas.' : '')"
+        >
+          <select
+            [id]="otField.fieldId"
+            [attr.aria-describedby]="otField.describedBy()"
+            formControlName="ordenTrabajoId"
+            class="w-full h-[42px] px-3.5 rounded-xl border bg-quaternary text-secondary text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
+            [class]="(form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched) ? 'border-error' : 'border-tertiary/30'"
+          >
+            <option value="">Seleccione una OT</option>
+            @for (ot of filteredOrdenesTrabajo(); track ot._id) {
+              <option [value]="ot._id">{{ ot.nombre }}</option>
+            }
+          </select>
+        </app-form-field>
       </div>
 
       <!-- Método de pago -->

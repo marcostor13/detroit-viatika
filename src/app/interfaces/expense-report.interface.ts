@@ -19,8 +19,6 @@ export interface ICreateViaticoPayload {
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
   observations?: string;
-  /** Saldos de la bolsa seleccionados (mismo centro de costo) que financian esta solicitud. */
-  saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -38,8 +36,6 @@ export interface IResubmitViaticoPayload {
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
   observations?: string;
-  /** Saldos de la bolsa re-seleccionados al corregir (si el viático no tiene ya uno). */
-  saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -173,6 +169,8 @@ export interface IExpenseReport {
   /** Cadena ordenada de aprobadores de centro de costo, armada al enviar la rendición. */
   directaApproverChain?: ({ _id: string; name: string; email: string } | string)[];
   directaApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /** Orden de Trabajo elegida al crear la rendición directa (heredada por todos sus comprobantes). */
+  directaOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string } | string;
   expenseIds: any[];
   createdBy: any; // User who created it
   approvedBy?: any; // Admin who approved it
@@ -253,14 +251,13 @@ export interface IExpenseReport {
   lockedByCajaChica?: boolean;
   /** Depósito inicial cuando la rendición directa fue iniciada por Contabilidad. */
   directaDeposit?: IDirectaDepositInfo;
-  /** Saldos de la bolsa (poblados) que financiaron esta rendición directa. */
-  saldoIds?: IReportFinancingSaldo[];
 }
 
 export interface IDirectaDepositInfo {
   amount: number;
+  metodoPago?: 'deposito' | 'efectivo';
   scannedAmount?: number;
-  receiptUrl: string;
+  receiptUrl?: string;
   receiptFileName?: string;
   receiptMimeType?: string;
   receiptSizeBytes?: number;
@@ -273,17 +270,6 @@ export interface IDirectaDepositInfo {
   createdAt?: string;
 }
 
-/** Saldo de la bolsa (poblado) que financió una rendición directa. */
-export interface IReportFinancingSaldo {
-  _id: string;
-  type: 'pago' | 'rendicion_directa' | 'rendicion';
-  amount: number;
-  concepto?: string;
-  deposit?: { operationNumber?: string; titular?: string; operationDate?: string };
-  sourceReportId?: { _id: string; codigo?: string; title?: string; gestion?: string } | string | null;
-  createdAt?: string;
-}
-
 export interface ICreateExpenseReport {
   title?: string;
   description?: string;
@@ -291,12 +277,12 @@ export interface ICreateExpenseReport {
   userId: string;
   clientId: string;
   projectId?: string;
+  /** Orden de Trabajo elegida al crear la rendición directa (filtrada por el centro de costo). */
+  ordenTrabajoId?: string;
   motivo?: string;
   gestion?: string;
   isDirecta?: boolean;
   isCajaChica?: boolean;
-  /** Saldos de la bolsa seleccionados para financiar esta rendición directa. */
-  saldoIds?: string[];
   // New fields
   accountNumber?: string;
   idDocument?: string;

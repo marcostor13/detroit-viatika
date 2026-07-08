@@ -145,6 +145,29 @@
   </div>
   }
 
+  <!-- Fallback: rendiciones directas creadas antes de tener OT propia (sin OT que heredar) -->
+  @if (needsFallbackOt()) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-2">
+      <label for="ordenTrabajoIdFallback" class="text-sm font-medium text-secondary">
+        Orden de Trabajo <span class="text-error">*</span>
+      </label>
+      <select
+        id="ordenTrabajoIdFallback"
+        formControlName="ordenTrabajoId"
+        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+        style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+      >
+        <option value="">Seleccione una OT</option>
+        @for (ot of filteredOrdenesTrabajo; track ot._id) {
+        <option [value]="ot._id">{{ ot.nombre }}</option>
+        }
+      </select>
+      <p class="text-xs text-tertiary">Esta rendición directa no tiene una OT propia asignada. Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005).</p>
+    </div>
+  </div>
+  }
+
   @if(!id && expenseType() === 'factura') {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
     <div class="flex flex-col gap-2">

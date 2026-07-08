@@ -15,7 +15,7 @@ import {
   IGeneratedFile,
   AsientoTipo,
 } from '../../../services/accounting-entries.service';
-import { IExpenseReport, IReportFinancingSaldo } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport } from '../../../interfaces/expense-report.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
@@ -143,9 +143,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get saldoLibre(): number {
     // Viáticos unificados: el fondo disponible es siempre viaticoPaidAmount − gastado
-    // (incluye el saldo de la bolsa prefinanciado + el depósito de contabilidad). Va
-    // primero para no confundirse con la rama de "directa financiada con bolsa" cuando
-    // el viático también tiene saldoIds (si no, mostraría solo el saldo, no el total).
+    // (incluye el depósito de contabilidad).
     if (this.report?.type === 'viatico') {
       const viaticoPaid = Number((this.report as any)?.viaticoPaidAmount ?? 0);
       return viaticoPaid - this.totalGastado;
@@ -154,10 +152,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     // depósito menos lo gastado (en vivo), no el monto del settlement almacenado.
     if (this.hasDirectaDeposit) {
       return this.directaSaldo;
-    }
-    // Rendición directa financiada con la bolsa: el saldo libre es presupuesto (saldos) − gastado.
-    if (this.hasFinancingSaldos) {
-      return this.financingSaldoDisponible;
     }
     if (this.settlement?.difference !== undefined && this.settlement.difference !== null) {
       return this.settlement.difference;
@@ -189,41 +183,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get directaSaldo(): number {
     return this.directaDeposited - this.totalGastado;
-  }
-
-  /** Saldos de la bolsa (poblados) que financiaron esta rendición directa. */
-  get financingSaldos(): IReportFinancingSaldo[] {
-    const s = this.report?.saldoIds as unknown[];
-    return Array.isArray(s)
-      ? (s.filter(x => x && typeof x === 'object') as IReportFinancingSaldo[])
-      : [];
-  }
-
-  get hasFinancingSaldos(): boolean {
-    return this.financingSaldos.length > 0;
-  }
-
-  get financingSaldosTotal(): number {
-    return this.financingSaldos.reduce((a, s) => a + (Number(s.amount) || 0), 0);
-  }
-
-  /** Saldo disponible de una directa financiada con la bolsa: presupuesto (saldos) − gastado. */
-  get financingSaldoDisponible(): number {
-    return this.financingSaldosTotal - this.totalGastado;
-  }
-
-  /** Tipo legible del saldo financiador. */
-  financingSaldoTipo(s: IReportFinancingSaldo): string {
-    return s.type === 'pago' ? 'Pago de contabilidad' : 'Saldo de rendición';
-  }
-
-  /** Detalle del saldo financiador: gestión/motivo, código de origen o N° de operación. */
-  financingSaldoLabel(s: IReportFinancingSaldo): string {
-    if (s.concepto?.trim()) return s.concepto.trim();
-    const r = s.sourceReportId;
-    if (r && typeof r !== 'string') return r.codigo || r.title || r.gestion || '';
-    if (s.type === 'pago' && s.deposit?.operationNumber) return `Op. ${s.deposit.operationNumber}`;
-    return '';
   }
 
   ngOnInit(): void {
@@ -1654,14 +1613,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         fechaSolicitud,
       });
     }
-    // Viático: lo pagado por contabilidad (viaticoPaidAmount menos lo cubierto por el
-    // saldo de la bolsa, que ya figura aparte en financiamientoSaldos) es un ingreso.
+    // Viático: lo pagado por contabilidad es un ingreso.
     if (this.report.type === 'viatico') {
       const viaticoPaid = Number(
         (this.report as { viaticoPaidAmount?: number }).viaticoPaidAmount ?? 0
       );
-      const bolsaTotal = this.hasFinancingSaldos ? this.financingSaldosTotal : 0;
-      const deposito = Math.round((viaticoPaid - bolsaTotal) * 100) / 100;
+      const deposito = Math.round(viaticoPaid * 100) / 100;
       if (deposito > 0.01) {
         const pagos = (
           this.report as {
@@ -1690,20 +1647,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       codigo: this.report.codigo || undefined,
       gestion: this.report.gestion || undefined,
       descripcionRendicion: this.report.description || undefined,
-      financiamientoSaldos: this.hasFinancingSaldos
-        ? this.financingSaldos.map(s => ({
-            tipo: this.financingSaldoTipo(s),
-            detalle: this.financingSaldoLabel(s),
-            monto: Number(s.amount) || 0,
-            fecha: s.deposit?.operationDate
-              || (s.createdAt ? new Date(s.createdAt).toLocaleDateString('es-PE') : ''),
-          }))
-        : undefined,
       colaborador: this.getCollaboratorDisplayName(),
       presupuesto: this.report.budget ?? 0,
       totalGastado: this.totalGastado,
       totalAnticipado: this.totalAnticipado,
-      saldoLibre: this.hasFinancingSaldos ? this.financingSaldoDisponible : this.saldoLibre,
+      saldoLibre: this.saldoLibre,
       fechaGeneracion: new Date().toLocaleString('es-PE', {
         dateStyle: 'short',
         timeStyle: 'short',

@@ -1,38 +1,53 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ExpenseReportsService } from '../../../services/expense-reports.service';
-import { SaldoService } from '../../../services/saldo.service';
 import { NotificationService } from '../../../services/notification.service';
 import { UploadService } from '../../../services/upload.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { AdminUsersService } from '../../admin-users/services/admin-users.service';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { ERoles } from '../../admin-users/interfaces/roles.enum';
+import { InvoicesService } from '../../invoices/services/invoices.service';
+import { IProject } from '../../invoices/interfaces/project.interface';
+import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
+import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
+import { FormFieldComponent } from '../../../design-system/form-field/form-field.component';
+import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 
 @Component({
   selector: 'app-nueva-rendicion-directa-deposito',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, IconComponent],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, IconComponent, FormFieldComponent, ProjectSelectComponent],
   templateUrl: './nueva-rendicion-directa-deposito.component.html',
 })
 export class NuevaRendicionDirectaDepositoComponent implements OnInit {
   private fb = inject(FormBuilder);
   private router = inject(Router);
   private expenseReportsService = inject(ExpenseReportsService);
-  private saldoService = inject(SaldoService);
   private notificationService = inject(NotificationService);
   private uploadService = inject(UploadService);
   private userStateService = inject(UserStateService);
   private adminUsersService = inject(AdminUsersService);
+  private invoicesService = inject(InvoicesService);
+  private ordenTrabajoService = inject(OrdenTrabajoService);
 
   targetUsers = signal<IUserResponse[]>([]);
   isUploadingDeposit = signal(false);
   isScanningDeposit = signal(false);
   isCreating = signal(false);
+
+  // Centro de costo + OT: fijan el destino de todos los comprobantes de la rendición.
+  projects = signal<IProject[]>([]);
+  ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
+  filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
+    const pid = this.form?.get('projectId')?.value;
+    if (!pid) return [];
+    return this.ordenesTrabajo().filter(ot => this.otCostCenterId(ot) === pid);
+  });
 
   depositReceiptUrl: string | null = null;
   depositReceiptName: string | null = null;
@@ -46,6 +61,8 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
 
   form: FormGroup = this.fb.group({
     userId: ['', Validators.required],
+    projectId: ['', Validators.required],
+    ordenTrabajoId: ['', Validators.required],
     metodoPago: ['deposito', Validators.required],
     gestion: [''],
     amount: [null, [Validators.required, Validators.min(0.01)]],
@@ -71,6 +88,45 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadTargetUsers();
+
+    const clientId = this.resolveClientId();
+    if (clientId) {
+      this.invoicesService.getProjects(clientId).subscribe({
+        next: list => this.projects.set((list || []).filter(p => p.isActive !== false)),
+        error: () => this.projects.set([]),
+      });
+    }
+
+    this.ordenTrabajoService.getAll().subscribe({
+      next: list => this.ordenesTrabajo.set((list || []).filter(o => o.isActive !== false)),
+      error: () => this.ordenesTrabajo.set([]),
+    });
+
+    // Si cambia el centro de costo, limpia la OT si ya no pertenece a él.
+    this.form.get('projectId')?.valueChanges.subscribe(pid => {
+      const otId = this.form.get('ordenTrabajoId')?.value;
+      if (!otId) return;
+      const stillValid = this.ordenesTrabajo().some(
+        ot => ot._id === otId && this.otCostCenterId(ot) === pid
+      );
+      if (!stillValid) this.form.get('ordenTrabajoId')?.setValue('');
+    });
+  }
+
+  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
+  private otCostCenterId(ot: IOrdenTrabajo): string {
+    const cc = ot.costCenterId;
+    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
+  }
+
+  private resolveClientId(): string {
+    const user = this.userStateService.getUser() as any;
+    return (
+      user?.companyId ||
+      user?.client?._id ||
+      (typeof user?.clientId === 'string' ? user.clientId : user?.clientId?._id) ||
+      ''
+    );
   }
 
   goBack(): void {
@@ -185,10 +241,12 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
     }
     this.isCreating.set(true);
     const v = this.form.value;
-    this.saldoService.createPago({
+    this.expenseReportsService.createDirectaDeposit({
       userId: v.userId,
+      projectId: v.projectId,
+      ordenTrabajoId: v.ordenTrabajoId,
+      gestion: v.gestion?.trim() || undefined,
       amount: Number(v.amount),
-      concepto: v.gestion?.trim() || undefined,
       metodoPago: v.metodoPago,
       scannedAmount: this.depositScannedAmount ?? undefined,
       receiptUrl: this.depositReceiptUrl || undefined,
@@ -200,16 +258,16 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
       operationTime: this.depositOperationTime || undefined,
       titular: this.depositTitular || undefined,
     }).subscribe({
-      next: () => {
+      next: (report) => {
         this.isCreating.set(false);
-        this.notificationService.show('Pago registrado y saldo asignado al colaborador.', 'success');
-        this.router.navigate(['/tesoreria'], { queryParams: { tab: 'rendiciones-directas' } });
+        this.notificationService.show('Rendición directa creada con el depósito registrado.', 'success');
+        this.router.navigate(['/mis-rendiciones', report._id, 'detalle']);
       },
       error: e => {
         this.isCreating.set(false);
         const raw = e?.error?.message;
         const msg = Array.isArray(raw) ? raw.join(', ') : raw;
-        this.notificationService.show(msg || 'Error al registrar el pago.', 'error');
+        this.notificationService.show(msg || 'Error al crear la rendición.', 'error');
       },
     });
   }

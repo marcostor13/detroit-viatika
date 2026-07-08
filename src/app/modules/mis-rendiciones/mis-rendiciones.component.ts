@@ -563,8 +563,7 @@ export class MisRendicionesComponent implements OnInit {
   }
 
   hasReportSaldo(report: IExpenseReport): boolean {
-    return !!(report.directaDeposit)
-      || !!(report.saldoIds && report.saldoIds.length > 0);
+    return !!(report.directaDeposit);
   }
 
   getReportSaldo(report: IExpenseReport): number {
