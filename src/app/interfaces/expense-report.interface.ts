@@ -19,9 +19,6 @@ export interface ICreateViaticoPayload {
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
   observations?: string;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
   /** Saldos de la bolsa seleccionados (mismo centro de costo) que financian esta solicitud. */
   saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
@@ -258,14 +255,6 @@ export interface IExpenseReport {
   directaDeposit?: IDirectaDepositInfo;
   /** Saldos de la bolsa (poblados) que financiaron esta rendición directa. */
   saldoIds?: IReportFinancingSaldo[];
-  /** ID de la rendición directa de la que proviene el saldo heredado. */
-  pendingBalanceFromReportId?: string;
-  /** Código (RD-XXXX) de la rendición de origen del saldo heredado (derivado en backend). */
-  pendingBalanceFromCodigo?: string;
-  /** Monto heredado desde la rendición directa de origen. */
-  pendingBalanceAmount?: number;
-  /** ID de la rendición directa que consumió el saldo de esta. */
-  pendingBalanceUsedInRendicionId?: string;
 }
 
 export interface IDirectaDepositInfo {
@@ -306,8 +295,6 @@ export interface ICreateExpenseReport {
   gestion?: string;
   isDirecta?: boolean;
   isCajaChica?: boolean;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
   /** Saldos de la bolsa seleccionados para financiar esta rendición directa. */
   saldoIds?: string[];
   // New fields

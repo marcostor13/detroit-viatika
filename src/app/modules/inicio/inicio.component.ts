@@ -191,14 +191,11 @@ export class InicioComponent implements OnInit {
 
   /**
    * Una rendición de viáticos cuenta como CERRADA cuando llegó a un estado final
-   * (cerrada / reembolsada / liquidada / saldo devuelto) O cuando su saldo pendiente
-   * ya fue resuelto: reutilizado/trasladado a otra solicitud o devuelto con
-   * comprobante. Mismo criterio que `isReportEffectivelyClosed` de mis-rendiciones.
+   * (cerrada / reembolsada / liquidada / saldo devuelto) O cuando ya fue devuelta
+   * con comprobante. Mismo criterio que `isReportEffectivelyClosed` de mis-rendiciones.
    */
   private isViaticoCerrado(r: IExpenseReport): boolean {
     return this.VIATICO_CLOSED_STATUSES.includes(r.status)
-      || !!(r as any).pendingBalanceUsedInRendicionId
-      || !!(r as any).pendingBalanceUsedInAdvanceId
       || !!(r as any).returnVoucher;
   }
 

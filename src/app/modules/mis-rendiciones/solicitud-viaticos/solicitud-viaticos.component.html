@@ -62,23 +62,6 @@
 
   <div class="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6">
 
-    <!-- Saldo pendiente trasladado (solo cuando viene de otra rendición) -->
-    @if (hasPendingBalance) {
-    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 flex items-start gap-3">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600 shrink-0 mt-0.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-      </svg>
-      <div>
-        <p class="text-sm font-semibold text-amber-800">Solicitud con saldo pendiente</p>
-        <p class="text-sm text-amber-700 mt-0.5">
-          Tienes un saldo pendiente de
-          <strong>S/ {{ pendingBalanceAmount() | number:'1.2-2' }}</strong>
-          trasladado desde tu rendicion anterior. Se usa para financiar este viático: cubre el costo de las categorías, contabilidad deposita solo la diferencia y, si el saldo supera el costo, el sobrante vuelve a tu bolsa.
-        </p>
-      </div>
-    </div>
-    }
-
     <!-- Info banner -->
     <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 flex items-start gap-3">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-500 shrink-0 mt-0.5">
@@ -172,9 +155,6 @@
             />
             @if (form.get('projectId')?.invalid && form.get('projectId')?.touched) {
             <p class="text-xs text-red-500">Seleccione un centro de costo</p>
-            }
-            @if (hasPendingBalance) {
-            <p class="text-xs text-gray-500">El centro de costo queda fijo por el saldo heredado; ese saldo solo puede usarse aquí.</p>
             }
           </div>
 
@@ -352,32 +332,10 @@
       <!-- Section: Resumen del monto -->
       <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <!-- Total general -->
-        @if (hasPendingBalance) {
-        <div class="px-4 py-3.5 bg-gray-50 flex flex-col gap-1.5 lg:items-end">
-          <div class="flex items-center justify-between lg:justify-end lg:gap-16">
-            <span class="text-sm text-gray-500">Monto requerido</span>
-            <span class="text-sm font-semibold text-gray-700 tabular-nums">S/ {{ totalGeneral() | number:'1.2-2' }}</span>
-          </div>
-          <div class="flex items-center justify-between lg:justify-end lg:gap-16">
-            <span class="text-sm text-gray-500">Saldo pendiente aplicado</span>
-            <span class="text-sm font-semibold text-amber-700 tabular-nums">- S/ {{ pendingUsed() | number:'1.2-2' }}</span>
-          </div>
-          <div class="flex items-center justify-between lg:justify-end lg:gap-16 pt-1 border-t border-gray-200 mt-0.5">
-            <span class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contabilidad deposita</span>
-            <span class="text-base font-bold text-gray-900 tabular-nums">S/ {{ pendingDeposita() | number:'1.2-2' }}</span>
-          </div>
-          @if (pendingExcess() > 0.009) {
-          <p class="text-xs font-medium text-emerald-700 mt-0.5 lg:text-right">
-            El sobrante de S/ {{ pendingExcess() | number:'1.2-2' }} volverá a tu bolsa. Contabilidad no deposita nada.
-          </p>
-          }
-        </div>
-        } @else {
         <div class="px-4 py-3.5 bg-gray-50 flex items-center justify-between gap-4 lg:justify-end">
           <span class="text-sm font-semibold text-gray-600 uppercase tracking-wide">Total general</span>
           <span class="text-base font-bold text-gray-900 tabular-nums">S/ {{ totalGeneral() | number:'1.2-2' }}</span>
         </div>
-        }
       </div>
 
     </form>

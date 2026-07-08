@@ -60,18 +60,6 @@
             <div>
               <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Monto solicitado</p>
               <p class="text-xl font-bold text-secondary">S/ {{ advance()!.amount | number:'1.2-2' }}</p>
-              @if (advance()!.pendingBalanceAmount != null && advance()!.pendingBalanceAmount! > 0) {
-                <div class="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs space-y-1">
-                  <div class="flex justify-between gap-4">
-                    <span class="text-amber-700">Saldo pendiente (rendicion anterior)</span>
-                    <span class="font-semibold text-amber-800 tabular-nums">S/ {{ advance()!.pendingBalanceAmount | number:'1.2-2' }}</span>
-                  </div>
-                  <div class="flex justify-between gap-4">
-                    <span class="text-amber-700">Monto adicional solicitado</span>
-                    <span class="font-semibold text-amber-800 tabular-nums">S/ {{ advance()!.additionalAmount | number:'1.2-2' }}</span>
-                  </div>
-                </div>
-              }
             </div>
 
             <div class="sm:col-span-2">
@@ -249,16 +237,6 @@
                 <span class="text-tertiary font-medium">Total</span>
                 <span class="text-secondary font-bold">S/ {{ advance()!.amount | number:'1.2-2' }}</span>
               </div>
-              @if (advance()!.pendingBalanceAmount != null && advance()!.pendingBalanceAmount! > 0) {
-                <div class="flex justify-between text-xs pt-1">
-                  <span class="text-tertiary">Saldo pendiente</span>
-                  <span class="text-amber-700 font-semibold tabular-nums">S/ {{ advance()!.pendingBalanceAmount | number:'1.2-2' }}</span>
-                </div>
-                <div class="flex justify-between text-xs">
-                  <span class="text-tertiary">Adicional</span>
-                  <span class="text-secondary font-medium tabular-nums">S/ {{ advance()!.additionalAmount | number:'1.2-2' }}</span>
-                </div>
-              }
             }
           </div>
         </div>

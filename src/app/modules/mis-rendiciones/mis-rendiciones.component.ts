@@ -564,14 +564,10 @@ export class MisRendicionesComponent implements OnInit {
 
   hasReportSaldo(report: IExpenseReport): boolean {
     return !!(report.directaDeposit)
-      || !!(report.pendingBalanceFromReportId && (report.pendingBalanceAmount ?? 0) > 0)
       || !!(report.saldoIds && report.saldoIds.length > 0);
   }
 
   getReportSaldo(report: IExpenseReport): number {
-    if (report.pendingBalanceFromReportId && (report.pendingBalanceAmount ?? 0) > 0) {
-      return (report.pendingBalanceAmount ?? 0) - this.getTotalGastado(report);
-    }
     return this.getSaldoLibre(report);
   }
 
@@ -851,8 +847,6 @@ export class MisRendicionesComponent implements OnInit {
    */
   isReportEffectivelyClosed(report: IExpenseReport): boolean {
     return report.status === 'closed'
-      || !!(report as any).pendingBalanceUsedInRendicionId
-      || !!(report as any).pendingBalanceUsedInAdvanceId
       || !!(report as any).returnVoucher;
   }
 

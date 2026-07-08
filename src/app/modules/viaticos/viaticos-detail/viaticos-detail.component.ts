@@ -344,8 +344,6 @@ export class ViaticosDetailComponent implements OnInit {
       const WHITE: [number, number, number] = [255, 255, 255];
       const LIGHT: [number, number, number] = [248, 243, 243];
       const BLACK: [number, number, number] = [30, 30, 30];
-      const AMBER_BG: [number, number, number] = [255, 251, 235];
-      const AMBER_FG: [number, number, number] = [120, 70, 20];
 
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' }) as JsPdfAT;
       const pageW = doc.internal.pageSize.getWidth();
@@ -413,22 +411,11 @@ export class ViaticosDetailComponent implements OnInit {
         `S/ ${ln.lineTotal.toFixed(2)}`,
       ]);
 
-      const hasPending = a.pendingBalanceAmount != null && a.pendingBalanceAmount > 0;
-
       autoTable(doc, {
         startY: tableY,
         margin: { left: M, right: M },
         head: [['Viáticos', 'Detalle', 'Importe', 'Cantidad\nde personas', 'Combustible\nGLP x dia', 'Días', 'Total']],
         body: [
-          ...(hasPending ? [[
-            { content: 'Saldo anterior', styles: { fontStyle: 'bold' as const, fillColor: AMBER_BG, textColor: AMBER_FG } },
-            { content: '', styles: { fillColor: AMBER_BG } },
-            { content: '', styles: { fillColor: AMBER_BG } },
-            { content: '', styles: { fillColor: AMBER_BG } },
-            { content: '', styles: { fillColor: AMBER_BG } },
-            { content: '', styles: { fillColor: AMBER_BG } },
-            { content: `S/ ${a.pendingBalanceAmount!.toFixed(2)}`, styles: { halign: 'right' as const, fontStyle: 'bold' as const, fillColor: AMBER_BG, textColor: AMBER_FG } },
-          ]] : []),
           ...tableRows,
           [
             {
@@ -481,7 +468,6 @@ export class ViaticosDetailComponent implements OnInit {
 
     try {
       const logoBase64 = await this.loadLogoBase64();
-      const hasPending = a.pendingBalanceAmount != null && a.pendingBalanceAmount > 0;
 
       const { responsible, accountStr, dni, peopleMax, place, startFmt, endFmt, projectName, lines, catName } =
         this.exportData();
@@ -579,22 +565,6 @@ export class ViaticosDetailComponent implements OnInit {
       const numFmt = '"S/ "#,##0.00';
       const numFmtPlain = '#,##0.00';
 
-      if (hasPending) {
-        const sRow = ws.addRow(['Saldo anterior', '', '', '', '', '', a.pendingBalanceAmount!]);
-        sRow.height = 18;
-        sRow.eachCell({ includeEmpty: true }, (cell, col) => {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
-          cell.font = (col === 1 || col === 7)
-            ? { bold: true, size: 9.5, color: { argb: 'FF92400E' } }
-            : { size: 9.5, color: { argb: 'FF92400E' } };
-          cell.border = allBorders();
-          cell.alignment = col === 7
-            ? { horizontal: 'right', vertical: 'middle' }
-            : { vertical: 'middle' };
-          if (col === 7) cell.numFmt = numFmt;
-        });
-      }
-
       lines.forEach((ln, i) => {
         const dRow = ws.addRow([
           catName(ln),
@@ -625,7 +595,7 @@ export class ViaticosDetailComponent implements OnInit {
       });
 
       // ── Fila TOTAL ──
-      const totalRowIdx = 11 + lines.length + (hasPending ? 1 : 0) + 1;
+      const totalRowIdx = 11 + lines.length + 1;
       const tRow = ws.addRow(['TOTAL', '', '', '', '', '', a.amount]);
       ws.mergeCells(`A${totalRowIdx}:F${totalRowIdx}`);
       tRow.height = 22;
