@@ -82,6 +82,8 @@ export default class AddInvoiceComponent implements OnInit {
   isDirectaReport = signal<boolean>(false);
   /** True cuando la rendición directa ya tiene una OT propia heredada (rendiciones creadas tras esta funcionalidad). */
   directaOrdenTrabajoInherited = signal<boolean>(false);
+  /** True cuando la planilla de movilidad hereda la OT de la solicitud de viático (VD-28). */
+  viaticoOrdenTrabajoInherited = signal<boolean>(false);
   fromContabilidad = false;
 
   expenseType = signal<ExpenseType>('factura');
@@ -487,6 +489,15 @@ export default class AddInvoiceComponent implements OnInit {
           this.form.get('ordenTrabajoId')?.disable();
           this.directaOrdenTrabajoInherited.set(true);
         }
+        // Viático: la OT se hereda de la solicitud del viático y la toman sus
+        // comprobantes de planilla de movilidad; no se elige por comprobante (VD-28).
+        const viaticoOtRef = (report as any)?.viaticoOrdenTrabajoId;
+        if (!isDirecta && (report as any)?.type === 'viatico' && viaticoOtRef) {
+          const otId = typeof viaticoOtRef === 'string' ? viaticoOtRef : viaticoOtRef._id;
+          this.form.patchValue({ ordenTrabajoId: otId });
+          this.form.get('ordenTrabajoId')?.disable();
+          this.viaticoOrdenTrabajoInherited.set(true);
+        }
         // El flag directa puede llegar después de que el usuario ya agregó filas:
         // re-sincroniza validadores del proyecto (superior y por fila).
         this.syncMobilityRowValidators();
@@ -724,12 +735,20 @@ export default class AddInvoiceComponent implements OnInit {
    * y dejan de ser obligatorios; en el resto de casos son requeridos.
    */
   private syncTopValidators(): void {
-    const optional = this.isDirectaPlanilla();
-    for (const name of ['proyectId', 'categoryId']) {
-      const ctrl = this.form.get(name);
-      if (!ctrl || ctrl.disabled) continue;
-      ctrl.setValidators(optional ? [] : [Validators.required]);
-      ctrl.updateValueAndValidity({ emitEvent: false });
+    // Proyecto: opcional solo en planilla directa (el centro de costo vive en la
+    // rendición). Requerido en el resto de casos.
+    const projCtrl = this.form.get('proyectId');
+    if (projCtrl && !projCtrl.disabled) {
+      projCtrl.setValidators(this.isDirectaPlanilla() ? [] : [Validators.required]);
+      projCtrl.updateValueAndValidity({ emitEvent: false });
+    }
+    // Categoría: la planilla de movilidad no la pide (se asigna "Movilidad"
+    // automáticamente, VD-28). Requerida en el resto de tipos de gasto.
+    const catCtrl = this.form.get('categoryId');
+    if (catCtrl && !catCtrl.disabled) {
+      const isPlanilla = this.expenseType() === 'planilla_movilidad';
+      catCtrl.setValidators(isPlanilla ? [] : [Validators.required]);
+      catCtrl.updateValueAndValidity({ emitEvent: false });
     }
   }
 
@@ -740,12 +759,12 @@ export default class AddInvoiceComponent implements OnInit {
    */
   private syncMobilityRowValidators(): void {
     this.syncTopValidators();
-    const rowRequired = this.isDirectaContext();
     const topProjectId = this.form.get('proyectId')?.value || '';
     for (const ctrl of this.mobilityRowsArray.controls) {
+      // La categoría ya no se pide por fila en la planilla de movilidad (VD-28).
       const categoryCtrl = ctrl.get('categoryId');
       if (categoryCtrl) {
-        categoryCtrl.setValidators(rowRequired ? [Validators.required] : []);
+        categoryCtrl.setValidators([]);
         categoryCtrl.updateValueAndValidity({ emitEvent: false });
       }
       const proyectCtrl = ctrl.get('proyectId');
@@ -757,12 +776,13 @@ export default class AddInvoiceComponent implements OnInit {
 
   addMobilityRow() {
     const topProjectId = this.form.get('proyectId')?.value || '';
-    const categoryRequired = this.isDirectaContext() ? [Validators.required] : [];
     const group = this.fb.group({
       fecha: ['', Validators.required],
       total: [null, [Validators.required, Validators.min(0)]],
       proyectId: [topProjectId],
-      categoryId: ['', categoryRequired],
+      // Categoría y tercero ya no se piden en la planilla de movilidad (VD-28);
+      // se conservan los controles en su valor por defecto por compatibilidad.
+      categoryId: [''],
       colaboradorEsTercero: [false],
       colaboradorId: [''],
       origen: ['', Validators.required],
@@ -1196,11 +1216,11 @@ export default class AddInvoiceComponent implements OnInit {
     }
     if (this.isDirectaContext()) {
       const allRowsComplete = this.mobilityRowsArray.controls.every(
-        (c) => !!c.get('proyectId')?.value && !!c.get('categoryId')?.value
+        (c) => !!c.get('proyectId')?.value
       );
       if (!allRowsComplete) {
         this.mobilityRowsArray.markAllAsTouched();
-        this.notificationService.show('Selecciona el proyecto y la categoría de cada fila', 'error');
+        this.notificationService.show('Falta el proyecto de alguna fila', 'error');
         return;
       }
     }
