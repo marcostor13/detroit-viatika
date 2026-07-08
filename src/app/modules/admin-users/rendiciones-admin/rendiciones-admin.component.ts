@@ -137,6 +137,11 @@ export class RendicionesAdminComponent implements OnInit {
   selectedRejectItem = signal<UnifiedRendicionItem | null>(null);
   rejectForm!: FormGroup;
 
+  // Detalle de solicitud (modal, en vez de redirigir cuando hay que aprobar/rechazar)
+  showDetailModal = signal(false);
+  detailItem = signal<UnifiedRendicionItem | null>(null);
+  expandedDetailLineIds = signal<Set<number>>(new Set());
+
   private get currentUserId(): string {
     return (this.userStateService.getUser() as any)?._id ?? '';
   }
@@ -200,12 +205,17 @@ export class RendicionesAdminComponent implements OnInit {
     });
   }
 
-  /** Líneas por categoría del viático en revisión (vacío si no es viático). */
-  approveViaticoLines(): any[] {
-    const item = this.pendingApproveItem();
-    if (!item || item.source !== 'report') return [];
+  /** Líneas por categoría de una solicitud (viático o anticipo). Vacío si no aplica. */
+  linesForItem(item: UnifiedRendicionItem | null): any[] {
+    if (!item) return [];
+    if (item.source === 'advance') return (item.raw as IAdvance).lines ?? [];
     const raw = item.raw as IExpenseReport;
     return raw.type === 'viatico' ? ((raw as any).viaticoLines ?? []) : [];
+  }
+
+  /** Líneas por categoría del viático en revisión (vacío si no es viático). */
+  approveViaticoLines(): any[] {
+    return this.linesForItem(this.pendingApproveItem());
   }
 
   /** Nombre de la categoría de una línea (acepta id suelto o ya poblado). */
@@ -337,11 +347,111 @@ export class RendicionesAdminComponent implements OnInit {
   }
 
   goToDetail(item: UnifiedRendicionItem): void {
+    // Cuando la solicitud está pendiente de la acción del usuario (aprobar/rechazar),
+    // mostramos el detalle en un modal en lugar de redirigir a la vista completa.
+    if (item.canApproveNow || item.canReject) {
+      this.openDetailModal(item);
+      return;
+    }
+    this.navigateToDetail(item);
+  }
+
+  private navigateToDetail(item: UnifiedRendicionItem): void {
     if (item.source === 'advance') {
       this.router.navigate(['/viaticos', item._id]);
     } else {
       this.router.navigate(['/mis-rendiciones', item._id, 'detalle']);
     }
+  }
+
+  // ─── Detalle en modal ───────────────────────────────────────────────────────
+
+  openDetailModal(item: UnifiedRendicionItem): void {
+    this.detailItem.set(item);
+    this.expandedDetailLineIds.set(new Set());
+    this.showDetailModal.set(true);
+  }
+
+  /** Líneas por categoría de la solicitud abierta en el modal de detalle. */
+  detailLines(): any[] {
+    return this.linesForItem(this.detailItem());
+  }
+
+  /** Centro de costo con código (ej. "CC-01 — Obra Norte"). */
+  detailCentroCosto(): string {
+    const item = this.detailItem();
+    if (!item) return '—';
+    const p = (item.raw as any).projectId;
+    // Poblado por el API
+    if (p && typeof p === 'object' && p.name) {
+      return p.code ? `${p.code} — ${p.name}` : p.name;
+    }
+    // Sin poblar: buscar el código en la lista de centros de costo ya cargada
+    const project = this.projects.find(x => x._id === item.projectId);
+    if (project) {
+      return project.code ? `${project.code} — ${project.name}` : project.name;
+    }
+    return item.projectName || '—';
+  }
+
+  /** Orden de Trabajo imputada (solo viáticos). Vacío si no aplica. */
+  detailOrdenTrabajo(): string {
+    const item = this.detailItem();
+    if (!item || item.source !== 'report') return '';
+    const ot = (item.raw as IExpenseReport).viaticoOrdenTrabajoId;
+    if (!ot) return '';
+    return typeof ot === 'object' ? (ot.nombre ?? '') : '';
+  }
+
+  /** Observaciones del colaborador (viático o anticipo). */
+  detailObservations(): string {
+    const item = this.detailItem();
+    if (!item) return '';
+    return item.source === 'advance'
+      ? ((item.raw as IAdvance).observations ?? '')
+      : ((item.raw as IExpenseReport).viaticoObservations ?? '');
+  }
+
+  detailStartDate(): string | undefined {
+    const item = this.detailItem();
+    if (!item) return undefined;
+    return item.source === 'advance'
+      ? (item.raw as IAdvance).startDate
+      : (item.raw as IExpenseReport).viaticoStartDate;
+  }
+
+  detailEndDate(): string | undefined {
+    const item = this.detailItem();
+    if (!item) return undefined;
+    return item.source === 'advance'
+      ? (item.raw as IAdvance).endDate
+      : (item.raw as IExpenseReport).viaticoEndDate;
+  }
+
+  toggleDetailLine(index: number): void {
+    const s = new Set(this.expandedDetailLineIds());
+    if (s.has(index)) { s.delete(index); } else { s.add(index); }
+    this.expandedDetailLineIds.set(s);
+  }
+
+  isDetailLineExpanded(index: number): boolean {
+    return this.expandedDetailLineIds().has(index);
+  }
+
+  /** Aprobar desde el modal de detalle. */
+  approveFromDetail(): void {
+    const item = this.detailItem();
+    if (!item) return;
+    this.showDetailModal.set(false);
+    this.openApproveModal(item);
+  }
+
+  /** Rechazar desde el modal de detalle. */
+  rejectFromDetail(): void {
+    const item = this.detailItem();
+    if (!item) return;
+    this.showDetailModal.set(false);
+    this.openRejectModal(item);
   }
 
   // ─── Approve ──────────────────────────────────────────────────────────────────
