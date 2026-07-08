@@ -39,11 +39,12 @@ export class TesoreriaComponent implements OnInit {
 
   get tabsList(): TabItem[] {
     const tabs: TabItem[] = [
-      { value: 'pendientes', label: 'Pendientes' },
+      // VD-32: se renombran las etiquetas visibles (no los `value`, que se usan en la lógica).
+      { value: 'pendientes', label: 'Fondos' },
       { value: 'aprobados', label: 'En pago' },
     ];
     if (this.canPayAndSettle) {
-      tabs.push({ value: 'devoluciones', label: 'Devoluciones', badge: this.pendingReturns.length || undefined });
+      tabs.push({ value: 'devoluciones', label: 'Reembolsos', badge: this.pendingReturns.length || undefined });
     }
     if (this.canManageDirectaDeposit) {
       tabs.push({ value: 'rendiciones-directas', label: 'Rendiciones Directas' });
