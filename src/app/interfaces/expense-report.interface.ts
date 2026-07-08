@@ -170,6 +170,12 @@ export interface IExpenseReport {
   rejectionReason?: string;
   /** Quién rechazó: coordinador (revisión inicial) o contabilidad (aprobación final). */
   rejectedByRole?: 'coordinador' | 'contabilidad';
+  // ─── Rendición directa: cadena de aprobadores por centro de costo ─────────
+  directaApprovalLevel?: number;
+  directaRequiredLevels?: number;
+  /** Cadena ordenada de aprobadores de centro de costo, armada al enviar la rendición. */
+  directaApproverChain?: ({ _id: string; name: string; email: string } | string)[];
+  directaApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
   expenseIds: any[];
   createdBy: any; // User who created it
   approvedBy?: any; // Admin who approved it

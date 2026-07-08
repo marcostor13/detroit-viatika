@@ -72,6 +72,25 @@
           <p class="mt-1 text-xs text-red-500">La gestion es obligatoria (minimo 3 caracteres).</p>
         }
       </div>
+
+      <!-- Centro de costo: los comprobantes que agregues heredaran este centro de costo -->
+      <div class="px-5 pb-5">
+        <app-form-field
+          #projectField
+          label="Centro de costo"
+          [required]="true"
+          [error]="(form.get('projectId')?.invalid && form.get('projectId')?.touched) ? 'Seleccione un centro de costo' : ''"
+        >
+          <app-project-select
+            [id]="projectField.fieldId"
+            [attr.aria-describedby]="projectField.describedBy()"
+            formControlName="projectId"
+            [projects]="projects()"
+            placeholder="Seleccione centro de costo…"
+            [invalid]="!!(form.get('projectId')?.invalid && form.get('projectId')?.touched)"
+          />
+        </app-form-field>
+      </div>
     </form>
 
     <!-- Saldos disponibles -->

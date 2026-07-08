@@ -12,11 +12,15 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { SaldoService } from '../../../services/saldo.service';
 import { ISaldo, SaldoType } from '../../../interfaces/saldo.interface';
+import { InvoicesService } from '../../invoices/services/invoices.service';
+import { IProject } from '../../invoices/interfaces/project.interface';
+import { FormFieldComponent } from '../../../design-system/form-field/form-field.component';
+import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 
 @Component({
   selector: 'app-nueva-rendicion-directa',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, FormFieldComponent, ProjectSelectComponent],
   templateUrl: './nueva-rendicion-directa.component.html',
 })
 export class NuevaRendicionDirectaComponent implements OnInit {
@@ -26,6 +30,7 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   private notifications = inject(NotificationService);
   private userState = inject(UserStateService);
   private saldoService = inject(SaldoService);
+  private invoicesService = inject(InvoicesService);
 
   submitting = signal(false);
 
@@ -33,6 +38,10 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   saldos = signal<ISaldo[]>([]);
   loadingSaldos = signal<boolean>(true);
   selectedIds = signal<Set<string>>(new Set());
+
+  // Centros de costo asignables: el colaborador elige uno al crear la rendición;
+  // sus documentos heredarán ese centro de costo (ya no se elige por-comprobante).
+  projects = signal<IProject[]>([]);
 
   selectedTotal = computed(() =>
     this.saldos()
@@ -42,6 +51,7 @@ export class NuevaRendicionDirectaComponent implements OnInit {
 
   form: FormGroup = this.fb.group({
     gestion: ['', [Validators.required, Validators.minLength(3)]],
+    projectId: ['', Validators.required],
   });
 
   ngOnInit(): void {
@@ -52,6 +62,24 @@ export class NuevaRendicionDirectaComponent implements OnInit {
       },
       error: () => this.loadingSaldos.set(false),
     });
+
+    const clientId = this.resolveClientId();
+    if (clientId) {
+      this.invoicesService.getProjects(clientId).subscribe({
+        next: list => this.projects.set((list || []).filter(p => p.isActive !== false)),
+        error: () => this.projects.set([]),
+      });
+    }
+  }
+
+  private resolveClientId(): string {
+    const user = this.userState.getUser() as any;
+    return (
+      user?.companyId ||
+      user?.client?._id ||
+      (typeof user?.clientId === 'string' ? user.clientId : user?.clientId?._id) ||
+      ''
+    );
   }
 
   isSelected(id: string): boolean {
@@ -100,11 +128,7 @@ export class NuevaRendicionDirectaComponent implements OnInit {
 
     const user = this.userState.getUser() as any;
     const userId = user?._id ?? '';
-    const clientId =
-      user?.companyId ||
-      user?.client?._id ||
-      (typeof user?.clientId === 'string' ? user.clientId : user?.clientId?._id) ||
-      '';
+    const clientId = this.resolveClientId();
 
     if (!userId || !clientId) {
       this.notifications.show('No se pudo identificar al usuario o empresa.', 'error');
@@ -120,6 +144,7 @@ export class NuevaRendicionDirectaComponent implements OnInit {
         isDirecta: true,
         userId,
         clientId,
+        projectId: this.form.value.projectId,
         ...(saldoIds.length > 0 && { saldoIds }),
       })
       .subscribe({

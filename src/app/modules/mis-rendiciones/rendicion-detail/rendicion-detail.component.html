@@ -371,6 +371,38 @@
         </div>
         }
 
+        <!-- Admin/Coordinador: rendición directa en cadena de aprobadores de centro de costo -->
+        @if (report.status === 'pending_l1' && report.isDirecta && isAdminView) {
+        <div class="flex flex-col gap-2 items-end">
+          @if (!canApproveDirectaChainStep) {
+            <p class="text-sm text-primary bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg max-w-xs leading-snug">
+              Esta rendición directa está en la cadena de aprobadores de centro de costo (nivel {{ (report.directaApprovalLevel ?? 0) + 1 }} de {{ report.directaRequiredLevels ?? 1 }}). No te corresponde aprobarla en este momento.
+            </p>
+          }
+          @if (canApproveDirectaChainStep) {
+          <div class="flex flex-row flex-wrap gap-2 justify-end">
+            <app-button
+              label="Aprobar Rendición"
+              variant="primary"
+              size="sm"
+              [fullWidth]="false"
+              [loading]="approvingDirecta()"
+              (clicked)="confirmApproveDirectaChainStep()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </app-button>
+            <app-button label="Rechazar rendición" variant="danger" size="sm" [fullWidth]="false" (clicked)="openDirectaRejectModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
+            </app-button>
+          </div>
+          }
+        </div>
+        }
+
         <!-- Contabilidad: rendición enviada — bloqueada hasta que coordinador apruebe -->
         @if (isPendingCoordinador) {
         <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-sm font-medium max-w-xs">
@@ -2350,6 +2382,20 @@
 }
 
 <!-- Modal: Admin rejection reason -->
+<app-modal [open]="showDirectaRejectModal()" title="Rechazar Rendición" size="sm" (closed)="showDirectaRejectModal.set(false)">
+  <p class="text-sm text-tertiary mb-4">Indica el motivo del rechazo para notificar al colaborador.</p>
+  <textarea
+    class="w-full border border-divider rounded-xl p-3 text-sm text-secondary min-h-[100px] focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+    placeholder="Motivo del rechazo..."
+    [ngModel]="directaRejectionReason()"
+    (ngModelChange)="directaRejectionReason.set($event)"
+  ></textarea>
+  <div class="flex gap-3 mt-4">
+    <app-button label="Cancelar" variant="secondary" [fullWidth]="true" (clicked)="showDirectaRejectModal.set(false)" />
+    <app-button label="Rechazar" variant="danger" [fullWidth]="true" [loading]="isRejectingDirecta()" (clicked)="submitDirectaRejection()" />
+  </div>
+</app-modal>
+
 @if(showAdminRejectModal()) {
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showAdminRejectModal.set(false)">
   <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>

@@ -512,10 +512,8 @@ export default class AddInvoiceComponent implements OnInit {
         if (report && report.projectId) {
           const pId = typeof report.projectId === 'string' ? report.projectId : (report.projectId as any)._id;
           this.form.patchValue({ proyectId: pId });
-          // En rendición directa el colaborador puede cambiar el proyecto por gasto
-          if (!isDirecta) {
-            this.form.get('proyectId')?.disable();
-          }
+          // El centro de costo lo fija la rendición (normal o directa): no se elige por comprobante.
+          this.form.get('proyectId')?.disable();
         }
         // El flag directa puede llegar después de que el usuario ya agregó filas:
         // re-sincroniza validadores del proyecto (superior y por fila).
@@ -809,27 +807,36 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
-  /** Sincroniza validadores de proyecto y categoría (selector superior + por fila) según el contexto directa. */
+  /**
+   * Sincroniza validadores de categoría por fila según el contexto directa, y
+   * mantiene el `proyectId` de cada fila igual al de la rendición (el centro
+   * de costo ya no se elige por comprobante ni por fila).
+   */
   private syncMobilityRowValidators(): void {
     this.syncTopValidators();
     const rowRequired = this.isDirectaContext();
+    const topProjectId = this.form.get('proyectId')?.value || '';
     for (const ctrl of this.mobilityRowsArray.controls) {
-      for (const name of ['proyectId', 'categoryId']) {
-        const c = ctrl.get(name);
-        if (!c) continue;
-        c.setValidators(rowRequired ? [Validators.required] : []);
-        c.updateValueAndValidity({ emitEvent: false });
+      const categoryCtrl = ctrl.get('categoryId');
+      if (categoryCtrl) {
+        categoryCtrl.setValidators(rowRequired ? [Validators.required] : []);
+        categoryCtrl.updateValueAndValidity({ emitEvent: false });
+      }
+      const proyectCtrl = ctrl.get('proyectId');
+      if (proyectCtrl && !proyectCtrl.value && topProjectId) {
+        proyectCtrl.setValue(topProjectId, { emitEvent: false });
       }
     }
   }
 
   addMobilityRow() {
-    const rowRequired = this.isDirectaContext() ? [Validators.required] : [];
+    const topProjectId = this.form.get('proyectId')?.value || '';
+    const categoryRequired = this.isDirectaContext() ? [Validators.required] : [];
     const group = this.fb.group({
       fecha: ['', Validators.required],
       total: [null, [Validators.required, Validators.min(0)]],
-      proyectId: ['', rowRequired],
-      categoryId: ['', rowRequired],
+      proyectId: [topProjectId],
+      categoryId: ['', categoryRequired],
       colaboradorEsTercero: [false],
       colaboradorId: [''],
       clienteProveedor: ['', Validators.required],

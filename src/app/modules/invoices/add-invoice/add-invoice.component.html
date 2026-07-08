@@ -87,6 +87,8 @@
   <!-- Proyecto + Categoría del gasto. En planilla directa ambos viven en cada fila, por eso se ocultan aquí. -->
   @if (!isDirectaPlanilla()) {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-6">
+    <!-- En rendición directa el centro de costo es el de la rendición: no se elige por comprobante. -->
+    @if (!isDirectaContext()) {
     <div class="flex flex-col gap-2">
       <label for="proyectId" class="text-sm font-medium text-secondary">
         Proyecto <span class="text-error">*</span>
@@ -101,6 +103,7 @@
       <span class="text-sm text-error">El proyecto es requerido</span>
       }
     </div>
+    }
 
     @if (expenseType() === 'planilla_movilidad') {
     <div class="flex flex-col gap-2">
@@ -514,20 +517,8 @@
           </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <!-- Proyecto + Categoría (por fila, solo en Rendiciones Directas) -->
+          <!-- Categoría (por fila, solo en Rendiciones Directas). El centro de costo es el de la rendición, no se elige por fila. -->
           @if (isDirectaContext()) {
-          <div class="flex flex-col gap-1 sm:col-span-3">
-            <label class="text-xs font-medium text-secondary">Proyecto <span class="text-error">*</span></label>
-            <app-project-select
-              formControlName="proyectId"
-              [projects]="proyects"
-              placeholder="Seleccione un proyecto"
-              [invalid]="!!(row.get('proyectId')?.invalid && row.get('proyectId')?.touched)"
-            />
-            @if (row.get('proyectId')?.invalid && row.get('proyectId')?.touched) {
-            <span class="text-xs text-error">El proyecto es requerido</span>
-            }
-          </div>
           <div class="flex flex-col gap-1 sm:col-span-3">
             <label class="text-xs font-medium text-secondary">Categoría <span class="text-error">*</span></label>
             <div class="relative">

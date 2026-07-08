@@ -19,6 +19,7 @@ import { IExpenseReport, IReportFinancingSaldo } from '../../../interfaces/expen
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { ModalComponent } from '../../../design-system/modal/modal.component';
 import {
   CashVoucherExportData,
   MobilitySheetExportData,
@@ -49,6 +50,7 @@ interface AsientoStep {
     CommonModule,
     FormsModule,
     ButtonComponent,
+    ModalComponent,
     SolicitudViaticosModalComponent,
     RouterModule,
   ],
@@ -824,6 +826,75 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.canCoordinadorApprove || this.canContabilidadApprove;
   }
 
+  /**
+   * Rendición directa: aprobador de centro de costo al que le toca el turno
+   * actual de la cadena (`directaApproverChain[directaApprovalLevel]`), o
+   * Superadmin. Solo aplica en `pending_l1`; al completar la cadena pasa a
+   * `pending_accounting` y actúa Contabilidad (`canContabilidadApprove`).
+   */
+  get canApproveDirectaChainStep(): boolean {
+    if (!this.report?.isDirecta || this.report.status !== 'pending_l1') return false;
+    if (this.userStateService.isSuperAdmin()) return true;
+    if (!this.userStateService.isCoordinador()) return false;
+    const chain = this.report.directaApproverChain ?? [];
+    const expected = chain[this.report.directaApprovalLevel ?? 0];
+    const expectedId = expected && typeof expected === 'object' ? (expected as any)._id : expected;
+    const currentUserId = this.userStateService.getUser()?._id;
+    return !!expectedId && !!currentUserId && String(expectedId) === String(currentUserId);
+  }
+
+  approvingDirecta = signal(false);
+
+  confirmApproveDirectaChainStep(): void {
+    this.approvingDirecta.set(true);
+    this.expenseReportsService.approveDirecta(this.id).subscribe({
+      next: (res) => {
+        this.report = res;
+        this.calculateTotals();
+        this.approvingDirecta.set(false);
+        this.notificationService.show('Turno aprobado.', 'success');
+      },
+      error: (err) => {
+        this.approvingDirecta.set(false);
+        const raw = err?.error?.message;
+        const msg = Array.isArray(raw) ? raw.join(', ') : raw;
+        this.notificationService.show(msg || 'Error al aprobar', 'error');
+      },
+    });
+  }
+
+  showDirectaRejectModal = signal(false);
+  directaRejectionReason = signal('');
+  isRejectingDirecta = signal(false);
+
+  openDirectaRejectModal(): void {
+    this.directaRejectionReason.set('');
+    this.showDirectaRejectModal.set(true);
+  }
+
+  submitDirectaRejection(): void {
+    const reason = this.directaRejectionReason().trim();
+    if (reason.length < 10) {
+      this.notificationService.show('El motivo de rechazo debe tener al menos 10 caracteres', 'error');
+      return;
+    }
+    this.isRejectingDirecta.set(true);
+    this.expenseReportsService.rejectDirecta(this.id, reason).subscribe({
+      next: (res) => {
+        this.report = res;
+        this.showDirectaRejectModal.set(false);
+        this.isRejectingDirecta.set(false);
+        this.notificationService.show('Rendición rechazada', 'success');
+      },
+      error: (err) => {
+        this.isRejectingDirecta.set(false);
+        const raw = err?.error?.message;
+        const msg = Array.isArray(raw) ? raw.join(', ') : raw;
+        this.notificationService.show(msg || 'Error al rechazar', 'error');
+      },
+    });
+  }
+
   confirmApproveExpense(expenseId: string): void {
     this.confirmationService.show(
       '¿Aprobar este comprobante? Esta acción no se puede deshacer.',
@@ -1340,6 +1411,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       'open',
       'rejected',
       'submitted',
+      'pending_l1',
       'pending_accounting',
       'partially_paid',
     ];
@@ -1390,6 +1462,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         solicited: 'Solicitada',
         open: 'Abierta',
         submitted: 'Enviada',
+        pending_l1: 'En aprobación de centro de costo',
         pending_accounting: 'Pendiente de Contabilidad',
         approved: 'Aprobada',
         rejected: 'Rechazada',
