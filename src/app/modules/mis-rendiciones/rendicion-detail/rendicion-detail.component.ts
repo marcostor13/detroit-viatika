@@ -1373,7 +1373,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         solicited: 'Solicitada',
         open: 'Abierta',
         submitted: 'Enviada',
-        pending_l1: 'En aprobación de centro de costo',
+        pending_l1: 'En solicitud',
         pending_accounting: 'Pendiente de Contabilidad',
         approved: 'Aprobada',
         rejected: 'Rechazada',
