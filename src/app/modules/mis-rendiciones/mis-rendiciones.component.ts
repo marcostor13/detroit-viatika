@@ -259,7 +259,6 @@ export class MisRendicionesComponent implements OnInit {
   getDirectaTipoCode(e: any): string {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = e?.subTipo ?? this.getData(e)['subTipo'];
@@ -302,7 +301,7 @@ export class MisRendicionesComponent implements OnInit {
 
   getDirectaDocNumber(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return (typeof e?.internalCode === 'string' && e.internalCode) ? e.internalCode : '-';
     }
     if (type === 'recibo_caja') {
@@ -321,7 +320,7 @@ export class MisRendicionesComponent implements OnInit {
   getDirectaTipo(e: any): string {
     const m: Record<string, string> = {
       factura: 'Factura', planilla_movilidad: 'Planilla', otros_gastos: 'Otros',
-      recibo_caja: 'Recibo', comprobante_caja: 'Comprobante',
+      recibo_caja: 'Recibo',
     };
     return m[e.expenseType] ?? e.expenseType ?? '—';
   }
@@ -334,21 +333,13 @@ export class MisRendicionesComponent implements OnInit {
       return first?.gestion || `${rows.length} filas`;
     }
     if (type === 'otros_gastos') return e?.description || 'DJ firmada';
-    if (type === 'comprobante_caja') {
-      try {
-        const d = this.getData(e);
-        const raw = d['payload'];
-        const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
-        return String(obj['concepto'] || '');
-      } catch { return ''; }
-    }
     const d = this.getData(e);
     return String(d['concepto'] || e.description || '');
   }
 
   getDirectaProveedor(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja' || type === 'otros_gastos') return '-';
+    if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
     const d = this.getData(e);
     const r = d['razonSocial'];
     if (typeof r === 'string' && r.trim()) return r.trim();

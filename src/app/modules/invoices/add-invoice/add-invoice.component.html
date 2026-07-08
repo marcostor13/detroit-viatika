@@ -4,13 +4,11 @@
       @if (expenseType() === 'planilla_movilidad') { Editar Planilla de Movilidad }
       @else if (expenseType() === 'otros_gastos') { Editar Gasto }
       @else if (expenseType() === 'recibo_caja') { Editar Recibo de Caja }
-      @else if (expenseType() === 'comprobante_caja') { Editar Comprobante de Caja }
       @else { Editar factura }
     }
     @else if (expenseType() === 'planilla_movilidad') { Nueva Planilla de Movilidad }
     @else if (expenseType() === 'otros_gastos') { Nuevo Gasto }
     @else if (expenseType() === 'recibo_caja') { Agregar Recibo de Caja }
-    @else if (expenseType() === 'comprobante_caja') { Agregar Comprobante de Caja }
     @else { Agregar Factura }
   </h1>
   <app-button
@@ -70,15 +68,6 @@
       >
         <app-icon name="clipboard-list" size="sm" />
         Otros Gastos
-      </button>
-      <button type="button"
-        (click)="setExpenseType('comprobante_caja')"
-        [class]="expenseType() === 'comprobante_caja'
-          ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
-          : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
-      >
-        <app-icon name="wallet" size="sm" />
-        Comprobante de Caja
       </button>
     </div>
   </div>
@@ -692,7 +681,7 @@
             <span class="text-xs text-tertiary">(línea recta)</span>
           </div>
           }
-          <!-- Total, Cliente/Proveedor -->
+          <!-- Total -->
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-secondary">Total S/. <span class="text-error">*</span></label>
             <input type="number" formControlName="total" placeholder="0.00" min="0" step="0.01"
@@ -705,16 +694,6 @@
               Supera el límite diario de S/ {{ mobilityDailyLimit | number:'1.2-2' }}
               (acumulado ese día: S/ {{ getMobilityDateTotal(row.get('fecha')?.value) | number:'1.2-2' }})
             </p>
-            }
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-secondary">Cliente / Proveedor <span class="text-error">*</span></label>
-            <input type="text" formControlName="clienteProveedor" placeholder="Nombre"
-              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-              [class.border-error]="row.get('clienteProveedor')?.invalid && row.get('clienteProveedor')?.touched"
-              [class.ring-error]="row.get('clienteProveedor')?.invalid && row.get('clienteProveedor')?.touched" />
-            @if (row.get('clienteProveedor')?.invalid && row.get('clienteProveedor')?.touched) {
-            <p class="text-xs text-error">Indica el cliente o proveedor.</p>
             }
           </div>
           <!-- Gestión -->
@@ -936,75 +915,6 @@
       </div>
     </div>
     }
-  </div>
-  }
-
-  <!-- ===== COMPROBANTE DE CAJA ===== -->
-  @if(expenseType() === 'comprobante_caja') {
-  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-5">
-
-    <!-- Escanear comprobante (opcional): autorellena los campos -->
-    @if(!id) {
-    <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Escanear comprobante (opcional)</label>
-      @if(!cashVoucherFileName) {
-      <label
-        class="flex flex-col items-center justify-center gap-2 w-full px-4 py-6 rounded-lg border-2 border-dashed border-gray-300 bg-background cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
-        [class.pointer-events-none]="isScanningVoucher()" [class.opacity-60]="isScanningVoucher()">
-        @if(isScanningVoucher()) {
-        <span class="inline-flex items-center gap-2 text-sm text-secondary">
-          <span class="inline-block w-4 h-4 border-2 border-primary/40 border-t-primary rounded-full animate-spin"></span>
-          Escaneando comprobante...
-        </span>
-        } @else {
-        <app-icon name="upload" size="lg" class="text-tertiary" />
-        <span class="text-sm text-secondary">Sube una foto o PDF para extraer los datos automáticamente</span>
-        <span class="text-xs text-gray-400">Los campos quedarán editables</span>
-        }
-        <input type="file" accept="image/*,application/pdf" class="hidden"
-          [disabled]="isScanningVoucher()" (change)="onCashVoucherFileSelected($event)" />
-      </label>
-      } @else {
-      <div class="flex items-center justify-between gap-3 w-full px-4 py-3 rounded-lg border border-green-200 bg-green-50">
-        <span class="inline-flex items-center gap-2 text-sm text-success-ink truncate">
-          <app-icon name="circle-check" size="sm" class="shrink-0" />
-          <span class="truncate">{{ cashVoucherFileName }}</span>
-        </span>
-        <app-button variant="ghost" size="sm" label="" ariaLabel="Quitar archivo" (clicked)="removeCashVoucherFile()">
-          <app-icon name="close" size="sm" />
-        </app-button>
-      </div>
-      }
-    </div>
-    }
-
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div class="flex flex-col gap-2">
-        <label class="text-sm font-medium text-secondary">Entregado a <span class="text-error">*</span></label>
-        <input type="text" formControlName="voucherEntregadoA"
-          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
-      </div>
-      <div class="flex flex-col gap-2">
-        <label class="text-sm font-medium text-secondary">Fecha</label>
-        <input type="date" [max]="todayIso" formControlName="voucherFecha"
-          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
-      </div>
-    </div>
-    <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Dirección</label>
-      <input type="text" formControlName="voucherDireccion"
-        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
-    </div>
-    <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Concepto <span class="text-error">*</span></label>
-      <textarea formControlName="voucherConcepto" rows="2"
-        class="w-full rounded-lg border border-gray-200 px-4 py-2 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"></textarea>
-    </div>
-    <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Monto total S/. <span class="text-error">*</span></label>
-      <input type="number" min="0" step="0.01" formControlName="voucherMonto"
-        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
-    </div>
   </div>
   }
 

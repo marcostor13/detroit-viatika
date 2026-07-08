@@ -212,11 +212,6 @@ describe('InvoicesService', () => {
     httpMock.expectOne(`${EXP}/cash-receipt`).flush({});
   });
 
-  it('createCashVoucher sends POST to /cash-voucher', () => {
-    service.createCashVoucher({ amount: 30 } as any).subscribe();
-    httpMock.expectOne(`${EXP}/cash-voucher`).flush({});
-  });
-
   it('validateWithSunatData sends POST to /validate-sunat', () => {
     const data = { rucEmisor: '20', serie: 'F001', correlativo: '001', fechaEmision: '2026-01-01' };
     service.validateWithSunatData('i1', data).subscribe();

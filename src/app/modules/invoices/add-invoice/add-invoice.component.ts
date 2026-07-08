@@ -118,12 +118,6 @@ export default class AddInvoiceComponent implements OnInit {
   isEditingOcrAmount = signal(false);
   editedOcrTotal = signal<number | null>(null);
 
-  // --- Escaneo OCR del comprobante de caja (autorellena el formulario) ---
-  isScanningVoucher = signal(false);
-  cashVoucherFileUrl: string | null = null;
-  cashVoucherFileName: string | null = null;
-  private cashVoucherMimeType: string | undefined;
-
   get ocrAmountWasEdited(): boolean {
     const edited = this.editedOcrTotal();
     return edited !== null && edited !== this.ocrTotalAmount();
@@ -434,26 +428,6 @@ export default class AddInvoiceComponent implements OnInit {
               receiptFecha: fecha,
               receiptMonto: res.total ?? 0,
             });
-          } else if (type === 'comprobante_caja') {
-            let voucherPayload: any = dataObj;
-            if (dataObj?.payload) {
-              try {
-                voucherPayload =
-                  typeof dataObj.payload === 'string'
-                    ? JSON.parse(dataObj.payload)
-                    : dataObj.payload;
-              } catch {
-                voucherPayload = {};
-              }
-            }
-            this.form.patchValue({
-              ...baseValues,
-              voucherEntregadoA: voucherPayload.entregadoA || '',
-              voucherDireccion: voucherPayload.direccion || '',
-              voucherConcepto: voucherPayload.concepto || '',
-              voucherFecha: fecha,
-              voucherMonto: res.total ?? voucherPayload.monto ?? 0,
-            });
           } else if (type === 'planilla_movilidad') {
             this.form.patchValue(baseValues);
             const rows: any[] = (res as any).mobilityRows || dataObj.rows || [];
@@ -467,7 +441,6 @@ export default class AddInvoiceComponent implements OnInit {
                 categoryId: [row.categoryId || '', rowRequired],
                 colaboradorEsTercero: [!!(row.colaboradorId && String(row.colaboradorId) !== this.currentUserId)],
                 colaboradorId: [row.colaboradorId && String(row.colaboradorId) !== this.currentUserId ? String(row.colaboradorId) : ''],
-                clienteProveedor: [row.clienteProveedor || '', Validators.required],
                 origen: [row.origen || '', Validators.required],
                 origenLat: [row.origenCoords?.lat ?? null],
                 origenLng: [row.origenCoords?.lng ?? null],
@@ -749,12 +722,6 @@ export default class AddInvoiceComponent implements OnInit {
       receiptConcepto: [''],
       receiptFecha: [''],
       receiptMonto: [null],
-      // Comprobante de caja
-      voucherEntregadoA: [''],
-      voucherDireccion: [''],
-      voucherConcepto: [''],
-      voucherFecha: [''],
-      voucherMonto: [null],
       // Planilla de movilidad
       mobilityRows: this.fb.array([]),
     });
@@ -839,7 +806,6 @@ export default class AddInvoiceComponent implements OnInit {
       categoryId: ['', categoryRequired],
       colaboradorEsTercero: [false],
       colaboradorId: [''],
-      clienteProveedor: ['', Validators.required],
       origen: ['', Validators.required],
       origenLat: [null],
       origenLng: [null],
@@ -1218,14 +1184,6 @@ export default class AddInvoiceComponent implements OnInit {
           !!(this.form.get('receiptConcepto')?.value || '').trim() &&
           (this.form.get('receiptMonto')?.value > 0)
         );
-      case 'comprobante_caja':
-        return (
-          proyectOk &&
-          this.form.get('categoryId')?.valid === true &&
-          !!(this.form.get('voucherEntregadoA')?.value || '').trim() &&
-          !!(this.form.get('voucherConcepto')?.value || '').trim() &&
-          (this.form.get('voucherMonto')?.value > 0)
-        );
       default:
         return this.form.valid;
     }
@@ -1285,129 +1243,6 @@ export default class AddInvoiceComponent implements OnInit {
     });
   }
 
-  /**
-   * Comprobante de caja: al seleccionar un archivo (imagen/PDF) se sube a S3 y se
-   * escanea con OCR para autorellenar los campos del formulario. Los campos
-   * quedan editables y el archivo se guarda como documento del comprobante.
-   */
-  onCashVoucherFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    if (!input.files || !input.files[0]) return;
-    const file = input.files[0];
-    this.selectedFile = file;
-    this.cashVoucherFileName = file.name;
-    this.cashVoucherMimeType = file.type;
-
-    this.isScanningVoucher.set(true);
-    const { downloadUrl$ } = this.uploadService.uploadFile(file, environment.storagePath);
-    downloadUrl$.subscribe({
-      next: (url) => {
-        this.cashVoucherFileUrl = url;
-        this.invoiceService
-          .scanCashVoucher({ url, mimeType: this.cashVoucherMimeType })
-          .subscribe({
-            next: (data) => {
-              this.isScanningVoucher.set(false);
-              this.applyCashVoucherScan(data);
-              this.notificationService.show(
-                'Datos extraidos del comprobante. Revisa y corrige si es necesario.',
-                'success'
-              );
-            },
-            error: (error) => {
-              // El archivo ya quedó subido; solo falló el OCR. Se permite carga manual.
-              this.isScanningVoucher.set(false);
-              this.notificationService.show(
-                'No se pudieron extraer los datos automaticamente. Completa los campos manualmente. ' +
-                  (error.error?.message || error.message || ''),
-                'warning'
-              );
-            },
-          });
-      },
-      error: (err) => {
-        this.isScanningVoucher.set(false);
-        this.cashVoucherFileUrl = null;
-        this.cashVoucherFileName = null;
-        this.notificationService.show('Error al subir el archivo: ' + err.message, 'error');
-      },
-    });
-  }
-
-  /** Vuelca los datos extraídos por OCR a los campos del comprobante de caja. */
-  private applyCashVoucherScan(data: {
-    entregadoA?: string;
-    fecha?: string;
-    direccion?: string;
-    concepto?: string;
-    monto?: number;
-  }): void {
-    const patch: any = {};
-    if (data.entregadoA) patch.voucherEntregadoA = data.entregadoA;
-    if (data.direccion) patch.voucherDireccion = data.direccion;
-    if (data.concepto) patch.voucherConcepto = data.concepto;
-    if (data.fecha) {
-      const iso = this.formatDateForInput(data.fecha);
-      if (iso) patch.voucherFecha = iso;
-    }
-    if (typeof data.monto === 'number' && data.monto > 0) patch.voucherMonto = data.monto;
-    this.form.patchValue(patch);
-  }
-
-  /** Quita el archivo escaneado del comprobante de caja. */
-  removeCashVoucherFile(): void {
-    this.selectedFile = null as any;
-    this.cashVoucherFileUrl = null;
-    this.cashVoucherFileName = null;
-    this.cashVoucherMimeType = undefined;
-  }
-
-  saveCashVoucher() {
-    const entregadoA = (this.form.get('voucherEntregadoA')?.value || '').trim();
-    const direccion = (this.form.get('voucherDireccion')?.value || '').trim();
-    const concepto = (this.form.get('voucherConcepto')?.value || '').trim();
-    const fecha = this.form.get('voucherFecha')?.value || '';
-    const monto = Number(this.form.get('voucherMonto')?.value || 0);
-    if (!entregadoA || !concepto || monto <= 0) {
-      this.notificationService.show(
-        'Completa los campos obligatorios del comprobante de caja',
-        'error'
-      );
-      return;
-    }
-
-    this.isLoading.set(true);
-    const payload = {
-      proyectId: this.form.get('proyectId')?.value,
-      categoryId: this.form.get('categoryId')?.value,
-      expenseReportId: this.rendicionId || undefined,
-      total: monto,
-      fechaEmision: fecha || undefined,
-      imageUrl: this.cashVoucherFileUrl || undefined,
-      data: JSON.stringify({
-        entregadoA,
-        direccion,
-        concepto,
-        monto,
-      }),
-    };
-    this.invoiceService.createCashVoucher(payload).subscribe({
-      next: (res) => {
-        this.isLoading.set(false);
-        this.notificationService.show('Comprobante de caja guardado correctamente', 'success');
-        this.notifyCategoryLimitWarning(res);
-        this.navigateAfterExpenseSave();
-      },
-      error: (error) => {
-        this.isLoading.set(false);
-        this.notificationService.show(
-          'Error al guardar comprobante: ' + (error.error?.message || error.message),
-          'error'
-        );
-      },
-    });
-  }
-
   saveMobilitySheet() {
     if (this.mobilityRowsArray.length === 0) {
       this.notificationService.show('Debes agregar al menos una fila', 'error');
@@ -1454,7 +1289,6 @@ export default class AddInvoiceComponent implements OnInit {
         ...(r.proyectId ? { proyectId: r.proyectId } : {}),
         ...(r.categoryId ? { categoryId: r.categoryId } : {}),
         ...this.resolveRowColaborador(r),
-        clienteProveedor: r.clienteProveedor,
         origen: r.origen,
         origenDepartamento: r.origenDepartamento,
         origenProvincia: r.origenProvincia,
@@ -1634,9 +1468,6 @@ export default class AddInvoiceComponent implements OnInit {
       case 'recibo_caja':
         this.saveCashReceipt();
         break;
-      case 'comprobante_caja':
-        this.saveCashVoucher();
-        break;
       default:
         if (!this.selectedFile) {
           this.notificationService.show('Debes seleccionar un archivo de factura', 'error');
@@ -1724,40 +1555,6 @@ export default class AddInvoiceComponent implements OnInit {
       payload.data = JSON.stringify(dataObj);
       payload.fechaEmision = formValue.receiptFecha;
       payload.total = Number(formValue.receiptMonto) || 0;
-    } else if (type === 'comprobante_caja') {
-      const monto = Number(formValue.voucherMonto) || 0;
-
-      let previousPayload: any = {};
-      if (previousData?.payload) {
-        try {
-          previousPayload =
-            typeof previousData.payload === 'string'
-              ? JSON.parse(previousData.payload)
-              : previousData.payload;
-        } catch {
-          previousPayload = {};
-        }
-      } else {
-        previousPayload = { ...previousData };
-        delete previousPayload.type;
-      }
-
-      const newPayload = {
-        ...previousPayload,
-        entregadoA: (formValue.voucherEntregadoA || '').trim(),
-        direccion: (formValue.voucherDireccion || '').trim(),
-        concepto: (formValue.voucherConcepto || '').trim(),
-        monto,
-      };
-
-      const dataObj = {
-        type: 'comprobante_caja',
-        payload: JSON.stringify(newPayload),
-      };
-      payload.data = JSON.stringify(dataObj);
-      payload.description = JSON.stringify(newPayload);
-      payload.fechaEmision = formValue.voucherFecha || undefined;
-      payload.total = monto;
     } else if (type === 'planilla_movilidad') {
       if (this.hasMobilityTerceroSinColaborador()) {
         this.mobilityRowsArray.markAllAsTouched();
@@ -1770,7 +1567,6 @@ export default class AddInvoiceComponent implements OnInit {
         ...(r.proyectId ? { proyectId: r.proyectId } : {}),
         ...(r.categoryId ? { categoryId: r.categoryId } : {}),
         ...this.resolveRowColaborador(r),
-        clienteProveedor: r.clienteProveedor,
         origen: r.origen,
         origenDepartamento: r.origenDepartamento,
         origenProvincia: r.origenProvincia,
@@ -2121,7 +1917,6 @@ export default class AddInvoiceComponent implements OnInit {
       case 'planilla_movilidad': return 'Guardar Planilla';
       case 'otros_gastos': return 'Guardar Gasto';
       case 'recibo_caja': return 'Guardar Recibo de Caja';
-      case 'comprobante_caja': return 'Guardar Comprobante de Caja';
       default: return 'Subir factura';
     }
   }

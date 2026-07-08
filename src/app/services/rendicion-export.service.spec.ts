@@ -4,7 +4,6 @@ import {
   RendicionExportData,
   AffidavitExportData,
   MobilitySheetExportData,
-  CashVoucherExportData,
   ReceiptExportData,
   SingleExpenseAffidavitData,
 } from './rendicion-export.service';
@@ -146,7 +145,7 @@ describe('RendicionExportService', () => {
         fechaGeneracion: '01/01/2026',
         total: 80,
         mobilityRows: [
-          { fecha: '01/01', clienteProveedor: 'Empresa', origen: 'Lima', destino: 'Callao', gestion: 'Reunión', total: 40 },
+          { fecha: '01/01', origen: 'Lima', destino: 'Callao', gestion: 'Reunión', total: 40 },
         ],
       };
       await expectAsync(service.exportSingleExpenseAffidavitToPdf(data)).toBeResolved();
@@ -192,43 +191,11 @@ describe('RendicionExportService', () => {
         collaborator: 'María',
         generatedAt: '01/01/2026',
         rows: [
-          { fecha: '01/01', clienteProveedor: 'Empresa', origen: 'Lima', destino: 'Miraflores', gestion: 'Gestión', total: 30 },
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'Gestión', total: 30 },
         ],
         total: 30,
       };
       await expectAsync(service.exportMobilitySheetToPdf(data)).toBeResolved();
-    });
-  });
-
-  describe('exportCashVoucherToPdf', () => {
-    it('resolves without throwing for minimal data', async () => {
-      const data: CashVoucherExportData = {
-        fileBaseName: 'cash-voucher',
-        collaborator: 'Juan',
-        entregadoA: 'Pedro López',
-        concepto: 'Gastos de representación',
-        monto: 150,
-        generatedAt: '01/01/2026',
-      };
-      await expectAsync(service.exportCashVoucherToPdf(data)).toBeResolved();
-    });
-
-    it('resolves without throwing with all optional fields', async () => {
-      const data: CashVoucherExportData = {
-        fileBaseName: 'cash-full',
-        collaborator: 'Ana',
-        collaboratorDni: '87654321',
-        internalCode: 'EMP-001',
-        entregadoA: 'Carlos',
-        direccion: 'Av. Lima 100',
-        concepto: 'Servicios',
-        monto: 300,
-        generatedAt: '15/05/2026',
-        projectName: 'Proyecto Alpha',
-        clientName: 'Cliente SA',
-        fechaEmision: '15/05/2026',
-      };
-      await expectAsync(service.exportCashVoucherToPdf(data)).toBeResolved();
     });
   });
 
@@ -271,8 +238,8 @@ describe('RendicionExportService', () => {
         location: 'Lima',
         generatedAt: '01/01/2026',
         rows: [
-          { fecha: '01/01', clienteProveedor: 'Co', origen: 'A', destino: 'B', gestion: 'G', total: 25 },
-          { fecha: '02/01', clienteProveedor: 'Co', origen: 'B', destino: 'C', gestion: 'G', total: 30 },
+          { fecha: '01/01', origen: 'A', destino: 'B', gestion: 'G', total: 25 },
+          { fecha: '02/01', origen: 'B', destino: 'C', gestion: 'G', total: 30 },
         ],
         total: 55,
       };

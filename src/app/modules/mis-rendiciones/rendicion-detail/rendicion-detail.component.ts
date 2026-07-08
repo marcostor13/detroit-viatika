@@ -21,7 +21,6 @@ import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { ModalComponent } from '../../../design-system/modal/modal.component';
 import {
-  CashVoucherExportData,
   MobilitySheetExportData,
   RendicionExportService,
   AffidavitExportData,
@@ -1010,7 +1009,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (type === 'planilla_movilidad') return 'Planilla Movilidad';
     if (type === 'otros_gastos') return 'Otros Gastos';
     if (type === 'recibo_caja') return 'Recibo de Caja';
-    if (type === 'comprobante_caja') return 'Comprobante de Caja';
     return 'Factura';
   }
 
@@ -1018,7 +1016,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   getExpenseTypeCode(expense: any): string {
     const type = expense?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = expense?.subTipo ?? this.getExpenseDataObject(expense)['subTipo'];
@@ -1052,7 +1049,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getExpenseDocumentNumber(expense: any): string {
     const type = expense?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return typeof expense?.internalCode === 'string' && expense.internalCode ? expense.internalCode : '-';
     }
     if (type === 'recibo_caja') {
@@ -1076,9 +1073,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   getExpenseProveedor(expense: any): string {
     const type = expense?.expenseType;
     if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
-    if (type === 'comprobante_caja') {
-      return String(this.getCashVoucherPayload(expense)['entregadoA'] || '-');
-    }
     const d = this.getExpenseDataObject(expense);
     const razonSocial = d['razonSocial'];
     if (typeof razonSocial === 'string' && razonSocial.trim()) return razonSocial.trim();
@@ -1153,12 +1147,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (type === 'otros_gastos') {
       return expense?.description || 'DJ firmada';
     }
-    if (type === 'comprobante_caja') {
-      try {
-        const parsed = typeof expense?.description === 'string' ? JSON.parse(expense.description) : null;
-        return parsed?.concepto || 'Comprobante interno';
-      } catch { return 'Comprobante interno'; }
-    }
     if (type === 'recibo_caja') {
       try {
         const data = typeof expense?.data === 'string' ? JSON.parse(expense.data) : expense?.data || {};
@@ -1202,12 +1190,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
     if (type === 'otros_gastos') {
       return expense?.description || 'DJ firmada';
-    }
-    if (type === 'comprobante_caja') {
-      try {
-        const parsed = typeof expense?.description === 'string' ? JSON.parse(expense.description) : null;
-        return parsed?.concepto || 'Comprobante interno';
-      } catch { return 'Comprobante interno'; }
     }
     if (type === 'recibo_caja') {
       try {
@@ -1290,31 +1272,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return String(v);
   }
 
-  /** Payload del comprobante de caja (entregadoA, direccion, concepto, monto). */
-  getCashVoucherPayload(exp: Record<string, unknown>): Record<string, unknown> {
-    const rawData = this.getExpenseDataObject(exp);
-    const payloadRaw = rawData['payload'];
-    let payloadObj: Record<string, unknown> = {};
-    if (payloadRaw && typeof payloadRaw === 'string') {
-      try { payloadObj = JSON.parse(payloadRaw); } catch { /* empty */ }
-    } else if (payloadRaw && typeof payloadRaw === 'object') {
-      payloadObj = payloadRaw as Record<string, unknown>;
-    }
-    if (!payloadObj['concepto'] && exp['description']) {
-      try {
-        const descParsed = JSON.parse(String(exp['description']));
-        if (descParsed?.concepto) payloadObj = descParsed;
-      } catch { /* empty */ }
-    }
-    return payloadObj;
-  }
-
-  cashVoucherText(exp: Record<string, unknown>, key: string): string {
-    const v = this.getCashVoucherPayload(exp)[key];
-    if (v === null || v === undefined || v === '') return '—';
-    return String(v);
-  }
-
   getExpenseStatusForUi(expense: Record<string, unknown>): string {
     if (expense['observado'] === true) return 'Observado';
     return this.mapExpenseStatusExport(
@@ -1331,11 +1288,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getExpenseTypeKey(
     exp: Record<string, unknown>
-  ): 'factura' | 'planilla_movilidad' | 'otros_gastos' | 'comprobante_caja' {
+  ): 'factura' | 'planilla_movilidad' | 'otros_gastos' {
     const t = exp['expenseType'];
     if (t === 'planilla_movilidad') return 'planilla_movilidad';
     if (t === 'otros_gastos') return 'otros_gastos';
-    if (t === 'comprobante_caja') return 'comprobante_caja';
     return 'factura';
   }
 
@@ -1644,14 +1600,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       const dataObj = this.getExpenseDataObject(exp);
       const expType = exp['expenseType'] as string;
       let provider = exp['provider'] as string || dataObj['razonSocial'] as string || '';
-      if (!provider && expType === 'comprobante_caja') {
-        provider = String(this.getCashVoucherPayload(exp)['entregadoA'] || '');
-      }
       if (!provider && this.getExpenseTypeLabel(exp) === 'Planilla movilidad') {
         provider = 'Planilla de Movilidad';
       }
       let numDoc = '';
-      if (expType === 'planilla_movilidad' || expType === 'comprobante_caja') {
+      if (expType === 'planilla_movilidad') {
         numDoc = typeof exp['internalCode'] === 'string' ? exp['internalCode'] : '';
       } else if (expType === 'recibo_caja') {
         const payload = dataObj['payload'];
@@ -1845,7 +1798,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private buildMobilityPageData(expense: Record<string, unknown>): MobilitySheetExportData {
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -1874,27 +1826,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       rows,
       total,
       signature: this.getCollaboratorSignature(),
-    };
-  }
-
-  private buildCashVoucherPageData(expense: Record<string, unknown>): CashVoucherExportData {
-    const payloadObj = this.getCashVoucherPayload(expense);
-    const companyName = this.userStateService.getUser()?.client?.businessName
-      || this.companyConfigService.getCompanyConfig()?.businessName;
-    return {
-      fileBaseName: `comprobante_caja_${String(expense['_id'] || 'sin_id')}`,
-      collaborator: this.getCollaboratorDisplayName(),
-      collaboratorDni: this.collaboratorDniForPdf(),
-      internalCode: typeof expense['internalCode'] === 'string' ? expense['internalCode'] : undefined,
-      entregadoA: String(payloadObj['entregadoA'] || '—'),
-      direccion: String(payloadObj['direccion'] || ''),
-      concepto: String(payloadObj['concepto'] || this.getExpenseDescription(expense)),
-      monto: this.getExpenseTotal(expense),
-      generatedAt: new Date().toLocaleDateString('es-PE'),
-      signature: this.getCollaboratorSignature(),
-      projectName: this.getProjectName(),
-      clientName: companyName,
-      fechaEmision: typeof expense['fechaEmision'] === 'string' ? expense['fechaEmision'] : undefined,
     };
   }
 
@@ -2017,7 +1948,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         const dayAmount = Math.min(DAILY_RATE, Math.round(remaining * 100) / 100);
         rows.push({
           fecha: this.dateToYmd(cur),
-          clienteProveedor: '',
           origen: '',
           destino: '',
           gestion: '',
@@ -2030,7 +1960,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     } else {
       rows.push({
         fecha: '',
-        clienteProveedor: '',
         origen: '',
         destino: '',
         gestion: '',
@@ -2080,8 +2009,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
           if (consolidated) pages.push({ type: 'mobility', data: consolidated });
           mobilityPageAdded = true;
         }
-      } else if (typeKey === 'comprobante_caja') {
-        pages.push({ type: 'cash_voucher', data: this.buildCashVoucherPageData(exp) });
       } else if (expType === 'recibo_caja') {
         pages.push({ type: 'receipt', data: this.buildReceiptPageData(exp) });
       } else if (typeKey === 'otros_gastos') {
@@ -2939,17 +2866,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.notificationService.show('Planilla de movilidad descargada en PDF', 'success');
   }
 
-  exportCashVoucher(expense: Record<string, unknown>): void {
-    if (this.getExpenseTypeKey(expense) !== 'comprobante_caja') return;
-    this.rendicionExportService.exportCashVoucherToPdf(this.buildCashVoucherPageData(expense));
-    this.notificationService.show('Comprobante de caja descargado en PDF', 'success');
-  }
-
   async exportMobilitySheetExcel(expense: Record<string, unknown>): Promise<void> {
     if (this.getExpenseTypeKey(expense) !== 'planilla_movilidad') return;
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -2987,7 +2907,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (this.getExpenseTypeKey(expense) !== 'planilla_movilidad') return;
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -3046,30 +2965,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const data: SingleExpenseAffidavitData = {
       fileBaseName: `dj_recibo_caja_${String(expense['_id'] || 'sin_id')}`,
       titulo: 'RECIBO DE CAJA',
-      colaborador: this.getCollaboratorDisplayName(),
-      colaboradorDni: this.collaboratorDniForPdf(),
-      empresaNombre: client?.businessName,
-      fechaGeneracion: new Date().toLocaleDateString('es-PE'),
-      total: this.getExpenseTotal(expense),
-      receiptFields,
-      signature: this.getCollaboratorSignature(),
-    };
-    await this.rendicionExportService.exportSingleExpenseAffidavitToPdf(data);
-    this.notificationService.show('Declaración jurada descargada', 'success');
-  }
-
-  async exportCashVoucherAffidavit(expense: Record<string, unknown>): Promise<void> {
-    if (this.getExpenseTypeKey(expense) !== 'comprobante_caja') return;
-    const payloadObj = this.getCashVoucherPayload(expense);
-    const client = this.userStateService.getUser()?.client;
-    const receiptFields = [
-      { label: 'Entregado a', value: String(payloadObj['entregadoA'] || '—') },
-      { label: 'Dirección', value: String(payloadObj['direccion'] || '—') },
-      { label: 'Concepto', value: String(payloadObj['concepto'] || this.getExpenseDescription(expense)) },
-    ];
-    const data: SingleExpenseAffidavitData = {
-      fileBaseName: `dj_comprobante_caja_${String(expense['_id'] || 'sin_id')}`,
-      titulo: 'COMPROBANTE DE CAJA',
       colaborador: this.getCollaboratorDisplayName(),
       colaboradorDni: this.collaboratorDniForPdf(),
       empresaNombre: client?.businessName,
