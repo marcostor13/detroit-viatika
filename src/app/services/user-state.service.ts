@@ -179,7 +179,7 @@ export class UserStateService {
   }
 
   canApproveL2(): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin() || this.isTesoreria()) return true;
     return this.getPermissions().canApproveL2 === true;
   }
 

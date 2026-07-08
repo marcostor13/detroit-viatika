@@ -78,12 +78,6 @@ export class ConfiguracionComponent implements OnInit {
   accountingForm: IAccountingConfig = { ...DEFAULT_ACCOUNTING_CONFIG };
   isSavingAccounting = false;
 
-  // Tesoreria emails
-  showTesoreriaEmailsForm = false;
-  tesoreriaEmails: string[] = [];
-  newTesoreriaEmail = '';
-  isSavingTesoreriaEmails = false;
-
   get currentUser() { return this.userStateService.getUser(); }
   get isAdminUser() { return this.userStateService.isAdmin() || this.userStateService.isSuperAdmin(); }
   get canConfigureEmpresa() { return this.isAdminUser || this.userStateService.isContabilidad(); }
@@ -118,7 +112,6 @@ export class ConfiguracionComponent implements OnInit {
         this.notificationsEnabled = config?.notificationSettings?.enabled ?? false;
         this.notificationsFrequency = config?.notificationSettings?.frequency ?? 'semanal';
         this.notificationsDay = config?.notificationSettings?.notificationDay ?? 1;
-        this.tesoreriaEmails = [...(config?.tesoreriaEmails ?? [])];
       }
     );
   }
@@ -184,54 +177,6 @@ export class ConfiguracionComponent implements OnInit {
       error: () => {
         this.notificationService.show('Error al guardar la configuración de notificaciones', 'error');
         this.isSavingNotifications = false;
-      },
-    });
-  }
-
-  editTesoreriaEmails() {
-    this.tesoreriaEmails = [...(this.companyConfig?.tesoreriaEmails ?? [])];
-    this.newTesoreriaEmail = '';
-    this.showTesoreriaEmailsForm = true;
-  }
-
-  cancelTesoreriaEmailsEdit() {
-    this.showTesoreriaEmailsForm = false;
-    this.tesoreriaEmails = [...(this.companyConfig?.tesoreriaEmails ?? [])];
-    this.newTesoreriaEmail = '';
-  }
-
-  addTesoreriaEmail() {
-    const email = this.newTesoreriaEmail.trim().toLowerCase();
-    if (!email || !email.includes('@')) {
-      this.notificationService.show('Ingresa un correo electrónico válido', 'error');
-      return;
-    }
-    if (this.tesoreriaEmails.includes(email)) {
-      this.notificationService.show('Este correo ya está en la lista', 'error');
-      return;
-    }
-    this.tesoreriaEmails.push(email);
-    this.newTesoreriaEmail = '';
-  }
-
-  removeTesoreriaEmail(index: number) {
-    this.tesoreriaEmails.splice(index, 1);
-  }
-
-  saveTesoreriaEmails() {
-    const companyId = this.companyConfig?._id || this.companyConfig?.companyId;
-    if (!companyId) return;
-    this.isSavingTesoreriaEmails = true;
-    this.invoicesService.updateTesoreriaEmails(companyId, this.tesoreriaEmails).subscribe({
-      next: () => {
-        this.notificationService.show('Correos de tesoreria guardados', 'success');
-        this.showTesoreriaEmailsForm = false;
-        this.isSavingTesoreriaEmails = false;
-        this.companyConfigService.refreshConfig();
-      },
-      error: () => {
-        this.notificationService.show('Error al guardar los correos de tesoreria', 'error');
-        this.isSavingTesoreriaEmails = false;
       },
     });
   }
