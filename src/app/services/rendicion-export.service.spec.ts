@@ -145,7 +145,7 @@ describe('RendicionExportService', () => {
         fechaGeneracion: '01/01/2026',
         total: 80,
         mobilityRows: [
-          { fecha: '01/01', clienteProveedor: 'Empresa', origen: 'Lima', destino: 'Callao', gestion: 'Reunión', total: 40 },
+          { fecha: '01/01', origen: 'Lima', destino: 'Callao', gestion: 'Reunión', total: 40 },
         ],
       };
       await expectAsync(service.exportSingleExpenseAffidavitToPdf(data)).toBeResolved();
@@ -191,7 +191,7 @@ describe('RendicionExportService', () => {
         collaborator: 'María',
         generatedAt: '01/01/2026',
         rows: [
-          { fecha: '01/01', clienteProveedor: 'Empresa', origen: 'Lima', destino: 'Miraflores', gestion: 'Gestión', total: 30 },
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'Gestión', total: 30 },
         ],
         total: 30,
       };
@@ -238,8 +238,8 @@ describe('RendicionExportService', () => {
         location: 'Lima',
         generatedAt: '01/01/2026',
         rows: [
-          { fecha: '01/01', clienteProveedor: 'Co', origen: 'A', destino: 'B', gestion: 'G', total: 25 },
-          { fecha: '02/01', clienteProveedor: 'Co', origen: 'B', destino: 'C', gestion: 'G', total: 30 },
+          { fecha: '01/01', origen: 'A', destino: 'B', gestion: 'G', total: 25 },
+          { fecha: '02/01', origen: 'B', destino: 'C', gestion: 'G', total: 30 },
         ],
         total: 55,
       };

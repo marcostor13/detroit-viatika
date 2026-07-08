@@ -120,7 +120,6 @@ export interface MobilitySheetExportData {
   proyecto?: string;
   rows: Array<{
     fecha: string;
-    clienteProveedor: string;
     origen: string;
     destino: string;
     gestion: string;
@@ -878,8 +877,8 @@ export class RendicionExportService {
 
     const logoB64 = await this.getLogoBase64();
 
-    // Col X positions: Fecha | Colaborador | CliProv | Proyecto | Origen | Destino | Gestión | TOTALES | end
-    const cols = [14, 30, 56, 80, 96, 122, 148, 170, 196];
+    // Col X positions: Fecha | Colaborador | Proyecto | Origen | Destino | Gestión | TOTALES | end
+    const cols = [14, 32, 62, 82, 112, 142, 170, 196];
 
     // Title
     doc.setFont('helvetica', 'bold');
@@ -950,8 +949,8 @@ export class RendicionExportService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
 
-    const headers = ['Fecha', 'Colaborador', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    for (let i = 0; i < 8; i++) {
+    const headers = ['Fecha', 'Colaborador', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
+    for (let i = 0; i < 7; i++) {
       doc.rect(cols[i], y, cols[i + 1] - cols[i], hdr, 'S');
       doc.text(headers[i], (cols[i] + cols[i + 1]) / 2, y + 5, { align: 'center' });
     }
@@ -961,7 +960,7 @@ export class RendicionExportService {
     // Data rows (min 10)
     const dataRows = [...data.rows];
     while (dataRows.length < 10) {
-      dataRows.push({ fecha: '', clienteProveedor: '', origen: '', destino: '', gestion: '', total: 0 });
+      dataRows.push({ fecha: '', origen: '', destino: '', gestion: '', total: 0 });
     }
 
     const rowH = 7;
@@ -969,7 +968,7 @@ export class RendicionExportService {
     doc.setFontSize(8);
 
     for (const row of dataRows) {
-      for (let c = 0; c < 8; c++) {
+      for (let c = 0; c < 7; c++) {
         doc.rect(cols[c], y, cols[c + 1] - cols[c], rowH, 'S');
       }
       const hasContent = !!(row.fecha || row.origen || row.destino || row.gestion);
@@ -986,45 +985,42 @@ export class RendicionExportService {
         });
         doc.setFontSize(prevSize);
       }
-      if (row.clienteProveedor) {
-        doc.text(doc.splitTextToSize(row.clienteProveedor, cols[3] - cols[2] - 2)[0], cols[2] + 1, y + 4.5);
-      }
       const proyectoCell = row.proyecto || data.proyecto;
       if (proyectoCell && hasContent) {
-        doc.text(doc.splitTextToSize(proyectoCell, cols[4] - cols[3] - 2)[0], cols[3] + 1, y + 4.5);
+        doc.text(doc.splitTextToSize(proyectoCell, cols[3] - cols[2] - 2)[0], cols[2] + 1, y + 4.5);
       }
       if (row.origen) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const oLines = (doc.splitTextToSize(row.origen, cols[5] - cols[4] - 2) as string[]).slice(0, 2);
+        const oLines = (doc.splitTextToSize(row.origen, cols[4] - cols[3] - 2) as string[]).slice(0, 2);
         const oStartY = oLines.length > 1 ? y + 2.8 : y + 4.5;
         oLines.forEach((line, i) => {
-          doc.text(line, cols[4] + 1, oStartY + i * 3);
+          doc.text(line, cols[3] + 1, oStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.destino) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const dLines = (doc.splitTextToSize(row.destino, cols[6] - cols[5] - 2) as string[]).slice(0, 2);
+        const dLines = (doc.splitTextToSize(row.destino, cols[5] - cols[4] - 2) as string[]).slice(0, 2);
         const dStartY = dLines.length > 1 ? y + 2.8 : y + 4.5;
         dLines.forEach((line, i) => {
-          doc.text(line, cols[5] + 1, dStartY + i * 3);
+          doc.text(line, cols[4] + 1, dStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.gestion) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const gLines = (doc.splitTextToSize(row.gestion, cols[7] - cols[6] - 2) as string[]).slice(0, 2);
+        const gLines = (doc.splitTextToSize(row.gestion, cols[6] - cols[5] - 2) as string[]).slice(0, 2);
         const gStartY = gLines.length > 1 ? y + 2.8 : y + 4.5;
         gLines.forEach((line, i) => {
-          doc.text(line, cols[6] + 1, gStartY + i * 3);
+          doc.text(line, cols[5] + 1, gStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.total) {
-        doc.text(row.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
+        doc.text(row.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
       }
       y += rowH;
     }
@@ -1038,22 +1034,22 @@ export class RendicionExportService {
     doc.setTextColor(145, 47, 44);
     doc.text('IMPORTE TOTAL PLANILLA DE MOVILIDAD', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
-    doc.text(data.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
+    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
+    doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
     y += footerH;
 
     doc.setTextColor(145, 47, 44);
     doc.text('CANTIDAD RECIBIDA  A CUENTA', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
+    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
     y += footerH;
 
     doc.setTextColor(145, 47, 44);
     doc.text('DIFERENCIA A MI FAVOR', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.text('S/.', cols[7] - 2, y + 4.5, { align: 'right' });
-    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
-    doc.text(data.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
+    doc.text('S/.', cols[6] - 2, y + 4.5, { align: 'right' });
+    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
+    doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
     y += footerH + 10;
 
     // Signature area
@@ -1162,12 +1158,11 @@ export class RendicionExportService {
     ws.columns = [
       { width: 14 },  // A: Fecha
       { width: 22 },  // B: Colaborador
-      { width: 24 },  // C: Cliente/Proveedor
-      { width: 14 },  // D: Proyecto
-      { width: 22 },  // E: Origen
-      { width: 22 },  // F: Destino
-      { width: 24 },  // G: Gestión
-      { width: 13 },  // H: TOTALES
+      { width: 14 },  // C: Proyecto
+      { width: 22 },  // D: Origen
+      { width: 22 },  // E: Destino
+      { width: 24 },  // F: Gestión
+      { width: 13 },  // G: TOTALES
     ];
 
     const cfg = this.companyConfigService.getCompanyConfig();
@@ -1180,7 +1175,7 @@ export class RendicionExportService {
     };
 
     // Row 1: Title
-    ws.mergeCells('A1:H1');
+    ws.mergeCells('A1:G1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'PLANILLA DE MOVILIDAD';
     titleCell.font = { bold: true, size: 13 };
@@ -1212,24 +1207,24 @@ export class RendicionExportService {
     ws.getCell('A5').value = 'Nombre Completo :';
     ws.getCell('A5').font = { bold: true, size: 9 };
     ws.getCell('A5').border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-    ws.mergeCells('B5:F5');
+    ws.mergeCells('B5:E5');
     ws.getCell('B5').value = data.collaborator;
     ws.getCell('B5').border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-    ws.getCell('G5').value = 'Nº';
-    ws.getCell('G5').font = { bold: true, size: 9 };
+    ws.getCell('F5').value = 'Nº';
+    ws.getCell('F5').font = { bold: true, size: 9 };
+    ws.getCell('F5').border = bt;
+    ws.getCell('G5').value = data.internalCode || '';
+    ws.getCell('G5').font = { size: 9 };
     ws.getCell('G5').border = bt;
-    ws.getCell('H5').value = data.internalCode || '';
-    ws.getCell('H5').font = { size: 9 };
-    ws.getCell('H5').border = bt;
 
     // Row 6: Vo.Bo.
     ws.getCell('A6').border = { bottom: { style: 'thin' } };
     ws.getCell('B6').border = { bottom: { style: 'thin' } };
-    ws.mergeCells('G6:H6');
-    ws.getCell('G6').value = 'Vo.Bo. Gerencia Adm y Finanzas';
-    ws.getCell('G6').alignment = { horizontal: 'center' };
-    ws.getCell('G6').font = { size: 8 };
-    ws.getCell('G6').border = bt;
+    ws.mergeCells('F6:G6');
+    ws.getCell('F6').value = 'Vo.Bo. Gerencia Adm y Finanzas';
+    ws.getCell('F6').alignment = { horizontal: 'center' };
+    ws.getCell('F6').font = { size: 8 };
+    ws.getCell('F6').border = bt;
 
     // Row 7: Periodo
     ws.getCell('A7').value = 'Periodo:';
@@ -1241,7 +1236,7 @@ export class RendicionExportService {
     ws.getRow(8).height = 4;
 
     // Row 9: Table title bar
-    ws.mergeCells('A9:H9');
+    ws.mergeCells('A9:G9');
     const tableTitle = ws.getCell('A9');
     tableTitle.value = 'DETALLE DE GASTOS DE MOVILIDAD';
     tableTitle.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
@@ -1250,8 +1245,8 @@ export class RendicionExportService {
     ws.getRow(9).height = 18;
 
     // Row 10: Single header row
-    const hdrLabels = ['Fecha', 'Colaborador', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    const hdrCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const hdrLabels = ['Fecha', 'Colaborador', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
+    const hdrCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
     for (let i = 0; i < hdrLabels.length; i++) {
       const cell = ws.getCell(`${hdrCols[i]}10`);
       cell.value = hdrLabels[i];
@@ -1265,7 +1260,7 @@ export class RendicionExportService {
     let r = 11;
     const dataRows = [...data.rows];
     while (dataRows.length < 10) {
-      dataRows.push({ fecha: '', clienteProveedor: '', origen: '', destino: '', gestion: '', total: 0 });
+      dataRows.push({ fecha: '', origen: '', destino: '', gestion: '', total: 0 });
     }
 
     for (const row of dataRows) {
@@ -1273,20 +1268,19 @@ export class RendicionExportService {
       ws.getCell(r, 1).value = this.formatDateDdMmYyyy(row.fecha);
       ws.getCell(r, 2).value = hasContent ? (row.colaborador || '') : '';
       ws.getCell(r, 2).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 3).value = row.clienteProveedor || '';
-      ws.getCell(r, 4).value = hasContent ? (row.proyecto || data.proyecto || '') : '';
-      ws.getCell(r, 5).value = row.origen || '';
+      ws.getCell(r, 3).value = hasContent ? (row.proyecto || data.proyecto || '') : '';
+      ws.getCell(r, 4).value = row.origen || '';
+      ws.getCell(r, 4).alignment = { wrapText: true, vertical: 'middle' };
+      ws.getCell(r, 5).value = row.destino || '';
       ws.getCell(r, 5).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 6).value = row.destino || '';
+      ws.getCell(r, 6).value = row.gestion || '';
       ws.getCell(r, 6).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 7).value = row.gestion || '';
-      ws.getCell(r, 7).alignment = { wrapText: true, vertical: 'middle' };
       if (row.total) {
-        ws.getCell(r, 8).value = row.total;
-        ws.getCell(r, 8).numFmt = '#,##0.00';
-        ws.getCell(r, 8).alignment = { horizontal: 'right' };
+        ws.getCell(r, 7).value = row.total;
+        ws.getCell(r, 7).numFmt = '#,##0.00';
+        ws.getCell(r, 7).alignment = { horizontal: 'right' };
       }
-      for (let i = 1; i <= 8; i++) {
+      for (let i = 1; i <= 7; i++) {
         ws.getCell(r, i).border = bt;
         ws.getCell(r, i).font = { size: 8.5 };
       }
@@ -1297,33 +1291,33 @@ export class RendicionExportService {
     // Footer rows
     const redFont = { bold: true, color: { argb: 'FF912f2c' } };
 
-    ws.mergeCells(r, 1, r, 7);
+    ws.mergeCells(r, 1, r, 6);
     ws.getCell(r, 1).value = 'IMPORTE TOTAL PLANILLA DE MOVILIDAD';
     ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 8).value = data.total;
-    ws.getCell(r, 8).numFmt = '#,##0.00';
-    ws.getCell(r, 8).alignment = { horizontal: 'right' };
-    ws.getCell(r, 8).border = bt;
-    ws.getRow(r).height = 16;
-    r++;
-
-    ws.mergeCells(r, 1, r, 7);
-    ws.getCell(r, 1).value = 'CANTIDAD RECIBIDA  A CUENTA';
-    ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 8).border = bt;
+    ws.getCell(r, 7).value = data.total;
+    ws.getCell(r, 7).numFmt = '#,##0.00';
+    ws.getCell(r, 7).alignment = { horizontal: 'right' };
+    ws.getCell(r, 7).border = bt;
     ws.getRow(r).height = 16;
     r++;
 
     ws.mergeCells(r, 1, r, 6);
+    ws.getCell(r, 1).value = 'CANTIDAD RECIBIDA  A CUENTA';
+    ws.getCell(r, 1).font = redFont;
+    ws.getCell(r, 7).border = bt;
+    ws.getRow(r).height = 16;
+    r++;
+
+    ws.mergeCells(r, 1, r, 5);
     ws.getCell(r, 1).value = 'DIFERENCIA A MI FAVOR';
     ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 7).value = 'S/.';
-    ws.getCell(r, 7).font = { bold: true };
+    ws.getCell(r, 6).value = 'S/.';
+    ws.getCell(r, 6).font = { bold: true };
+    ws.getCell(r, 6).alignment = { horizontal: 'right' };
+    ws.getCell(r, 7).value = data.total;
+    ws.getCell(r, 7).numFmt = '#,##0.00';
     ws.getCell(r, 7).alignment = { horizontal: 'right' };
-    ws.getCell(r, 8).value = data.total;
-    ws.getCell(r, 8).numFmt = '#,##0.00';
-    ws.getCell(r, 8).alignment = { horizontal: 'right' };
-    ws.getCell(r, 8).border = bt;
+    ws.getCell(r, 7).border = bt;
     ws.getRow(r).height = 16;
     r += 2;
 
@@ -1402,12 +1396,12 @@ export class RendicionExportService {
     if (data.mobilityRows && data.mobilityRows.length > 0) {
       autoTable(doc, {
         startY: y,
-        head: [['Fecha', 'Cliente / Proveedor', 'Origen', 'Destino', 'Gestión', 'Total (S/)']],
-        body: data.mobilityRows.map(r => [r.fecha, r.clienteProveedor || '—', r.origen || '—', r.destino || '—', r.gestion || '—', r.total.toFixed(2)]),
+        head: [['Fecha', 'Origen', 'Destino', 'Gestión', 'Total (S/)']],
+        body: data.mobilityRows.map(r => [r.fecha, r.origen || '—', r.destino || '—', r.gestion || '—', r.total.toFixed(2)]),
         theme: 'grid',
         headStyles: { fillColor: [145, 47, 44], textColor: 255 },
         styles: { fontSize: 8 },
-        columnStyles: { 5: { halign: 'right' } },
+        columnStyles: { 4: { halign: 'right' } },
         margin: { left: 14, right: 14 },
       });
       tableRendered = true;

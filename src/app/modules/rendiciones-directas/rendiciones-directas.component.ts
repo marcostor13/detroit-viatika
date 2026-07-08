@@ -479,14 +479,14 @@ export class RendicionesDirectasComponent implements OnInit {
 
   async exportMobilityPdf(e: any, event: Event): Promise<void> {
     event.stopPropagation();
-    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
+    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
     const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToPdf(data);
   }
 
   async exportMobilityExcel(e: any, event: Event): Promise<void> {
     event.stopPropagation();
-    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
+    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
     const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToExcel(data);
   }

@@ -1725,7 +1725,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private buildMobilityPageData(expense: Record<string, unknown>): MobilitySheetExportData {
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -1876,7 +1875,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         const dayAmount = Math.min(DAILY_RATE, Math.round(remaining * 100) / 100);
         rows.push({
           fecha: this.dateToYmd(cur),
-          clienteProveedor: '',
           origen: '',
           destino: '',
           gestion: '',
@@ -1889,7 +1887,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     } else {
       rows.push({
         fecha: '',
-        clienteProveedor: '',
         origen: '',
         destino: '',
         gestion: '',
@@ -2800,7 +2797,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (this.getExpenseTypeKey(expense) !== 'planilla_movilidad') return;
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -2838,7 +2834,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (this.getExpenseTypeKey(expense) !== 'planilla_movilidad') return;
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),

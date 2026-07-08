@@ -19,7 +19,6 @@ export interface IMobilityRow {
   proyectId?: string;
   /** Categoría de la fila, según el perfil del proyecto de la fila (Rendiciones Directas). */
   categoryId?: string;
-  clienteProveedor: string;
   origen: string;
   origenDepartamento?: string;
   origenProvincia?: string;

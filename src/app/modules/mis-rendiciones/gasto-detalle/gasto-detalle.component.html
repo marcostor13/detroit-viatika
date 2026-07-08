@@ -156,9 +156,7 @@
             <thead class="bg-gray-50 text-left text-gray-500">
               <tr>
                 <th class="px-3 py-2 font-medium">Fecha</th>
-                <th class="px-3 py-2 font-medium">Concepto</th>
                 <th class="px-3 py-2 font-medium text-right">Total</th>
-                <th class="px-3 py-2 font-medium hidden md:table-cell">Cliente / Prov.</th>
                 <th class="px-3 py-2 font-medium hidden lg:table-cell">Origen → Destino</th>
                 <th class="px-3 py-2 font-medium hidden lg:table-cell">Km</th>
                 <th class="px-3 py-2 font-medium hidden md:table-cell">Gestion</th>
@@ -168,9 +166,7 @@
               @for (row of mobilityRows(exp); track trackRow($index)) {
               <tr class="hover:bg-gray-50/80">
                 <td class="px-3 py-2 whitespace-nowrap">{{ row['fecha'] || '—' }}</td>
-                <td class="px-3 py-2 max-w-[200px] break-words">{{ row['concepto'] || '—' }}</td>
                 <td class="px-3 py-2 text-right tabular-nums font-medium">{{ mobilityRowTotal(row) | number:'1.2-2' }}</td>
-                <td class="px-3 py-2 hidden md:table-cell break-words">{{ row['clienteProveedor'] || '—' }}</td>
                 <td class="px-3 py-2 hidden lg:table-cell text-gray-600">{{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}</td>
                 <td class="px-3 py-2 hidden lg:table-cell tabular-nums">{{ row['distanciaKm'] ?? '—' }}</td>
                 <td class="px-3 py-2 hidden md:table-cell">{{ row['gestion'] || '—' }}</td>

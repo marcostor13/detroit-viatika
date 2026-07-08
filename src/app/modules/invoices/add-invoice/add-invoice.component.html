@@ -690,7 +690,7 @@
             <span class="text-xs text-tertiary">(línea recta)</span>
           </div>
           }
-          <!-- Total, Cliente/Proveedor -->
+          <!-- Total -->
           <div class="flex flex-col gap-1">
             <label class="text-xs font-medium text-secondary">Total S/. <span class="text-error">*</span></label>
             <input type="number" formControlName="total" placeholder="0.00" min="0" step="0.01"
@@ -703,16 +703,6 @@
               Supera el límite diario de S/ {{ mobilityDailyLimit | number:'1.2-2' }}
               (acumulado ese día: S/ {{ getMobilityDateTotal(row.get('fecha')?.value) | number:'1.2-2' }})
             </p>
-            }
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-secondary">Cliente / Proveedor <span class="text-error">*</span></label>
-            <input type="text" formControlName="clienteProveedor" placeholder="Nombre"
-              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
-              [class.border-error]="row.get('clienteProveedor')?.invalid && row.get('clienteProveedor')?.touched"
-              [class.ring-error]="row.get('clienteProveedor')?.invalid && row.get('clienteProveedor')?.touched" />
-            @if (row.get('clienteProveedor')?.invalid && row.get('clienteProveedor')?.touched) {
-            <p class="text-xs text-error">Indica el cliente o proveedor.</p>
             }
           </div>
           <!-- Gestión -->
