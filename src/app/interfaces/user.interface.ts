@@ -65,12 +65,8 @@ export interface IUserPermissions {
   modules: string[];
   canApproveL1: boolean;
   canApproveL2: boolean;
-  /** Categorías sueltas asignadas directamente (independientes de los perfiles). */
+  /** Categorías sueltas asignadas directamente al usuario. */
   categoryIds?: string[];
-  /** @deprecated usar categoryProfileIds. */
-  categoryProfileId?: string | null;
-  /** Perfiles de categoría asignados (deriva centros de costo y categorías visibles). */
-  categoryProfileIds?: string[];
   /**
    * Centros de costo (Project) asignados, ORDENADOS: el primero es el centro
    * de costo principal del colaborador (primer aprobador cuando solicita

@@ -206,30 +206,6 @@ export const routes: Routes = [
         canActivate: [AuthAdmin2Guard],
       },
       {
-        path: 'perfiles-categoria',
-        loadComponent: () =>
-          import('./modules/perfiles-categoria/perfiles-categoria.component').then(
-            (m) => m.PerfilesCategoriaComponent
-          ),
-        canActivate: [AuthAdmin2Guard],
-      },
-      {
-        path: 'perfiles-categoria/nueva',
-        loadComponent: () =>
-          import(
-            './modules/perfiles-categoria/form/perfiles-categoria-form.component'
-          ).then((m) => m.PerfilesCategoriaFormComponent),
-        canActivate: [AuthAdmin2Guard],
-      },
-      {
-        path: 'perfiles-categoria/:id/editar',
-        loadComponent: () =>
-          import(
-            './modules/perfiles-categoria/form/perfiles-categoria-form.component'
-          ).then((m) => m.PerfilesCategoriaFormComponent),
-        canActivate: [AuthAdmin2Guard],
-      },
-      {
         path: 'mi-perfil',
         loadComponent: () =>
           import('./modules/mi-perfil/mi-perfil.component').then(

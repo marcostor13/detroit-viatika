@@ -1,6 +1,5 @@
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
-import { Subscription } from 'rxjs';
 import {
   FormBuilder,
   FormGroup,
@@ -21,7 +20,6 @@ import { environment } from '../../../../environments/environment';
 import { CommonModule } from '@angular/common';
 import { IProject } from '../interfaces/project.interface';
 import { ICategory } from '../interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import {
   InvoiceStatus,
   SunatValidationInfo,
@@ -33,7 +31,6 @@ import { ProjectSelectComponent } from '../../../design-system/project-select/pr
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
 import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
@@ -64,14 +61,11 @@ export default class AddInvoiceComponent implements OnInit {
   private uploadService = inject(UploadService);
   private companyConfigService = inject(CompanyConfigService);
   private expenseService = inject(ExpenseService);
-  private categoryGroupService = inject(CategoryGroupService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
 
   form!: FormGroup;
   id: string = this.route.snapshot.params['id'];
   categories: ICategory[] = [];
-  /** Perfiles de categoría (category-groups). Cada proyecto referencia uno y de él se derivan sus categorías. */
-  categoryGroups: ICategoryGroup[] = [];
   proyects: IProject[] = [];
   /** Órdenes de Trabajo activas, requeridas en planilla de movilidad (formato ADF-FOR-005). */
   ordenesTrabajo: IOrdenTrabajo[] = [];
@@ -297,18 +291,11 @@ export default class AddInvoiceComponent implements OnInit {
     this.fromContabilidad = this.route.snapshot.queryParamMap.get('from') === 'contabilidad' || this.userStateService.isContabilidad();
     this.guardRendiciones();
     this.loadCategories();
-    this.loadCategoryGroups();
     this.loadProjects();
     this.loadOrdenesTrabajo();
     this.loadClientUsers();
-    // Al cambiar de proyecto, si la categoría elegida no pertenece a su perfil, se limpia.
+    // Al cambiar de proyecto, la OT depende del centro de costo: si la elegida no pertenece al nuevo, se limpia.
     this.form.get('proyectId')?.valueChanges.subscribe((pid) => {
-      const allowed = this.allowedCategoryIds();
-      const selected = this.form.get('categoryId')?.value;
-      if (allowed && selected && !allowed.has(String(selected))) {
-        this.form.get('categoryId')?.setValue('');
-      }
-      // La OT depende del centro de costo: si la elegida no pertenece al nuevo, se limpia.
       const otId = this.form.get('ordenTrabajoId')?.value;
       if (
         otId &&
@@ -459,7 +446,6 @@ export default class AddInvoiceComponent implements OnInit {
                 gestion: [row.gestion || '', Validators.required],
               });
               this.mobilityRowsArray.push(group);
-              this.wireRowCategoryReset(group);
             }
           }
         },
@@ -551,15 +537,6 @@ export default class AddInvoiceComponent implements OnInit {
     });
   }
 
-  loadCategoryGroups() {
-    this.categoryGroupService.getAll().subscribe({
-      next: (groups) => {
-        this.categoryGroups = groups ?? [];
-      },
-      error: () => {},
-    });
-  }
-
   loadProjects() {
     this.invoiceService.getProjects().subscribe({
       next: (projects) => {
@@ -644,53 +621,14 @@ export default class AddInvoiceComponent implements OnInit {
     projCtrl?.updateValueAndValidity({ emitEvent: false });
   }
 
-  /**
-   * IDs de categoría permitidas por el perfil (category-group) del proyecto `projId`,
-   * o `null` cuando no aplica filtro (sin proyecto, proyecto sin perfil, o perfil sin
-   * categorías) — en cuyo caso se muestran todas.
-   */
-  private allowedCategoryIdsFor(projId: string | null | undefined): Set<string> | null {
-    if (!projId) return null;
-    const project = this.proyects.find((p) => String(p._id) === String(projId));
-    const groupId = project?.categoryGroupId;
-    if (!groupId) return null;
-    const group = this.categoryGroups.find((g) => String(g._id) === String(groupId));
-    const ids = (group?.categoryIds ?? []).map(String);
-    if (!ids.length) return null;
-    return new Set(ids);
-  }
-
-  /** IDs de categoría permitidas por el perfil del proyecto del gasto (selector superior). */
-  private allowedCategoryIds(): Set<string> | null {
-    return this.allowedCategoryIdsFor(this.form.get('proyectId')?.value);
-  }
-
-  /**
-   * Filtra `categories` por un set permitido, manteniendo visible la categoría ya
-   * seleccionada aunque no pertenezca al perfil (p. ej. al editar un gasto creado
-   * antes de asignar el perfil). Con `allowed === null` no aplica filtro.
-   */
-  private filterCategoriesByAllowed(allowed: Set<string> | null, selected: any): ICategory[] {
-    if (!allowed) return this.categories;
-    return this.categories.filter(
-      (c) => allowed.has(String(c._id)) || String(c._id) === String(selected)
-    );
-  }
-
-  /** Categorías visibles en el selector superior: filtradas por el perfil del proyecto del gasto. */
+  /** Categorías visibles en el selector superior: siempre todas las activas del cliente. */
   get filteredCategories(): ICategory[] {
-    return this.filterCategoriesByAllowed(this.allowedCategoryIds(), this.form.get('categoryId')?.value);
+    return this.categories;
   }
 
-  /**
-   * Categorías visibles para una fila de la planilla (Rendiciones Directas): filtradas
-   * por el perfil del proyecto elegido en esa misma fila, de modo que la categoría
-   * siempre corresponda al proyecto seleccionado en la fila.
-   */
+  /** Categorías visibles para una fila de la planilla (Rendiciones Directas). */
   getRowCategories(index: number): ICategory[] {
-    const row = this.mobilityRowsArray.at(index);
-    const allowed = this.allowedCategoryIdsFor(row?.get('proyectId')?.value);
-    return this.filterCategoriesByAllowed(allowed, row?.get('categoryId')?.value);
+    return this.categories;
   }
 
   lookupRazonSocial(ruc: string) {
@@ -843,26 +781,6 @@ export default class AddInvoiceComponent implements OnInit {
       gestion: ['', Validators.required],
     });
     this.mobilityRowsArray.push(group);
-    this.wireRowCategoryReset(group);
-  }
-
-  /** Suscripciones por fila que limpian la categoría cuando cambia el proyecto de la fila. */
-  private rowCategorySubs = new WeakMap<FormGroup, Subscription>();
-
-  /**
-   * Al cambiar el proyecto de una fila, limpia su categoría si dejó de pertenecer al
-   * perfil del nuevo proyecto, para que la categoría corresponda siempre al proyecto
-   * seleccionado en esa fila (Rendiciones Directas).
-   */
-  private wireRowCategoryReset(group: FormGroup): void {
-    const sub = group.get('proyectId')!.valueChanges.subscribe((projId) => {
-      const allowed = this.allowedCategoryIdsFor(projId);
-      const selected = group.get('categoryId')?.value;
-      if (allowed && selected && !allowed.has(String(selected))) {
-        group.get('categoryId')?.setValue('');
-      }
-    });
-    this.rowCategorySubs.set(group, sub);
   }
 
   onOrigenSelected(result: PlaceResult, index: number) {
@@ -1079,9 +997,6 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   removeMobilityRow(index: number) {
-    const group = this.mobilityRowsArray.at(index) as FormGroup;
-    this.rowCategorySubs.get(group)?.unsubscribe();
-    this.rowCategorySubs.delete(group);
     this.mobilityRowsArray.removeAt(index);
   }
 

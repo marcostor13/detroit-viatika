@@ -60,8 +60,6 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/notifications/',
     '/bulk-import',
     '/caja-chica-report',
-    '/saldo',
-    '/saldo/',
     '/accounting-entries',
     '/upload',
     '/upload/',

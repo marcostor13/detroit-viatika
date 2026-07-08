@@ -4,12 +4,10 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AdminUsersService } from '../services/admin-users.service';
 import { NotificationService } from '../../../services/notification.service';
 import { CategoriaService } from '../../../services/categoria.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { IUserResponse, IUserPermissions } from '../../../interfaces/user.interface';
 import { ICategory } from '../../invoices/interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
@@ -34,7 +32,6 @@ export class UserPermissionsComponent implements OnInit {
   private adminUsersService = inject(AdminUsersService);
   private notification = inject(NotificationService);
   private categoriaService = inject(CategoriaService);
-  private groupService = inject(CategoryGroupService);
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
 
@@ -43,7 +40,6 @@ export class UserPermissionsComponent implements OnInit {
   saving = false;
 
   allCategories = signal<ICategory[]>([]);
-  groups = signal<ICategoryGroup[]>([]);
   categorySearch = signal('');
   categoriesLoading = signal(false);
   /** Catálogo de centros de costo de la empresa. */
@@ -87,7 +83,6 @@ export class UserPermissionsComponent implements OnInit {
           categoryIds: user.permissions?.categoryIds ?? [],
           projectIds: user.permissions?.projectIds ?? [],
         };
-        this.maybeApplyDefault();
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
     });
@@ -161,42 +156,16 @@ export class UserPermissionsComponent implements OnInit {
 
   loadCategoryData() {
     this.categoriesLoading.set(true);
-    Promise.all([
-      this.groupService.getAll().toPromise(),
-      this.categoriaService.getAllFlatAdmin().toPromise(),
-    ]).then(([groups, cats]) => {
-      this.groups.set(groups ?? []);
-      this.allCategories.set(cats ?? []);
-      this.categoriesLoading.set(false);
-      this.maybeApplyDefault();
-    }).catch(() => {
-      this.notification.show('Error al cargar perfiles/categorías', 'error');
-      this.categoriesLoading.set(false);
+    this.categoriaService.getAllFlatAdmin().subscribe({
+      next: (cats) => {
+        this.allCategories.set(cats ?? []);
+        this.categoriesLoading.set(false);
+      },
+      error: () => {
+        this.notification.show('Error al cargar categorías', 'error');
+        this.categoriesLoading.set(false);
+      },
     });
-  }
-
-  // --- Pre-selección por rol ---
-
-  /** Aplica el default por rol solo si el usuario aún no tiene categorías y ya cargaron los datos. */
-  private maybeApplyDefault() {
-    if (!this.user || this.allCategories().length === 0) return;
-    if ((this.permissions.categoryIds ?? []).length === 0) this.applyRoleDefault();
-  }
-
-  isColaborador(): boolean {
-    const r = (this.user?.role?.name || this.user?.roleName || '').toLowerCase();
-    return r === 'colaborador';
-  }
-
-  /** Colaborador => categorías del perfil PROYECTO; otros roles => ADMINISTRACION + COMERCIAL. */
-  applyRoleDefault() {
-    const colaborador = this.isColaborador();
-    const wantedNames = colaborador ? ['PROYECTO'] : ['ADMINISTRACION', 'COMERCIAL'];
-    const ids = new Set<string>();
-    this.groups()
-      .filter((g) => wantedNames.includes(g.name))
-      .forEach((g) => (g.categoryIds ?? []).forEach((id) => ids.add(String(id))));
-    this.permissions.categoryIds = Array.from(ids);
   }
 
   // --- Módulos ---
@@ -246,31 +215,6 @@ export class UserPermissionsComponent implements OnInit {
 
   clearAllCategories() {
     this.permissions.categoryIds = [];
-  }
-
-  // --- Perfiles (grupos rápidos) ---
-  // Un solo listado de categorías para todo el usuario. Clicar un perfil
-  // siempre AGREGA sus categorías a la selección (no la quita si ya estaba
-  // seleccionado), así seleccionar varios perfiles seguidos es acumulativo.
-  // Para deseleccionar todo se usa el botón "Quitar todos" (clearAllCategories).
-
-  groupIsFullySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    const catIds = group.categoryIds ?? [];
-    return catIds.length > 0 && catIds.every((id) => ids.includes(id));
-  }
-
-  groupIsPartiallySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    const catIds = group.categoryIds ?? [];
-    return !this.groupIsFullySelected(group) && catIds.some((id) => ids.includes(id));
-  }
-
-  selectGroup(group: ICategoryGroup) {
-    const catIds = group.categoryIds ?? [];
-    const current = new Set(this.permissions.categoryIds ?? []);
-    catIds.forEach((id) => current.add(id));
-    this.permissions.categoryIds = Array.from(current);
   }
 
   get selectedCount(): number {

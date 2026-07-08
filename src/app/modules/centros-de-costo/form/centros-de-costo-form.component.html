@@ -59,22 +59,6 @@
         </select>
       </div>
 
-      <!-- Perfil de Categoría -->
-      <div class="flex flex-col gap-1.5">
-        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">
-          Perfil de Categoría <span class="text-tertiary/60 font-normal normal-case">(opcional)</span>
-        </label>
-        <select
-          [(ngModel)]="form.categoryGroupId"
-          class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-        >
-          <option value="">Sin perfil</option>
-          @for (p of perfiles; track p._id) {
-          <option [value]="p._id">{{ p.name }}</option>
-          }
-        </select>
-      </div>
-
       <!-- Aprobador -->
       <div class="flex flex-col gap-1.5">
         <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">

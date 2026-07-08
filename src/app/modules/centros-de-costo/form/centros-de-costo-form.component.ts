@@ -6,14 +6,12 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { NotificationService } from '../../../services/notification.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { LineaNegocioService } from '../../../services/linea-negocio.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { AdminUsersService } from '../../admin-users/services/admin-users.service';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ILineaNegocio } from '../../../interfaces/linea-negocio.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
 
 @Component({
@@ -28,7 +26,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
   private notification = inject(NotificationService);
   private invoicesService = inject(InvoicesService);
   private lineaNegocioService = inject(LineaNegocioService);
-  private categoryGroupService = inject(CategoryGroupService);
   private userStateService = inject(UserStateService);
   private adminUsersService = inject(AdminUsersService);
 
@@ -40,7 +37,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
     code: '',
     isActive: true,
     lineaNegocioId: '',
-    categoryGroupId: '',
     // Mapeo contable (asientos Contanet)
     cuentaAnalitica9x: '',
     cuentaDestino6x: '',
@@ -51,7 +47,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
     approverId: '',
   };
   lineas: ILineaNegocio[] = [];
-  perfiles: ICategoryGroup[] = [];
   /** Candidatos a aprobador del centro de costo: cualquier usuario activo de la empresa. */
   approverCandidates: IUserResponse[] = [];
 
@@ -64,7 +59,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
 
   ngOnInit() {
     this.loadLineas();
-    this.loadPerfiles();
     this.loadApproverCandidates();
     this.projectId = this.route.snapshot.paramMap.get('id');
     if (this.projectId) {
@@ -87,13 +81,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
     });
   }
 
-  loadPerfiles() {
-    this.categoryGroupService.getAll().subscribe({
-      next: (perfiles) => { this.perfiles = perfiles ?? []; },
-      error: () => { this.perfiles = []; },
-    });
-  }
-
   loadProject(id: string) {
     const companyId = this.userStateService.getUser()?.companyId || '';
     this.invoicesService.getProjectById(id, companyId).subscribe({
@@ -103,7 +90,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
           code: p.code ?? '',
           isActive: p.isActive ?? true,
           lineaNegocioId: p.lineaNegocioId ?? '',
-          categoryGroupId: p.categoryGroupId ?? '',
           cuentaAnalitica9x: p.cuentaAnalitica9x ?? '',
           cuentaDestino6x: p.cuentaDestino6x ?? '',
           centroCosto: p.centroCosto ?? '',
@@ -136,7 +122,6 @@ export class CentrosDeCostoFormComponent implements OnInit {
       code: this.form.code.trim() || undefined,
       isActive: this.form.isActive,
       lineaNegocioId: this.form.lineaNegocioId || '',
-      categoryGroupId: this.form.categoryGroupId || '',
       cuentaAnalitica9x: this.form.cuentaAnalitica9x.trim() || undefined,
       cuentaDestino6x: this.form.cuentaDestino6x.trim() || undefined,
       centroCosto: this.form.centroCosto.trim() || undefined,
