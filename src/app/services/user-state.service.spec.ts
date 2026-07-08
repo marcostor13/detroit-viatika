@@ -290,6 +290,12 @@ describe('UserStateService — empty localStorage', () => {
       expect(service.canApproveL2()).toBeFalse();
     });
 
+    it('canApproveL2() returns true for Tesoreria role regardless of permission flag', () => {
+      const role = { _id: 'r4', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canApproveL2()).toBeTrue();
+    });
+
     it('canAccessTesoreria() returns true for Superadministrador', () => {
       const role = { _id: 'r3', name: 'Superadministrador', active: true, createdAt: new Date(), updatedAt: new Date() };
       service.setUser(makeUser({ role }));

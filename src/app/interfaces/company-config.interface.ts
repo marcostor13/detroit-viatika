@@ -18,7 +18,6 @@ export interface ICompanyConfig {
     /** 0=Dom … 6=Sáb (default 1=Lunes). Solo aplica con frequency='semanal'. */
     notificationDay?: number;
   };
-  tesoreriaEmails?: string[];
   createdAt?: Date;
   updatedAt?: Date;
 }
