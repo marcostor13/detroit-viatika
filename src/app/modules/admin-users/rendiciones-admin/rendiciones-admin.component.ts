@@ -57,6 +57,10 @@ const REPORT_STATUS_COLORS: Record<string, string> = {
 export type UnifiedRendicionItem = {
   _id: string;
   source: 'report' | 'advance';
+  /** Tipo de solicitud, para distinguirlas en la tabla. */
+  kind: 'viatico' | 'directa' | 'anticipo';
+  kindLabel: string;
+  kindColor: string;
   userName: string;
   userInitials: string;
   userId: string;
@@ -125,8 +129,11 @@ export class RendicionesAdminComponent implements OnInit {
 
   filterUserId = '';
   filterProjectId = '';
+  filterStatus = '';
   filterDateFrom = '';
   filterDateTo = '';
+  /** Estados presentes en la lista (para el filtro por estado). Se recalcula en applyFilters. */
+  statusOptions: { value: string; label: string }[] = [];
 
   // Approve modal
   showApproveModal = signal(false);
@@ -254,17 +261,22 @@ export class RendicionesAdminComponent implements OnInit {
       return {
         _id: r._id,
         source: 'report' as const,
+        kind: (isDirectaChain ? 'directa' : 'viatico') as UnifiedRendicionItem['kind'],
+        kindLabel: isDirectaChain ? 'Directa' : 'Viático',
+        kindColor: isDirectaChain ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
         title: r.title || r.viaticoPlace || '—',
         projectName: this.getProjectName(r),
         projectId: pid ?? '',
-        amount: r.viaticoAmount ?? r.budget ?? 0,
+        // Directa: el monto a mostrar es la suma de los gastos cargados por el
+        // colaborador (no `budget`, que en una directa es 0). VD-25.
+        amount: isDirectaChain
+          ? this.reportExpensesTotal(r)
+          : (r.viaticoAmount ?? r.budget ?? 0),
         status: r.status,
-        statusLabel: isDirectaChain && r.status === 'pending_l1'
-          ? 'En aprobación de centro de costo'
-          : (REPORT_STATUS_LABELS[r.status] ?? r.status),
+        statusLabel: REPORT_STATUS_LABELS[r.status] ?? r.status,
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
@@ -299,6 +311,9 @@ export class RendicionesAdminComponent implements OnInit {
       return {
         _id: a._id,
         source: 'advance' as const,
+        kind: 'anticipo' as UnifiedRendicionItem['kind'],
+        kindLabel: 'Anticipo',
+        kindColor: 'bg-violet-100 text-violet-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
@@ -324,6 +339,20 @@ export class RendicionesAdminComponent implements OnInit {
 
     const items = [...reportItems, ...advanceItems];
 
+    // Opciones del filtro por estado: los estados realmente presentes en la lista
+    // ("los actuales"), sin duplicar, ordenados por etiqueta. VD-30.
+    const seenStatuses = new Map<string, string>();
+    for (const it of items) {
+      if (!seenStatuses.has(it.status)) seenStatuses.set(it.status, it.statusLabel);
+    }
+    this.statusOptions = [...seenStatuses.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    // Si el estado filtrado ya no existe en los datos, se limpia para no ocultar todo.
+    if (this.filterStatus && !seenStatuses.has(this.filterStatus)) {
+      this.filterStatus = '';
+    }
+
     let result = items;
 
     if (this.filterUserId) {
@@ -331,6 +360,9 @@ export class RendicionesAdminComponent implements OnInit {
     }
     if (this.filterProjectId) {
       result = result.filter(i => i.projectId === this.filterProjectId);
+    }
+    if (this.filterStatus) {
+      result = result.filter(i => i.status === this.filterStatus);
     }
     if (this.filterDateFrom) {
       const from = new Date(this.filterDateFrom).getTime();
@@ -350,13 +382,14 @@ export class RendicionesAdminComponent implements OnInit {
   clearFilters(): void {
     this.filterUserId = '';
     this.filterProjectId = '';
+    this.filterStatus = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
     this.applyFilters();
   }
 
   get hasActiveFilters(): boolean {
-    return !!(this.filterUserId || this.filterProjectId || this.filterDateFrom || this.filterDateTo);
+    return !!(this.filterUserId || this.filterProjectId || this.filterStatus || this.filterDateFrom || this.filterDateTo);
   }
 
   goToDetail(item: UnifiedRendicionItem): void {
@@ -591,6 +624,76 @@ export class RendicionesAdminComponent implements OnInit {
   private canDeleteReport(report: IExpenseReport): boolean {
     if (this.userStateService.isContabilidad()) return true;
     return report.expenseIds.length === 0;
+  }
+
+  /**
+   * Suma el total de los gastos (comprobantes) cargados en una rendición. Usa
+   * `expense.total` de cada comprobante poblado; si `expenseIds` no viene
+   * poblado (solo IDs) devuelve 0. Sirve para mostrar el monto de una rendición
+   * directa, que no tiene `budget` propio. VD-25.
+   */
+  private reportExpensesTotal(report: IExpenseReport): number {
+    const expenses = report.expenseIds;
+    if (!Array.isArray(expenses)) return 0;
+    return expenses.reduce(
+      (sum, exp: any) =>
+        sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
+      0
+    );
+  }
+
+  /**
+   * Comprobantes (facturas) cargados en una rendición directa, para mostrarlos
+   * en el modal de aprobación/detalle. Solo aplica a directas y solo devuelve
+   * comprobantes ya poblados (objetos). VD-25.
+   */
+  directaExpenses(item: UnifiedRendicionItem | null): any[] {
+    if (!item || item.source !== 'report') return [];
+    const raw = item.raw as IExpenseReport;
+    if (!raw.isDirecta || !Array.isArray(raw.expenseIds)) return [];
+    return raw.expenseIds.filter(e => e && typeof e === 'object');
+  }
+
+  /** `data` del comprobante como objeto (acepta JSON string o ya poblado). */
+  private expenseData(exp: any): Record<string, any> {
+    const raw = exp?.data;
+    try {
+      if (raw == null) return {};
+      if (typeof raw === 'string') return JSON.parse(raw);
+      if (typeof raw === 'object') return raw;
+    } catch { /* data mal formada: se ignora */ }
+    return {};
+  }
+
+  /** N° de comprobante (serie-correlativo) para el listado de la directa. */
+  expenseDocNumber(exp: any): string {
+    const d = this.expenseData(exp);
+    const serie = d['serie'] ? String(d['serie']) : '';
+    const correlativo = d['correlativo'] ? String(d['correlativo']) : '';
+    if (serie && correlativo) return `${serie}-${correlativo}`;
+    return serie || correlativo || '—';
+  }
+
+  /** Proveedor / razón social del comprobante para el listado de la directa. */
+  expenseProveedor(exp: any): string {
+    const d = this.expenseData(exp);
+    const razonSocial = d['razonSocial'];
+    if (typeof razonSocial === 'string' && razonSocial.trim()) return razonSocial.trim();
+    const provider = exp?.provider;
+    if (typeof provider === 'string' && provider.trim()) return provider.trim();
+    return '—';
+  }
+
+  /** URL del archivo adjunto del comprobante (imagen/PDF de la factura). */
+  expenseFileUrl(exp: any): string | null {
+    const f = exp?.file;
+    return typeof f === 'string' && f.trim() ? f.trim() : null;
+  }
+
+  /** Abre la factura adjunta del comprobante en una pestaña nueva. */
+  openExpenseFile(exp: any): void {
+    const url = this.expenseFileUrl(exp);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   private getReportUserName(report: IExpenseReport): string {

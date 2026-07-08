@@ -102,7 +102,7 @@
       <select
         id="ordenTrabajoId"
         formControlName="ordenTrabajoId"
-        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer disabled:bg-gray-50 disabled:text-tertiary disabled:cursor-not-allowed"
         style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
       >
         <option value="">Seleccione una OT</option>
@@ -110,7 +110,9 @@
         <option [value]="ot._id">{{ ot.nombre }}</option>
         }
       </select>
-      @if (proyectId?.value && filteredOrdenesTrabajo.length === 0) {
+      @if (viaticoOrdenTrabajoInherited()) {
+      <p class="text-xs text-tertiary">Heredada de la solicitud de viático. No se puede cambiar aquí.</p>
+      } @else if (proyectId?.value && filteredOrdenesTrabajo.length === 0) {
       <p class="text-xs text-amber-600">El centro de costo elegido no tiene órdenes de trabajo activas.</p>
       } @else {
       <p class="text-xs text-tertiary">Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005). Solo se listan las OT del centro de costo elegido.</p>
@@ -118,6 +120,8 @@
     </div>
     }
 
+    <!-- Categoría: la planilla de movilidad no la pide; se asigna "Movilidad" automáticamente (VD-28). -->
+    @if (expenseType() !== 'planilla_movilidad') {
     <div class="flex flex-col gap-2">
       <label for="categoryId" class="text-sm font-medium text-secondary">
         Categoría <span class="text-error">*</span>
@@ -142,6 +146,7 @@
       <span class="text-sm text-error">La categoría es requerida</span>
       }
     </div>
+    }
   </div>
   }
 
@@ -529,55 +534,11 @@
           </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <!-- Categoría (por fila, solo en Rendiciones Directas). El centro de costo es el de la rendición, no se elige por fila. -->
-          @if (isDirectaContext()) {
-          <div class="flex flex-col gap-1 sm:col-span-3">
-            <label class="text-xs font-medium text-secondary">Categoría <span class="text-error">*</span></label>
-            <div class="relative">
-              <select formControlName="categoryId"
-                class="w-full h-[42px] pl-3 pr-10 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm cursor-pointer appearance-none"
-                [class.border-error]="row.get('categoryId')?.invalid && row.get('categoryId')?.touched">
-                <option value="">Seleccione una categoría</option>
-                @for (category of getRowCategories(i); track category._id) {
-                <option [value]="category._id">{{ category.name }}</option>
-                }
-              </select>
-              <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary">
-                <app-icon name="chevron-down" size="sm" />
-              </div>
-            </div>
-            @if (row.get('categoryId')?.invalid && row.get('categoryId')?.touched) {
-            <span class="text-xs text-error">La categoría es requerida</span>
-            }
-          </div>
-          }
-          <!-- Colaborador (por fila): por defecto quien rinde; check al costado para asignar a un tercero -->
+          <!-- Colaborador (por fila): siempre quien rinde. La planilla de movilidad ya no admite terceros (VD-28). -->
           <div class="flex flex-col gap-1 sm:col-span-3">
             <label class="text-xs font-medium text-secondary">Colaborador</label>
-            <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-              <div class="flex-1 min-w-0">
-                @if (!row.get('colaboradorEsTercero')?.value) {
-                <input type="text" [value]="currentUserName" readonly
-                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-gray-50 text-tertiary text-sm cursor-not-allowed" />
-                } @else {
-                <app-worker-select
-                  formControlName="colaboradorId"
-                  [workers]="workers"
-                  placeholder="Busca y selecciona un trabajador"
-                  [invalid]="isRowColaboradorInvalid(i)"
-                />
-                }
-              </div>
-              <label class="flex items-center gap-2 cursor-pointer select-none shrink-0 h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background">
-                <input type="checkbox" formControlName="colaboradorEsTercero"
-                  (change)="onColaboradorTerceroToggle(i)"
-                  class="h-4 w-4 rounded border-tertiary/50 text-primary focus:ring-primary/30" />
-                <span class="text-xs text-secondary whitespace-nowrap">Es un tercero</span>
-              </label>
-            </div>
-            @if (isRowColaboradorInvalid(i)) {
-            <span class="text-xs text-error">Selecciona el trabajador</span>
-            }
+            <input type="text" [value]="currentUserName" readonly
+              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-gray-50 text-tertiary text-sm cursor-not-allowed" />
           </div>
           <!-- Fecha -->
           <div class="flex flex-col gap-1">

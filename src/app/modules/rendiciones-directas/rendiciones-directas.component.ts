@@ -197,6 +197,7 @@ export class RendicionesDirectasComponent implements OnInit {
     if (r?.effectivelyClosed) return 'Cerrada';
     const map: Record<string, string> = {
       open: 'Abierta', solicited: 'Solicitada', submitted: 'Enviada',
+      pending_l1: 'En solicitud',
       pending_accounting: 'En contabilidad', approved: 'Aprobada',
       rejected: 'Rechazada', closed: 'Cerrada', liquidated: 'Liquidada',
       reimbursed: 'Reembolsada', cancelled: 'Cancelada',

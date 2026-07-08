@@ -131,6 +131,10 @@ export interface MobilitySheetExportData {
   }>;
   total: number;
   signature?: string;
+  /** Coordinador que aprobó (VD-33): su firma aparece junto a la del colaborador. */
+  coordinator?: string;
+  coordinatorDni?: string;
+  coordinatorSignature?: string;
 }
 
 export interface ReceiptExportData {
@@ -863,7 +867,11 @@ export class RendicionExportService {
   }
 
   async exportMobilitySheetToPdf(data: MobilitySheetExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
-    data = { ...data, signature: await this.resolveSignature(data.signature) };
+    data = {
+      ...data,
+      signature: await this.resolveSignature(data.signature),
+      coordinatorSignature: await this.resolveSignature(data.coordinatorSignature),
+    };
     const isNew = !inDoc;
     const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     if (!isNew) doc.addPage([210, 297], 'portrait');
@@ -1052,27 +1060,40 @@ export class RendicionExportService {
     doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
     y += footerH + 10;
 
-    // Signature area
+    // Signature area — dos firmas: colaborador (izquierda) y coordinador (derecha). VD-33.
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.text('LUGAR Y FECHA:', lm, y);
+    y += 6;
 
-    const sigCX = pageW / 2;
+    const sigWorkerCX = 62;
+    const sigCoordCX = 150;
+    const sigTop = y;
     if (data.signature) {
-      doc.addImage(data.signature, 'PNG', sigCX - 25, y + 2, 50, 16);
+      doc.addImage(data.signature, 'PNG', sigWorkerCX - 25, sigTop, 50, 16);
     }
-    y += 20;
+    if (data.coordinatorSignature) {
+      doc.addImage(data.coordinatorSignature, 'PNG', sigCoordCX - 25, sigTop, 50, 16);
+    }
+    y = sigTop + 18;
     doc.setFont('helvetica', 'bold');
-    doc.text('FIRMA Trabajador', sigCX, y, { align: 'center' });
-    doc.line(sigCX - 35, y + 1.5, sigCX + 35, y + 1.5);
+    doc.text('FIRMA Trabajador', sigWorkerCX, y, { align: 'center' });
+    doc.line(sigWorkerCX - 35, y + 1.5, sigWorkerCX + 35, y + 1.5);
+    doc.text('FIRMA Coordinador', sigCoordCX, y, { align: 'center' });
+    doc.line(sigCoordCX - 35, y + 1.5, sigCoordCX + 35, y + 1.5);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.text(
       data.collaboratorDni ? `DNI   ${data.collaboratorDni}` : 'DNI',
-      sigCX,
+      sigWorkerCX,
       y,
       { align: 'center' },
     );
+    if (data.coordinator) {
+      doc.text(data.coordinator.toUpperCase(), sigCoordCX, y, { align: 'center' });
+    } else {
+      doc.text(data.coordinatorDni ? `DNI   ${data.coordinatorDni}` : 'DNI', sigCoordCX, y, { align: 'center' });
+    }
     y += 12;
 
     // Cargar a / Cuenta
