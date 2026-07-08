@@ -249,7 +249,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     planilla_movilidad: 'Movilidad',
     otros_gastos: 'Otros gastos',
     recibo_caja: 'Recibo de caja',
-    comprobante_caja: 'Comprobante de caja',
   };
 
   ngOnInit() {
