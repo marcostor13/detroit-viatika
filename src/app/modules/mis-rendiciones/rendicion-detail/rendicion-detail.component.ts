@@ -790,7 +790,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get canApproveDirectaChainStep(): boolean {
     if (!this.report?.isDirecta || this.report.status !== 'pending_l1') return false;
     if (this.userStateService.isSuperAdmin()) return true;
-    if (!this.userStateService.isCoordinador()) return false;
+    // La autoridad para aprobar una directa es POR ASIGNACIÓN (el jefe inmediato de
+    // la cadena), igual que valida el backend (canActOnChain: expected === actorId).
+    // No se exige el rol Coordinador: el aprobador asignado puede tener otro rol y
+    // aun así debe ver el botón. VD-36.
     const chain = this.report.directaApproverChain ?? [];
     const expected = chain[this.report.directaApprovalLevel ?? 0];
     const expectedId = expected && typeof expected === 'object' ? (expected as any)._id : expected;

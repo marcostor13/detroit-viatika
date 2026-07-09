@@ -371,8 +371,10 @@
         </div>
         }
 
-        <!-- Admin/Coordinador: rendición directa en cadena de aprobadores de centro de costo -->
-        @if (report.status === 'pending_l1' && report.isDirecta && isAdminView) {
+        <!-- Aprobador de la directa (jefe inmediato asignado), admin o vista admin.
+             Se incluye canApproveDirectaChainStep para que el aprobador asignado vea
+             los botones aunque llegue desde su propia vista (link del correo). VD-36. -->
+        @if (report.status === 'pending_l1' && report.isDirecta && (isAdminView || canApproveDirectaChainStep)) {
         <div class="flex flex-col gap-2 items-end">
           @if (!canApproveDirectaChainStep) {
             <p class="text-sm text-primary bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg max-w-xs leading-snug">
