@@ -120,7 +120,7 @@
     </div>
     }
 
-    <!-- Categoría: la planilla de movilidad no la pide; se asigna "Movilidad" automáticamente (VD-28). -->
+    <!-- Categoría: en planilla de movilidad se resuelve entre las categorías "Planilla de movilidad" asignadas al colaborador. -->
     @if (expenseType() !== 'planilla_movilidad') {
     <div class="flex flex-col gap-2">
       <label for="categoryId" class="text-sm font-medium text-secondary">
@@ -146,6 +146,39 @@
       <span class="text-sm text-error">La categoría es requerida</span>
       }
     </div>
+    } @else if (!isDirectaPlanilla()) {
+      @if (showMovilidadCategorySelect) {
+      <div class="flex flex-col gap-2">
+        <label for="categoryId" class="text-sm font-medium text-secondary">
+          Categoría de Planilla de movilidad <span class="text-error">*</span>
+        </label>
+        <div class="relative">
+          <select
+            id="categoryId"
+            formControlName="categoryId"
+            class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+            style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+          >
+            <option value="">Seleccione una categoría</option>
+            @for(category of movilidadCategories; track category._id){
+            <option value="{{ category._id }}">{{ category.name }}</option>
+            }
+          </select>
+          <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">
+            <app-icon name="chevron-down" size="sm" />
+          </div>
+        </div>
+        @if (categoryId?.invalid && categoryId?.touched) {
+        <span class="text-sm text-error">La categoría es requerida</span>
+        }
+      </div>
+      } @else if (categoriesLoaded() && movilidadCategories.length === 0) {
+      <div class="flex flex-col gap-2">
+        <span class="text-sm text-error">
+          No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.
+        </span>
+      </div>
+      }
     }
   </div>
   }

@@ -66,6 +66,7 @@ export default class AddInvoiceComponent implements OnInit {
   form!: FormGroup;
   id: string = this.route.snapshot.params['id'];
   categories: ICategory[] = [];
+  categoriesLoaded = signal(false);
   proyects: IProject[] = [];
   /** Órdenes de Trabajo activas, requeridas en planilla de movilidad (formato ADF-FOR-005). */
   ordenesTrabajo: IOrdenTrabajo[] = [];
@@ -543,6 +544,8 @@ export default class AddInvoiceComponent implements OnInit {
     this.invoiceService.getCategories().subscribe({
       next: (categories) => {
         this.categories = categories;
+        this.categoriesLoaded.set(true);
+        this.applyMovilidadCategoryDefault();
       },
       error: (error) => {},
     });
@@ -635,6 +638,37 @@ export default class AddInvoiceComponent implements OnInit {
   /** Categorías visibles en el selector superior: siempre todas las activas del cliente. */
   get filteredCategories(): ICategory[] {
     return this.categories;
+  }
+
+  /** Categorías asignadas al colaborador cuyo nombre contiene "planilla de movilidad" (sin distinguir mayúsculas/minúsculas). */
+  get movilidadCategories(): ICategory[] {
+    return this.categories.filter((c) => (c.name || '').toLowerCase().includes('planilla de movilidad'));
+  }
+
+  /** Se muestra el selector solo cuando hay más de una categoría de planilla de movilidad asignada. */
+  get showMovilidadCategorySelect(): boolean {
+    return (
+      this.expenseType() === 'planilla_movilidad' &&
+      !this.isDirectaPlanilla() &&
+      this.movilidadCategories.length > 1
+    );
+  }
+
+  /**
+   * Si el colaborador tiene una única categoría "Planilla de movilidad" asignada, se
+   * asigna internamente sin mostrar selector. Si tiene más de una, queda pendiente de
+   * elección (selector requerido). Si no tiene ninguna, no se completa (bloquea el guardado).
+   */
+  private applyMovilidadCategoryDefault(): void {
+    if (this.expenseType() !== 'planilla_movilidad' || this.isDirectaPlanilla()) return;
+    const catCtrl = this.form.get('categoryId');
+    if (!catCtrl || catCtrl.disabled) return;
+    const matches = this.movilidadCategories;
+    if (matches.length === 1) {
+      catCtrl.setValue(matches[0]._id);
+    }
+    catCtrl.setValidators(matches.length > 0 ? [Validators.required] : []);
+    catCtrl.updateValueAndValidity({ emitEvent: false });
   }
 
   /** Categorías visibles para una fila de la planilla (Rendiciones Directas). */
@@ -742,13 +776,19 @@ export default class AddInvoiceComponent implements OnInit {
       projCtrl.setValidators(this.isDirectaPlanilla() ? [] : [Validators.required]);
       projCtrl.updateValueAndValidity({ emitEvent: false });
     }
-    // Categoría: la planilla de movilidad no la pide (se asigna "Movilidad"
-    // automáticamente, VD-28). Requerida en el resto de tipos de gasto.
+    // Categoría: en planilla de movilidad (no directa) se resuelve entre las
+    // categorías "Planilla de movilidad" asignadas al colaborador (ver
+    // applyMovilidadCategoryDefault). En planilla directa vive en cada fila.
+    // Requerida en el resto de tipos de gasto.
     const catCtrl = this.form.get('categoryId');
     if (catCtrl && !catCtrl.disabled) {
       const isPlanilla = this.expenseType() === 'planilla_movilidad';
-      catCtrl.setValidators(isPlanilla ? [] : [Validators.required]);
-      catCtrl.updateValueAndValidity({ emitEvent: false });
+      if (isPlanilla && !this.isDirectaPlanilla()) {
+        this.applyMovilidadCategoryDefault();
+      } else {
+        catCtrl.setValidators(isPlanilla ? [] : [Validators.required]);
+        catCtrl.updateValueAndValidity({ emitEvent: false });
+      }
     }
   }
 
@@ -1099,9 +1139,12 @@ export default class AddInvoiceComponent implements OnInit {
       case 'planilla_movilidad': {
         // En planilla directa la categoría vive en cada fila (cubierta por mobilityRowsArray.valid).
         const categoryOk = this.isDirectaPlanilla() || this.form.get('categoryId')?.valid === true;
+        // El colaborador debe tener al menos una categoría de Planilla de movilidad asignada.
+        const movilidadCategoryOk = this.isDirectaPlanilla() || this.movilidadCategories.length > 0;
         return (
           proyectOk &&
           categoryOk &&
+          movilidadCategoryOk &&
           this.mobilityRowsArray.length > 0 &&
           this.mobilityRowsArray.valid &&
           !this.hasAnyMobilityLimitExceeded()
@@ -1202,6 +1245,13 @@ export default class AddInvoiceComponent implements OnInit {
   saveMobilitySheet() {
     if (this.mobilityRowsArray.length === 0) {
       this.notificationService.show('Debes agregar al menos una fila', 'error');
+      return;
+    }
+    if (!this.isDirectaPlanilla() && this.movilidadCategories.length === 0) {
+      this.notificationService.show(
+        'No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.',
+        'error'
+      );
       return;
     }
     const proyectCtrl = this.form.get('proyectId');
