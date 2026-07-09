@@ -312,6 +312,7 @@ describe('AddInvoiceComponent', () => {
   describe('isFormValid - planilla_movilidad', () => {
     it('is false with no rows', () => {
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1' });
       component.setExpenseType('planilla_movilidad');
       expect(component.isFormValid()).toBeFalse();
@@ -319,6 +320,7 @@ describe('AddInvoiceComponent', () => {
 
     it('is true with a complete row under the daily limit', () => {
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1' });
       component.setExpenseType('planilla_movilidad');
       component.addMobilityRow();
@@ -334,6 +336,7 @@ describe('AddInvoiceComponent', () => {
 
     it('is false when the daily limit is exceeded', () => {
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.mobilityDailyLimit = 15;
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1' });
       component.setExpenseType('planilla_movilidad');
@@ -346,6 +349,60 @@ describe('AddInvoiceComponent', () => {
         gestion: 'g1',
       });
       expect(component.isFormValid()).toBeFalse();
+    });
+
+    it('is false when no movilidad category is assigned to the collaborator', () => {
+      const component = createComponent();
+      component.categories = [{ _id: 'catOther', name: 'Viajes' } as any];
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1' });
+      component.setExpenseType('planilla_movilidad');
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-01',
+        total: 10,
+        origen: 'A',
+        destino: 'B',
+        gestion: 'g1',
+      });
+      expect(component.isFormValid()).toBeFalse();
+    });
+  });
+
+  describe('movilidad category selection', () => {
+    it('auto-assigns the categoryId when exactly one movilidad category matches (case-insensitive)', () => {
+      const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'PLANILLA DE MOVILIDAD - Lima' } as any];
+      component.setExpenseType('planilla_movilidad');
+      expect(component.form.get('categoryId')?.value).toBe('catMov');
+      expect(component.showMovilidadCategorySelect).toBeFalse();
+    });
+
+    it('requires manual selection when more than one movilidad category is assigned', () => {
+      const component = createComponent();
+      component.categories = [
+        { _id: 'cat1', name: 'Planilla de movilidad Lima' } as any,
+        { _id: 'cat2', name: 'planilla de movilidad Provincias' } as any,
+      ];
+      component.setExpenseType('planilla_movilidad');
+      expect(component.showMovilidadCategorySelect).toBeTrue();
+      expect(component.form.get('categoryId')?.value).toBeFalsy();
+      expect(component.form.get('categoryId')?.hasValidator(Validators.required)).toBeTrue();
+    });
+
+    it('does not show the selector nor auto-assign when no movilidad category is assigned', () => {
+      const component = createComponent();
+      component.categories = [{ _id: 'cat1', name: 'Viajes' } as any];
+      component.setExpenseType('planilla_movilidad');
+      expect(component.showMovilidadCategorySelect).toBeFalse();
+      expect(component.movilidadCategories.length).toBe(0);
+      expect(component.form.get('categoryId')?.value).toBeFalsy();
+    });
+
+    it('does not apply to other expense types', () => {
+      const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+      component.setExpenseType('otros_gastos');
+      expect(component.form.get('categoryId')?.value).toBeFalsy();
     });
   });
 
@@ -546,8 +603,20 @@ describe('AddInvoiceComponent', () => {
       expect(notificationService.show).toHaveBeenCalledWith('Debes agregar al menos una fila', 'error');
     });
 
+    it('shows an error when the collaborator has no movilidad category assigned', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      component.saveMobilitySheet();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.',
+        'error'
+      );
+      expect(invoicesService.createMobilitySheet).not.toHaveBeenCalled();
+    });
+
     it('requires proyecto, categoria, and orden de trabajo', () => {
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.addMobilityRow();
       component.saveMobilitySheet();
       expect(notificationService.show).toHaveBeenCalledWith(
@@ -558,6 +627,7 @@ describe('AddInvoiceComponent', () => {
 
     it('requires a worker to be selected on rows flagged as tercero', () => {
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', ordenTrabajoId: 'ot1' });
       component.addMobilityRow();
       component.mobilityRowsArray.at(0).patchValue({ colaboradorEsTercero: true });
@@ -571,6 +641,7 @@ describe('AddInvoiceComponent', () => {
     it('creates the mobility sheet on success', () => {
       invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', ordenTrabajoId: 'ot1' });
       component.addMobilityRow();
       component.mobilityRowsArray.at(0).patchValue({
@@ -588,6 +659,7 @@ describe('AddInvoiceComponent', () => {
 
     it('blocks submission when the daily limit is exceeded', () => {
       const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.mobilityDailyLimit = 15;
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', ordenTrabajoId: 'ot1' });
       component.addMobilityRow();
@@ -731,6 +803,7 @@ describe('AddInvoiceComponent', () => {
         data: '{}',
         mobilityRows: [{ fecha: '2026-02-01', total: 10, origen: 'A', destino: 'B', gestion: 'g1' }],
       });
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1' });
       component.mobilityRowsArray.at(0).patchValue({ colaboradorEsTercero: true, colaboradorId: '' });
       component.update();
