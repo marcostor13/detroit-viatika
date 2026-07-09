@@ -188,33 +188,33 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     notes: contaState === 'rejected' ? rejectionReason : undefined,
   });
 
-  // finalIdx — Estado final (solo si no fue rechazada)
-  if (!rejected) {
+  // finalIdx — Estado final (solo si no fue rechazada y no hay reembolso).
+  // Cuando corresponde reembolso, se omite este paso: la aprobación ya quedó
+  // reflejada en los pasos de coordinador/contabilidad y el flujo continúa
+  // directo con el reembolso, evitando un "Aprobada" redundante.
+  if (!rejected && !expectsReembolso) {
     const finalState = stateFor(finalIdx);
-    // Si aún falta el reembolso, este paso es solo la aprobación; el estado final
-    // ("Reembolsada") se muestra en el paso de reembolso para no duplicarlo.
     const label =
-      finalState === 'completed'
-        ? (expectsReembolso ? 'Aprobada' : (FINAL_LABELS[status] ?? 'Finalizada'))
-        : finalState === 'active' ? 'Rendición en curso'
-        : 'Finalizada';
+      finalState === 'completed' ? (FINAL_LABELS[status] ?? 'Finalizada') :
+      finalState === 'active' ? 'Rendición en curso' :
+      'Finalizada';
     steps.push({
       label,
       state: finalState,
-      date: finalState === 'completed' ? fmt(r.contabilidadApprovedAt || r.reimbursedAt) : undefined,
+      date: finalState === 'completed' ? fmt(r.reimbursedAt || r.contabilidadApprovedAt) : undefined,
       description: finalState === 'active' ? 'Registrando gastos, pendiente de cierre' : undefined,
     });
+  }
 
-    // reembolsoIdx — Reembolso de Tesorería (solo cuando corresponde reembolso al colaborador)
-    if (expectsReembolso) {
-      const reembolsoState = stateFor(reembolsoIdx);
-      steps.push({
-        label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
-        state: reembolsoState,
-        date: reembolsoState === 'completed' ? fmt(r.reimbursedAt) : undefined,
-        description: reembolsoState === 'active' ? 'Pendiente de pago de Tesorería' : undefined,
-      });
-    }
+  // reembolsoIdx — Reembolso de Tesorería (solo cuando corresponde reembolso al colaborador)
+  if (!rejected && expectsReembolso) {
+    const reembolsoState = stateFor(reembolsoIdx);
+    steps.push({
+      label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
+      state: reembolsoState,
+      date: reembolsoState === 'completed' ? fmt(r.reimbursedAt) : undefined,
+      description: reembolsoState === 'active' ? 'Pendiente de pago de Tesorería' : undefined,
+    });
   }
 
   return steps;
