@@ -4,6 +4,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } 
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
 import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
+import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -130,10 +131,13 @@ export class RendicionesAdminComponent implements OnInit {
   filterUserId = '';
   filterProjectId = '';
   filterStatus = '';
+  filterKind = '';
   filterDateFrom = '';
   filterDateTo = '';
   /** Estados presentes en la lista (para el filtro por estado). Se recalcula en applyFilters. */
   statusOptions: { value: string; label: string }[] = [];
+  /** Tipos presentes en la lista (Directa/Viático/Anticipo). Se recalcula en applyFilters. */
+  kindOptions: { value: string; label: string }[] = [];
 
   // Approve modal
   showApproveModal = signal(false);
@@ -353,6 +357,18 @@ export class RendicionesAdminComponent implements OnInit {
       this.filterStatus = '';
     }
 
+    // Opciones del filtro por tipo: los tipos presentes en la lista. VD-30.
+    const seenKinds = new Map<string, string>();
+    for (const it of items) {
+      if (!seenKinds.has(it.kind)) seenKinds.set(it.kind, it.kindLabel);
+    }
+    this.kindOptions = [...seenKinds.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (this.filterKind && !seenKinds.has(this.filterKind)) {
+      this.filterKind = '';
+    }
+
     let result = items;
 
     if (this.filterUserId) {
@@ -363,6 +379,9 @@ export class RendicionesAdminComponent implements OnInit {
     }
     if (this.filterStatus) {
       result = result.filter(i => i.status === this.filterStatus);
+    }
+    if (this.filterKind) {
+      result = result.filter(i => i.kind === this.filterKind);
     }
     if (this.filterDateFrom) {
       const from = new Date(this.filterDateFrom).getTime();
@@ -383,13 +402,14 @@ export class RendicionesAdminComponent implements OnInit {
     this.filterUserId = '';
     this.filterProjectId = '';
     this.filterStatus = '';
+    this.filterKind = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
     this.applyFilters();
   }
 
   get hasActiveFilters(): boolean {
-    return !!(this.filterUserId || this.filterProjectId || this.filterStatus || this.filterDateFrom || this.filterDateTo);
+    return !!(this.filterUserId || this.filterProjectId || this.filterStatus || this.filterKind || this.filterDateFrom || this.filterDateTo);
   }
 
   goToDetail(item: UnifiedRendicionItem): void {
@@ -412,10 +432,27 @@ export class RendicionesAdminComponent implements OnInit {
 
   // ─── Detalle en modal ───────────────────────────────────────────────────────
 
+  /** Trazabilidad del flujo (VD-31) de la solicitud abierta en el modal de detalle. */
+  detailFlowSteps = signal<FlowStep[]>([]);
+
   openDetailModal(item: UnifiedRendicionItem): void {
     this.detailItem.set(item);
     this.expandedDetailLineIds.set(new Set());
     this.showDetailModal.set(true);
+    // Trazabilidad: solo para reportes (viático/directa/normal). Se trae el
+    // reporte completo porque la lista no puebla cadenas de aprobadores ni
+    // hitos de contabilidad; con eso el timeline sale con nombres y fechas.
+    this.detailFlowSteps.set(item.source === 'report' ? buildReportFlowSteps(item.raw) : []);
+    if (item.source === 'report') {
+      this.expenseReportsService.findOne(item._id).subscribe({
+        next: (full) => {
+          if (this.detailItem()?._id === item._id) {
+            this.detailFlowSteps.set(buildReportFlowSteps(full));
+          }
+        },
+        error: () => {},
+      });
+    }
   }
 
   /** Líneas por categoría de la solicitud abierta en el modal de detalle. */

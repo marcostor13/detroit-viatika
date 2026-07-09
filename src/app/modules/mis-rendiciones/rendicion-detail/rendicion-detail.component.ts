@@ -16,6 +16,7 @@ import {
   AsientoTipo,
 } from '../../../services/accounting-entries.service';
 import { IExpenseReport } from '../../../interfaces/expense-report.interface';
+import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
@@ -1407,6 +1408,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       returned: 'Saldo devuelto',
     };
     return labels[this.report.status] ?? this.report.status;
+  }
+
+  /** Trazabilidad del flujo de aprobación paso a paso (VD-31). Ver `buildReportFlowSteps`. */
+  flowSteps(): FlowStep[] {
+    return buildReportFlowSteps(this.report);
   }
 
   getCollaboratorDisplayName(): string {
