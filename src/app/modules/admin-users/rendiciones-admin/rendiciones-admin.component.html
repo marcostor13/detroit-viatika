@@ -73,7 +73,7 @@
         <select
           [(ngModel)]="filterStatus"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
           @for (st of statusOptions; track st.value) {
@@ -201,7 +201,7 @@
 
           <!-- Estado -->
           <td class="px-4 py-3.5 text-center">
-            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" [class]="item.statusColor">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold uppercase" [class]="item.statusColor">
               {{ item.statusLabel }}
             </span>
           </td>
@@ -305,7 +305,7 @@
                 </div>
                 <p class="text-xs text-tertiary mt-0.5 truncate">{{ item.projectName }}</p>
               </div>
-              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [class]="item.statusColor">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="item.statusColor">
                 {{ item.statusLabel }}
               </span>
             </div>
@@ -538,7 +538,7 @@
             <p class="text-xs text-tertiary mt-0.5">Detalle de la solicitud</p>
           </div>
         </div>
-        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [class]="detailItem()?.statusColor">
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="detailItem()?.statusColor">
           {{ detailItem()?.statusLabel }}
         </span>
       </div>
