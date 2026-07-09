@@ -854,6 +854,7 @@ export class MisRendicionesComponent implements OnInit {
     if (this.isReportEffectivelyClosed(report)) return 'Cerrada';
     const map: Partial<Record<string, string>> = {
       solicited: 'Solicitada', open: 'Abierta', submitted: 'Enviada',
+      pending_l1: 'En solicitud',
       pending_accounting: 'En contabilidad', approved: 'Aprobada',
       rejected: 'Rechazada', reimbursed: 'Reembolsada',
       closed: 'Cerrada', cancelled: 'Cancelada',
@@ -866,7 +867,8 @@ export class MisRendicionesComponent implements OnInit {
     if (this.isReportEffectivelyClosed(report)) return 'bg-gray-100 text-gray-500';
     const map: Partial<Record<string, string>> = {
       solicited: 'bg-purple-100 text-purple-700', open: 'bg-green-100 text-green-700',
-      submitted: 'bg-yellow-100 text-yellow-700', pending_accounting: 'bg-violet-100 text-violet-700',
+      submitted: 'bg-yellow-100 text-yellow-700', pending_l1: 'bg-yellow-100 text-yellow-700',
+      pending_accounting: 'bg-violet-100 text-violet-700',
       approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700',
       reimbursed: 'bg-teal-100 text-teal-700', closed: 'bg-gray-100 text-gray-500',
       cancelled: 'bg-gray-100 text-gray-500',
@@ -1062,7 +1064,7 @@ export class MisRendicionesComponent implements OnInit {
       solicited: 'SOLICITADA',
       open: 'ABIERTA',
       submitted: 'ENVIADA',
-      pending_l1: 'EN APROBACIÓN DE CENTRO DE COSTO',
+      pending_l1: 'EN SOLICITUD',
       pending_accounting: 'PENDIENTE CONTABILIDAD',
       approved: 'APROBADA',
       rejected: 'RECHAZADA',
