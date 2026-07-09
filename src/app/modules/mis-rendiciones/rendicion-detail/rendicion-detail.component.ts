@@ -2324,6 +2324,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   adminReembolsoDate = signal(new Date().toISOString().split('T')[0]);
   adminReembolsoBank = signal('');
   adminReembolsoRef = signal('');
+  adminReembolsoMonto = signal<number | null>(null);
   adminReembolsoMethod = signal<'transferencia_bancaria' | 'efectivo' | 'cheque'>('transferencia_bancaria');
   // Datos detectados por el escaneo del comprobante
   isScanningAdminReembolso = signal(false);
@@ -2338,6 +2339,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.adminReembolsoDate.set(new Date().toISOString().split('T')[0]);
     this.adminReembolsoBank.set('');
     this.adminReembolsoRef.set('');
+    // Precarga el monto con el saldo a favor del colaborador (editable).
+    const expected = Math.abs(Number(this.saldoLibre) || 0);
+    this.adminReembolsoMonto.set(expected > 0.001 ? Number(expected.toFixed(2)) : null);
     this.adminReembolsoMethod.set('transferencia_bancaria');
     this.adminReembolsoScannedAmount.set(null);
     this.adminReembolsoTitular.set(null);
@@ -2397,6 +2401,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       this.notificationService.show('Ingresa la fecha de pago', 'warning');
       return;
     }
+    const monto = this.adminReembolsoMonto();
+    if (monto == null || monto <= 0) {
+      this.notificationService.show('Ingresa el monto del reembolso', 'warning');
+      return;
+    }
     if (method !== 'efectivo' && !fileUrl) {
       this.notificationService.show('Sube el comprobante de pago', 'warning');
       return;
@@ -2409,7 +2418,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       reference: this.adminReembolsoRef() || undefined,
       paymentReceiptUrl: fileUrl || undefined,
       paymentReceiptFileName: this.adminReembolsoFileName() || undefined,
-      scannedAmount: this.adminReembolsoScannedAmount() ?? undefined,
+      scannedAmount: monto,
       operationNumber: this.adminReembolsoRef() || undefined,
       operationDate: this.adminReembolsoOperationDate() || undefined,
       operationTime: this.adminReembolsoOperationTime() || undefined,
