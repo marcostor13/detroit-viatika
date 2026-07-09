@@ -343,17 +343,18 @@ export class RendicionesAdminComponent implements OnInit {
 
     const items = [...reportItems, ...advanceItems];
 
-    // Opciones del filtro por estado: los estados realmente presentes en la lista
-    // ("los actuales"), sin duplicar, ordenados por etiqueta. VD-30.
-    const seenStatuses = new Map<string, string>();
-    for (const it of items) {
-      if (!seenStatuses.has(it.status)) seenStatuses.set(it.status, it.statusLabel);
-    }
-    this.statusOptions = [...seenStatuses.entries()]
-      .map(([value, label]) => ({ value, label }))
+    // Opciones del filtro por estado HOMOLOGADAS con la columna Estado de la tabla
+    // (VD-30): se agrupan por la ETIQUETA visible, no por el status crudo. Así se
+    // evita que aparezcan opciones duplicadas —p. ej. `approved` y `viatico_approved`
+    // ambas se muestran como "Aprobada"— y al elegir una opción se filtran TODAS las
+    // filas que muestran ese mismo estado, tal como se ven en la tabla.
+    const seenLabels = new Set<string>();
+    for (const it of items) seenLabels.add(it.statusLabel);
+    this.statusOptions = [...seenLabels]
+      .map(label => ({ value: label, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-    // Si el estado filtrado ya no existe en los datos, se limpia para no ocultar todo.
-    if (this.filterStatus && !seenStatuses.has(this.filterStatus)) {
+    // Si la etiqueta filtrada ya no existe en los datos, se limpia para no ocultar todo.
+    if (this.filterStatus && !seenLabels.has(this.filterStatus)) {
       this.filterStatus = '';
     }
 
@@ -378,7 +379,9 @@ export class RendicionesAdminComponent implements OnInit {
       result = result.filter(i => i.projectId === this.filterProjectId);
     }
     if (this.filterStatus) {
-      result = result.filter(i => i.status === this.filterStatus);
+      // Se filtra por la etiqueta visible (homologada con la tabla), no por el
+      // status crudo, para que coincida 1:1 con lo que muestra la columna Estado.
+      result = result.filter(i => i.statusLabel === this.filterStatus);
     }
     if (this.filterKind) {
       result = result.filter(i => i.kind === this.filterKind);
