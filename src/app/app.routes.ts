@@ -378,6 +378,14 @@ export const routes: Routes = [
         canActivate: [AuthAdmin2Guard],
       },
       {
+        path: 'perfiles-categorias',
+        loadComponent: () =>
+          import('./modules/perfiles-categorias/perfiles-categorias.component').then(
+            (m) => m.PerfilesCategoriasComponent
+          ),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
         path: 'audit-log',
         loadComponent: () =>
           import('./modules/audit-log/audit-log.component').then(

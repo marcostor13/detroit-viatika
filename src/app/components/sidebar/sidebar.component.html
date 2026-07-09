@@ -304,6 +304,12 @@
             class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
           >Categorías</a>
           <a
+            [routerLink]="['/perfiles-categorias']"
+            [class.text-primary]="isSelected('/perfiles-categorias')"
+            [class.font-semibold]="isSelected('/perfiles-categorias')"
+            class="flex items-center px-3 py-2 text-sm text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+          >Perfiles de Categoría</a>
+          <a
             [routerLink]="['/centros-de-costo']"
             [class.text-primary]="isSelected('/centros-de-costo')"
             [class.font-semibold]="isSelected('/centros-de-costo')"
@@ -701,6 +707,13 @@
               [class.font-semibold]="isSelected('/categorias')"
               class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
             >Categorías</a>
+            <a
+              [routerLink]="['/perfiles-categorias']"
+              (click)="toggleSidebar()"
+              [class.text-primary]="isSelected('/perfiles-categorias')"
+              [class.font-semibold]="isSelected('/perfiles-categorias')"
+              class="flex items-center px-3 py-3 text-secondary rounded-lg hover:bg-background hover:text-primary transition-all duration-200"
+            >Perfiles de Categoría</a>
             <a
               [routerLink]="['/centros-de-costo']"
               (click)="toggleSidebar()"
