@@ -2200,19 +2200,22 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Registrar el reembolso al colaborador es una acción de tesorería. El
-   * coordinador NUNCA registra el pago, aunque tenga vista de administración,
-   * el permiso de aprobación L2 o los módulos de tesorería/contabilidad: el
-   * rol es el discriminador (mismo criterio que el backend en
-   * register-reimbursement-payment). Lo registra Contabilidad o SuperAdmin.
+   * Registrar el reembolso al colaborador es una acción de TESORERÍA (VD-37):
+   * lo registra Tesorería o SuperAdmin (o un delegado con L2), nunca Contabilidad
+   * ni el Coordinador. Mismo criterio que el backend en
+   * register-reimbursement-payment (canPay). No se exige `isAdminView` porque
+   * Tesorería no forma parte de esa vista; basta con que no sea su propia
+   * rendición y tenga el rol de pago.
    */
   get canAdminRegisterReembolso(): boolean {
-    if (!this.isAdminView) return false;
+    if (this.isOwnReport) return false;
     if (this.userStateService.isCoordinador()) return false;
+    // Solo Tesorería (o SuperAdmin como override). NO se usa canApproveL2() porque
+    // en el frontend hace short-circuit a true para Contabilidad, que justamente
+    // NO debe registrar el reembolso (VD-37); el backend ya excluye a Contabilidad.
     const canPay =
-      this.userStateService.isContabilidad() ||
-      this.userStateService.isSuperAdmin() ||
-      this.userStateService.canApproveL2();
+      this.userStateService.isTesoreria() ||
+      this.userStateService.isSuperAdmin();
     if (!canPay) return false;
     const status = this.report?.status;
     if (status !== 'approved' && status !== 'reimbursed' && status !== 'closed') return false;
