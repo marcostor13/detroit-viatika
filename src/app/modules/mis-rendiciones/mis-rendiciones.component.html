@@ -87,16 +87,9 @@
           class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
-          <option value="pending_l1">Pendiente aprobación</option>
-          <option value="pending_l2">Aprobado por coord.</option>
-          <option value="viatico_approved">Aprobado</option>
-          <option value="partially_paid">Pago parcial</option>
-          <option value="open">Registrando gastos</option>
-          <option value="submitted">Enviada</option>
-          <option value="approved">Aprobada</option>
-          <option value="settled">Liquidada</option>
-          <option value="rejected">Rechazada</option>
-          <option value="cancelled">Cancelada</option>
+          @for (label of viaticoStatusOptions; track label) {
+          <option [value]="label">{{ label }}</option>
+          }
         </select>
       </div>
 
@@ -277,13 +270,9 @@
           class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
-          <option value="open">Abierta</option>
-          <option value="submitted">Enviada</option>
-          <option value="pending_l1">En aprobación de centro de costo</option>
-          <option value="pending_accounting">Pendiente de Contabilidad</option>
-          <option value="approved">Aprobada</option>
-          <option value="rejected">Rechazada</option>
-          <option value="cancelled">Cancelada</option>
+          @for (label of directaStatusOptions; track label) {
+          <option [value]="label">{{ label }}</option>
+          }
         </select>
       </div>
 
