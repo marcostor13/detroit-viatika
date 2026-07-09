@@ -131,6 +131,25 @@
           <app-button variant="ghost" size="sm" label="Quitar todos" (clicked)="clearAllCategories()" />
         </div>
 
+        <!-- Perfiles: al elegir uno se marcan todas sus categorías de una vez (VD-38) -->
+        @if (categoryProfiles().length > 0) {
+          <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="text-xs font-semibold text-tertiary uppercase tracking-wider mr-0.5">Perfiles:</span>
+            @for (perfil of categoryProfiles(); track perfil._id) {
+              <button type="button" (click)="toggleProfile(perfil)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+                [ngClass]="isProfileSelected(perfil)
+                  ? 'bg-primary text-white border-primary'
+                  : (isProfilePartial(perfil)
+                      ? 'bg-primary/10 text-primary border-primary/30'
+                      : 'bg-background text-secondary border-divider hover:border-primary/40')">
+                {{ perfil.name }}
+                <span class="opacity-70">· {{ profileCount(perfil) }}</span>
+              </button>
+            }
+          </div>
+        }
+
         <!-- Lista única de categorías -->
         <div class="max-h-80 overflow-y-auto rounded-xl border border-divider divide-y divide-divider">
           @for (cat of filteredCategories; track cat._id) {

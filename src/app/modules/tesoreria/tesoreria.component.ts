@@ -17,7 +17,7 @@ import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { TabsComponent, TabItem } from '../../design-system/tabs/tabs.component';
-type Tab = 'pendientes' | 'aprobados' | 'devoluciones' | 'rendiciones-directas';
+type Tab = 'pendientes' | 'aprobados' | 'reembolsos' | 'devoluciones' | 'rendiciones-directas';
 
 @Component({
   selector: 'app-tesoreria',
@@ -44,7 +44,11 @@ export class TesoreriaComponent implements OnInit {
       { value: 'aprobados', label: 'En pago' },
     ];
     if (this.canPayAndSettle) {
-      tabs.push({ value: 'devoluciones', label: 'Reembolsos', badge: this.pendingReturns.length || undefined });
+      // VD-37: la pestaña "Reembolsos" muestra los reembolsos al colaborador
+      // (pendingReimbursements). Las devoluciones (saldo que devuelve el colaborador)
+      // recuperan su propia pestaña "Devoluciones".
+      tabs.push({ value: 'reembolsos', label: 'Reembolsos', badge: this.pendingReimbursements.length || undefined });
+      tabs.push({ value: 'devoluciones', label: 'Devoluciones', badge: this.pendingReturns.length || undefined });
     }
     if (this.canManageDirectaDeposit) {
       tabs.push({ value: 'rendiciones-directas', label: 'Rendiciones Directas' });

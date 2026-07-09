@@ -28,7 +28,7 @@ import {
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
-import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
+import { WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
@@ -44,7 +44,7 @@ declare const google: any;
 @Component({
   selector: 'app-add-invoice',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, WorkerSelectComponent, PlacesAutocompleteDirective],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, PlacesAutocompleteDirective],
   templateUrl: './add-invoice.component.html',
   styleUrl: './add-invoice.component.scss',
 })

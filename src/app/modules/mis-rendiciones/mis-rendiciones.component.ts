@@ -878,7 +878,7 @@ export class MisRendicionesComponent implements OnInit {
 
   // ─── Unified viático list (merges new viaticos + old advances + old rendiciones) ───
 
-  get unifiedViaticoList(): UnifiedViaticoItem[] {
+  private get allViaticoItems(): UnifiedViaticoItem[] {
     const items: UnifiedViaticoItem[] = [];
 
     // 1. New type='viatico' ExpenseReports
@@ -946,12 +946,29 @@ export class MisRendicionesComponent implements OnInit {
       });
     }
 
-    // Apply filters
+    return items;
+  }
+
+  /**
+   * Opciones del filtro por estado HOMOLOGADAS con la columna Estado de la tabla
+   * (VD-30): las etiquetas realmente presentes en la lista, sin duplicar y ordenadas.
+   * Así el desplegable ofrece exactamente lo que se ve en la tabla (p. ej. "En
+   * solicitud", "Cerrada") en vez de una lista fija que no coincide.
+   */
+  get viaticoStatusOptions(): string[] {
+    const labels = new Set<string>();
+    for (const it of this.allViaticoItems) labels.add(it.statusLabel);
+    return [...labels].sort((a, b) => a.localeCompare(b));
+  }
+
+  get unifiedViaticoList(): UnifiedViaticoItem[] {
+    // Se filtra por la etiqueta visible (no por el status crudo) para que coincida
+    // 1:1 con lo que muestra la columna Estado. VD-30.
     const status = this.viaticosStatusFilter();
     const from = this.viaticosDateFrom();
     const to = this.viaticosDateTo();
-    let filtered = items;
-    if (status) filtered = filtered.filter(i => i.rawStatus === status);
+    let filtered = this.allViaticoItems;
+    if (status) filtered = filtered.filter(i => i.statusLabel === status);
     if (from) filtered = filtered.filter(i => new Date(i.createdAt) >= new Date(from));
     if (to) filtered = filtered.filter(i => new Date(i.createdAt) <= new Date(to + 'T23:59:59'));
 
@@ -996,12 +1013,25 @@ export class MisRendicionesComponent implements OnInit {
     return false;
   }
 
+  /**
+   * Opciones del filtro por estado de rendiciones directas, homologadas con la
+   * columna Estado de la tabla (panelStatusText). VD-30.
+   */
+  get directaStatusOptions(): string[] {
+    const labels = new Set<string>();
+    for (const r of this.expenseReports.filter(r => r.isDirecta)) {
+      labels.add(this.panelStatusText(r));
+    }
+    return [...labels].sort((a, b) => a.localeCompare(b));
+  }
+
   get filteredDirectaReports(): IExpenseReport[] {
     let reports = this.expenseReports.filter(r => r.isDirecta);
     const status = this.directasStatusFilter();
     const from = this.directasDateFrom();
     const to = this.directasDateTo();
-    if (status) reports = reports.filter(r => r.status === status);
+    // Filtrado por la etiqueta visible, homologado con la tabla. VD-30.
+    if (status) reports = reports.filter(r => this.panelStatusText(r) === status);
     if (from) reports = reports.filter(r => new Date(r.createdAt) >= new Date(from));
     if (to) reports = reports.filter(r => new Date(r.createdAt) <= new Date(to + 'T23:59:59'));
     return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
