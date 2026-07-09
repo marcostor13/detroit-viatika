@@ -1551,6 +1551,98 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return labels[s] || status || '—';
   }
 
+  /** Área (departamento) del colaborador, desde su perfil (userId.area). */
+  private getCollaboratorArea(): string | undefined {
+    const u = this.report?.userId;
+    if (u && typeof u === 'object' && 'area' in u) {
+      return (u as { area?: string }).area || undefined;
+    }
+    return undefined;
+  }
+
+  /** Nombre de Contabilidad que dio la aprobación final (recuadro V°B° FINANZAS). */
+  private getContabilidadName(): string | undefined {
+    const u = (this.report as any)?.contabilidadApprovedBy;
+    if (u && typeof u === 'object' && 'name' in u) {
+      return (u as { name?: string }).name || undefined;
+    }
+    return undefined;
+  }
+
+  /** Firma de Contabilidad (recuadro V°B° FINANZAS), si tiene firma registrada. */
+  private getContabilidadSignature(): string | undefined {
+    const u = (this.report as any)?.contabilidadApprovedBy;
+    if (u && typeof u === 'object' && 'signature' in u) {
+      return (u as { signature?: string }).signature || undefined;
+    }
+    return undefined;
+  }
+
+  /** Firma de `approvedBy` (fallback para el Jefe Inmediato si no hubo coordinador). */
+  private getApprovedBySignature(): string | undefined {
+    const u = this.report?.approvedBy;
+    if (u && typeof u === 'object' && 'signature' in u) {
+      return (u as { signature?: string }).signature || undefined;
+    }
+    return undefined;
+  }
+
+  /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
+  private getHeaderCentroCosto(): string | undefined {
+    const ot =
+      (this.report as any)?.viaticoOrdenTrabajoId ||
+      (this.report as any)?.directaOrdenTrabajoId;
+    const cc = ot && typeof ot === 'object' ? (ot as any).costCenterId : null;
+    if (cc && typeof cc === 'object' && 'name' in cc) {
+      return (cc as { name?: string }).name || undefined;
+    }
+    return undefined;
+  }
+
+  /** Periodo (mes) de la rendición, en mayúsculas (ej. "DICIEMBRE"). */
+  private getPeriodoLabel(): string | undefined {
+    const raw =
+      this.report?.startDate ??
+      (this.report as any)?.viaticoStartDate ??
+      this.report?.createdAt;
+    if (!raw) return undefined;
+    const d = new Date(raw as string);
+    if (isNaN(d.getTime())) return undefined;
+    return d.toLocaleString('es-PE', { month: 'long' }).toUpperCase();
+  }
+
+  /** OT (nombre) y centro de costo (nombre) de un gasto, desde su ordenTrabajoId populado. */
+  private getExpenseOtAndCc(exp: Record<string, unknown>): { ot: string; centroCosto: string } {
+    const otObj = exp['ordenTrabajoId'];
+    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '' };
+    const ot = String((otObj as { nombre?: string }).nombre ?? '');
+    const cc = (otObj as { costCenterId?: unknown }).costCenterId;
+    const centroCosto =
+      cc && typeof cc === 'object' && 'name' in cc
+        ? String((cc as { name?: string }).name ?? '')
+        : '';
+    return { ot, centroCosto };
+  }
+
+  /** Moneda del gasto: dólares, tipo de cambio y monto convertido a soles. */
+  private resolveExpenseMoneda(
+    exp: Record<string, unknown>,
+    dataObj: Record<string, unknown>,
+  ): { soles: number; dolares?: number; tipoCambio?: number } {
+    const total = Number(exp['total']) || 0;
+    const monedaRaw = String(dataObj['moneda'] ?? '').toUpperCase();
+    const isUsd = monedaRaw.includes('USD') || monedaRaw.includes('$');
+    // El tipo de cambio puede venir a nivel raíz o dentro de comprobanteDetallado.
+    const tcRoot = dataObj['tipoCambio'];
+    const tcNested = (dataObj['comprobanteDetallado'] as { comprobante?: { tipoCambio?: unknown } })?.comprobante?.tipoCambio;
+    const tcRaw = tcRoot ?? tcNested;
+    const tipoCambio =
+      tcRaw != null && !isNaN(Number(tcRaw)) && Number(tcRaw) > 0 ? Number(tcRaw) : undefined;
+    if (!isUsd) return { soles: total };
+    // Gasto en USD: dólares = total; soles solo si hay TC (si no, queda en blanco).
+    return { soles: tipoCambio ? total * tipoCambio : 0, dolares: total, tipoCambio };
+  }
+
   private getSettlementForExport(): RendicionExportData['settlement'] | undefined {
     const s = this.settlement as {
       advanceTotal?: number;
@@ -1606,6 +1698,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       const concepto = this.getExpenseConcepto(exp);
       // Rendición directa: el proyecto es individual por gasto. En el reporte solo va el código.
       const proyecto = this.resolveRowProjectLabel(exp['proyectId']);
+      // Columnas contables del formato ADF-FOR-004.
+      const ruc = dataObj['rucEmisor'] ? String(dataObj['rucEmisor']) : '';
+      const { ot, centroCosto } = this.getExpenseOtAndCc(exp);
+      const { soles, dolares, tipoCambio } = this.resolveExpenseMoneda(exp, dataObj);
       return {
         tipo: this.getExpenseTypeCode(exp),
         fecha: this.getExpenseDate(exp),
@@ -1613,12 +1709,19 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         comentario: comentario || undefined,
         placaVehiculo: placaVehiculo || undefined,
         proyecto: proyecto || undefined,
-        monto: Number(exp['total']) || 0,
+        monto: soles,
         estadoComprobante: this.mapExpenseStatusExport(
           typeof exp['status'] === 'string' ? exp['status'] : undefined,
         ),
         proveedor: provider,
-        numeroDocumento: numDoc
+        numeroDocumento: numDoc,
+        ruc: ruc || undefined,
+        ot: ot || undefined,
+        centroCosto: centroCosto || undefined,
+        // CTA. DESTINO: pendiente de definir con el cliente. Se deja vacío por ahora.
+        ctaDestino: undefined,
+        dolares,
+        tipoCambio,
       };
     });
     const anticipos = this.advances.flatMap((a) => {
@@ -1706,6 +1809,25 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       approvedByName: this.getApprovedByName(),
       createdByName: this.getCreatedByName(),
       projectName: this.getProjectName(),
+      // --- Cabecera contable del formato ADF-FOR-004 ---
+      nRendicion: this.report.codigo || undefined,
+      fechaDocumento: this.report.createdAt
+        ? this.formatEmissionDate(this.report.createdAt)
+        : undefined,
+      concepto: this.report.description || this.report.title || undefined,
+      destino: this.report.location || undefined,
+      departamento: this.getCollaboratorArea(),
+      periodo: this.getPeriodoLabel(),
+      centroCostoCabecera: this.getHeaderCentroCosto(),
+      montoInicialEntregado: this.totalAnticipado,
+      // Jefe Inmediato: preferimos el coordinador que aprobó (tiene firma/DNI); si no
+      // hubo coordinador, caemos al aprobador genérico (approvedBy).
+      jefeInmediatoName:
+        this.getCoordinatorName() ||
+        (this.getApprovedByName() !== '—' ? this.getApprovedByName() : undefined),
+      jefeSignature: this.getCoordinatorSignature() || this.getApprovedBySignature(),
+      financeName: this.getContabilidadName(),
+      financeSignature: this.getContabilidadSignature(),
     };
   }
 
