@@ -491,10 +491,6 @@
                     <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Depósito S/</span>
                     <span class="text-gray-700 tabular-nums">{{ r.hasDeposit ? ('S/ ' + (r.deposited | number:'1.2-2')) : '—' }}</span>
                   </div>
-                  <div>
-                    <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Saldo S/</span>
-                    <span class="tabular-nums" [ngClass]="(r.saldo ?? 0) < 0 ? 'text-red-600 font-semibold' : 'text-gray-700'">{{ r.saldo == null ? '—' : ('S/ ' + (r.saldo | number:'1.2-2')) }}</span>
-                  </div>
                 </div>
               </td>
             </tr>
@@ -517,10 +513,6 @@
             <div>
               <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Gastado S/</span>
               <span class="text-gray-900 font-semibold tabular-nums">S/ {{ r.totalGastado | number:'1.2-2' }}</span>
-            </div>
-            <div>
-              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Saldo S/</span>
-              <span class="tabular-nums" [ngClass]="(r.saldo ?? 0) < 0 ? 'text-red-600 font-semibold' : 'text-gray-700'">{{ r.saldo == null ? '—' : ('S/ ' + (r.saldo | number:'1.2-2')) }}</span>
             </div>
             <div>
               <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Depósito S/</span>
