@@ -78,12 +78,22 @@ export class PerfilesCategoriasComponent implements OnInit {
     this.selectedIds.set(set);
   }
 
+  /** Marca todas las categorías VISIBLES según el filtro actual (une con lo ya seleccionado). */
   selectAll() {
-    this.selectedIds.set(new Set(this.categories().map((c) => c._id!).filter(Boolean)));
+    const set = new Set(this.selectedIds());
+    for (const c of this.filteredCategories) {
+      if (c._id) set.add(c._id);
+    }
+    this.selectedIds.set(set);
   }
 
+  /** Desmarca las categorías VISIBLES según el filtro actual (conserva el resto). */
   clearAll() {
-    this.selectedIds.set(new Set<string>());
+    const set = new Set(this.selectedIds());
+    for (const c of this.filteredCategories) {
+      if (c._id) set.delete(c._id);
+    }
+    this.selectedIds.set(set);
   }
 
   newProfile() {

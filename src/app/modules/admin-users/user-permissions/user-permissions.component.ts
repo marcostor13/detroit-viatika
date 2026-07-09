@@ -221,12 +221,21 @@ export class UserPermissionsComponent implements OnInit {
     }
   }
 
+  /** Marca todas las categorías VISIBLES según el filtro actual (une con lo ya seleccionado). */
   selectAllCategories() {
-    this.permissions.categoryIds = this.allCategories().map((c) => c._id!).filter(Boolean);
+    const current = new Set(this.permissions.categoryIds ?? []);
+    for (const c of this.filteredCategories) {
+      if (c._id) current.add(c._id);
+    }
+    this.permissions.categoryIds = [...current];
   }
 
+  /** Desmarca las categorías VISIBLES según el filtro actual (conserva el resto). */
   clearAllCategories() {
-    this.permissions.categoryIds = [];
+    const remove = new Set(this.filteredCategories.map((c) => c._id).filter(Boolean));
+    this.permissions.categoryIds = (this.permissions.categoryIds ?? []).filter(
+      (id) => !remove.has(id)
+    );
   }
 
   get selectedCount(): number {
