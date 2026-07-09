@@ -50,9 +50,22 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   const rejectionReason: string | undefined = r.rejectionReason || r.viaticoRejectionReason;
   const terminal = TERMINAL_STATUSES.includes(status) || !!r.returnVoucher;
 
+  // Reembolso a favor del colaborador: Tesorería le devuelve lo que gastó de su
+  // bolsillo. Aplica a rendiciones con saldo a reembolsar y a toda directa del
+  // colaborador (sin depósito de Contabilidad), que siempre termina en reembolso.
+  const reembolsoDone =
+    !!r.reimbursementPaymentInfo || !!r.reimbursedAt || status === 'reimbursed';
+  const collaboratorDirecta =
+    isDirecta && !(Number(r.directaDeposit?.amount ?? 0) > 0);
+  const expectsReembolso =
+    reembolsoDone ||
+    r.settlement?.type === 'reembolso' ||
+    (collaboratorDirecta && terminal);
+
   const chainCount = chain.length > 0 ? Math.max(requiredLevels, chain.length) : 1;
   const contaIdx = chainCount + 1;
   const finalIdx = chainCount + 2;
+  const reembolsoIdx = chainCount + 3;
 
   const approverName = (i: number): string => {
     const c = chain[i];
@@ -79,6 +92,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   }
   if (contaDone) progress = Math.max(progress, contaIdx);
   if (terminal) progress = finalIdx;
+  if (expectsReembolso && reembolsoDone) progress = reembolsoIdx;
 
   // Índice donde se rechazó (si aplica).
   let rejIdx = -1;
@@ -106,6 +120,10 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     activeIndex = contaIdx;
   } else if (!terminal && progress >= contaIdx) {
     activeIndex = finalIdx; // aprobaciones listas, rendición en curso
+  }
+  // Aprobada y con reembolso pendiente: el paso activo es el pago de Tesorería.
+  if (!rejected && expectsReembolso && !reembolsoDone) {
+    activeIndex = reembolsoIdx;
   }
 
   const stateFor = (idx: number): FlowStep['state'] => {
@@ -173,16 +191,30 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   // finalIdx — Estado final (solo si no fue rechazada)
   if (!rejected) {
     const finalState = stateFor(finalIdx);
+    // Si aún falta el reembolso, este paso es solo la aprobación; el estado final
+    // ("Reembolsada") se muestra en el paso de reembolso para no duplicarlo.
     const label =
-      finalState === 'completed' ? (FINAL_LABELS[status] ?? 'Finalizada') :
-      finalState === 'active' ? 'Rendición en curso' :
-      'Finalizada';
+      finalState === 'completed'
+        ? (expectsReembolso ? 'Aprobada' : (FINAL_LABELS[status] ?? 'Finalizada'))
+        : finalState === 'active' ? 'Rendición en curso'
+        : 'Finalizada';
     steps.push({
       label,
       state: finalState,
-      date: finalState === 'completed' ? fmt(r.reimbursedAt || r.contabilidadApprovedAt) : undefined,
+      date: finalState === 'completed' ? fmt(r.contabilidadApprovedAt || r.reimbursedAt) : undefined,
       description: finalState === 'active' ? 'Registrando gastos, pendiente de cierre' : undefined,
     });
+
+    // reembolsoIdx — Reembolso de Tesorería (solo cuando corresponde reembolso al colaborador)
+    if (expectsReembolso) {
+      const reembolsoState = stateFor(reembolsoIdx);
+      steps.push({
+        label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
+        state: reembolsoState,
+        date: reembolsoState === 'completed' ? fmt(r.reimbursedAt) : undefined,
+        description: reembolsoState === 'active' ? 'Pendiente de pago de Tesorería' : undefined,
+      });
+    }
   }
 
   return steps;
