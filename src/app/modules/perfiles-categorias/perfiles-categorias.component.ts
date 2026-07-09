@@ -55,9 +55,28 @@ export class PerfilesCategoriasComponent implements OnInit {
     return this.categories().find((c) => c._id === id)?.name ?? '—';
   }
 
-  profileCategoryNames(p: ICategoryProfile): string {
-    const names = (p.categoryIds ?? []).map((id) => this.categoryName(id));
-    return names.length ? names.join(', ') : 'Sin categorías';
+  /** Chips por defecto antes de mostrar "+N más". */
+  readonly PROFILE_CHIP_LIMIT = 12;
+  expandedProfiles = signal<Set<string>>(new Set<string>());
+
+  profileCategoryList(p: ICategoryProfile): string[] {
+    return (p.categoryIds ?? []).map((id) => this.categoryName(id));
+  }
+
+  isProfileExpanded(id?: string): boolean {
+    return !!id && this.expandedProfiles().has(id);
+  }
+
+  toggleProfileExpanded(id?: string) {
+    if (!id) return;
+    const set = new Set(this.expandedProfiles());
+    set.has(id) ? set.delete(id) : set.add(id);
+    this.expandedProfiles.set(set);
+  }
+
+  visibleProfileCategories(p: ICategoryProfile): string[] {
+    const all = this.profileCategoryList(p);
+    return this.isProfileExpanded(p._id) ? all : all.slice(0, this.PROFILE_CHIP_LIMIT);
   }
 
   get filteredCategories(): ICategory[] {
