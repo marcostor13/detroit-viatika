@@ -369,6 +369,68 @@
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
     <div class="flex justify-between items-center mb-6">
       <div>
+        <h2 class="text-xl font-semibold text-secondary">Cuenta de cargo (pagos BBVA)</h2>
+        <p class="text-sm text-tertiary mt-1">Cuenta de la empresa que BBVA usa como origen en el archivo de pagos masivos.</p>
+      </div>
+      @if (!showPaymentAccountForm) {
+      <app-button label="Editar" variant="primary" size="md" (clicked)="editPaymentAccount()" />
+      }
+    </div>
+
+    @if (!showPaymentAccountForm) {
+    <div class="flex items-center justify-between py-3 border-b border-divider">
+      <div>
+        <p class="text-sm font-medium text-secondary">Cuenta de cargo</p>
+        <p class="text-xs text-tertiary mt-0.5">Se escribe en la cabecera del archivo TXT que sube Tesorería.</p>
+      </div>
+      <span class="text-sm font-semibold text-secondary">
+        @if (companyConfig?.paymentAccount) {
+          {{ companyConfig!.paymentAccount }}
+        } @else {
+          <span class="text-warning-ink font-normal">Sin configurar</span>
+        }
+      </span>
+    </div>
+    }
+
+    @if (showPaymentAccountForm) {
+    <div class="space-y-6">
+      <div>
+        <label for="paymentAccount" class="block text-sm font-medium text-secondary mb-1">Cuenta de cargo</label>
+        <p class="text-xs text-tertiary mb-2">Número de cuenta de cargo tal como lo indica BBVA Net Cash (solo dígitos). Obligatoria para generar el archivo de pagos.</p>
+        <input
+          id="paymentAccount"
+          type="text"
+          [(ngModel)]="paymentAccount"
+          placeholder="Ej: 000110380350100056833"
+          class="w-full sm:w-96 px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm"
+        />
+      </div>
+      <div class="flex space-x-3">
+        <app-button
+          [label]="isSavingPaymentAccount ? 'Guardando...' : 'Guardar'"
+          variant="primary"
+          size="md"
+          [disabled]="isSavingPaymentAccount"
+          (clicked)="savePaymentAccount()"
+        />
+        <app-button
+          label="Cancelar"
+          variant="secondary"
+          size="md"
+          [disabled]="isSavingPaymentAccount"
+          (clicked)="cancelPaymentAccountEdit()"
+        />
+      </div>
+    </div>
+    }
+  </section>
+  } <!-- end canConfigureEmpresa: cuenta de cargo -->
+
+  @if (canConfigureEmpresa) {
+  <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
+    <div class="flex justify-between items-center mb-6">
+      <div>
         <h2 class="text-xl font-semibold text-secondary">Notificaciones Automaticas</h2>
         <p class="text-sm text-tertiary mt-1">Configura el envio automatico de recordatorios de rendicion a colaboradores y coordinadores.</p>
       </div>

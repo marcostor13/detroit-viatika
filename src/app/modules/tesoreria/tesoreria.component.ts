@@ -1,7 +1,11 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { AdvanceService } from '../../services/advance.service';
+import {
+  AdvanceService,
+  IGeneratePaymentsTxt,
+  IReconcileResult,
+} from '../../services/advance.service';
 import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
 import { UploadService } from '../../services/upload.service';
@@ -960,5 +964,107 @@ export class TesoreriaComponent implements OnInit {
     const u = rep?.userId;
     if (u && typeof u === 'object') return u.name || u.email || '—';
     return '—';
+  }
+
+  // ─── Pagos por lote BBVA (VD-7) ─────────────────────────────────────────────
+
+  showBatchModal = signal(false);
+  batchMode = signal<'generate' | 'reconcile'>('generate');
+  isGeneratingTxt = signal(false);
+  isReconciling = signal(false);
+  generateResult = signal<IGeneratePaymentsTxt | null>(null);
+  reconcileResult = signal<IReconcileResult | null>(null);
+
+  /** Solo quien paga (Tesorería/Contabilidad/Admin/Super) usa el lote BBVA. */
+  get canUseBatchPayments(): boolean {
+    return this.canPayAndSettle;
+  }
+
+  /** Genera el TXT, lo descarga y muestra el resumen (excluidos por datos incompletos). */
+  generatePaymentsTxt(): void {
+    if (this.isGeneratingTxt()) return;
+    this.isGeneratingTxt.set(true);
+    this.reconcileResult.set(null);
+    this.advanceService.generatePaymentsTxt().subscribe({
+      next: (res) => {
+        this.isGeneratingTxt.set(false);
+        this.generateResult.set(res);
+        this.batchMode.set('generate');
+        this.showBatchModal.set(true);
+        if (res.count > 0) {
+          this.downloadTxtFile(res.fileBase64, res.fileName);
+          this.notificationService.show(
+            `Archivo generado: ${res.count} pago(s) por S/ ${res.totalSoles.toFixed(2)}.`,
+            'success'
+          );
+        } else {
+          this.notificationService.show(
+            `No se generó el archivo: ${res.excluded.length} beneficiario(s) con datos bancarios incompletos.`,
+            'warning'
+          );
+        }
+      },
+      error: (e) => {
+        this.isGeneratingTxt.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo generar el archivo de pagos.',
+          'error'
+        );
+      },
+    });
+  }
+
+  /** Decodifica el base64 Latin-1 a bytes y dispara la descarga del .txt. */
+  private downloadTxtFile(base64: string, fileName: string): void {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'BBVAREND.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Sube el PDF de BBVA y muestra el resultado de la conciliación. */
+  onReconcileFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      this.notificationService.show('Debes subir el PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
+      input.value = '';
+      return;
+    }
+    this.isReconciling.set(true);
+    this.generateResult.set(null);
+    this.advanceService.reconcilePayments(file).subscribe({
+      next: (res) => {
+        this.isReconciling.set(false);
+        this.reconcileResult.set(res);
+        this.batchMode.set('reconcile');
+        this.showBatchModal.set(true);
+        const n = res.conciliados.length;
+        this.notificationService.show(
+          n > 0 ? `${n} pago(s) conciliado(s) y marcado(s) como pagados.` : 'No se conció ningún pago. Revisa el resumen.',
+          n > 0 ? 'success' : 'warning'
+        );
+        this.loadData();
+      },
+      error: (e) => {
+        this.isReconciling.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo procesar el PDF de BBVA.',
+          'error'
+        );
+      },
+    });
+    input.value = '';
+  }
+
+  closeBatchModal(): void {
+    this.showBatchModal.set(false);
   }
 }
