@@ -1627,7 +1627,7 @@
       <!-- ── TRAZABILIDAD DEL FLUJO (aprobaciones paso a paso, VD-31) ──────── -->
       @if (flowSteps().length > 0) {
       <div class="mt-6 bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6">
-        <h2 class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-5">Trazabilidad del flujo</h2>
+        <h2 class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-5">Estado</h2>
         <div>
           @for (step of flowSteps(); track $index; let last = $last) {
           <div class="flex gap-3">

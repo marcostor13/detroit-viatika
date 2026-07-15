@@ -718,7 +718,7 @@
       <!-- Trazabilidad del flujo (aprobaciones paso a paso, VD-31) — debajo de las acciones -->
       @if (detailFlowSteps().length > 0) {
       <div class="mt-6 pt-5 border-t border-tertiary/15">
-        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Trazabilidad del flujo</p>
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Estado</p>
         <div>
           @for (step of detailFlowSteps(); track $index; let last = $last) {
           <div class="flex gap-3">
