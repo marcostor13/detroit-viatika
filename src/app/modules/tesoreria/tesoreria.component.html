@@ -1,9 +1,30 @@
 <div class="p-5 max-w-7xl mx-auto flex flex-col gap-6">
 
   <!-- Header -->
-  <div>
-    <h1 class="text-2xl font-bold text-secondary">Pagos</h1>
-    <p class="text-sm text-tertiary mt-0.5">Gestión de viáticos y comprobantes de pago</p>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">Pagos</h1>
+      <p class="text-sm text-tertiary mt-0.5">Gestión de viáticos y comprobantes de pago</p>
+    </div>
+    @if (canUseBatchPayments) {
+    <div class="flex items-center gap-2">
+      <app-button variant="primary" size="sm"
+        [label]="isGeneratingTxt() ? 'Generando...' : 'Generar archivo de pagos'"
+        [disabled]="isGeneratingTxt()" (clicked)="generatePaymentsTxt()" />
+      <label
+        class="inline-flex items-center gap-2 h-[38px] px-3 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium cursor-pointer"
+        [class.opacity-50]="isReconciling()" [class.pointer-events-none]="isReconciling()">
+        <app-icon name="upload" size="sm" />
+        {{ isReconciling() ? 'Procesando...' : 'Cargar pagos' }}
+        <input type="file" accept="application/pdf" class="hidden"
+          (change)="onReconcileFileSelected($event)" />
+      </label>
+      <!-- PRUEBAS: simula el PDF de BBVA para continuar el proceso sin el banco. -->
+      <app-button variant="secondary" size="sm"
+        [label]="isSimulatingPdf() ? 'Simulando...' : 'Simular PDF BBVA'"
+        [disabled]="isSimulatingPdf() || isReconciling()" (clicked)="simulateBbvaPdf()" />
+    </div>
+    }
   </div>
 
   <!-- Stats Cards -->
@@ -1065,6 +1086,110 @@
           {{ isActing() ? 'Registrando...' : 'Registrar pago' }}
         </button>
       </div>
+    </div>
+  </div>
+</div>
+}
+
+<!-- ── Modal resumen de pagos por lote BBVA (VD-7) ──────────────────────────── -->
+@if (showBatchModal()) {
+<div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" (click)="closeBatchModal()">
+  <div class="bg-quaternary rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6" (click)="$event.stopPropagation()">
+
+    <!-- Resumen de generación -->
+    @if (batchMode() === 'generate' && generateResult(); as gen) {
+    @if (gen.count > 0) {
+    <h2 class="text-lg font-bold text-secondary mb-1">Archivo de pagos generado</h2>
+    <p class="text-sm text-tertiary mb-4">Se descargó <span class="font-medium text-secondary">{{ gen.fileName }}</span>. Súbelo a BBVA Net Cash → Pagos Masivos.</p>
+    } @else {
+    <h2 class="text-lg font-bold text-warning-ink mb-1">No se generó el archivo</h2>
+    <p class="text-sm text-tertiary mb-4">Hay pagos pendientes, pero ninguno tiene datos bancarios completos. Corrige los datos de los beneficiarios y vuelve a intentarlo.</p>
+    }
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Pagos incluidos</p>
+        <p class="text-2xl font-bold text-primary">{{ gen.count }}</p>
+      </div>
+      <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Total</p>
+        <p class="text-2xl font-bold text-secondary">S/ {{ gen.totalSoles | number:'1.2-2' }}</p>
+      </div>
+    </div>
+    @if (gen.excluded.length > 0) {
+    <div class="rounded-xl border border-warning/30 bg-warning/5 p-3 mb-2">
+      <p class="text-sm font-semibold text-warning-ink mb-2">{{ gen.excluded.length }} beneficiario(s) excluido(s) por datos bancarios incompletos:</p>
+      <ul class="space-y-1">
+        @for (ex of gen.excluded; track ex.id) {
+        <li class="flex justify-between gap-3 text-xs">
+          <span class="text-secondary font-medium">{{ ex.beneficiaryName }}</span>
+          <span class="text-tertiary text-right">S/ {{ ex.amount | number:'1.2-2' }} · {{ ex.reason }}</span>
+        </li>
+        }
+      </ul>
+    </div>
+    }
+    }
+
+    <!-- Resumen de conciliación -->
+    @if (batchMode() === 'reconcile' && reconcileResult(); as rec) {
+    <h2 class="text-lg font-bold text-secondary mb-1">Conciliación de pagos</h2>
+    @if (rec.operationNumber) {
+    <p class="text-sm text-tertiary mb-4">N° de operación del lote: <span class="font-medium text-secondary">{{ rec.operationNumber }}</span>@if (rec.executedAt) { · {{ rec.executedAt }} }</p>
+    }
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="rounded-xl border border-success/30 bg-success/5 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Conciliados</p>
+        <p class="text-2xl font-bold text-success-ink">{{ rec.conciliados.length }}</p>
+      </div>
+      <div class="rounded-xl border border-warning/30 bg-warning/5 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Sin conciliar</p>
+        <p class="text-2xl font-bold text-warning-ink">{{ rec.sinConciliar.length }}</p>
+      </div>
+      <div class="rounded-xl border border-error/30 bg-error/5 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">No abonados</p>
+        <p class="text-2xl font-bold text-error">{{ rec.noAbonados.length }}</p>
+      </div>
+    </div>
+    @if (rec.conciliados.length > 0) {
+    <p class="text-sm font-semibold text-secondary mb-1.5">Pagos marcados como pagados</p>
+    <ul class="space-y-1 mb-3">
+      @for (c of rec.conciliados; track c.id) {
+      <li class="flex justify-between gap-3 text-xs">
+        <span class="text-secondary font-medium">{{ c.beneficiaryName }} <span class="text-tertiary">({{ c.documentNumber }})</span></span>
+        <span class="text-success-ink text-right font-medium">S/ {{ c.amount | number:'1.2-2' }}</span>
+      </li>
+      }
+    </ul>
+    }
+    @if (rec.sinConciliar.length > 0) {
+    <p class="text-sm font-semibold text-warning-ink mb-1.5">Sin conciliar (revisar manualmente)</p>
+    <ul class="space-y-1 mb-3">
+      @for (s of rec.sinConciliar; track s.documentNumber + s.amount) {
+      <li class="flex justify-between gap-3 text-xs">
+        <span class="text-secondary font-medium">{{ s.titular || '—' }} <span class="text-tertiary">({{ s.documentNumber }})</span></span>
+        <span class="text-tertiary text-right">S/ {{ s.amount | number:'1.2-2' }} · {{ s.reason }}</span>
+      </li>
+      }
+    </ul>
+    }
+    @if (rec.noAbonados.length > 0) {
+    <p class="text-sm font-semibold text-error mb-1.5">Abonos no exitosos</p>
+    <ul class="space-y-1">
+      @for (n of rec.noAbonados; track n.documentNumber) {
+      <li class="flex justify-between gap-3 text-xs">
+        <span class="text-secondary font-medium">{{ n.titular || '—' }} <span class="text-tertiary">({{ n.documentNumber }})</span></span>
+        <span class="text-error text-right">{{ n.situacion }}</span>
+      </li>
+      }
+    </ul>
+    }
+    }
+
+    <div class="flex justify-end mt-6">
+      <button type="button" (click)="closeBatchModal()"
+        class="h-[42px] px-5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">
+        Entendido
+      </button>
     </div>
   </div>
 </div>
