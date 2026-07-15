@@ -205,6 +205,31 @@ export class RendicionesDirectasComponent implements OnInit {
     return map[String(r?.status || '')] ?? (r?.status || '—');
   }
 
+  /**
+   * Color del badge de estado, igual que en /rendiciones (VD-51). Antes todos los
+   * estados salían en plomo; ahora se diferencia por color según el estado.
+   */
+  reportStatusBadgeClass(r: any): string {
+    if (r?.effectivelyClosed) return 'bg-gray-100 text-gray-500';
+    const map: Record<string, string> = {
+      solicited: 'bg-purple-100 text-purple-800',
+      open: 'bg-blue-100 text-blue-800',
+      submitted: 'bg-yellow-100 text-yellow-800',
+      pending_l1: 'bg-yellow-100 text-yellow-800',
+      pending_l2: 'bg-orange-100 text-orange-800',
+      pending_accounting: 'bg-amber-100 text-amber-800',
+      pending_contabilidad: 'bg-amber-100 text-amber-800',
+      approved: 'bg-green-100 text-green-800',
+      rejected: 'bg-red-100 text-red-800',
+      liquidated: 'bg-emerald-100 text-emerald-800',
+      settled: 'bg-emerald-100 text-emerald-800',
+      reimbursed: 'bg-emerald-100 text-emerald-800',
+      closed: 'bg-gray-100 text-gray-800',
+      cancelled: 'bg-gray-100 text-gray-500',
+    };
+    return map[String(r?.status || '')] ?? 'bg-gray-100 text-gray-700';
+  }
+
   reportFecha(r: any): string { return formatFechaEmisionDdMmYyyy(r?.createdAt) || '—'; }
 
   viewReport(r: any): void {
