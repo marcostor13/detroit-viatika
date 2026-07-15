@@ -152,6 +152,23 @@ export class CompanyConfigService {
     });
   }
 
+  updatePaymentAccount(companyId: string, paymentAccount: string): Observable<ICompanyConfig> {
+    return new Observable((observer) => {
+      this.invoicesService
+        .updateCompanyConfig(companyId, { paymentAccount })
+        .subscribe({
+          next: (config) => {
+            this.companyConfigSubject.next(config);
+            observer.next(config);
+            observer.complete();
+          },
+          error: (err) => {
+            observer.error(err);
+          },
+        });
+    });
+  }
+
   updateLimits(companyId: string, limits: { movilidadDiario?: number }): Observable<ICompanyConfig> {
     return new Observable((observer) => {
       this.invoicesService

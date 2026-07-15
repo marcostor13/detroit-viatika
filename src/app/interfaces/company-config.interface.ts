@@ -9,6 +9,8 @@ export interface ICompanyConfig {
   comercialName?: string;
   email?: string;
   phone?: string;
+  /** Cuenta de cargo para el archivo de pagos BBVA (cabecera). */
+  paymentAccount?: string;
   limits?: {
     movilidadDiario?: number | null;
   };
