@@ -972,6 +972,7 @@ export class TesoreriaComponent implements OnInit {
   batchMode = signal<'generate' | 'reconcile'>('generate');
   isGeneratingTxt = signal(false);
   isReconciling = signal(false);
+  isSimulatingPdf = signal(false);
   generateResult = signal<IGeneratePaymentsTxt | null>(null);
   reconcileResult = signal<IReconcileResult | null>(null);
 
@@ -1038,6 +1039,12 @@ export class TesoreriaComponent implements OnInit {
       input.value = '';
       return;
     }
+    this.reconcileFile(file);
+    input.value = '';
+  }
+
+  /** Envía el PDF (real o simulado) a conciliación y procesa el resultado. */
+  private reconcileFile(file: File): void {
     this.isReconciling.set(true);
     this.generateResult.set(null);
     this.advanceService.reconcilePayments(file).subscribe({
@@ -1061,7 +1068,41 @@ export class TesoreriaComponent implements OnInit {
         );
       },
     });
-    input.value = '';
+  }
+
+  /**
+   * PRUEBAS: simula el PDF de retorno de BBVA. Pide al backend que marque como
+   * abonados todos los pagos pendientes y los concilie por el mismo motor que el
+   * PDF real, para continuar el flujo sin depender del banco. Ocultar/quitar
+   * antes de producción (la vía real es "Cargar pagos" con el PDF de BBVA).
+   */
+  simulateBbvaPdf(): void {
+    if (this.isSimulatingPdf() || this.isReconciling()) return;
+    this.isSimulatingPdf.set(true);
+    this.generateResult.set(null);
+    this.advanceService.simulateReconcile().subscribe({
+      next: (res) => {
+        this.isSimulatingPdf.set(false);
+        this.reconcileResult.set(res);
+        this.batchMode.set('reconcile');
+        this.showBatchModal.set(true);
+        const n = res.conciliados.length;
+        this.notificationService.show(
+          n > 0
+            ? `Simulación BBVA: ${n} pago(s) conciliado(s) y marcado(s) como pagados.`
+            : 'Simulación BBVA: no se concilió ningún pago. Revisa el resumen.',
+          n > 0 ? 'success' : 'warning'
+        );
+        this.loadData();
+      },
+      error: (e) => {
+        this.isSimulatingPdf.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo simular el PDF de BBVA.',
+          'error'
+        );
+      },
+    });
   }
 
   closeBatchModal(): void {

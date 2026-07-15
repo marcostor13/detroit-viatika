@@ -128,6 +128,17 @@ export class AdvanceService {
     );
   }
 
+  /**
+   * PRUEBAS: simula el PDF de "Consulta de Pagos Masivos" de BBVA y concilia todos
+   * los pagos pendientes (los marca como pagados) para continuar el flujo.
+   */
+  simulateReconcile(): Observable<IReconcileResult> {
+    return this.http.post<IReconcileResult>(
+      `${this.url}/payments/simulate-reconcile/client/${this.clientId}`,
+      {}
+    );
+  }
+
   /** Sube el PDF de "Consulta de Pagos Masivos" de BBVA y concilia los abonos. */
   reconcilePayments(file: File): Observable<IReconcileResult> {
     const form = new FormData();

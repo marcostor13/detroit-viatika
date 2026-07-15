@@ -19,6 +19,10 @@
         <input type="file" accept="application/pdf" class="hidden"
           (change)="onReconcileFileSelected($event)" />
       </label>
+      <!-- PRUEBAS: simula el PDF de BBVA para continuar el proceso sin el banco. -->
+      <app-button variant="secondary" size="sm"
+        [label]="isSimulatingPdf() ? 'Simulando...' : 'Simular PDF BBVA'"
+        [disabled]="isSimulatingPdf() || isReconciling()" (clicked)="simulateBbvaPdf()" />
     </div>
     }
   </div>
