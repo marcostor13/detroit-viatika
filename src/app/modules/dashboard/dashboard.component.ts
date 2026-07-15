@@ -1140,7 +1140,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   // ─── Template helpers ──────────────────────────────────────────────────────
 
   hasData(): boolean {
-    return !!this.data() && this.kpis().gastoCount > 0;
+    const k = this.kpis();
+    return (
+      !!this.data() &&
+      (k.gastoCount > 0 ||
+        k.anticipoSolicitadoCount > 0 ||
+        k.rendicionesTotal > 0)
+    );
   }
 
   expenseStatusLabel(status: string): string {
