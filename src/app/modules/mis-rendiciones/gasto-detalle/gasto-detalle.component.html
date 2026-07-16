@@ -122,6 +122,36 @@
           <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">Pendiente de revision</span>
         }
       </div>
+
+      <!-- Cadena de aprobación por centro de costo -->
+      @if (chainSteps(exp).length > 0) {
+      <div class="mt-4 pt-4 border-t border-gray-100">
+        <p class="text-xs text-gray-400 mb-2">Cadena de aprobación (centro de costo)</p>
+        <div class="space-y-1.5">
+          @for (step of chainSteps(exp); track step.level) {
+          <div class="flex items-center justify-between gap-2 text-xs rounded-lg border px-2.5 py-1.5"
+            [ngClass]="{
+              'border-green-200 bg-green-50': step.state === 'completado',
+              'border-yellow-200 bg-yellow-50': step.state === 'pendiente',
+              'border-gray-200 bg-gray-50 text-gray-400': step.state === 'futuro'
+            }">
+            <span class="font-semibold">
+              N{{ step.level }}
+              @if (step.escalatedFrom) { <span class="font-normal italic">(escalado desde N{{ step.escalatedFrom }})</span> }
+            </span>
+            <span class="truncate max-w-[55%] text-right" [title]="step.approverNames">{{ step.approverNames }}</span>
+            <span class="font-medium">
+              @switch (step.state) {
+                @case ('completado') { Aprobado }
+                @case ('pendiente') { Pendiente }
+                @case ('futuro') { — }
+              }
+            </span>
+          </div>
+          }
+        </div>
+      </div>
+      }
     </section>
 
     <!-- Alertas -->

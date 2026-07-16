@@ -7,7 +7,7 @@ import { UserStateService } from '../../services/user-state.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { AdvanceService } from '../../services/advance.service';
 import { NotificationService } from '../../services/notification.service';
-import { IExpenseReport } from '../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
@@ -63,9 +63,16 @@ export class InicioComponent implements OnInit {
 
   readonly PREVIEW = 5;
 
-  readonly isCoordinador = this.userState.isCoordinador();
+  /**
+   * Reemplaza el antiguo `isCoordinador` de solo lectura: "soy aprobador de algo?"
+   * en vez del rol. Se llena en ngOnInit vía refreshApproverStatus() (no se lee el
+   * signal cacheado de UserStateService a ciegas) porque este componente suele ser
+   * la primera pantalla tras el login, con mayor probabilidad de carrera contra esa
+   * consulta asíncrona.
+   */
+  isApprover = signal(false);
 
-  // Permisos → controlan qué tarjetas/listas propias se muestran (tanto coordinador
+  // Permisos → controlan qué tarjetas/listas propias se muestran (tanto aprobador
   // como colaborador se rigen por lo que tengan ACTIVADO). Modelo del negocio:
   //   • Viáticos (solicitudes + rendiciones de viáticos) → módulo 'mis-rendiciones'
   //   • Rendiciones directas                            → módulo 'nueva-rendicion'
@@ -137,7 +144,7 @@ export class InicioComponent implements OnInit {
   }
 
   get subtitle(): string {
-    return this.isCoordinador
+    return this.isApprover()
       ? 'Aquí tienes lo pendiente de tu equipo.'
       : 'Aquí tienes un resumen de tu actividad.';
   }
@@ -295,11 +302,16 @@ export class InicioComponent implements OnInit {
       return;
     }
 
-    if (this.isCoordinador) {
-      this.loadCoordinador(clientId);
-    } else {
-      this.loadColaborador(userId, clientId);
-    }
+    // refreshApproverStatus() es una llamada HTTP async: se espera su valor emitido
+    // (no se lee el signal cacheado) para no perder la carrera contra el arranque.
+    this.userState.refreshApproverStatus().subscribe((isApprover) => {
+      this.isApprover.set(isApprover);
+      if (isApprover) {
+        this.loadCoordinador(clientId);
+      } else {
+        this.loadColaborador(userId, clientId);
+      }
+    });
   }
 
   private loadColaborador(userId: string, clientId: string) {
@@ -407,6 +419,13 @@ export class InicioComponent implements OnInit {
     return typeof entry === 'object' ? entry._id : entry;
   }
 
+  /** ¿El usuario actual está entre los `approverIds` del paso `level` de una cadena por centro de costo? */
+  private isApproverOfStep(chain: IChainStep[] | undefined, level: number): boolean {
+    const step = chain?.[level];
+    if (!step) return false;
+    return step.approverIds.some(a => (typeof a === 'object' ? a._id : a) === this.currentUserId);
+  }
+
   // ─── Mapeo a filas ────────────────────────────────────────────────
   private reportRow(r: IExpenseReport): DashRow {
     return {
@@ -421,7 +440,7 @@ export class InicioComponent implements OnInit {
       statusColor: this.REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600',
       createdAt: r.createdAt,
       canApproveNow: r.status === 'pending_l1' &&
-        (this.userState.isSuperAdmin() || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        (this.userState.isSuperAdmin() || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0)),
     };
   }
 

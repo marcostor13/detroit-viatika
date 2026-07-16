@@ -2,43 +2,24 @@ import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { ViaticosComponent } from './viaticos.component';
-import { AdvanceService } from '../../services/advance.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
-import { IAdvance } from '../../interfaces/advance.interface';
-import { IExpenseReport } from '../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../interfaces/expense-report.interface';
 
 describe('ViaticosComponent', () => {
   let component: ViaticosComponent;
-  let advanceService: jasmine.SpyObj<AdvanceService>;
   let expenseReportsService: jasmine.SpyObj<ExpenseReportsService>;
   let userState: jasmine.SpyObj<UserStateService>;
   let notifications: jasmine.SpyObj<NotificationService>;
   let router: jasmine.SpyObj<Router>;
 
-  const baseAdvance: IAdvance = {
-    _id: 'adv-1',
-    userId: { _id: 'user-1', name: 'Juan Perez', email: 'juan@test.com' },
-    clientId: 'client-1',
-    approverChain: [
-      { _id: 'appr-1', name: 'Ana Aprobadora', email: 'ana@test.com' },
-      { _id: 'appr-2', name: 'Beto Aprobador', email: 'beto@test.com' },
-    ],
-    projectId: { _id: 'proj-1', code: 'PRJ1', name: 'Proyecto Uno' },
-    place: 'Lima',
-    startDate: '2026-01-01',
-    endDate: '2026-01-05',
-    lines: [],
-    amount: 300,
-    description: 'Viaje a Lima',
-    status: 'pending_l1',
-    approvalLevel: 0,
-    requiredLevels: 2,
-    approvalHistory: [],
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-  };
+  const chainStep = (approverIds: { _id: string; name: string; email: string }[]): IChainStep => ({
+    level: 2,
+    projectId: { _id: 'proj-2', code: 'PRJ2', name: 'Proyecto Dos' },
+    projectRole: 'seleccionado',
+    approverIds,
+  });
 
   const baseViaticoReport: IExpenseReport = {
     _id: 'via-1',
@@ -55,7 +36,7 @@ describe('ViaticosComponent', () => {
     viaticoApprovalLevel: 0,
     viaticoRequiredLevels: 2,
     viaticoApproverChain: [
-      { _id: 'appr-1', name: 'Ana Aprobadora', email: 'ana@test.com' },
+      chainStep([{ _id: 'appr-1', name: 'Ana Aprobadora', email: 'ana@test.com' }]),
     ],
     projectId: { _id: 'proj-2', code: 'PRJ2', name: 'Proyecto Dos' },
     expenseIds: [],
@@ -68,7 +49,6 @@ describe('ViaticosComponent', () => {
     TestBed.configureTestingModule({
       imports: [ViaticosComponent],
       providers: [
-        { provide: AdvanceService, useValue: advanceService },
         { provide: ExpenseReportsService, useValue: expenseReportsService },
         { provide: UserStateService, useValue: userState },
         { provide: NotificationService, useValue: notifications },
@@ -80,7 +60,6 @@ describe('ViaticosComponent', () => {
   }
 
   beforeEach(() => {
-    advanceService = jasmine.createSpyObj('AdvanceService', ['findForViaticosPage', 'approve', 'reject']);
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
       'getViaticosList', 'approveViatico', 'approveViaticoContabilidad', 'rejectViatico',
     ]);
@@ -88,14 +67,13 @@ describe('ViaticosComponent', () => {
     notifications = jasmine.createSpyObj('NotificationService', ['show']);
     router = jasmine.createSpyObj('Router', ['navigate']);
 
-    advanceService.findForViaticosPage.and.returnValue(of([]));
     expenseReportsService.getViaticosList.and.returnValue(of([]));
     userState.getUser.and.returnValue({ _id: 'current-user' } as any);
     userState.isSuperAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
   });
 
-  describe('ngOnInit / load', () => {
+  describe('ngOnInit / loadViaticoReports', () => {
     beforeEach(() => setup());
 
     it('builds rejectForm with required + minLength validators and loads data', () => {
@@ -108,51 +86,32 @@ describe('ViaticosComponent', () => {
       expect(control.valid).toBeFalse();
       control.setValue('long enough reason');
       expect(control.valid).toBeTrue();
-      expect(advanceService.findForViaticosPage).toHaveBeenCalled();
       expect(expenseReportsService.getViaticosList).toHaveBeenCalled();
-    });
-
-    it('load() populates allAdvances and clears isLoading on success', () => {
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
-      expect(component.allAdvances()).toEqual([baseAdvance]);
-      expect(component.isLoading()).toBeFalse();
-    });
-
-    it('load() clears list and isLoading on error', () => {
-      advanceService.findForViaticosPage.and.returnValue(throwError(() => new Error('fail')));
-      component.load();
-      expect(component.allAdvances()).toEqual([]);
-      expect(component.isLoading()).toBeFalse();
     });
 
     it('loadViaticoReports() populates allViaticoReports on success', () => {
       expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
       component.loadViaticoReports();
       expect(component.allViaticoReports()).toEqual([baseViaticoReport]);
-      expect(component.viaticoReportsLoading()).toBeFalse();
+      expect(component.isLoading()).toBeFalse();
     });
 
     it('loadViaticoReports() clears list on error', () => {
       expenseReportsService.getViaticosList.and.returnValue(throwError(() => new Error('fail')));
       component.loadViaticoReports();
       expect(component.allViaticoReports()).toEqual([]);
-      expect(component.viaticoReportsLoading()).toBeFalse();
+      expect(component.isLoading()).toBeFalse();
     });
 
-    it('reloadAll() calls both load and loadViaticoReports', () => {
-      spyOn(component, 'load');
+    it('reloadAll() calls loadViaticoReports', () => {
       spyOn(component, 'loadViaticoReports');
       component.reloadAll();
-      expect(component.load).toHaveBeenCalled();
       expect(component.loadViaticoReports).toHaveBeenCalled();
     });
 
-    it('applyFilters() reloads both lists', () => {
-      spyOn(component, 'load');
+    it('applyFilters() reloads the list', () => {
       spyOn(component, 'loadViaticoReports');
       component.applyFilters();
-      expect(component.load).toHaveBeenCalled();
       expect(component.loadViaticoReports).toHaveBeenCalled();
     });
   });
@@ -161,7 +120,7 @@ describe('ViaticosComponent', () => {
     beforeEach(() => setup());
 
     it('clearFilters resets all filter signals', () => {
-      component.filterStatus.set('approved');
+      component.filterStatus.set('viatico_approved');
       component.filterSearch.set('juan');
       component.filterDateFrom.set('2026-01-01');
       component.filterDateTo.set('2026-01-31');
@@ -173,9 +132,9 @@ describe('ViaticosComponent', () => {
     });
 
     it('onStatusChange sets filterStatus from event target value', () => {
-      const event = { target: { value: 'approved' } } as unknown as Event;
+      const event = { target: { value: 'viatico_approved' } } as unknown as Event;
       component.onStatusChange(event);
-      expect(component.filterStatus()).toBe('approved');
+      expect(component.filterStatus()).toBe('viatico_approved');
     });
 
     it('onSearchChange sets filterSearch from event target value', () => {
@@ -183,44 +142,25 @@ describe('ViaticosComponent', () => {
       component.onSearchChange(event);
       expect(component.filterSearch()).toBe('maria');
     });
-
-    it('onDateFromChange sets filterDateFrom from event target value', () => {
-      const event = { target: { value: '2026-01-01' } } as unknown as Event;
-      component.onDateFromChange(event);
-      expect(component.filterDateFrom()).toBe('2026-01-01');
-    });
-
-    it('onDateToChange sets filterDateTo from event target value', () => {
-      const event = { target: { value: '2026-01-31' } } as unknown as Event;
-      component.onDateToChange(event);
-      expect(component.filterDateTo()).toBe('2026-01-31');
-    });
   });
 
   describe('stats', () => {
     beforeEach(() => setup());
 
-    it('counts pending_l1, in_progress, approved and paid across advances and viatico reports', () => {
-      const advances: IAdvance[] = [
-        { ...baseAdvance, _id: 'a1', status: 'pending_l1', approvalLevel: 0 },
-        { ...baseAdvance, _id: 'a2', status: 'pending_l1', approvalLevel: 1 },
-        { ...baseAdvance, _id: 'a3', status: 'approved' },
-        { ...baseAdvance, _id: 'a4', status: 'paid' },
-      ];
+    it('counts pending_l1, in_progress, approved and paid across viatico reports', () => {
       const reports: IExpenseReport[] = [
         { ...baseViaticoReport, _id: 'v1', status: 'pending_l1', viaticoApprovalLevel: 0 },
         { ...baseViaticoReport, _id: 'v2', status: 'pending_l1', viaticoApprovalLevel: 1 },
         { ...baseViaticoReport, _id: 'v3', status: 'viatico_approved' },
+        { ...baseViaticoReport, _id: 'v4', status: 'paid' },
       ];
-      advanceService.findForViaticosPage.and.returnValue(of(advances));
       expenseReportsService.getViaticosList.and.returnValue(of(reports));
-      component.load();
       component.loadViaticoReports();
 
       const stats = component.stats();
-      expect(stats.pending_l1).toBe(2);
-      expect(stats.in_progress).toBe(2);
-      expect(stats.approved).toBe(2);
+      expect(stats.pending_l1).toBe(1);
+      expect(stats.in_progress).toBe(1);
+      expect(stats.approved).toBe(1);
       expect(stats.paid).toBe(1);
     });
   });
@@ -228,12 +168,10 @@ describe('ViaticosComponent', () => {
   describe('unifiedFiltered', () => {
     beforeEach(() => setup());
 
-    it('maps advances and viatico reports, sorted by createdAt desc', () => {
-      const olderAdvance: IAdvance = { ...baseAdvance, _id: 'old', createdAt: '2025-01-01T00:00:00Z' };
+    it('maps viatico reports, sorted by createdAt desc', () => {
+      const olderReport: IExpenseReport = { ...baseViaticoReport, _id: 'old', createdAt: '2025-01-01T00:00:00Z' };
       const newerReport: IExpenseReport = { ...baseViaticoReport, _id: 'new', createdAt: '2026-05-01T00:00:00Z' };
-      advanceService.findForViaticosPage.and.returnValue(of([olderAdvance]));
-      expenseReportsService.getViaticosList.and.returnValue(of([newerReport]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([olderReport, newerReport]));
       component.loadViaticoReports();
 
       const result = component.unifiedFiltered();
@@ -243,9 +181,7 @@ describe('ViaticosComponent', () => {
     });
 
     it('filters by search term across name, email and place', () => {
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
       expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
-      component.load();
       component.loadViaticoReports();
 
       component.filterSearch.set('cusco');
@@ -257,21 +193,21 @@ describe('ViaticosComponent', () => {
     });
 
     it('filters by status', () => {
-      const approvedAdvance: IAdvance = { ...baseAdvance, _id: 'approved-1', status: 'approved' };
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance, approvedAdvance]));
-      component.load();
+      const approvedReport: IExpenseReport = { ...baseViaticoReport, _id: 'approved-1', status: 'viatico_approved' };
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport, approvedReport]));
+      component.loadViaticoReports();
 
-      component.filterStatus.set('approved');
+      component.filterStatus.set('viatico_approved');
       const result = component.unifiedFiltered();
       expect(result.length).toBe(1);
       expect(result[0]._id).toBe('approved-1');
     });
 
     it('filters by date range (dateFrom/dateTo)', () => {
-      const inRange: IAdvance = { ...baseAdvance, _id: 'in-range', createdAt: '2026-03-15T00:00:00Z' };
-      const outOfRange: IAdvance = { ...baseAdvance, _id: 'out-of-range', createdAt: '2026-06-01T00:00:00Z' };
-      advanceService.findForViaticosPage.and.returnValue(of([inRange, outOfRange]));
-      component.load();
+      const inRange: IExpenseReport = { ...baseViaticoReport, _id: 'in-range', createdAt: '2026-03-15T00:00:00Z' };
+      const outOfRange: IExpenseReport = { ...baseViaticoReport, _id: 'out-of-range', createdAt: '2026-06-01T00:00:00Z' };
+      expenseReportsService.getViaticosList.and.returnValue(of([inRange, outOfRange]));
+      component.loadViaticoReports();
 
       component.filterDateFrom.set('2026-03-01');
       component.filterDateTo.set('2026-03-31');
@@ -280,20 +216,39 @@ describe('ViaticosComponent', () => {
       expect(result[0]._id).toBe('in-range');
     });
 
-    it('canApproveNow/canReject true for advance pending_l1 when current user is the expected approver', () => {
+    it('canApproveNow/canReject true when current user is among the pending step approverIds', () => {
       userState.getUser.and.returnValue({ _id: 'appr-1' } as any);
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       expect(item.canApproveNow).toBeTrue();
       expect(item.canReject).toBeTrue();
       expect(item.pendingApproverName).toBe('Ana Aprobadora');
     });
 
-    it('canApproveNow false for advance pending_l1 when current user is not the expected approver', () => {
+    it('canApproveNow true when the pending step has several approvers and the user is any of them', () => {
+      const multiApproverReport: IExpenseReport = {
+        ...baseViaticoReport,
+        _id: 'multi-1',
+        viaticoApproverChain: [
+          chainStep([
+            { _id: 'appr-1', name: 'Ana Aprobadora', email: 'ana@test.com' },
+            { _id: 'appr-2', name: 'Beto Aprobador', email: 'beto@test.com' },
+          ]),
+        ],
+      };
+      userState.getUser.and.returnValue({ _id: 'appr-2' } as any);
+      expenseReportsService.getViaticosList.and.returnValue(of([multiApproverReport]));
+      component.loadViaticoReports();
+      const item = component.unifiedFiltered()[0];
+      expect(item.canApproveNow).toBeTrue();
+      expect(item.pendingApproverName).toBe('Ana Aprobadora / Beto Aprobador');
+    });
+
+    it('canApproveNow false when current user is not among the pending step approverIds', () => {
       userState.getUser.and.returnValue({ _id: 'someone-else' } as any);
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       expect(item.canApproveNow).toBeFalse();
       expect(item.canReject).toBeFalse();
@@ -302,8 +257,8 @@ describe('ViaticosComponent', () => {
     it('canApproveNow true for any pending_l1 item when user is SuperAdmin', () => {
       userState.getUser.and.returnValue({ _id: 'irrelevant' } as any);
       userState.isSuperAdmin.and.returnValue(true);
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       expect(item.canApproveNow).toBeTrue();
     });
@@ -336,8 +291,8 @@ describe('ViaticosComponent', () => {
     beforeEach(() => setup());
 
     it('openApproveModal sets pendingApproveItem and shows modal', () => {
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       component.openApproveModal(item);
       expect(component.pendingApproveItem()).toBe(item);
@@ -346,27 +301,7 @@ describe('ViaticosComponent', () => {
 
     it('confirmApprove does nothing when there is no pending item', () => {
       component.confirmApprove();
-      expect(advanceService.approve).not.toHaveBeenCalled();
       expect(expenseReportsService.approveViatico).not.toHaveBeenCalled();
-    });
-
-    it('confirmApprove calls advanceService.approve for advance items and shows success', () => {
-      advanceService.approve.and.returnValue(of(baseAdvance));
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
-      const item = component.unifiedFiltered()[0];
-      spyOn(component, 'reloadAll');
-      component.openApproveModal(item);
-      component.confirmApprove();
-
-      expect(advanceService.approve).toHaveBeenCalledWith('adv-1', {});
-      expect(component.showApproveModal()).toBeFalse();
-      expect(component.isActing()).toBeFalse();
-      expect(notifications.show).toHaveBeenCalledWith(
-        `Solicitud aprobada (nivel ${baseAdvance.approvalLevel + 1} de ${baseAdvance.requiredLevels})`,
-        'success',
-      );
-      expect(component.reloadAll).toHaveBeenCalled();
     });
 
     it('confirmApprove calls approveViatico for non-contabilidad-gate viatico reports', () => {
@@ -380,6 +315,13 @@ describe('ViaticosComponent', () => {
 
       expect(expenseReportsService.approveViatico).toHaveBeenCalledWith('via-1');
       expect(expenseReportsService.approveViaticoContabilidad).not.toHaveBeenCalled();
+      expect(component.showApproveModal()).toBeFalse();
+      expect(component.isActing()).toBeFalse();
+      expect(notifications.show).toHaveBeenCalledWith(
+        `Solicitud aprobada (nivel ${(baseViaticoReport.viaticoApprovalLevel ?? 0) + 1} de ${baseViaticoReport.viaticoRequiredLevels})`,
+        'success',
+      );
+      expect(component.reloadAll).toHaveBeenCalled();
     });
 
     it('confirmApprove calls approveViaticoContabilidad for pending_contabilidad reports with contabilidad message', () => {
@@ -400,9 +342,9 @@ describe('ViaticosComponent', () => {
     });
 
     it('confirmApprove shows backend error message and resets acting state on failure', () => {
-      advanceService.approve.and.returnValue(throwError(() => ({ error: { message: 'Nivel de aprobación inválido' } })));
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.approveViatico.and.returnValue(throwError(() => ({ error: { message: 'Nivel de aprobación inválido' } })));
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       component.openApproveModal(item);
       component.confirmApprove();
@@ -413,9 +355,9 @@ describe('ViaticosComponent', () => {
     });
 
     it('confirmApprove shows fallback error message when backend has none', () => {
-      advanceService.approve.and.returnValue(throwError(() => ({})));
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.approveViatico.and.returnValue(throwError(() => ({})));
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       component.openApproveModal(item);
       component.confirmApprove();
@@ -431,8 +373,8 @@ describe('ViaticosComponent', () => {
     });
 
     it('openRejectModal sets selectedItem, resets form and shows modal', () => {
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       component.rejectForm.patchValue({ rejectionReason: 'stale value here' });
       component.openRejectModal(item);
@@ -443,52 +385,40 @@ describe('ViaticosComponent', () => {
 
     it('confirmReject does nothing when there is no selected item', () => {
       component.confirmReject();
-      expect(advanceService.reject).not.toHaveBeenCalled();
+      expect(expenseReportsService.rejectViatico).not.toHaveBeenCalled();
     });
 
     it('confirmReject does nothing when the form is invalid', () => {
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       component.openRejectModal(item);
       component.rejectForm.patchValue({ rejectionReason: 'short' });
       component.confirmReject();
-      expect(advanceService.reject).not.toHaveBeenCalled();
+      expect(expenseReportsService.rejectViatico).not.toHaveBeenCalled();
     });
 
-    it('confirmReject calls advanceService.reject with reason for advance items', () => {
-      advanceService.reject.and.returnValue(of({ ...baseAdvance, status: 'rejected' }));
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
+    it('confirmReject calls expenseReportsService.rejectViatico with reason', () => {
+      expenseReportsService.rejectViatico.and.returnValue(of({ ...baseViaticoReport, status: 'rejected' }));
+      expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
+      component.loadViaticoReports();
       const item = component.unifiedFiltered()[0];
       spyOn(component, 'reloadAll');
       component.openRejectModal(item);
       component.rejectForm.patchValue({ rejectionReason: 'No cumple politica de viaticos' });
       component.confirmReject();
 
-      expect(advanceService.reject).toHaveBeenCalledWith('adv-1', { rejectionReason: 'No cumple politica de viaticos' });
+      expect(expenseReportsService.rejectViatico).toHaveBeenCalledWith('via-1', 'No cumple politica de viaticos');
       expect(notifications.show).toHaveBeenCalledWith('Solicitud rechazada', 'success');
       expect(component.showRejectModal()).toBeFalse();
       expect(component.isActing()).toBeFalse();
       expect(component.reloadAll).toHaveBeenCalled();
     });
 
-    it('confirmReject calls expenseReportsService.rejectViatico for new source items', () => {
-      expenseReportsService.rejectViatico.and.returnValue(of({ ...baseViaticoReport, status: 'rejected' }));
+    it('confirmReject shows backend error message on failure', () => {
+      expenseReportsService.rejectViatico.and.returnValue(throwError(() => ({ error: { message: 'No autorizado' } })));
       expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
       component.loadViaticoReports();
-      const item = component.unifiedFiltered()[0];
-      component.openRejectModal(item);
-      component.rejectForm.patchValue({ rejectionReason: 'No cumple politica de viaticos' });
-      component.confirmReject();
-
-      expect(expenseReportsService.rejectViatico).toHaveBeenCalledWith('via-1', 'No cumple politica de viaticos');
-    });
-
-    it('confirmReject shows backend error message on failure', () => {
-      advanceService.reject.and.returnValue(throwError(() => ({ error: { message: 'No autorizado' } })));
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
       const item = component.unifiedFiltered()[0];
       component.openRejectModal(item);
       component.rejectForm.patchValue({ rejectionReason: 'No cumple politica de viaticos' });
@@ -502,14 +432,7 @@ describe('ViaticosComponent', () => {
   describe('openDetail navigation', () => {
     beforeEach(() => setup());
 
-    it('navigates to /viaticos/:id for advance-sourced items', () => {
-      advanceService.findForViaticosPage.and.returnValue(of([baseAdvance]));
-      component.load();
-      component.openDetail(component.unifiedFiltered()[0]);
-      expect(router.navigate).toHaveBeenCalledWith(['/viaticos', 'adv-1']);
-    });
-
-    it('navigates to /mis-rendiciones/:id/detalle for new-sourced items', () => {
+    it('navigates to /mis-rendiciones/:id/detalle', () => {
       expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
       component.loadViaticoReports();
       component.openDetail(component.unifiedFiltered()[0]);

@@ -73,6 +73,11 @@ export interface IUserPermissions {
    * hacia un centro de costo que no tiene asignado).
    */
   projectIds?: string[];
+  /**
+   * Centro de costo principal explícito. Debe estar contenido en projectIds.
+   * Si no se envía, el backend usa projectIds[0] como fallback.
+   */
+  primaryProjectId?: string;
 }
 
 export interface IUserResponse {

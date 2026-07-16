@@ -324,8 +324,8 @@ describe('MisRendicionesComponent', () => {
       expect(component.getDirectaEstado({ expenseReportId: 'r1', _reportStatus: 'rejected' }).label).toBe('Rechazado');
     });
 
-    it('falls back to "Revisado" when approvalCont is approved', () => {
-      expect(component.getDirectaEstado({ expenseReportId: 'r1', approvalCont: { status: 'approved' } }).label).toBe('Revisado');
+    it('falls back to "Revisado" when contabilidadStatus is approved', () => {
+      expect(component.getDirectaEstado({ expenseReportId: 'r1', contabilidadStatus: 'approved' }).label).toBe('Revisado');
     });
 
     it('defaults to "Enviado"', () => {

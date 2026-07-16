@@ -107,4 +107,28 @@ describe('httpInterceptor', () => {
       return of(new HttpResponse({ status: 200 }));
     }).subscribe();
   });
+
+  it('appends companyId to a plain GET request', (done) => {
+    userState.getUser.and.returnValue({ access_token: validToken, companyId: 'c1' } as any);
+    userState.getToken.and.returnValue(validToken);
+    userState.isSuperAdmin.and.returnValue(false);
+    const req = new HttpRequest('GET', 'http://api/project');
+    run(req, (r: HttpRequest<any>) => {
+      expect(r.url).toBe('http://api/project/c1');
+      done();
+      return of(new HttpResponse({ status: 200 }));
+    }).subscribe();
+  });
+
+  it('does NOT append companyId to /project/me/am-i-approver (skipCompanyIdEndpoints)', (done) => {
+    userState.getUser.and.returnValue({ access_token: validToken, companyId: 'c1' } as any);
+    userState.getToken.and.returnValue(validToken);
+    userState.isSuperAdmin.and.returnValue(false);
+    const req = new HttpRequest('GET', 'http://api/project/me/am-i-approver');
+    run(req, (r: HttpRequest<any>) => {
+      expect(r.url).toBe('http://api/project/me/am-i-approver');
+      done();
+      return of(new HttpResponse({ status: 200 }));
+    }).subscribe();
+  });
 });

@@ -150,8 +150,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.userStateService.isContabilidad();
   }
 
-  isCoordinador(): boolean {
-    return this.userStateService.isCoordinador();
+  isApprover(): boolean {
+    return this.userStateService.isApprover();
   }
 
   canAccessTesoreria(): boolean {

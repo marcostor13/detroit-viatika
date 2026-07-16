@@ -38,7 +38,9 @@ describe('RendicionesAdminComponent', () => {
     viaticoAmount: 100,
     viaticoApprovalLevel: 0,
     viaticoRequiredLevels: 1,
-    viaticoApproverChain: ['u2'],
+    viaticoApproverChain: [
+      { level: 2, projectId: 'p1', projectRole: 'seleccionado', approverIds: ['u2'] },
+    ],
   };
 
   const mockAdvance: IAdvance = {
@@ -59,13 +61,13 @@ describe('RendicionesAdminComponent', () => {
   beforeEach(() => {
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
       'findAllByClient', 'getDeletionPreview', 'delete',
-      'approveViatico', 'approveViaticoContabilidad', 'approveDirecta',
-      'rejectViatico', 'rejectDirecta',
+      'approveViatico', 'approveViaticoContabilidad',
+      'rejectViatico',
     ]);
     adminUsersService = jasmine.createSpyObj('AdminUsersService', ['getUsers']);
     invoicesService = jasmine.createSpyObj('InvoicesService', ['getProjects']);
     userStateService = jasmine.createSpyObj('UserStateService', [
-      'getUser', 'isSuperAdmin', 'isCoordinador', 'isContabilidad', 'canApproveL2',
+      'getUser', 'isSuperAdmin', 'isCoordinador', 'isApprover', 'isContabilidad', 'canApproveL2',
     ]);
     notifications = jasmine.createSpyObj('NotificationService', ['show']);
     advanceService = jasmine.createSpyObj('AdvanceService', ['findOrphaned', 'approve', 'reject']);
@@ -74,6 +76,7 @@ describe('RendicionesAdminComponent', () => {
     userStateService.getUser.and.returnValue({ _id: 'u2', companyId: 'c1' } as any);
     userStateService.isSuperAdmin.and.returnValue(false);
     userStateService.isCoordinador.and.returnValue(false);
+    userStateService.isApprover.and.returnValue(false);
     userStateService.isContabilidad.and.returnValue(false);
     userStateService.canApproveL2.and.returnValue(false);
 
@@ -134,15 +137,15 @@ describe('RendicionesAdminComponent', () => {
       expect(c.filterUserId).toBe('u1');
     });
 
-    it('excludes isDirecta reports for non-coordinador roles', () => {
+    it('excludes isDirecta reports for non-approver users', () => {
       const directaReport = { ...mockReport, _id: 'rep2', isDirecta: true };
       expenseReportsService.findAllByClient.and.returnValue(of([mockReport, directaReport]));
       component.ngOnInit();
       expect(component.filteredItems.some((i) => i._id === 'rep2')).toBeFalse();
     });
 
-    it('keeps isDirecta reports when the user is Coordinador', () => {
-      userStateService.isCoordinador.and.returnValue(true);
+    it('keeps isDirecta reports when the user is an approver', () => {
+      userStateService.isApprover.and.returnValue(true);
       const directaReport = { ...mockReport, _id: 'rep2', isDirecta: true };
       expenseReportsService.findAllByClient.and.returnValue(of([mockReport, directaReport]));
       component.ngOnInit();

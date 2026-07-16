@@ -8,6 +8,17 @@ export type IExpenseReportStatus =
   | 'pending_l1' | 'pending_l2' | 'pending_contabilidad' | 'viatico_approved'
   | 'partially_paid' | 'paid' | 'settled' | 'returned';
 
+/** Espeja `ChainStep` del backend (approval-chain.util.ts). */
+export interface IChainStep {
+  level: number;
+  projectId: { _id: string; code?: string; name?: string } | string;
+  projectRole: 'principal' | 'seleccionado';
+  /** Cualquiera de estos aprobadores puede completar el paso. */
+  approverIds: ({ _id: string; name: string; email: string } | string)[];
+  /** Presente si este paso es resultado de un escalamiento (regla 1.5). */
+  escalatedFrom?: number;
+}
+
 export interface ICreateViaticoPayload {
   amount: number;
   place: string;
@@ -146,8 +157,8 @@ export interface IExpenseReport {
   viaticoPaidAmount?: number;
   viaticoApprovalLevel?: number;
   viaticoRequiredLevels?: number;
-  /** Cadena ordenada de aprobadores asignada al momento de crear la solicitud. */
-  viaticoApproverChain?: ({ _id: string; name: string; email: string } | string)[];
+  /** Cadena por centro de costo (N2 principal/seleccionado) asignada al crear la solicitud. */
+  viaticoApproverChain?: IChainStep[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
   viaticoRejectionReason?: string;
   /** Quién rechazó: aprobador de centro de costo, o Contabilidad (gate final). */

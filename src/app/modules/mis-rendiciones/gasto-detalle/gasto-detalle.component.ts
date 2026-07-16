@@ -376,8 +376,48 @@ emissionDateText(exp: Record<string, unknown>): string {
   }
 
   getApprovalContStatus(exp: Record<string, unknown>): string {
-    const a = exp['approvalCont'] as any;
-    return a?.status ?? 'pending';
+    return (exp['contabilidadStatus'] as string) ?? 'pending';
+  }
+
+  // ─── Cadena de aprobación por centro de costo ────────────────────────────────
+
+  private chainStepApproverNames(step: Record<string, unknown> | undefined): string {
+    const approverIds = (step?.['approverIds'] as any[]) ?? [];
+    if (!approverIds.length) return '—';
+    return approverIds
+      .map((a: any) => (typeof a === 'object' ? (a.name ?? a._id) : a))
+      .join(' / ');
+  }
+
+  private getApprovalLevel(exp: Record<string, unknown>): number {
+    return (exp['approvalLevel'] as number) ?? 0;
+  }
+
+  /** Cadena ordenada de niveles del comprobante, con estado y aprobador(es) de cada paso. */
+  chainSteps(exp: Record<string, unknown>): Array<{
+    level: number;
+    state: 'completado' | 'pendiente' | 'futuro';
+    approverNames: string;
+    escalatedFrom?: number;
+    approvedBy?: string;
+    date?: string;
+  }> {
+    const chain = (exp['approverChain'] as any[]) ?? [];
+    const approvalLevel = this.getApprovalLevel(exp);
+    const history = (exp['approvalHistory'] as any[]) ?? [];
+    return chain.map((step: any, idx: number) => {
+      const state: 'completado' | 'pendiente' | 'futuro' =
+        idx < approvalLevel ? 'completado' : idx === approvalLevel ? 'pendiente' : 'futuro';
+      const entry = history.find((h: any) => h.level === step.level);
+      return {
+        level: step.level,
+        state,
+        approverNames: this.chainStepApproverNames(step),
+        escalatedFrom: step.escalatedFrom,
+        approvedBy: entry?.approvedBy,
+        date: entry?.date,
+      };
+    });
   }
 
   canEdit(exp: Record<string, unknown>): boolean {

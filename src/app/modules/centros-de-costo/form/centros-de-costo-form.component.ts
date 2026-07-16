@@ -14,6 +14,11 @@ import { IProject } from '../../invoices/interfaces/project.interface';
 import { ILineaNegocio } from '../../../interfaces/linea-negocio.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
 
+interface IApproverLevelForm {
+  level: number;
+  userIds: string[];
+}
+
 @Component({
   selector: 'app-centros-de-costo-form',
   standalone: true,
@@ -44,11 +49,16 @@ export class CentrosDeCostoFormComponent implements OnInit {
     subCentroCosto: '',
     area: '',
     esAdministrativo: false,
-    approverId: '',
   };
   lineas: ILineaNegocio[] = [];
   /** Candidatos a aprobador del centro de costo: cualquier usuario activo de la empresa. */
   approverCandidates: IUserResponse[] = [];
+
+  /** Niveles de aprobación configurados (identidad por número de nivel, no por posición). */
+  approverLevels: IApproverLevelForm[] = [];
+  addingLevel = false;
+  newLevelNumber: number | null = null;
+  newLevelUserIds: string[] = [];
 
   private getErrorMessage(error: HttpErrorResponse, fallback: string) {
     const apiMessage = Array.isArray(error.error?.message)
@@ -96,8 +106,11 @@ export class CentrosDeCostoFormComponent implements OnInit {
           subCentroCosto: p.subCentroCosto ?? '',
           area: p.area ?? '',
           esAdministrativo: p.esAdministrativo ?? false,
-          approverId: p.approverId ?? '',
         };
+        this.approverLevels = (p.approverLevels ?? []).map((l) => ({
+          level: l.level,
+          userIds: (l.userIds ?? []).map((u) => (typeof u === 'string' ? u : u._id)),
+        }));
       },
       error: (error: HttpErrorResponse) => {
         this.notification.show(this.getErrorMessage(error, 'Error al cargar el centro de costo'), 'error');
@@ -128,7 +141,9 @@ export class CentrosDeCostoFormComponent implements OnInit {
       subCentroCosto: this.form.subCentroCosto.trim() || undefined,
       area: this.form.area.trim() || undefined,
       esAdministrativo: this.form.esAdministrativo,
-      approverId: this.form.approverId || '',
+      approverLevels: this.approverLevels
+        .filter((l) => l.userIds.length > 0)
+        .map((l) => ({ level: l.level, userIds: l.userIds })),
     };
 
     if (this.isEditing) {
@@ -160,5 +175,84 @@ export class CentrosDeCostoFormComponent implements OnInit {
         },
       });
     }
+  }
+
+  // --- Niveles de aprobación ---
+
+  get sortedApproverLevels(): IApproverLevelForm[] {
+    return [...this.approverLevels].sort((a, b) => a.level - b.level);
+  }
+
+  /** Candidatos aún no asignados como aprobadores de este nivel. */
+  candidatesForLevel(level: IApproverLevelForm): IUserResponse[] {
+    return this.approverCandidates.filter((u) => !level.userIds.includes(u._id!));
+  }
+
+  userLabel(id: string): string {
+    const u = this.approverCandidates.find((c) => c._id === id);
+    return u ? `${u.name} (${u.email})` : id;
+  }
+
+  addApproverToLevel(level: IApproverLevelForm, userId: string) {
+    if (!userId || level.userIds.includes(userId)) return;
+    level.userIds = [...level.userIds, userId];
+  }
+
+  removeApproverFromLevel(level: IApproverLevelForm, userId: string) {
+    level.userIds = level.userIds.filter((id) => id !== userId);
+    if (level.userIds.length === 0) {
+      this.removeLevel(level.level);
+    }
+  }
+
+  removeLevel(levelNumber: number) {
+    this.approverLevels = this.approverLevels.filter((l) => l.level !== levelNumber);
+  }
+
+  private nextSuggestedLevel(): number {
+    const used = new Set(this.approverLevels.map((l) => l.level));
+    let n = 1;
+    while (used.has(n)) n++;
+    return n;
+  }
+
+  startAddLevel() {
+    this.addingLevel = true;
+    this.newLevelNumber = this.nextSuggestedLevel();
+    this.newLevelUserIds = [];
+  }
+
+  cancelAddLevel() {
+    this.addingLevel = false;
+    this.newLevelNumber = null;
+    this.newLevelUserIds = [];
+  }
+
+  toggleNewLevelUser(userId: string, checked: boolean) {
+    if (checked) {
+      if (!this.newLevelUserIds.includes(userId)) {
+        this.newLevelUserIds = [...this.newLevelUserIds, userId];
+      }
+    } else {
+      this.newLevelUserIds = this.newLevelUserIds.filter((id) => id !== userId);
+    }
+  }
+
+  confirmAddLevel() {
+    const level = this.newLevelNumber;
+    if (!level || !Number.isInteger(level) || level < 1) {
+      this.notification.show('Ingresa un número de nivel válido', 'error');
+      return;
+    }
+    if (this.approverLevels.some((l) => l.level === level)) {
+      this.notification.show(`Ya existe un Nivel ${level} configurado`, 'error');
+      return;
+    }
+    if (this.newLevelUserIds.length === 0) {
+      this.notification.show('Selecciona al menos un aprobador para el nivel', 'error');
+      return;
+    }
+    this.approverLevels = [...this.approverLevels, { level, userIds: [...this.newLevelUserIds] }];
+    this.cancelAddLevel();
   }
 }

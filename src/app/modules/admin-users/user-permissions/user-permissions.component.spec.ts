@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { UserPermissionsComponent } from './user-permissions.component';
@@ -63,7 +64,7 @@ describe('UserPermissionsComponent', () => {
     userState.getUser.and.returnValue({ companyId: 'c1' } as any);
 
     TestBed.configureTestingModule({
-      imports: [UserPermissionsComponent],
+      imports: [UserPermissionsComponent, HttpClientTestingModule],
       providers: [
         { provide: ActivatedRoute, useValue: { snapshot: { params: { id: 'u1' } } } },
         { provide: Router, useValue: router },
@@ -103,6 +104,7 @@ describe('UserPermissionsComponent', () => {
         canApproveL2: false,
         categoryIds: [],
         projectIds: [],
+        primaryProjectId: undefined,
       });
     });
 
@@ -347,7 +349,7 @@ describe('UserPermissionsComponent', () => {
 
       component.save();
 
-      expect(notification.show).toHaveBeenCalledWith('Error al actualizar los permisos', 'error');
+      expect(notification.show).toHaveBeenCalledWith('fail', 'error');
       expect(component.saving).toBeFalse();
     });
   });

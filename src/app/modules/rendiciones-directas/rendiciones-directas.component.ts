@@ -253,7 +253,7 @@ export class RendicionesDirectasComponent implements OnInit {
         this.approvingId.set(null);
         this.notifications.show('Documento marcado como revisado.', 'success');
         this.data.update(list => list.map(row =>
-          row._id === e._id ? { ...row, approvalCont: { status: 'approved' } } : row
+          row._id === e._id ? { ...row, contabilidadStatus: 'approved' } : row
         ));
       },
       error: (err) => {
@@ -464,9 +464,9 @@ export class RendicionesDirectasComponent implements OnInit {
   hasFile(e: any): boolean { return this.getFileUrl(e) !== null; }
   openFile(e: any, event: Event): void { event.stopPropagation(); const url = this.getFileUrl(e); url ? window.open(url, '_blank', 'noopener,noreferrer') : this.notifications.show('Sin documento adjunto', 'warning'); }
 
-  getEstadoCont(e: any): string { return e.approvalCont?.status === 'approved' ? 'Revisado' : 'Pendiente'; }
-  getEstadoContClass(e: any): string { return e.approvalCont?.status === 'approved' ? 'bg-teal-100 text-teal-700' : 'bg-yellow-100 text-yellow-700'; }
-  isRevisado(e: any): boolean { return e.approvalCont?.status === 'approved'; }
+  getEstadoCont(e: any): string { return e.contabilidadStatus === 'approved' ? 'Revisado' : 'Pendiente'; }
+  getEstadoContClass(e: any): string { return e.contabilidadStatus === 'approved' ? 'bg-teal-100 text-teal-700' : 'bg-yellow-100 text-yellow-700'; }
+  isRevisado(e: any): boolean { return e.contabilidadStatus === 'approved'; }
   getTotal(e: any): number { const t = e?.total; if (typeof t === 'number') return t; const n = Number(t); return Number.isNaN(n) ? 0 : n; }
   get totalMonto(): number { return this.data().reduce((sum, e) => sum + (this.isDeposito(e) ? 0 : this.getTotal(e)), 0); }
 

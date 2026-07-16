@@ -242,14 +242,6 @@ export class ExpenseReportsService {
   }
 
   /** Aprueba el turno actual de la cadena de aprobadores de centro de costo de una rendición directa. */
-  approveDirecta(id: string): Observable<IExpenseReport> {
-    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/directa/approve`, {});
-  }
-
-  rejectDirecta(id: string, rejectionReason: string): Observable<IExpenseReport> {
-    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/directa/reject`, { rejectionReason });
-  }
-
   registerViaticoPayment(id: string, payload: IRegisterReimbursementPaymentPayload): Observable<IExpenseReport> {
     return this.http.patch<IExpenseReport>(
       `${this.apiUrl}/expense-report/${id}/viatico/register-payment`,

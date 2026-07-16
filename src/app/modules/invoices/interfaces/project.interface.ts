@@ -23,10 +23,17 @@ export interface IProject {
   area?: string;
   /** Marca si el centro de costo es administrativo. */
   esAdministrativo?: boolean;
-  /** Aprobador de las solicitudes de viático imputadas a este centro de costo (id) */
+  /** @deprecated usar approverLevels. Se mantiene solo por compatibilidad de lectura, ya no se edita desde el form. */
   approverId?: string;
   /** Aprobador poblado (nombre/email) cuando el API lo devuelve */
   approver?: { _id?: string; name?: string; email?: string };
+  /** Aprobadores por nivel explícito (N1, N2, N3…) de este centro de costo. */
+  approverLevels?: IApproverLevel[];
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface IApproverLevel {
+  level: number;
+  userIds: (string | { _id: string; name?: string; email?: string })[];
 }

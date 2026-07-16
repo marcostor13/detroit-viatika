@@ -65,7 +65,7 @@ describe('RendicionDetailComponent', () => {
   beforeEach(() => {
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
       'findOne', 'update', 'findExpensesPaginated', 'close', 'cancelRendicion',
-      'approveDirecta', 'rejectDirecta', 'validateClosure', 'requestReopening',
+      'validateClosure', 'requestReopening',
       'approveReopening', 'registerReturnVoucher', 'registerReimbursementPayment',
       'reopen', 'batchApproveByCoord', 'batchApproveByCollab', 'createAffidavit',
       'scanDepositAmount',
@@ -75,7 +75,7 @@ describe('RendicionDetailComponent', () => {
     ]);
     notification = jasmine.createSpyObj('NotificationService', ['show']);
     userState = jasmine.createSpyObj('UserStateService', [
-      'getUser', 'isAdmin', 'isSuperAdmin', 'isContabilidad', 'isCoordinador',
+      'getUser', 'isAdmin', 'isSuperAdmin', 'isContabilidad', 'isApprover',
       'hasModulePermission', 'canApproveL1', 'canApproveL2',
     ]);
     companyConfigService = jasmine.createSpyObj('CompanyConfigService', ['refreshConfig', 'getCompanyConfig']);
@@ -95,7 +95,7 @@ describe('RendicionDetailComponent', () => {
     userState.isAdmin.and.returnValue(false);
     userState.isSuperAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
-    userState.isCoordinador.and.returnValue(false);
+    userState.isApprover.and.returnValue(false);
     userState.hasModulePermission.and.returnValue(false);
     userState.canApproveL1.and.returnValue(false);
     userState.canApproveL2.and.returnValue(false);
@@ -210,9 +210,9 @@ describe('RendicionDetailComponent', () => {
       expect(component.isAdminView).toBeTrue();
     });
 
-    it('coordinador with rendiciones permission acts as admin on others\' reports', () => {
+    it('approver with rendiciones permission acts as admin on others\' reports', () => {
       component.report = makeReport({ userId: { _id: 'other', name: 'x' } as any });
-      userState.isCoordinador.and.returnValue(true);
+      userState.isApprover.and.returnValue(true);
       userState.hasModulePermission.and.returnValue(true);
       expect(component.isAdminView).toBeTrue();
     });
@@ -278,8 +278,8 @@ describe('RendicionDetailComponent', () => {
       expect(component.canApproveExpenses).toBeFalse();
     });
 
-    it('is true for a coordinador with the rendiciones permission', () => {
-      userState.isCoordinador.and.returnValue(true);
+    it('is true for an approver with the rendiciones permission', () => {
+      userState.isApprover.and.returnValue(true);
       userState.hasModulePermission.and.returnValue(true);
       expect(component.canApproveExpenses).toBeTrue();
     });
@@ -431,58 +431,6 @@ describe('RendicionDetailComponent', () => {
       expenseReportsService.update.and.returnValue(throwError(() => ({ error: { message: 'no autorizado' } })));
       component.submitAdminRejection();
       expect(notification.show).toHaveBeenCalledWith('no autorizado', 'error');
-    });
-  });
-
-  describe('canApproveDirectaChainStep / confirmApproveDirectaChainStep', () => {
-    it('is true for superadmin on a pending_l1 directa', () => {
-      component.report = makeReport({ isDirecta: true, status: 'pending_l1' });
-      userState.isSuperAdmin.and.returnValue(true);
-      expect(component.canApproveDirectaChainStep).toBeTrue();
-    });
-
-    it('is true when the coordinador is next in the approver chain', () => {
-      component.report = makeReport({
-        isDirecta: true, status: 'pending_l1',
-        directaApproverChain: [{ _id: 'u1', name: 'Juan', email: 'j@x.com' }],
-        directaApprovalLevel: 0,
-      });
-      userState.isCoordinador.and.returnValue(true);
-      expect(component.canApproveDirectaChainStep).toBeTrue();
-    });
-
-    it('confirmApproveDirectaChainStep calls the service and shows success', () => {
-      const updated = makeReport({ isDirecta: true, status: 'pending_accounting' });
-      expenseReportsService.approveDirecta.and.returnValue(of(updated));
-      component.confirmApproveDirectaChainStep();
-      expect(expenseReportsService.approveDirecta).toHaveBeenCalledWith('r1');
-      expect(notification.show).toHaveBeenCalledWith('Turno aprobado.', 'success');
-      expect(component.approvingDirecta()).toBeFalse();
-    });
-
-    it('confirmApproveDirectaChainStep shows an error on failure', () => {
-      expenseReportsService.approveDirecta.and.returnValue(throwError(() => ({ error: { message: 'no turno' } })));
-      component.confirmApproveDirectaChainStep();
-      expect(notification.show).toHaveBeenCalledWith('no turno', 'error');
-    });
-  });
-
-  describe('submitDirectaRejection', () => {
-    it('requires at least 10 characters', () => {
-      component.directaRejectionReason.set('short');
-      component.submitDirectaRejection();
-      expect(notification.show).toHaveBeenCalledWith(
-        'El motivo de rechazo debe tener al menos 10 caracteres', 'error'
-      );
-      expect(expenseReportsService.rejectDirecta).not.toHaveBeenCalled();
-    });
-
-    it('rejects with a valid reason', () => {
-      component.directaRejectionReason.set('motivo suficientemente largo');
-      expenseReportsService.rejectDirecta.and.returnValue(of(makeReport({ status: 'rejected' })));
-      component.submitDirectaRejection();
-      expect(expenseReportsService.rejectDirecta).toHaveBeenCalledWith('r1', 'motivo suficientemente largo');
-      expect(notification.show).toHaveBeenCalledWith('Rendición rechazada', 'success');
     });
   });
 

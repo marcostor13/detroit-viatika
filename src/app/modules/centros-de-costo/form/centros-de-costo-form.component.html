@@ -59,23 +59,106 @@
         </select>
       </div>
 
-      <!-- Aprobador -->
+      <!-- Niveles de aprobación -->
       <div class="flex flex-col gap-1.5">
         <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">
-          Aprobador <span class="text-tertiary/60 font-normal normal-case">(opcional)</span>
+          Niveles de aprobación <span class="text-tertiary/60 font-normal normal-case">(opcional)</span>
         </label>
-        <select
-          [(ngModel)]="form.approverId"
-          class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-        >
-          <option value="">Sin aprobador</option>
-          @for (u of approverCandidates; track u._id) {
-          <option [value]="u._id">{{ u.name }} ({{ u.email }})</option>
-          }
-        </select>
         <p class="text-xs text-tertiary">
-          Usuario que debe aprobar las solicitudes de viático imputadas a este centro de costo.
+          Define quién debe aprobar las solicitudes de viático imputadas a este centro de costo, por nivel.
+          Cada nivel puede tener varios aprobadores (cualquiera de ellos puede aprobar ese paso). Un centro de
+          costo puede omitir niveles, por ejemplo tener Nivel 2 sin tener Nivel 1.
         </p>
+
+        @if (sortedApproverLevels.length === 0 && !addingLevel) {
+          <p class="text-sm text-tertiary text-center py-4 border border-dashed border-tertiary/30 rounded-lg">
+            Sin niveles de aprobación configurados.
+          </p>
+        }
+
+        @if (sortedApproverLevels.length > 0) {
+          <div class="flex flex-col gap-3 mt-1">
+            @for (level of sortedApproverLevels; track level.level) {
+              <div class="rounded-lg border border-tertiary/20 p-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-primary uppercase tracking-wider">Nivel {{ level.level }}</span>
+                  <app-button variant="ghost" size="sm" label="" ariaLabel="Quitar nivel" (clicked)="removeLevel(level.level)">
+                    <app-icon name="trash" size="sm" />
+                  </app-button>
+                </div>
+
+                @if (level.userIds.length > 0) {
+                  <div class="flex flex-wrap gap-2 mb-2">
+                    @for (uid of level.userIds; track uid) {
+                      <span class="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs bg-primary/10 text-primary">
+                        {{ userLabel(uid) }}
+                        <button
+                          type="button"
+                          class="hover:opacity-70"
+                          aria-label="Quitar aprobador"
+                          (click)="removeApproverFromLevel(level, uid)"
+                        >
+                          <app-icon name="close" size="sm" />
+                        </button>
+                      </span>
+                    }
+                  </div>
+                }
+
+                @if (candidatesForLevel(level).length > 0) {
+                  <select
+                    class="h-[38px] w-full px-3 rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                    (change)="addApproverToLevel(level, $any($event.target).value); $any($event.target).value = ''"
+                  >
+                    <option value="">+ Agregar aprobador…</option>
+                    @for (u of candidatesForLevel(level); track u._id) {
+                      <option [value]="u._id">{{ u.name }} ({{ u.email }})</option>
+                    }
+                  </select>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        @if (addingLevel) {
+          <div class="rounded-lg border border-primary/30 bg-primary/5 p-3 mt-1">
+            <div class="flex flex-col gap-1.5 mb-3">
+              <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Número de nivel</label>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                [(ngModel)]="newLevelNumber"
+                class="h-[38px] w-24 px-3 rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+              />
+            </div>
+
+            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Aprobadores</label>
+            <div class="max-h-48 overflow-y-auto rounded-lg border border-tertiary/20 divide-y divide-tertiary/10 mt-1.5 mb-3">
+              @for (u of approverCandidates; track u._id) {
+                <label class="flex items-center gap-3 px-3 py-2 hover:bg-background cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
+                    [checked]="newLevelUserIds.includes(u._id!)"
+                    (change)="toggleNewLevelUser(u._id!, $any($event.target).checked)"
+                  />
+                  <span class="text-sm text-secondary">{{ u.name }} ({{ u.email }})</span>
+                </label>
+              } @empty {
+                <p class="text-sm text-tertiary text-center py-4">No hay usuarios disponibles.</p>
+              }
+            </div>
+
+            <div class="flex gap-2">
+              <app-button label="Agregar" variant="primary" size="sm" (clicked)="confirmAddLevel()" />
+              <app-button label="Cancelar" variant="secondary" size="sm" (clicked)="cancelAddLevel()" />
+            </div>
+          </div>
+        } @else {
+          <app-button label="+ Agregar nivel" variant="secondary" size="sm" class="self-start mt-1" (clicked)="startAddLevel()" />
+        }
       </div>
 
       <!-- Mapeo contable (asientos Contanet) -->

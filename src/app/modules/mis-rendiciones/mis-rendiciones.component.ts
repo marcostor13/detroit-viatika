@@ -352,7 +352,7 @@ export class MisRendicionesComponent implements OnInit {
     if (st === 'pending_accounting') return { label: 'En revision', cls: 'bg-yellow-100 text-yellow-700' };
     if (st === 'approved') return { label: 'Aprobado', cls: 'bg-green-100 text-green-700' };
     if (st === 'rejected') return { label: 'Rechazado', cls: 'bg-red-100 text-red-700' };
-    if (e.approvalCont?.status === 'approved') return { label: 'Revisado', cls: 'bg-teal-100 text-teal-700' };
+    if (e.contabilidadStatus === 'approved') return { label: 'Revisado', cls: 'bg-teal-100 text-teal-700' };
     return { label: 'Enviado', cls: 'bg-blue-100 text-blue-700' };
   }
 

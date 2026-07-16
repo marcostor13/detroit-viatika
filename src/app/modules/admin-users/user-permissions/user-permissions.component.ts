@@ -68,6 +68,7 @@ export class UserPermissionsComponent implements OnInit {
     canApproveL2: false,
     categoryIds: [],
     projectIds: [],
+    primaryProjectId: undefined,
   };
 
   ngOnInit(): void {
@@ -94,6 +95,7 @@ export class UserPermissionsComponent implements OnInit {
           canApproveL2: user.permissions?.canApproveL2 ?? false,
           categoryIds: user.permissions?.categoryIds ?? [],
           projectIds: user.permissions?.projectIds ?? [],
+          primaryProjectId: user.permissions?.primaryProjectId ?? undefined,
         };
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
@@ -144,7 +146,24 @@ export class UserPermissionsComponent implements OnInit {
 
   removeProject(index: number) {
     const current = this.permissions.projectIds ?? [];
+    const removedId = current[index];
     this.permissions.projectIds = current.filter((_, i) => i !== index);
+    if (removedId && this.permissions.primaryProjectId === removedId) {
+      this.permissions.primaryProjectId = undefined;
+    }
+  }
+
+  /** Principal explícito si el usuario lo marcó; si no, cae al primero de la lista. */
+  get effectivePrimaryProjectId(): string | undefined {
+    return this.permissions.primaryProjectId ?? this.permissions.projectIds?.[0];
+  }
+
+  isPrimary(id?: string): boolean {
+    return !!id && this.effectivePrimaryProjectId === id;
+  }
+
+  setPrimary(id: string) {
+    this.permissions.primaryProjectId = id;
   }
 
   moveProjectUp(index: number) {
@@ -295,8 +314,8 @@ export class UserPermissionsComponent implements OnInit {
         );
         this.saving = false;
       },
-      error: () => {
-        this.notification.show('Error al actualizar los permisos', 'error');
+      error: (err: Error) => {
+        this.notification.show(err.message || 'Error al actualizar los permisos', 'error');
         this.saving = false;
       },
     });

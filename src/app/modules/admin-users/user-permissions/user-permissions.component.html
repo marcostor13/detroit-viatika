@@ -47,9 +47,9 @@
     <app-card [hover]="false" class="mb-6">
       <h2 class="text-base font-semibold text-secondary mb-1">Centros de Costo Asignados</h2>
       <p class="text-sm text-tertiary mb-5">
-        Ordena los centros de costo del colaborador. El <strong>primero de la lista es su centro de costo principal</strong>:
-        cuando solicite un viático hacia un centro de costo que no esté en esta lista, el aprobador del principal
-        actúa como primer nivel, seguido del aprobador del centro de costo elegido.
+        Marca con la estrella el <strong>centro de costo principal</strong> del colaborador: cuando solicite un
+        viático hacia un centro de costo que no esté en esta lista, el aprobador del principal actúa como primer
+        nivel, seguido del aprobador del centro de costo elegido. Si no marcas ninguno, se usa el primero de la lista.
       </p>
 
       @if (assignedProjects.length === 0) {
@@ -60,8 +60,18 @@
         <div class="space-y-2 mb-4">
           @for (p of assignedProjects; track p._id; let i = $index) {
             <div class="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-divider">
+              <app-button
+                [variant]="isPrimary(p._id) ? 'primary' : 'ghost'"
+                size="sm"
+                label=""
+                [ariaLabel]="isPrimary(p._id) ? 'Centro de costo principal' : 'Marcar como principal'"
+                [disabled]="isPrimary(p._id)"
+                (clicked)="setPrimary(p._id!)"
+              >
+                <app-icon name="star" size="sm" />
+              </app-button>
               <span class="text-xs font-semibold text-tertiary w-16 shrink-0">
-                {{ i === 0 ? 'Principal' : 'Nivel ' + (i + 1) }}
+                {{ isPrimary(p._id) ? 'Principal' : 'Nivel ' + (i + 1) }}
               </span>
               <span class="text-sm text-secondary flex-1">{{ projectLabel(p) }}</span>
               <div class="flex items-center gap-1 shrink-0">

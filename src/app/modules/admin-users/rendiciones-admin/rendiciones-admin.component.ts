@@ -11,7 +11,7 @@ import { UserStateService } from '../../../services/user-state.service';
 import { NotificationService } from '../../../services/notification.service';
 import { AdvanceService } from '../../../services/advance.service';
 import { CategoriaService } from '../../../services/categoria.service';
-import { IExpenseReport } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
@@ -81,6 +81,8 @@ export type UnifiedRendicionItem = {
   isContabilidadGate: boolean;
   approvalLevel: number;
   requiredLevels: number;
+  /** Progreso agregado por comprobante (solo directa: ya no tiene cadena a nivel de reporte). */
+  directaProgress: { approved: number; total: number } | null;
   raw: IExpenseReport | IAdvance;
 };
 
@@ -170,6 +172,13 @@ export class RendicionesAdminComponent implements OnInit {
     return typeof entry === 'object' ? entry._id : entry;
   }
 
+  /** ¿El usuario actual está entre los `approverIds` del paso `level` de una cadena por centro de costo? */
+  private isApproverOfStep(chain: IChainStep[] | undefined, level: number): boolean {
+    const step = chain?.[level];
+    if (!step) return false;
+    return step.approverIds.some(a => (typeof a === 'object' ? a._id : a) === this.currentUserId);
+  }
+
   ngOnInit(): void {
     this.rejectForm = this.fb.group({
       rejectionReason: ['', [Validators.required, Validators.minLength(10)]],
@@ -189,13 +198,15 @@ export class RendicionesAdminComponent implements OnInit {
       advances: this.advanceService.findOrphaned(clientId),
     }).subscribe({
       next: ({ reports, advances }) => {
-        // Para Coordinador, el backend (findAllByCoordinator) ya limita las
-        // directas a las que le corresponden en su directaApproverChain — se
-        // muestran aquí para que pueda aprobarlas/rechazarlas. Para el resto de
-        // roles (Admin/Contabilidad/SuperAdmin) se siguen ocultando: ya tienen
-        // su propia vista dedicada en /rendiciones?tab=directas.
-        const isCoordinador = this.userStateService.isCoordinador();
-        this.allReports = reports.filter((r) => !r.isDirecta || isCoordinador);
+        // Para un aprobador (cualquiera de los comprobantes de la directa, no un
+        // rol específico), el backend (findAllByCoordinator) ya limita las
+        // directas a las que le corresponden — se muestran aquí para que pueda
+        // aprobarlas/rechazarlas por comprobante desde el detalle. Para el resto
+        // de roles no-aprobadores (Admin/Contabilidad/SuperAdmin sin cadena
+        // propia) se siguen ocultando: ya tienen su propia vista dedicada en
+        // /rendiciones?tab=directas.
+        const isApprover = this.userStateService.isApprover();
+        this.allReports = reports.filter((r) => !r.isDirecta || isApprover);
         this.allOrphanedAdvances = advances;
         this.applyFilters();
         this.isLoading = false;
@@ -284,23 +295,23 @@ export class RendicionesAdminComponent implements OnInit {
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
-        canApproveNow: (isViatico && (
+        // La rendición directa ya no tiene aprobación a nivel de reporte — cada
+        // comprobante tiene su propia cadena (ver rendicion-detail/gasto-detalle).
+        // Esta bandeja solo ofrece acción report-level para viático.
+        canApproveNow: isViatico && (
           (r.status === 'pending_l1' &&
-            (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+            (this.isSuperAdmin || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0))) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
-        )) || (isDirectaChain && r.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(r.directaApproverChain, r.directaApprovalLevel ?? 0) === this.currentUserId)
         ),
-        canReject: (isViatico && (
+        canReject: isViatico && (
           (r.status === 'pending_l1' &&
-            (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+            (this.isSuperAdmin || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0))) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
-        )) || (isDirectaChain && r.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(r.directaApproverChain, r.directaApprovalLevel ?? 0) === this.currentUserId)
         ),
         isContabilidadGate: r.status === 'pending_contabilidad',
-        approvalLevel: (isDirectaChain ? r.directaApprovalLevel : r.viaticoApprovalLevel) ?? 0,
-        requiredLevels: (isDirectaChain ? r.directaRequiredLevels : r.viaticoRequiredLevels) ?? 1,
+        approvalLevel: (isDirectaChain ? 0 : r.viaticoApprovalLevel) ?? 0,
+        requiredLevels: (isDirectaChain ? 1 : r.viaticoRequiredLevels) ?? 1,
+        directaProgress: isDirectaChain ? this.reportDirectaProgress(r) : null,
         raw: r,
       };
     });
@@ -337,6 +348,7 @@ export class RendicionesAdminComponent implements OnInit {
         isContabilidadGate: false,
         approvalLevel: a.approvalLevel,
         requiredLevels: a.requiredLevels,
+        directaProgress: null,
         raw: a,
       };
     });
@@ -551,14 +563,11 @@ export class RendicionesAdminComponent implements OnInit {
     const item = this.pendingApproveItem();
     if (!item) return;
     this.isActing.set(true);
-    const isDirectaChain = item.source === 'report' && (item.raw as IExpenseReport).isDirecta === true;
     const action$: Observable<unknown> = item.source === 'advance'
       ? this.advanceService.approve(item._id, {})
-      : isDirectaChain
-        ? this.expenseReportsService.approveDirecta(item._id)
-        : item.isContabilidadGate
-          ? this.expenseReportsService.approveViaticoContabilidad(item._id)
-          : this.expenseReportsService.approveViatico(item._id);
+      : item.isContabilidadGate
+        ? this.expenseReportsService.approveViaticoContabilidad(item._id)
+        : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
@@ -590,12 +599,9 @@ export class RendicionesAdminComponent implements OnInit {
     if (!item || this.rejectForm.invalid) return;
     this.isActing.set(true);
     const reason: string = this.rejectForm.value.rejectionReason;
-    const isDirectaChain = item.source === 'report' && (item.raw as IExpenseReport).isDirecta === true;
     const action$: Observable<unknown> = item.source === 'advance'
       ? this.advanceService.reject(item._id, { rejectionReason: reason })
-      : isDirectaChain
-        ? this.expenseReportsService.rejectDirecta(item._id, reason)
-        : this.expenseReportsService.rejectViatico(item._id, reason);
+      : this.expenseReportsService.rejectViatico(item._id, reason);
     action$.subscribe({
       next: () => {
         this.notifications.show('Solicitud rechazada', 'success');
@@ -680,6 +686,20 @@ export class RendicionesAdminComponent implements OnInit {
         sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
       0
     );
+  }
+
+  /**
+   * Progreso agregado de una rendición directa: cuántos de sus comprobantes ya
+   * completaron su propia cadena N1/N2/[N2 sel] + Contabilidad (status === 'approved'
+   * en Expense, que refleja computeCombinedStatus). Reemplaza el gate a nivel de
+   * reporte que ya no existe para directa.
+   */
+  private reportDirectaProgress(report: IExpenseReport): { approved: number; total: number } {
+    const expenses = (report.expenseIds ?? []).filter(
+      (exp: any) => exp && typeof exp === 'object'
+    );
+    const approved = expenses.filter((exp: any) => exp.status === 'approved').length;
+    return { approved, total: expenses.length };
   }
 
   /**

@@ -144,8 +144,8 @@
       </a>
       }
 
-      <!-- Coordinador: nav fijo -->
-      @if (isCoordinador()) {
+      <!-- Aprobador de algún centro de costo: nav fijo -->
+      @if (isApprover()) {
       <a
         [routerLink]="['/inicio']"
         routerLinkActive="bg-primary text-white"
@@ -202,7 +202,7 @@
         <span class="font-medium">Mis Rendiciones</span>
       </a>
       }
-      @if ((isColaborador() || isCoordinador()) && hasModulePermission('colaboradores')) {
+      @if ((isColaborador() || isApprover()) && hasModulePermission('colaboradores')) {
       <a
         [routerLink]="['/admin-users']"
         routerLinkActive="bg-primary text-white"
@@ -546,8 +546,8 @@
         </a>
         }
 
-        <!-- Coordinador: nav fijo -->
-        @if (isCoordinador()) {
+        <!-- Aprobador de algún centro de costo: nav fijo -->
+        @if (isApprover()) {
         <a
           [routerLink]="['/inicio']"
           (click)="toggleSidebar()"
@@ -604,7 +604,7 @@
           <span class="font-medium text-lg">Mis Rendiciones</span>
         </a>
         }
-        @if ((isColaborador() || isCoordinador()) && hasModulePermission('colaboradores')) {
+        @if ((isColaborador() || isApprover()) && hasModulePermission('colaboradores')) {
         <a
           [routerLink]="['/admin-users']"
           (click)="toggleSidebar()"

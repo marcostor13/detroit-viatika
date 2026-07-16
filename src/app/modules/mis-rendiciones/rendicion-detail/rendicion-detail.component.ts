@@ -15,12 +15,11 @@ import {
   IGeneratedFile,
   AsientoTipo,
 } from '../../../services/accounting-entries.service';
-import { IExpenseReport } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.interface';
 import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
-import { ModalComponent } from '../../../design-system/modal/modal.component';
 import {
   MobilitySheetExportData,
   RendicionExportService,
@@ -31,7 +30,6 @@ import {
   ComprobantePage,
   FacturaPageData,
 } from '../../../services/rendicion-export.service';
-import { SolicitudViaticosModalComponent } from '../solicitud-viaticos-modal/solicitud-viaticos-modal.component';
 import {
   formatFechaEmisionDdMmYyyy,
   resolveExpenseFechaEmision,
@@ -50,8 +48,6 @@ interface AsientoStep {
     CommonModule,
     FormsModule,
     ButtonComponent,
-    ModalComponent,
-    SolicitudViaticosModalComponent,
     RouterModule,
   ],
   templateUrl: './rendicion-detail.component.html',
@@ -76,7 +72,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   advances: IAdvance[] = [];
   /** Catálogo de proyectos del cliente, para resolver el proyecto por fila de las planillas (Rendiciones Directas). */
   projects: IProject[] = [];
-  showAdvanceModal = false;
 
   // Comprobantes paginados
   expensesPage = signal<{ data: any[]; total: number; page: number; limit: number; pages: number } | null>(null);
@@ -275,12 +270,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   openAdvanceModal() {
-    this.showAdvanceModal = true;
-  }
-
-  onSolicitudViaticosClosed(success: boolean): void {
-    this.showAdvanceModal = false;
-    if (success) this.loadAdvances();
+    this.router.navigate(['/mis-rendiciones/solicitud-viaticos/nueva']);
   }
 
   private updateDocCounts(report: IExpenseReport): void {
@@ -414,11 +404,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get isAdminView(): boolean {
-    // Sobre su propia rendición, cualquier rol (incl. coordinador) actúa como
+    // Sobre su propia rendición, cualquier usuario (incl. aprobador) actúa como
     // colaborador: agrega/envía sus gastos y no puede auto-aprobarse.
     if (this.isOwnReport) return false;
     return this.userStateService.isAdmin() || this.userStateService.isSuperAdmin() || this.userStateService.isContabilidad() || this.userStateService.canApproveL2()
-      || (this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones'));
+      || (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones'));
   }
 
   // --- Descarga de asientos contables (solo Contabilidad) ---
@@ -582,7 +572,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get canApproveExpenses(): boolean {
     if (this.userStateService.isContabilidad()) return false;
-    if (this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones')) return true;
+    if (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones')) return true;
     return this.userStateService.canApproveL1();
   }
 
@@ -782,76 +772,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Rendición directa: aprobador de centro de costo al que le toca el turno
-   * actual de la cadena (`directaApproverChain[directaApprovalLevel]`), o
-   * Superadmin. Solo aplica en `pending_l1`; al completar la cadena pasa a
-   * `pending_accounting` y actúa Contabilidad (`canContabilidadApprove`).
+   * @removed canApproveDirectaChainStep/confirmApproveDirectaChainStep/
+   * openDirectaRejectModal/submitDirectaRejection — la rendición directa ya
+   * no tiene una cadena de aprobación a nivel de reporte (nunca llega a
+   * `pending_l1`); cada comprobante se aprueba/rechaza individualmente, ver
+   * confirmApproveExpense/rejectExpense más abajo.
    */
-  get canApproveDirectaChainStep(): boolean {
-    if (!this.report?.isDirecta || this.report.status !== 'pending_l1') return false;
-    if (this.userStateService.isSuperAdmin()) return true;
-    // La autoridad para aprobar una directa es POR ASIGNACIÓN (el jefe inmediato de
-    // la cadena), igual que valida el backend (canActOnChain: expected === actorId).
-    // No se exige el rol Coordinador: el aprobador asignado puede tener otro rol y
-    // aun así debe ver el botón. VD-36.
-    const chain = this.report.directaApproverChain ?? [];
-    const expected = chain[this.report.directaApprovalLevel ?? 0];
-    const expectedId = expected && typeof expected === 'object' ? (expected as any)._id : expected;
-    const currentUserId = this.userStateService.getUser()?._id;
-    return !!expectedId && !!currentUserId && String(expectedId) === String(currentUserId);
-  }
-
-  approvingDirecta = signal(false);
-
-  confirmApproveDirectaChainStep(): void {
-    this.approvingDirecta.set(true);
-    this.expenseReportsService.approveDirecta(this.id).subscribe({
-      next: (res) => {
-        this.report = res;
-        this.calculateTotals();
-        this.approvingDirecta.set(false);
-        this.notificationService.show('Turno aprobado.', 'success');
-      },
-      error: (err) => {
-        this.approvingDirecta.set(false);
-        const raw = err?.error?.message;
-        const msg = Array.isArray(raw) ? raw.join(', ') : raw;
-        this.notificationService.show(msg || 'Error al aprobar', 'error');
-      },
-    });
-  }
-
-  showDirectaRejectModal = signal(false);
-  directaRejectionReason = signal('');
-  isRejectingDirecta = signal(false);
-
-  openDirectaRejectModal(): void {
-    this.directaRejectionReason.set('');
-    this.showDirectaRejectModal.set(true);
-  }
-
-  submitDirectaRejection(): void {
-    const reason = this.directaRejectionReason().trim();
-    if (reason.length < 10) {
-      this.notificationService.show('El motivo de rechazo debe tener al menos 10 caracteres', 'error');
-      return;
-    }
-    this.isRejectingDirecta.set(true);
-    this.expenseReportsService.rejectDirecta(this.id, reason).subscribe({
-      next: (res) => {
-        this.report = res;
-        this.showDirectaRejectModal.set(false);
-        this.isRejectingDirecta.set(false);
-        this.notificationService.show('Rendición rechazada', 'success');
-      },
-      error: (err) => {
-        this.isRejectingDirecta.set(false);
-        const raw = err?.error?.message;
-        const msg = Array.isArray(raw) ? raw.join(', ') : raw;
-        this.notificationService.show(msg || 'Error al rechazar', 'error');
-      },
-    });
-  }
 
   confirmApproveExpense(expenseId: string): void {
     this.confirmationService.show(
@@ -1347,9 +1273,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.collaboratorCanEdit;
   }
 
-  /** Coordinador (con permiso rendiciones) o Contabilidad pueden editar/eliminar cualquier comprobante pendiente. */
+  /** Un aprobador (con permiso rendiciones) o Contabilidad pueden editar/eliminar cualquier comprobante pendiente. */
   get canMutateAsAdmin(): boolean {
-    return (this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones'))
+    return (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones'))
       || this.userStateService.isContabilidad();
   }
 
@@ -2836,21 +2762,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   // ─── Editar / Cancelar / Eliminar solicitud de viáticos pendiente ────────────
 
-  editingAdvance = signal<IAdvance | null>(null);
-  showEditAdvanceModal = signal(false);
   showCancelAdvanceModal = signal(false);
   cancellingAdvanceId = signal<string | null>(null);
   isCancellingAdvance = signal(false);
 
   openEditAdvanceModal(adv: IAdvance): void {
-    this.editingAdvance.set(adv);
-    this.showEditAdvanceModal.set(true);
-  }
-
-  onEditAdvanceClosed(success: boolean): void {
-    this.editingAdvance.set(null);
-    this.showEditAdvanceModal.set(false);
-    if (success) this.loadAdvances();
+    this.router.navigate(['/mis-rendiciones/solicitud-viaticos', adv._id, 'editar']);
   }
 
   openCancelAdvanceModal(adv: IAdvance): void {
@@ -3050,15 +2967,36 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.notificationService.show('Declaración jurada descargada', 'success');
   }
 
-  // ─── Aprobación dual de comprobantes ─────────────────────────────────────────
+  // ─── Aprobación por documento (cadena de centro de costo + Contabilidad) ─────
 
-  get canApproveExpenseAsCoord(): boolean {
-    return this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones')
-      || this.userStateService.isAdmin() || this.userStateService.isSuperAdmin();
+  private get currentUserId(): string {
+    return (this.userStateService.getUser() as any)?._id ?? '';
+  }
+
+  /** Nivel (0-based) actualmente pendiente de la cadena del comprobante. */
+  private currentChainStep(expense: any): IChainStep | undefined {
+    const chain: IChainStep[] = expense?.approverChain ?? [];
+    const level = expense?.approvalLevel ?? 0;
+    return chain[level];
+  }
+
+  /** ¿El usuario actual está entre los `approverIds` del paso pendiente, o es Superadmin? */
+  canApproveExpenseAsCoord(expense: any): boolean {
+    if (this.userStateService.isSuperAdmin()) return true;
+    const step = this.currentChainStep(expense);
+    if (!step) return false;
+    return step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId);
   }
 
   get canApproveExpenseAsCont(): boolean {
     return this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
+  }
+
+  /** Visibilidad del botón de aprobación en lote: al menos un comprobante listado le corresponde. */
+  get canBatchApproveAsCoord(): boolean {
+    if (this.userStateService.isSuperAdmin()) return true;
+    const expenses = this.expensesPage()?.data ?? [];
+    return expenses.some((e: any) => this.canApproveExpenseAsCoord(e));
   }
 
   get canReopen(): boolean {
@@ -3068,8 +3006,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get batchApproveCount(): number {
     const expenses = this.expensesPage()?.data ?? [];
     return expenses.filter((e: any) => {
-      const contStatus = e.approvalCont?.status ?? 'pending';
-      const coordStatus = e.approvalCoord?.status ?? 'pending';
+      const contStatus = e.contabilidadStatus ?? 'pending';
+      const coordStatus = this.getExpenseApprovalCoord(e).status;
       return contStatus === 'approved' && coordStatus !== 'approved';
     }).length;
   }
@@ -3077,17 +3015,75 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get collaboratorBatchCount(): number {
     const expenses = this.expensesPage()?.data ?? [];
     return expenses.filter((e: any) => {
-      const contStatus = e.approvalCont?.status ?? 'pending';
+      const contStatus = e.contabilidadStatus ?? 'pending';
       return contStatus === 'approved' && e.status !== 'approved';
     }).length;
   }
 
-  getExpenseApprovalCoord(expense: any): { status: string; userName?: string } {
-    return expense.approvalCoord ?? { status: 'pending' };
+  /**
+   * Estado de la cadena de centro de costo del comprobante, combinando
+   * `approvalLevel`/`requiredLevels` (avance) con el `status` general
+   * (para distinguir un rechazo en la cadena de un rechazo de Contabilidad).
+   */
+  getExpenseApprovalCoord(expense: any): {
+    status: 'pending' | 'approved' | 'rejected';
+    level: number;
+    requiredLevels: number;
+    pendingApproverNames: string;
+    escalated: boolean;
+  } {
+    const chain: IChainStep[] = expense?.approverChain ?? [];
+    const requiredLevels = expense?.requiredLevels ?? chain.length;
+    const approvalLevel = expense?.approvalLevel ?? 0;
+    const contStatus = expense?.contabilidadStatus ?? 'pending';
+    let status: 'pending' | 'approved' | 'rejected' = approvalLevel >= requiredLevels ? 'approved' : 'pending';
+    if (status === 'pending' && expense?.status === 'rejected' && contStatus !== 'rejected') status = 'rejected';
+    const step = chain[approvalLevel];
+    return {
+      status,
+      level: step?.level ?? approvalLevel + 1,
+      requiredLevels,
+      pendingApproverNames: this.chainStepApproverNames(step),
+      escalated: step?.escalatedFrom != null,
+    };
   }
 
-  getExpenseApprovalCont(expense: any): { status: string; userName?: string } {
-    return expense.approvalCont ?? { status: 'pending' };
+  getExpenseApprovalCont(expense: any): { status: 'pending' | 'approved' | 'rejected' } {
+    return { status: expense?.contabilidadStatus ?? 'pending' };
+  }
+
+  private chainStepApproverNames(step: IChainStep | undefined): string {
+    if (!step || !step.approverIds?.length) return '—';
+    return step.approverIds
+      .map((a: any) => (typeof a === 'object' ? (a.name ?? a._id) : a))
+      .join(' / ');
+  }
+
+  /** Cadena completa del comprobante para la visualización de niveles (N1/N2/…). */
+  getExpenseChainSteps(expense: any): Array<{
+    level: number;
+    state: 'completado' | 'pendiente' | 'futuro';
+    approverNames: string;
+    escalatedFrom?: number;
+    approvedBy?: string;
+    date?: string;
+  }> {
+    const chain: IChainStep[] = expense?.approverChain ?? [];
+    const approvalLevel = expense?.approvalLevel ?? 0;
+    const history: Array<{ level: number; approvedBy: string; action: string; date: string }> = expense?.approvalHistory ?? [];
+    return chain.map((step, idx) => {
+      const state: 'completado' | 'pendiente' | 'futuro' =
+        idx < approvalLevel ? 'completado' : idx === approvalLevel ? 'pendiente' : 'futuro';
+      const entry = history.find(h => h.level === step.level);
+      return {
+        level: step.level,
+        state,
+        approverNames: this.chainStepApproverNames(step),
+        escalatedFrom: step.escalatedFrom,
+        approvedBy: entry?.approvedBy,
+        date: entry?.date,
+      };
+    });
   }
 
   approveExpenseByRole(expenseId: string, role: 'coord' | 'cont'): void {

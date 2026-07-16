@@ -204,6 +204,11 @@
             <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold uppercase" [class]="item.statusColor">
               {{ item.statusLabel }}
             </span>
+            @if (item.directaProgress && item.directaProgress.total > 0) {
+              <div class="text-xs text-tertiary mt-1" [title]="item.directaProgress.approved + ' de ' + item.directaProgress.total + ' comprobantes con su cadena completa'">
+                {{ item.directaProgress.approved }}/{{ item.directaProgress.total }} comprobantes
+              </div>
+            }
           </td>
 
           <!-- Acciones — el ojo (Ver detalle) va primero y los iconos condicionales
@@ -316,9 +321,14 @@
                 </div>
                 <p class="text-xs text-tertiary mt-0.5 truncate">{{ item.projectName }}</p>
               </div>
-              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="item.statusColor">
-                {{ item.statusLabel }}
-              </span>
+              <div class="flex flex-col items-end gap-0.5">
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="item.statusColor">
+                  {{ item.statusLabel }}
+                </span>
+                @if (item.directaProgress && item.directaProgress.total > 0) {
+                  <span class="text-[10px] text-tertiary whitespace-nowrap">{{ item.directaProgress.approved }}/{{ item.directaProgress.total }} comprobantes</span>
+                }
+              </div>
             </div>
           </div>
         </div>
