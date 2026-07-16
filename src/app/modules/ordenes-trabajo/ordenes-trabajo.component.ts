@@ -4,10 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { OrdenTrabajoService } from '../../services/orden-trabajo.service';
+import { InvoicesService } from '../invoices/services/invoices.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmationService } from '../../services/confirmation.service';
-import { IOrdenTrabajo, OT_DEPARTAMENTOS, otDepartamentoLabel } from '../../interfaces/orden-trabajo.interface';
+import { UserStateService } from '../../services/user-state.service';
+import { IOrdenTrabajo } from '../../interfaces/orden-trabajo.interface';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
+import { IProject } from '../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { BadgeComponent } from '../../design-system/badge/badge.component';
@@ -34,22 +37,33 @@ import { PaginatorComponent } from '../../design-system/paginator/paginator.comp
 })
 export class OrdenesTrabajoComponent implements OnInit {
   private ordenTrabajoService = inject(OrdenTrabajoService);
+  private invoicesService = inject(InvoicesService);
   private notificationService = inject(NotificationService);
   private confirmationService = inject(ConfirmationService);
+  private userStateService = inject(UserStateService);
   private router = inject(Router);
 
-  readonly departamentos = OT_DEPARTAMENTOS;
-  readonly departamentoLabel = otDepartamentoLabel;
+  projects = signal<IProject[]>([]);
 
   result = signal<IPaginatedResult<IOrdenTrabajo>>({ data: [], total: 0, page: 1, pages: 0, limit: 20 });
   loading = signal(false);
   page = signal(1);
   limit = signal(20);
   search = signal('');
-  filterDepartamento = signal('');
+  filterCostCenterId = signal('');
 
   ngOnInit() {
+    this.loadProjects();
     this.load();
+  }
+
+  private loadProjects() {
+    const companyId = this.userStateService.getUser()?.companyId;
+    if (!companyId) return;
+    this.invoicesService.getProjects(companyId).subscribe({
+      next: (list) => this.projects.set((list || []).filter((p) => p.isActive !== false)),
+      error: () => this.projects.set([]),
+    });
   }
 
   load() {
@@ -59,7 +73,7 @@ export class OrdenesTrabajoComponent implements OnInit {
         page: this.page(),
         limit: this.limit(),
         search: this.search() || undefined,
-        departamento: this.filterDepartamento() || undefined,
+        costCenterId: this.filterCostCenterId() || undefined,
       })
       .subscribe({
         next: (res) => {
@@ -73,14 +87,20 @@ export class OrdenesTrabajoComponent implements OnInit {
       });
   }
 
+  costCenterLabel(row: IOrdenTrabajo): string {
+    const cc = row.costCenterId;
+    if (!cc || typeof cc === 'string') return '—';
+    return cc.code ? `${cc.code} — ${cc.name}` : cc.name;
+  }
+
   onSearch(value: string) {
     this.search.set(value);
     this.page.set(1);
     this.load();
   }
 
-  onFilterDepartamento(value: string) {
-    this.filterDepartamento.set(value);
+  onFilterCostCenter(value: string) {
+    this.filterCostCenterId.set(value);
     this.page.set(1);
     this.load();
   }
@@ -103,7 +123,7 @@ export class OrdenesTrabajoComponent implements OnInit {
   delete(orden: IOrdenTrabajo) {
     this.confirmationService.confirm({
       title: 'Eliminar Orden de Trabajo',
-      message: `¿Eliminar "${orden.codigo}"? El correlativo no se reutilizará.`,
+      message: `¿Eliminar "${orden.nombre}"?`,
       accept: () => {
         this.ordenTrabajoService.delete(orden._id!).subscribe({
           next: () => {

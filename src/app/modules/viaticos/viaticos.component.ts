@@ -28,8 +28,6 @@ type UnifiedSolicitudItem = {
   projectLabel: string;
   dateRange: string;
   amount: number;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -161,8 +159,6 @@ export class ViaticosComponent implements OnInit {
         projectLabel: this.advProjectLabel(a),
         dateRange: this.advDateRange(a),
         amount: a.amount,
-        pendingBalanceAmount: (a as any).pendingBalanceAmount,
-        additionalAmount: (a as any).additionalAmount,
         status: a.status,
         statusLabel: this.ADV_LABELS[a.status] ?? a.status,
         statusColor: this.ADV_COLORS[a.status] ?? 'bg-gray-100 text-gray-600',

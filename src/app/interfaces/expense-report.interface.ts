@@ -19,11 +19,6 @@ export interface ICreateViaticoPayload {
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
   observations?: string;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
-  /** Saldos de la bolsa seleccionados (mismo centro de costo) que financian esta solicitud. */
-  saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -41,8 +36,6 @@ export interface IResubmitViaticoPayload {
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
   observations?: string;
-  /** Saldos de la bolsa re-seleccionados al corregir (si el viático no tiene ya uno). */
-  saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -164,8 +157,8 @@ export interface IExpenseReport {
   viaticoBankName?: string;
   viaticoAccountNumber?: string;
   viaticoCci?: string;
-  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, codigo, departamento, descripcion}). */
-  viaticoOrdenTrabajoId?: { _id: string; codigo: string; departamento: string; descripcion?: string } | string;
+  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, nombre, costCenterId}). */
+  viaticoOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string; isActive?: boolean } | string;
   /** Motivo indicado por el administrador al rechazar */
   rejectionReason?: string;
   /** Quién rechazó: coordinador (revisión inicial) o contabilidad (aprobación final). */
@@ -218,12 +211,6 @@ export interface IExpenseReport {
    */
   createdByOther?: boolean;
   /**
-   * Derivado en backend: la rendición directa se creó con saldo heredado de otra
-   * rendición. Si es true, el dueño no puede eliminarla (rompería la cadena del
-   * saldo); solo Contabilidad.
-   */
-  inheritedBalance?: boolean;
-  /**
    * Derivado en backend: la caja chica ya fue incluida (jalada) por Contabilidad
    * en un reporte (borrador o finalizado). Si es true, el colaborador ya no puede
    * eliminarla; solo Contabilidad.
@@ -250,16 +237,6 @@ export interface IExpenseReport {
   lockedByCajaChica?: boolean;
   /** Depósito inicial cuando la rendición directa fue iniciada por Contabilidad. */
   directaDeposit?: IDirectaDepositInfo;
-  /** Saldos de la bolsa (poblados) que financiaron esta rendición directa. */
-  saldoIds?: IReportFinancingSaldo[];
-  /** ID de la rendición directa de la que proviene el saldo heredado. */
-  pendingBalanceFromReportId?: string;
-  /** Código (RD-XXXX) de la rendición de origen del saldo heredado (derivado en backend). */
-  pendingBalanceFromCodigo?: string;
-  /** Monto heredado desde la rendición directa de origen. */
-  pendingBalanceAmount?: number;
-  /** ID de la rendición directa que consumió el saldo de esta. */
-  pendingBalanceUsedInRendicionId?: string;
 }
 
 export interface IDirectaDepositInfo {
@@ -278,17 +255,6 @@ export interface IDirectaDepositInfo {
   createdAt?: string;
 }
 
-/** Saldo de la bolsa (poblado) que financió una rendición directa. */
-export interface IReportFinancingSaldo {
-  _id: string;
-  type: 'pago' | 'rendicion_directa' | 'rendicion';
-  amount: number;
-  concepto?: string;
-  deposit?: { operationNumber?: string; titular?: string; operationDate?: string };
-  sourceReportId?: { _id: string; codigo?: string; title?: string; gestion?: string } | string | null;
-  createdAt?: string;
-}
-
 export interface ICreateExpenseReport {
   title?: string;
   description?: string;
@@ -300,10 +266,6 @@ export interface ICreateExpenseReport {
   gestion?: string;
   isDirecta?: boolean;
   isCajaChica?: boolean;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  /** Saldos de la bolsa seleccionados para financiar esta rendición directa. */
-  saldoIds?: string[];
   // New fields
   accountNumber?: string;
   idDocument?: string;

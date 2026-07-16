@@ -6,7 +6,6 @@ import { catchError } from 'rxjs/operators';
 import { UserStateService } from '../../services/user-state.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { AdvanceService } from '../../services/advance.service';
-import { SaldoService } from '../../services/saldo.service';
 import { NotificationService } from '../../services/notification.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
@@ -40,7 +39,6 @@ export class InicioComponent implements OnInit {
   private expenseReportsService = inject(ExpenseReportsService);
   private advanceService = inject(AdvanceService);
   private notifications = inject(NotificationService);
-  saldoService = inject(SaldoService);
   private router = inject(Router);
 
   isLoading = signal(true);
@@ -191,20 +189,17 @@ export class InicioComponent implements OnInit {
 
   /**
    * Una rendición de viáticos cuenta como CERRADA cuando llegó a un estado final
-   * (cerrada / reembolsada / liquidada / saldo devuelto) O cuando su saldo pendiente
-   * ya fue resuelto: reutilizado/trasladado a otra solicitud o devuelto con
-   * comprobante. Mismo criterio que `isReportEffectivelyClosed` de mis-rendiciones.
+   * (cerrada / reembolsada / liquidada / saldo devuelto) o tiene comprobante de
+   * devolución. Mismo criterio que `isReportEffectivelyClosed` de mis-rendiciones.
    */
   private isViaticoCerrado(r: IExpenseReport): boolean {
     return this.VIATICO_CLOSED_STATUSES.includes(r.status)
-      || !!(r as any).pendingBalanceUsedInRendicionId
-      || !!(r as any).pendingBalanceUsedInAdvanceId
       || !!(r as any).returnVoucher;
   }
 
   /**
    * VIÁTICOS — Rendiciones CERRADAS. Misma partición que misRendicionesViaticosRows
-   * pero con las rendiciones ya finalizadas (incluye saldo reutilizado en otra solicitud).
+   * pero con las rendiciones ya finalizadas.
    */
   misRendicionesViaticosCerradasRows = computed<DashRow[]>(() => {
     const fromViatico = this.viaticoReports()
@@ -287,7 +282,6 @@ export class InicioComponent implements OnInit {
 
   // ─── Carga ────────────────────────────────────────────────────────
   ngOnInit() {
-    this.saldoService.refreshTotal();
     // Trae los permisos vigentes del servidor (los de localStorage pueden estar
     // desactualizados si se cambiaron en otra sesión) para gatear bien las tarjetas.
     this.userState.refreshPermissions().subscribe();

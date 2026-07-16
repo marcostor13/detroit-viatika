@@ -361,7 +361,7 @@ export class MisRendicionesComponent implements OnInit {
     if (st === 'pending_accounting') return { label: 'En revision', cls: 'bg-yellow-100 text-yellow-700' };
     if (st === 'approved') return { label: 'Aprobado', cls: 'bg-green-100 text-green-700' };
     if (st === 'rejected') return { label: 'Rechazado', cls: 'bg-red-100 text-red-700' };
-    if (e.approvalCont?.status === 'approved') return { label: 'Revisado', cls: 'bg-teal-100 text-teal-700' };
+    if (e.contabilidadStatus === 'approved') return { label: 'Revisado', cls: 'bg-teal-100 text-teal-700' };
     return { label: 'Enviado', cls: 'bg-blue-100 text-blue-700' };
   }
 
@@ -572,15 +572,10 @@ export class MisRendicionesComponent implements OnInit {
   }
 
   hasReportSaldo(report: IExpenseReport): boolean {
-    return !!(report.directaDeposit)
-      || !!(report.pendingBalanceFromReportId && (report.pendingBalanceAmount ?? 0) > 0)
-      || !!(report.saldoIds && report.saldoIds.length > 0);
+    return !!(report.directaDeposit);
   }
 
   getReportSaldo(report: IExpenseReport): number {
-    if (report.pendingBalanceFromReportId && (report.pendingBalanceAmount ?? 0) > 0) {
-      return (report.pendingBalanceAmount ?? 0) - this.getTotalGastado(report);
-    }
     return this.getSaldoLibre(report);
   }
 
@@ -697,13 +692,6 @@ export class MisRendicionesComponent implements OnInit {
     // eliminar (solo Contabilidad).
     if (report.isDirecta && report.createdByOther) return false;
 
-    // Rendición directa con saldo heredado de otra: el dueño puede eliminarla
-    // MIENTRAS no haya subido ningún gasto (el borrado devuelve el saldo a la
-    // bolsa y libera la rendición de origen). Con gastos ya cargados, solo
-    // Contabilidad. Espeja la validación del backend (remove).
-    if (report.isDirecta && report.inheritedBalance && (report.expenseIds?.length ?? 0) > 0)
-      return false;
-
     // Caja chica ya jalada por Contabilidad (borrador o finalizado): no la puede
     // eliminar (solo Contabilidad).
     if (report.isCajaChica && (report.referencedByCajaChica || report.lockedByCajaChica))
@@ -716,9 +704,6 @@ export class MisRendicionesComponent implements OnInit {
 
     // Viático unificado con pago ya desembolsado (estado "Registrando gastos"): el
     // pago consta en viaticoPaidAmount, no en un Advance, pero igualmente bloquea.
-    // OJO: un viático aún pendiente de aprobación puede tener viaticoPaidAmount > 0
-    // solo porque la bolsa de saldos lo prefinanció; ese caso SÍ es eliminable (al
-    // borrarlo se devuelve el saldo), así que no lo bloqueamos.
     const viaticoPendienteAprobacion = ['pending_l1', 'pending_l2'].includes(report.status);
     if (
       (report as any).type === 'viatico' &&
@@ -854,14 +839,12 @@ export class MisRendicionesComponent implements OnInit {
   // ─── Helpers for legacy rendiciones in unified list ───────────────────────
 
   /**
-   * Una rendición se considera cerrada (a efectos del label) cuando su saldo
-   * pendiente ya fue resuelto: trasladado a otra solicitud o devuelto con
-   * comprobante. Mismo criterio que el detalle (`isEffectivelyClosed`).
+   * Una rendición se considera cerrada (a efectos del label) cuando llegó a un
+   * estado final o fue devuelta con comprobante. Mismo criterio que el detalle
+   * (`isEffectivelyClosed`).
    */
   isReportEffectivelyClosed(report: IExpenseReport): boolean {
     return report.status === 'closed'
-      || !!(report as any).pendingBalanceUsedInRendicionId
-      || !!(report as any).pendingBalanceUsedInAdvanceId
       || !!(report as any).returnVoucher;
   }
 

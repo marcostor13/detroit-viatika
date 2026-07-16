@@ -7,7 +7,7 @@ import { UserStateService } from './user-state.service';
 
 @Injectable({ providedIn: 'root' })
 export class CategoryGroupService {
-  private readonly baseUrl = `${environment.api}/category-group`;
+  private readonly baseUrl = `${environment.api}/category-profile`;
   private readonly http = inject(HttpClient);
   private readonly userState = inject(UserStateService);
 

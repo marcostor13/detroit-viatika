@@ -403,8 +403,7 @@ export class GastoDetalleComponent implements OnInit {
   }
 
   getApprovalContStatus(exp: Record<string, unknown>): string {
-    const a = exp['approvalCont'] as any;
-    return a?.status ?? 'pending';
+    return (exp['contabilidadStatus'] as string | undefined) ?? 'pending';
   }
 
   canEdit(exp: Record<string, unknown>): boolean {

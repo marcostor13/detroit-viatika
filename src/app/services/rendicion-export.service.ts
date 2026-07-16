@@ -84,8 +84,6 @@ export interface RendicionExportData {
    * columna "Proyecto" en la tabla de comprobantes.
    */
   isDirecta?: boolean;
-  /** Saldos de la bolsa (pagos de contabilidad / remanentes) que financiaron la rendición directa. */
-  financiamientoSaldos?: { tipo: string; detalle: string; monto: number; fecha?: string }[];
 }
 
 export interface AffidavitExportRow {
@@ -432,23 +430,6 @@ export class RendicionExportService {
       sumIngresos += a.monto;
     });
 
-    // Saldos de la bolsa que financian la rendición directa, como "Ingresos"
-    (data.financiamientoSaldos || []).forEach(s => {
-      addDataRow([
-        itemIndex++,
-        s.fecha || '',
-        '',
-        '',
-        'Saldo',
-        `${s.tipo}${s.detalle ? ' · ' + s.detalle : ''}`,
-        ...(showProyecto ? [''] : []),
-        '',
-        s.monto,
-        ''
-      ]);
-      sumIngresos += s.monto;
-    });
-
     // Expenses as "Gastos"
     data.comprobantes.forEach(exp => {
       addDataRow([
@@ -672,22 +653,6 @@ export class RendicionExportService {
         ''
       ]);
       sumIngresos += a.monto;
-    });
-
-    (data.financiamientoSaldos || []).forEach(s => {
-      bodyData.push([
-        itemIndex++,
-        s.fecha || '',
-        '',
-        '',
-        'Saldo',
-        `${s.tipo}${s.detalle ? ' · ' + s.detalle : ''}`,
-        ...(showProyecto ? [''] : []),
-        '',
-        s.monto.toFixed(2),
-        ''
-      ]);
-      sumIngresos += s.monto;
     });
 
     data.comprobantes.forEach(exp => {

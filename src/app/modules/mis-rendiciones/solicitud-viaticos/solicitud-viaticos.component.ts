@@ -17,10 +17,8 @@ import { ExpenseReportsService } from '../../../services/expense-reports.service
 import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
-import { SaldoService } from '../../../services/saldo.service';
-import { ISaldo } from '../../../interfaces/saldo.interface';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo, otDepartamentoLabel } from '../../../interfaces/orden-trabajo.interface';
+import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 import {
   PlacesAutocompleteDirective,
   PlaceResult,
@@ -53,84 +51,30 @@ export class SolicitudViaticosComponent implements OnInit {
   private notifications = inject(NotificationService);
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
-  private saldoService = inject(SaldoService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
 
-  readonly departamentoLabel = otDepartamentoLabel;
   ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
 
   submitting = signal(false);
   useCustomBank = signal(false);
 
-  // Saldos de viáticos del mismo centro de costo (bolsa).
-  saldos = signal<ISaldo[]>([]);
-  loadingSaldos = signal<boolean>(false);
-  selectedSaldoIds = signal<Set<string>>(new Set());
-
-  selectedSaldoTotal = computed(() =>
-    this.saldos()
-      .filter(s => this.selectedSaldoIds().has(s._id))
-      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
-  );
-
-  /** Monto del saldo realmente aplicado al viático (nunca más que el total). */
-  saldoUsed(): number {
-    return Math.min(this.selectedSaldoTotal(), this.totalGeneral());
-  }
-
-  /** Sobrante del saldo que volverá a la bolsa (cuando el saldo cubre todo el viático). */
-  saldoExcess(): number {
-    return Math.round(Math.max(0, this.selectedSaldoTotal() - this.totalGeneral()) * 100) / 100;
-  }
-
-  /** Diferencia que deposita contabilidad (cuando el total del viático supera el saldo). */
-  contabilidadDeposita(): number {
-    return Math.round(Math.max(0, this.totalGeneral() - this.selectedSaldoTotal()) * 100) / 100;
-  }
-
-  // El saldo heredado de otra rendición (pendingBalance) prefinancia el viático igual
-  // que un saldo de la bolsa: cubre el monto requerido, contabilidad deposita solo
-  // la diferencia y, si el saldo supera el costo, el sobrante vuelve a la bolsa.
-
-  /** Monto del saldo heredado realmente aplicado (nunca más que el monto requerido). */
-  pendingUsed(): number {
-    return Math.round(Math.min(this.pendingBalanceAmount(), this.totalGeneral()) * 100) / 100;
-  }
-
-  /** Sobrante del saldo heredado que volverá a la bolsa (cuando cubre todo el costo). */
-  pendingExcess(): number {
-    return Math.round(Math.max(0, this.pendingBalanceAmount() - this.totalGeneral()) * 100) / 100;
-  }
-
-  /** Diferencia que deposita contabilidad (cuando el costo supera el saldo heredado). */
-  pendingDeposita(): number {
-    return Math.round(Math.max(0, this.totalGeneral() - this.pendingBalanceAmount()) * 100) / 100;
-  }
-
-  /** Solo se ofrece la bolsa de saldos en solicitudes nuevas (no reenvío ni saldo heredado por query). */
-  get canUseSaldoBag(): boolean {
-    if (this.hasPendingBalance) return false;
-    if (!this.isResubmit) return true;
-    // En corrección solo se permite re-seleccionar saldo si el viático no tiene ya
-    // uno aplicado (caso típico: fue rechazado y su saldo se devolvió a la bolsa).
-    const v = this.viaticoToResubmit();
-    return !!v && !(Array.isArray(v.saldoIds) && v.saldoIds.length > 0);
-  }
   loading = signal(false);
   projects = signal<IProject[]>([]);
   /** ID del centro de costo elegido; espeja el control `projectId`. */
   selectedProjectId = signal<string>('');
+
+  /** OTs a mostrar en el desplegable: solo las del centro de costo elegido. */
+  filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
+    const pid = this.selectedProjectId();
+    if (!pid) return [];
+    return this.ordenesTrabajo().filter((ot) => this.otCostCenterId(ot) === pid);
+  });
   advanceToResubmit = signal<IAdvance | null>(null);
   /** Viático unificado (ExpenseReport) en edición/reenvío. */
   viaticoToResubmit = signal<IExpenseReport | null>(null);
 
   private selectedLat: number | undefined;
   private selectedLng: number | undefined;
-
-  /** ID de la rendición de origen cuando se traslada saldo pendiente. */
-  pendingBalanceFromReportId = signal<string | null>(null);
-  /** Monto del saldo pendiente trasladado desde la rendición de origen. */
-  pendingBalanceAmount = signal<number>(0);
 
   form = this.fb.group({
     place: ['', Validators.required],
@@ -158,118 +102,49 @@ export class SolicitudViaticosComponent implements OnInit {
     return `${y}-${m}-${day}`;
   }
 
-  get hasPendingBalance(): boolean {
-    return !!this.pendingBalanceFromReportId() && this.pendingBalanceAmount() > 0;
-  }
-
   get pageTitle(): string {
     const adv = this.advanceToResubmit();
     if (adv) return `Corregir solicitud · v${adv.solicitudVersion ?? 1}`;
-    return this.hasPendingBalance
-      ? 'Nueva solicitud de viáticos (con saldo pendiente)'
-      : 'Nueva solicitud de viáticos';
+    return 'Nueva solicitud de viáticos';
   }
 
-  /** Monto requerido ingresado por el colaborador (monto adicional, sin saldo heredado). */
+  /** Monto requerido ingresado por el colaborador. */
   totalGeneral(): number {
     const n = Number(this.form.value.amount);
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
   }
 
-  /** Total del anticipo = saldo pendiente + monto requerido. */
-  totalAnticipo(): number {
-    return Math.round((this.pendingBalanceAmount() + this.totalGeneral()) * 100) / 100;
-  }
-
   ngOnInit(): void {
-    // Espeja el centro de costo elegido para alimentar la carga de saldos elegibles.
-    // (En restauración se actualiza el signal sin emitir evento.)
     this.form.get('projectId')?.valueChanges.subscribe((pid) => {
       this.selectedProjectId.set(pid ?? '');
-      this.loadEligibleSaldos(pid ?? '');
+      // Si la OT elegida no pertenece al nuevo centro de costo, se limpia.
+      this.clearOtIfNotInCostCenter(pid ?? '');
     });
 
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.loadForResubmit(id);
     } else {
-      const qp = this.route.snapshot.queryParamMap;
-      const fromReport = qp.get('pendingBalanceFromReportId');
-      const amount = parseFloat(qp.get('pendingBalanceAmount') ?? '0');
-      if (fromReport && amount > 0) {
-        this.pendingBalanceFromReportId.set(fromReport);
-        this.pendingBalanceAmount.set(amount);
-        // El saldo heredado pertenece al centro de costo de la rendición de origen:
-        // se fija automáticamente y se bloquea (no puede trasladarse a otro).
-        this.lockProjectFromSourceReport(fromReport);
-      }
       this.loadCatalogues();
     }
   }
 
-  /**
-   * Fija y bloquea el centro de costo a partir de la rendición que origina el saldo
-   * heredado: ese saldo solo puede usarse en su mismo centro de costo, no en otro.
-   */
-  private lockProjectFromSourceReport(reportId: string): void {
-    this.expenseReportsService.findOne(reportId).subscribe({
-      next: (report) => {
-        const raw = report?.projectId as unknown;
-        const pid =
-          raw && typeof raw === 'object'
-            ? String((raw as { _id?: string })._id ?? '')
-            : String(raw ?? '');
-        if (!pid) return;
-        const ctrl = this.form.get('projectId');
-        ctrl?.setValue(pid);
-        this.selectedProjectId.set(pid);
-        ctrl?.disable({ emitEvent: false });
-      },
-      error: () => {},
-    });
+  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
+  private otCostCenterId(ot: IOrdenTrabajo): string {
+    const cc = ot.costCenterId;
+    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
   }
 
-  /** Carga los saldos de viáticos elegibles (mismo centro de costo) y limpia la selección. */
-  private loadEligibleSaldos(projectId: string): void {
-    this.selectedSaldoIds.set(new Set());
-    if (!this.canUseSaldoBag || !projectId) {
-      this.saldos.set([]);
-      return;
+  /** Limpia la OT seleccionada si no pertenece al centro de costo indicado. */
+  private clearOtIfNotInCostCenter(projectId: string): void {
+    const otId = this.form.get('ordenTrabajoId')?.value;
+    if (!otId) return;
+    const stillValid = this.ordenesTrabajo().some(
+      (ot) => ot._id === otId && this.otCostCenterId(ot) === projectId
+    );
+    if (!stillValid) {
+      this.form.get('ordenTrabajoId')?.setValue('');
     }
-    this.loadingSaldos.set(true);
-    this.saldoService.getEligible('viatico', projectId).subscribe({
-      next: rows => {
-        this.saldos.set(rows ?? []);
-        this.loadingSaldos.set(false);
-      },
-      error: () => {
-        this.saldos.set([]);
-        this.loadingSaldos.set(false);
-      },
-    });
-  }
-
-  isSaldoSelected(id: string): boolean {
-    return this.selectedSaldoIds().has(id);
-  }
-
-  /** Gestión / motivo del saldo, o su origen (rendición / N° operación). */
-  saldoDescripcion(s: ISaldo): string {
-    if (s.concepto?.trim()) return s.concepto.trim();
-    const r = s.sourceReportId;
-    if (r && typeof r !== 'string') return r.codigo || r.title || '';
-    if (s.type === 'pago' && s.deposit?.operationNumber) return `Op. ${s.deposit.operationNumber}`;
-    return '';
-  }
-
-  toggleSaldo(id: string): void {
-    const next = new Set(this.selectedSaldoIds());
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    this.selectedSaldoIds.set(next);
   }
 
   private loadForResubmit(id: string): void {
@@ -320,10 +195,7 @@ export class SolicitudViaticosComponent implements OnInit {
   }
 
   private bootstrapFromAdvance(adv: IAdvance): void {
-    // El monto requerido equivale al costo que antes se armaba con el detalle por
-    // categoría: `additionalAmount` cuando la solicitud incorporó un saldo heredado,
-    // o `amount` completo en caso contrario.
-    this.form.patchValue({ amount: adv.additionalAmount ?? adv.amount });
+    this.form.patchValue({ amount: adv.amount });
 
     const pid =
       typeof adv.projectId === 'object' && adv.projectId
@@ -340,7 +212,6 @@ export class SolicitudViaticosComponent implements OnInit {
       this.useCustomBank.set(true);
       this.form.patchValue({ bankName: adv.requestBankName ?? '', accountNumber: adv.requestAccountNumber, cci: adv.requestCci ?? '' });
     }
-    // Sin emitir: evita relanzar la carga de saldos elegibles antes de tiempo.
     this.form.get('projectId')?.setValue(pid, { emitEvent: false });
     this.selectedProjectId.set(pid);
 
@@ -349,8 +220,6 @@ export class SolicitudViaticosComponent implements OnInit {
 
   /** Precarga el formulario desde un viático unificado (ExpenseReport) en edición. */
   private bootstrapFromViatico(report: IExpenseReport): void {
-    // `viaticoAmount` es el monto requerido (sin el saldo heredado, que se restaura
-    // aparte más abajo).
     this.form.patchValue({ amount: report.viaticoAmount ?? null });
 
     const pid =
@@ -381,16 +250,6 @@ export class SolicitudViaticosComponent implements OnInit {
     const rLng = (report as { viaticoLng?: number }).viaticoLng;
     if (rLat != null) this.selectedLat = rLat;
     if (rLng != null) this.selectedLng = rLng;
-
-    // Restaura el saldo heredado (si lo tuviera) para que el total cuadre.
-    if (report.pendingBalanceFromReportId && (report.pendingBalanceAmount ?? 0) > 0) {
-      this.pendingBalanceFromReportId.set(report.pendingBalanceFromReportId);
-      this.pendingBalanceAmount.set(Number(report.pendingBalanceAmount));
-    }
-
-    // Como el projectId se fija sin emitir evento, cargamos los saldos elegibles a
-    // mano: en una corrección sin saldo aplicado permite re-seleccionar de la bolsa.
-    this.loadEligibleSaldos(pid);
 
     this.loadCatalogues();
   }
@@ -426,12 +285,7 @@ export class SolicitudViaticosComponent implements OnInit {
   }
 
   goBack(): void {
-    const fromReport = this.pendingBalanceFromReportId();
-    if (fromReport) {
-      this.router.navigate(['/mis-rendiciones', fromReport, 'detalle']);
-    } else {
-      this.router.navigate(['/mis-rendiciones']);
-    }
+    this.router.navigate(['/mis-rendiciones']);
   }
 
   submit(): void {
@@ -462,14 +316,9 @@ export class SolicitudViaticosComponent implements OnInit {
     }
 
     const place = (this.form.value.place || '').trim();
-    // getRawValue: el centro de costo puede estar deshabilitado (saldo heredado),
-    // y los controles deshabilitados no aparecen en form.value.
     const projectId = (this.form.getRawValue().projectId as string) ?? '';
     const ordenTrabajoId = (this.form.value.ordenTrabajoId as string) || undefined;
     const montoRequerido = this.totalGeneral();
-    const fromReportId = this.pendingBalanceFromReportId();
-    const pendingAmt = this.pendingBalanceAmount();
-    const hasPending = !!(fromReportId && pendingAmt > 0);
 
     const customBank = this.useCustomBank() ? {
       bankName: (this.form.value.bankName || '').trim() || undefined,
@@ -479,18 +328,10 @@ export class SolicitudViaticosComponent implements OnInit {
 
     this.submitting.set(true);
 
-    // Saldos de la bolsa: prefinancian el viático. El saldo nunca cubre más que el
-    // total: si lo supera, solo se usa lo necesario y el sobrante vuelve a la bolsa
-    // (contabilidad no deposita nada); si el total lo supera, contabilidad deposita
-    // la diferencia. Ambos casos son válidos, así que no hay restricción de monto.
-    const saldoIds = Array.from(this.selectedSaldoIds());
-
     // Reenvío/edición de un viático unificado (ExpenseReport).
     const viatico = this.viaticoToResubmit();
     if (viatico) {
       const resubmitPayload: IResubmitViaticoPayload = {
-        // El saldo heredado prefinancia el monto requerido en el backend
-        // (no se suma al anticipo), igual que un saldo de la bolsa.
         amount: montoRequerido,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
@@ -500,7 +341,6 @@ export class SolicitudViaticosComponent implements OnInit {
         projectId,
         ordenTrabajoId,
         observations: (this.form.value.observations || '').trim() || undefined,
-        ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
         ...customBank,
       };
       this.expenseReportsService.resubmitViatico(viatico._id, resubmitPayload).subscribe({
@@ -515,7 +355,7 @@ export class SolicitudViaticosComponent implements OnInit {
     if (adv) {
       // Resubmit of a legacy Advance (old system)
       const legacyPayload: ICreateAdvancePayload = {
-        amount: hasPending ? this.totalAnticipo() : montoRequerido,
+        amount: montoRequerido,
         description: `Viático: ${place} (${startStr} → ${endStr})`,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
@@ -524,11 +364,6 @@ export class SolicitudViaticosComponent implements OnInit {
         endDate: `${endStr}T12:00:00.000Z`,
         projectId,
         observations: (this.form.value.observations || '').trim() || undefined,
-        ...(hasPending && {
-          pendingBalanceFromReportId: fromReportId!,
-          pendingBalanceAmount: pendingAmt,
-          additionalAmount: montoRequerido,
-        }),
         ...customBank,
       };
       this.advanceService.resubmit(adv._id, legacyPayload).subscribe({
@@ -540,8 +375,6 @@ export class SolicitudViaticosComponent implements OnInit {
 
     // New unified viatico (ExpenseReport type='viatico')
     const viaticoPayload: ICreateViaticoPayload = {
-      // El saldo heredado prefinancia el monto requerido en el backend
-      // (no se suma al anticipo), igual que un saldo de la bolsa.
       amount: montoRequerido,
       place,
       ...(this.selectedLat != null && { lat: this.selectedLat }),
@@ -551,12 +384,6 @@ export class SolicitudViaticosComponent implements OnInit {
       projectId,
       ordenTrabajoId,
       observations: (this.form.value.observations || '').trim() || undefined,
-      ...(hasPending && {
-        pendingBalanceFromReportId: fromReportId!,
-        pendingBalanceAmount: pendingAmt,
-        additionalAmount: montoRequerido,
-      }),
-      ...(this.canUseSaldoBag && saldoIds.length > 0 && { saldoIds }),
       ...customBank,
     };
     this.expenseReportsService.createViatico(viaticoPayload).subscribe({
@@ -572,13 +399,7 @@ export class SolicitudViaticosComponent implements OnInit {
       : 'Solicitud de viáticos enviada correctamente';
     this.notifications.show(msg, 'success');
     this.submitting.set(false);
-    this.saldoService.refreshTotal();
-    const fromReport = this.pendingBalanceFromReportId();
-    if (fromReport) {
-      this.router.navigate(['/mis-rendiciones', fromReport, 'detalle']);
-    } else {
-      this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'viaticos' } });
-    }
+    this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'viaticos' } });
   }
 
   private onSubmitError(e: any): void {

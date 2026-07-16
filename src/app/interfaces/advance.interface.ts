@@ -149,10 +149,6 @@ export interface IAdvance {
   /** Reenvíos tras rechazo (Fase 3). */
   solicitudVersion?: number;
   budgetCommitmentRecorded?: boolean;
-  /** Rendición de origen cuando este anticipo incorpora un saldo pendiente de otra rendición. */
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
   requestBankName?: string;
   requestAccountNumber?: string;
   requestCci?: string;
@@ -188,9 +184,6 @@ export interface ICreateAdvancePayload {
   endDate?: string;
   projectId?: string;
   observations?: string;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
   bankName?: string;
   accountNumber?: string;
   cci?: string;

@@ -47,15 +47,6 @@
         <span class="font-medium">Mis Rendiciones</span>
       </a>
       <a
-        [routerLink]="['/saldo']"
-        routerLinkActive="bg-primary text-white"
-        [class.bg-primary]="isSelected('/saldo')"
-        [class.text-white]="isSelected('/saldo')"
-        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-      >
-        <span class="font-medium">Saldo</span>
-      </a>
-      <a
         [routerLink]="['/mi-perfil']"
         routerLinkActive="bg-primary text-white"
         [class.bg-primary]="isSelected('/mi-perfil')"
@@ -209,17 +200,6 @@
         class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
       >
         <span class="font-medium">Mis Rendiciones</span>
-      </a>
-      }
-      @if (isCoordinador()) {
-      <a
-        [routerLink]="['/saldo']"
-        routerLinkActive="bg-primary text-white"
-        [class.bg-primary]="isSelected('/saldo')"
-        [class.text-quaternary]="isSelected('/saldo')"
-        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-      >
-        <span class="font-medium">Saldo</span>
       </a>
       }
       @if ((isColaborador() || isCoordinador()) && hasModulePermission('colaboradores')) {
@@ -468,16 +448,6 @@
           <span class="font-medium text-lg">Mis Rendiciones</span>
         </a>
         <a
-          [routerLink]="['/saldo']"
-          (click)="toggleSidebar()"
-          routerLinkActive="bg-primary text-white"
-          [class.bg-primary]="isSelected('/saldo')"
-          [class.text-white]="isSelected('/saldo')"
-          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-        >
-          <span class="font-medium text-lg">Saldo</span>
-        </a>
-        <a
           [routerLink]="['/mi-perfil']"
           (click)="toggleSidebar()"
           routerLinkActive="bg-primary text-white"
@@ -632,17 +602,6 @@
           class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
         >
           <span class="font-medium text-lg">Mis Rendiciones</span>
-        </a>
-        }
-        @if (isCoordinador()) {
-        <a
-          [routerLink]="['/saldo']"
-          (click)="toggleSidebar()"
-          [class.bg-primary]="isSelected('/saldo')"
-          [class.text-quaternary]="isSelected('/saldo')"
-          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
-        >
-          <span class="font-medium text-lg">Saldo</span>
         </a>
         }
         @if ((isColaborador() || isCoordinador()) && hasModulePermission('colaboradores')) {

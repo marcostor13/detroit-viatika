@@ -532,127 +532,7 @@
           </p>
         </div>
       </div>
-      } @else if (report.isDirecta && hasPendingBalanceCredit) {
-      <!-- Rendición directa creada desde saldo heredado -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
-        <!-- Saldo heredado -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-blue-200 p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-primary/10 text-primary rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Heredado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-primary tabular-nums">S/ {{ pendingBalanceCreditAmount | number:'1.2-2' }}</p>
-          <p class="text-xs text-tertiary/70 mt-1">{{ pendingBalanceFromLabel }}</p>
-        </div>
-        <!-- Total gastado -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-error/10 text-error rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Total Gastado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
-        </div>
-        <!-- Saldo disponible -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-success/10 text-success-ink rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Disponible</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': saldoLibre >= 0, 'text-error': saldoLibre < 0}">
-            S/ {{ saldoLibre | number:'1.2-2' }}
-          </p>
-        </div>
-      </div>
       } @else if (report.isDirecta || report.isCajaChica) {
-      @if (isSaldoUsadoEnOtraRendicion) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6 md:mb-8 w-full max-w-xl">
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-error/10 text-error rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Total Gastado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
-        </div>
-        <div class="rounded-xl shadow-sm border bg-warning/10 border-amber-200 p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-warning/10 text-warning-ink rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Disponible</p>
-          </div>
-          <p class="text-sm font-semibold text-warning-ink">Saldo utilizado en otra solicitud (S/ {{ saldoLibre | number:'1.2-2' }}) trasladado a nueva solicitud</p>
-        </div>
-      </div>
-      } @else if (hasFinancingSaldos) {
-      <!-- Rendición directa financiada con saldo de la bolsa -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
-        <!-- Presupuesto (financiado con saldo) -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-primary/10 text-primary rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Presupuesto</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ financingSaldosTotal | number:'1.2-2' }}</p>
-          <div class="mt-3 border-t border-divider pt-2 space-y-1.5">
-            <p class="text-[11px] font-semibold text-tertiary/70 uppercase tracking-wider">Financiado con saldo</p>
-            @for (s of financingSaldos; track s._id) {
-            <div class="flex justify-between gap-2 text-xs">
-              <span class="text-tertiary truncate">{{ financingSaldoTipo(s) }}@if (financingSaldoLabel(s)) { · {{ financingSaldoLabel(s) }} }</span>
-              <span class="font-medium text-secondary shrink-0 tabular-nums">S/ {{ s.amount | number:'1.2-2' }}</span>
-            </div>
-            }
-          </div>
-        </div>
-        <!-- Total gastado -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-error/10 text-error rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Total Gastado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
-        </div>
-        <!-- Saldo disponible -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-success/10 text-success-ink rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Disponible</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': financingSaldoDisponible >= 0, 'text-error': financingSaldoDisponible < 0}">
-            S/ {{ financingSaldoDisponible | number:'1.2-2' }}
-          </p>
-        </div>
-      </div>
-      } @else {
       <div class="w-full max-w-xs mb-6 md:mb-8">
         <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
           <div class="flex items-center gap-3 mb-2">
@@ -666,7 +546,6 @@
           <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
         </div>
       </div>
-      }
       } @else {
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
         <!-- Budget assigned -->
@@ -721,29 +600,18 @@
         </div>
 
         <!-- Remaining balance -->
-        <div class="rounded-xl shadow-sm border p-4 sm:p-6"
-          [ngClass]="isSaldoUsadoEnOtraRendicion ? 'bg-warning/10 border-amber-200' : 'bg-quaternary border-divider'">
+        <div class="rounded-xl shadow-sm border p-4 sm:p-6 bg-quaternary border-divider">
           <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 rounded-lg" [ngClass]="isSaldoUsadoEnOtraRendicion ? 'bg-warning/10 text-warning-ink' : 'bg-success/10 text-success-ink'">
-              @if (isSaldoUsadoEnOtraRendicion) {
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-              </svg>
-              } @else {
+            <div class="p-2 rounded-lg bg-success/10 text-success-ink">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
-              }
             </div>
             <p class="font-medium text-tertiary">Saldo Disponible</p>
           </div>
-          @if (isSaldoUsadoEnOtraRendicion) {
-          <p class="text-sm font-semibold text-warning-ink">Saldo utilizado en otra solicitud (S/ {{ saldoLibre | number:'1.2-2' }}) trasladado a nueva solicitud</p>
-          } @else {
           <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': saldoLibre >= 0, 'text-error': saldoLibre < 0}">
             S/ {{ saldoLibre | number:'1.2-2' }}
           </p>
-          }
         </div>
       </div>
       }
@@ -1012,16 +880,12 @@
         <p class="text-sm text-secondary mb-4">
           Tienes un saldo a devolver a la empresa de
           <strong class="text-error">S/ {{ saldoLibre | number:'1.2-2' }}</strong>.
-          Realiza el depósito a la cuenta de la empresa y adjunta el comprobante, o usa ese saldo para iniciar una nueva solicitud.
+          Realiza el depósito a la cuenta de la empresa y adjunta el comprobante.
         </p>
         <div class="flex flex-wrap gap-3">
           <button (click)="openReturnVoucherModal()"
             class="inline-flex items-center px-4 py-2 rounded-lg bg-error text-white font-semibold text-sm hover:bg-error">
             Adjuntar comprobante de devolución
-          </button>
-          <button (click)="openNuevaSolicitudConSaldo()"
-            class="inline-flex items-center px-4 py-2 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary">
-            Usar saldo en nueva solicitud
           </button>
         </div>
       </div>
@@ -2900,62 +2764,6 @@
     </div>
   </div>
   }
-
-<!-- Modal: Nueva rendición directa con saldo -->
-@if (showNuevaDirectaConSaldoModal()) {
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showNuevaDirectaConSaldoModal.set(false)">
-  <div class="bg-quaternary rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
-    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
-      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-primary">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-      </div>
-      <div>
-        <h3 class="text-base font-semibold text-secondary">Nueva rendición directa</h3>
-        <p class="text-xs text-tertiary">Saldo disponible: S/ {{ saldoLibre | number:'1.2-2' }}</p>
-      </div>
-    </div>
-    <div class="px-6 py-4">
-      <p class="text-sm text-tertiary mb-4">
-        Se creará una nueva rendición directa usando el saldo de <strong>S/ {{ saldoLibre | number:'1.2-2' }}</strong> disponible en esta rendición.
-      </p>
-      <label class="block text-sm font-medium text-secondary mb-1">Gestión <span class="text-error">*</span></label>
-      <input
-        type="text"
-        [value]="nuevaDirectaGestion()"
-        (input)="nuevaDirectaGestion.set($any($event.target).value)"
-        class="w-full rounded-lg border border-tertiary/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400"
-        placeholder="Ej: Viaje a Arequipa - Julio 2026"
-        [disabled]="isCreatingDirectaConSaldo()"
-      />
-    </div>
-    <div class="px-6 pb-6 flex gap-3">
-      <button
-        type="button"
-        class="flex-1 py-2.5 border border-divider text-secondary rounded-xl text-sm font-medium hover:bg-background transition-colors"
-        [disabled]="isCreatingDirectaConSaldo()"
-        (click)="showNuevaDirectaConSaldoModal.set(false)"
-      >
-        Volver
-      </button>
-      <button
-        type="button"
-        class="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary disabled:opacity-50 transition-colors"
-        [disabled]="isCreatingDirectaConSaldo() || !nuevaDirectaGestion().trim()"
-        (click)="createNuevaDirectaConSaldo()"
-      >
-        @if (isCreatingDirectaConSaldo()) {
-          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
-          Creando...
-        } @else {
-          Crear rendición
-        }
-      </button>
-    </div>
-  </div>
-</div>
-}
 
 <!-- Modal: Adjuntar comprobante de devolución de saldo (colaborador, rendición cerrada) -->
 @if (showReturnVoucherModal()) {

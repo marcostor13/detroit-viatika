@@ -62,23 +62,6 @@
 
   <div class="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6">
 
-    <!-- Saldo pendiente trasladado (solo cuando viene de otra rendición) -->
-    @if (hasPendingBalance) {
-    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 flex items-start gap-3">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-amber-600 shrink-0 mt-0.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-      </svg>
-      <div>
-        <p class="text-sm font-semibold text-amber-800">Solicitud con saldo pendiente</p>
-        <p class="text-sm text-amber-700 mt-0.5">
-          Tienes un saldo pendiente de
-          <strong>S/ {{ pendingBalanceAmount() | number:'1.2-2' }}</strong>
-          trasladado desde tu rendicion anterior. Se usa para financiar este viático: cubre el costo de las categorías, contabilidad deposita solo la diferencia y, si el saldo supera el costo, el sobrante vuelve a tu bolsa.
-        </p>
-      </div>
-    </div>
-    }
-
     <!-- Info banner -->
     <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 flex items-start gap-3">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-500 shrink-0 mt-0.5">
@@ -173,9 +156,6 @@
             @if (form.get('projectId')?.invalid && form.get('projectId')?.touched) {
             <p class="text-xs text-red-500">Seleccione un centro de costo</p>
             }
-            @if (hasPendingBalance) {
-            <p class="text-xs text-gray-500">El centro de costo queda fijo por el saldo heredado; ese saldo solo puede usarse aquí.</p>
-            }
           </div>
 
           <!-- Orden de Trabajo -->
@@ -188,11 +168,17 @@
               class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow"
             >
               <option value="">Sin Orden de Trabajo</option>
-              @for (ot of ordenesTrabajo(); track ot._id) {
-                <option [value]="ot._id">{{ ot.codigo }} — {{ departamentoLabel(ot.departamento) }}</option>
+              @for (ot of filteredOrdenesTrabajo(); track ot._id) {
+                <option [value]="ot._id">{{ ot.nombre }}</option>
               }
             </select>
-            <p class="text-xs text-gray-500">Departamento al que se imputará el gasto de este viático, si corresponde.</p>
+            @if (!selectedProjectId()) {
+              <p class="text-xs text-gray-500">Elige primero un centro de costo para ver sus órdenes de trabajo.</p>
+            } @else if (filteredOrdenesTrabajo().length === 0) {
+              <p class="text-xs text-amber-600">Este centro de costo no tiene órdenes de trabajo activas.</p>
+            } @else {
+              <p class="text-xs text-gray-500">Orden de trabajo (del centro de costo elegido) a la que se imputará el gasto, si corresponde.</p>
+            }
           </div>
 
           <!-- Monto requerido -->
@@ -213,63 +199,6 @@
             <p class="text-xs text-red-500">Indique el monto requerido para el viaje</p>
             }
           </div>
-
-          <!-- Saldo de la bolsa (mismo centro de costo) -->
-          @if (canUseSaldoBag && selectedProjectId()) {
-          <div class="md:col-span-2 flex flex-col gap-2">
-            <label class="text-sm font-medium text-gray-700">
-              Financiar con saldo (opcional)
-            </label>
-            <p class="text-xs text-gray-500 -mt-1">
-              Solo aparecen saldos de viáticos del mismo centro de costo. Se usa solo lo necesario: si el saldo supera el total, el sobrante vuelve a tu bolsa y contabilidad no deposita nada; si el total es mayor, contabilidad deposita la diferencia.
-            </p>
-            @if (loadingSaldos()) {
-              <p class="text-sm text-gray-400">Cargando saldos...</p>
-            } @else if (saldos().length === 0) {
-              <p class="text-sm text-gray-400">No hay saldos disponibles para este centro de costo.</p>
-            } @else {
-              <div class="space-y-2">
-                @for (s of saldos(); track s._id) {
-                <label
-                  class="flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
-                  [class.border-primary]="isSaldoSelected(s._id)"
-                  [class.bg-blue-50]="isSaldoSelected(s._id)"
-                  [class.border-gray-200]="!isSaldoSelected(s._id)"
-                >
-                  <input
-                    type="checkbox"
-                    [checked]="isSaldoSelected(s._id)"
-                    (change)="toggleSaldo(s._id)"
-                    class="w-4 h-4 accent-primary"
-                  />
-                  <span class="flex-1 min-w-0 text-sm text-gray-700">
-                    {{ s.type === 'pago' ? 'Pago' : 'Saldo de rendición' }}
-                    @if (saldoDescripcion(s)) {
-                      <span class="block text-xs text-gray-500 truncate">{{ saldoDescripcion(s) }}</span>
-                    }
-                  </span>
-                  <span class="text-sm font-semibold text-gray-900 shrink-0">S/ {{ s.amount | number:'1.2-2' }}</span>
-                </label>
-                }
-              </div>
-              @if (selectedSaldoTotal() > 0) {
-              <div class="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5">
-                <span class="text-sm font-medium text-emerald-700">Saldo aplicado</span>
-                <span class="text-base font-bold text-emerald-700">S/ {{ saldoUsed() | number:'1.2-2' }}</span>
-              </div>
-                @if (saldoExcess() > 0.009) {
-                <p class="text-xs font-medium text-emerald-700 -mt-1">
-                  El sobrante de S/ {{ saldoExcess() | number:'1.2-2' }} volverá a tu bolsa. Contabilidad no deposita nada.
-                </p>
-                } @else if (contabilidadDeposita() > 0.009) {
-                <p class="text-xs text-gray-500 -mt-1">
-                  Contabilidad depositará la diferencia: S/ {{ contabilidadDeposita() | number:'1.2-2' }}.
-                </p>
-                }
-              }
-            }
-          </div>
-          }
 
           <!-- Observaciones -->
           <div class="md:col-span-2 flex flex-col gap-1.5">
@@ -346,32 +275,10 @@
       <!-- Section: Resumen del monto -->
       <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <!-- Total general -->
-        @if (hasPendingBalance) {
-        <div class="px-4 py-3.5 bg-gray-50 flex flex-col gap-1.5 lg:items-end">
-          <div class="flex items-center justify-between lg:justify-end lg:gap-16">
-            <span class="text-sm text-gray-500">Monto requerido</span>
-            <span class="text-sm font-semibold text-gray-700 tabular-nums">S/ {{ totalGeneral() | number:'1.2-2' }}</span>
-          </div>
-          <div class="flex items-center justify-between lg:justify-end lg:gap-16">
-            <span class="text-sm text-gray-500">Saldo pendiente aplicado</span>
-            <span class="text-sm font-semibold text-amber-700 tabular-nums">- S/ {{ pendingUsed() | number:'1.2-2' }}</span>
-          </div>
-          <div class="flex items-center justify-between lg:justify-end lg:gap-16 pt-1 border-t border-gray-200 mt-0.5">
-            <span class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contabilidad deposita</span>
-            <span class="text-base font-bold text-gray-900 tabular-nums">S/ {{ pendingDeposita() | number:'1.2-2' }}</span>
-          </div>
-          @if (pendingExcess() > 0.009) {
-          <p class="text-xs font-medium text-emerald-700 mt-0.5 lg:text-right">
-            El sobrante de S/ {{ pendingExcess() | number:'1.2-2' }} volverá a tu bolsa. Contabilidad no deposita nada.
-          </p>
-          }
-        </div>
-        } @else {
         <div class="px-4 py-3.5 bg-gray-50 flex items-center justify-between gap-4 lg:justify-end">
           <span class="text-sm font-semibold text-gray-600 uppercase tracking-wide">Total general</span>
           <span class="text-base font-bold text-gray-900 tabular-nums">S/ {{ totalGeneral() | number:'1.2-2' }}</span>
         </div>
-        }
       </div>
 
     </form>

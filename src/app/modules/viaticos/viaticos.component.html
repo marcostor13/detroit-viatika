@@ -159,11 +159,6 @@
               </td>
               <td class="px-4 py-3.5 text-right">
                 <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
-                @if (item.pendingBalanceAmount && item.pendingBalanceAmount > 0) {
-                  <div class="text-xs text-amber-600 mt-0.5 tabular-nums">
-                    Saldo S/ {{ item.pendingBalanceAmount | number:'1.2-2' }}
-                  </div>
-                }
               </td>
               <td class="px-4 py-3.5 text-center">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" [class]="item.statusColor">

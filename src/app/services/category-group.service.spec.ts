@@ -4,7 +4,7 @@ import { CategoryGroupService } from './category-group.service';
 import { UserStateService } from './user-state.service';
 import { environment } from '../../environments/environment';
 
-const BASE = `${environment.api}/category-group`;
+const BASE = `${environment.api}/category-profile`;
 
 describe('CategoryGroupService', () => {
   let service: CategoryGroupService;
@@ -30,7 +30,7 @@ describe('CategoryGroupService', () => {
   afterEach(() => http.verify());
 
   describe('getAll', () => {
-    it('sends GET request to /category-group/:companyId', () => {
+    it('sends GET request to /category-profile/:companyId', () => {
       service.getAll().subscribe();
       http.expectOne(`${BASE}/c1`).flush([]);
     });
@@ -63,7 +63,7 @@ describe('CategoryGroupService', () => {
   });
 
   describe('update', () => {
-    it('sends PATCH to /category-group/:id/:companyId', () => {
+    it('sends PATCH to /category-profile/:id/:companyId', () => {
       service.update('g1', { name: 'Updated' }).subscribe();
       const req = http.expectOne(`${BASE}/g1/c1`);
       expect(req.request.method).toBe('PATCH');
@@ -80,7 +80,7 @@ describe('CategoryGroupService', () => {
   });
 
   describe('remove', () => {
-    it('sends DELETE to /category-group/:id/:companyId', () => {
+    it('sends DELETE to /category-profile/:id/:companyId', () => {
       service.remove('g1').subscribe();
       const req = http.expectOne(`${BASE}/g1/c1`);
       expect(req.request.method).toBe('DELETE');

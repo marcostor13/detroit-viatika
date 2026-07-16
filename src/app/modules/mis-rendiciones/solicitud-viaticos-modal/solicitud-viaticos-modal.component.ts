@@ -120,9 +120,6 @@ export class SolicitudViaticosModalComponent implements OnChanges {
   }
 
   private bootstrapFromAdvance(adv: IAdvance): void {
-    // El monto requerido equivale al costo que antes se armaba con el detalle por
-    // categoría: `additionalAmount` cuando la solicitud incorporó un saldo heredado,
-    // o `amount` completo en caso contrario.
     const pid =
       typeof adv.projectId === 'object' && adv.projectId
         ? adv.projectId._id
@@ -133,7 +130,7 @@ export class SolicitudViaticosModalComponent implements OnChanges {
       startDate: this.ymdFromAdvanceDate(adv.startDate),
       endDate: this.ymdFromAdvanceDate(adv.endDate),
       observations: adv.observations ?? '',
-      amount: adv.additionalAmount ?? adv.amount,
+      amount: adv.amount,
     });
     // Sin emitir: evita relanzar efectos secundarios del listener de `projectId`.
     this.form.get('projectId')?.setValue(pid, { emitEvent: false });

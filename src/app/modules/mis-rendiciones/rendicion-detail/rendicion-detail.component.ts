@@ -15,7 +15,7 @@ import {
   IGeneratedFile,
   AsientoTipo,
 } from '../../../services/accounting-entries.service';
-import { IExpenseReport, IReportFinancingSaldo } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport } from '../../../interfaces/expense-report.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
@@ -141,10 +141,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get saldoLibre(): number {
-    // Viáticos unificados: el fondo disponible es siempre viaticoPaidAmount − gastado
-    // (incluye el saldo de la bolsa prefinanciado + el depósito de contabilidad). Va
-    // primero para no confundirse con la rama de "directa financiada con bolsa" cuando
-    // el viático también tiene saldoIds (si no, mostraría solo el saldo, no el total).
+    // Viáticos unificados: el fondo disponible es siempre viaticoPaidAmount − gastado.
     if (this.report?.type === 'viatico') {
       const viaticoPaid = Number((this.report as any)?.viaticoPaidAmount ?? 0);
       return viaticoPaid - this.totalGastado;
@@ -153,14 +150,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     // depósito menos lo gastado (en vivo), no el monto del settlement almacenado.
     if (this.hasDirectaDeposit) {
       return this.directaSaldo;
-    }
-    // Rendición directa creada desde el saldo de otra: el presupuesto es el saldo heredado.
-    if (this.hasPendingBalanceCredit) {
-      return this.pendingBalanceCreditAmount - this.totalGastado;
-    }
-    // Rendición directa financiada con la bolsa: el saldo libre es presupuesto (saldos) − gastado.
-    if (this.hasFinancingSaldos) {
-      return this.financingSaldoDisponible;
     }
     if (this.settlement?.difference !== undefined && this.settlement.difference !== null) {
       return this.settlement.difference;
@@ -192,41 +181,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get directaSaldo(): number {
     return this.directaDeposited - this.totalGastado;
-  }
-
-  /** Saldos de la bolsa (poblados) que financiaron esta rendición directa. */
-  get financingSaldos(): IReportFinancingSaldo[] {
-    const s = this.report?.saldoIds as unknown[];
-    return Array.isArray(s)
-      ? (s.filter(x => x && typeof x === 'object') as IReportFinancingSaldo[])
-      : [];
-  }
-
-  get hasFinancingSaldos(): boolean {
-    return this.financingSaldos.length > 0;
-  }
-
-  get financingSaldosTotal(): number {
-    return this.financingSaldos.reduce((a, s) => a + (Number(s.amount) || 0), 0);
-  }
-
-  /** Saldo disponible de una directa financiada con la bolsa: presupuesto (saldos) − gastado. */
-  get financingSaldoDisponible(): number {
-    return this.financingSaldosTotal - this.totalGastado;
-  }
-
-  /** Tipo legible del saldo financiador. */
-  financingSaldoTipo(s: IReportFinancingSaldo): string {
-    return s.type === 'pago' ? 'Pago de contabilidad' : 'Saldo de rendición';
-  }
-
-  /** Detalle del saldo financiador: gestión/motivo, código de origen o N° de operación. */
-  financingSaldoLabel(s: IReportFinancingSaldo): string {
-    if (s.concepto?.trim()) return s.concepto.trim();
-    const r = s.sourceReportId;
-    if (r && typeof r !== 'string') return r.codigo || r.title || r.gestion || '';
-    if (s.type === 'pago' && s.deposit?.operationNumber) return `Op. ${s.deposit.operationNumber}`;
-    return '';
   }
 
   ngOnInit(): void {
@@ -1383,7 +1337,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getReportStatusLabel(): string {
     if (!this.report) return '';
-    // Saldo ya resuelto (trasladado o devuelto) => se muestra como Cerrada.
     if (this.isEffectivelyClosed) return 'Cerrada';
     if (this.report.isDirecta) {
       const directaLabels: Partial<Record<IExpenseReport['status'], string>> = {
@@ -1616,12 +1569,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const anticipos = this.advances.flatMap((a) => {
       const fechaSolicitud = a.createdAt ? this.formatEmissionDate(a.createdAt) : '—';
       const estado = this.ADVANCE_STATUS_LABELS[a.status] ?? a.status;
-      if (a.pendingBalanceAmount !== undefined && a.additionalAmount !== undefined) {
-        return [
-          { descripcion: 'Saldo pendiente (rendición anterior)', monto: a.pendingBalanceAmount, estado, fechaSolicitud },
-          { descripcion: `${a.description} (adicional)`, monto: a.additionalAmount, estado, fechaSolicitud },
-        ];
-      }
       return [{ descripcion: a.description, monto: a.amount, estado, fechaSolicitud }];
     });
     // Rendición directa con depósito de Contabilidad: el depósito funciona como
@@ -1638,31 +1585,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         fechaSolicitud,
       });
     }
-    // Rendición directa creada desde el saldo de otra rendición: el saldo heredado
-    // funciona como ingreso (igual que un anticipo/depósito), por lo que debe
-    // figurar en la columna Ingresos del reporte. Sin esto, el reporte no muestra
-    // el saldo heredado y el cuadre de reembolso/rendir queda incompleto.
-    if (this.hasPendingBalanceCredit) {
-      const rawDate = this.report.createdAt;
-      const fechaSolicitud = rawDate ? this.formatEmissionDate(rawDate) : '—';
-      const origenCodigo = this.report.pendingBalanceFromCodigo;
-      anticipos.unshift({
-        descripcion: origenCodigo
-          ? `Saldo heredado (${origenCodigo})`
-          : 'Saldo heredado (rendición anterior)',
-        monto: this.pendingBalanceCreditAmount,
-        estado: 'Traspasado',
-        fechaSolicitud,
-      });
-    }
-    // Viático: lo pagado por contabilidad (viaticoPaidAmount menos lo cubierto por el
-    // saldo de la bolsa, que ya figura aparte en financiamientoSaldos) es un ingreso.
+    // Viático: lo pagado por contabilidad (viaticoPaidAmount) es un ingreso.
     if (this.report.type === 'viatico') {
       const viaticoPaid = Number(
         (this.report as { viaticoPaidAmount?: number }).viaticoPaidAmount ?? 0
       );
-      const bolsaTotal = this.hasFinancingSaldos ? this.financingSaldosTotal : 0;
-      const deposito = Math.round((viaticoPaid - bolsaTotal) * 100) / 100;
+      const deposito = Math.round(viaticoPaid * 100) / 100;
       if (deposito > 0.01) {
         const pagos = (
           this.report as {
@@ -1691,20 +1619,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       codigo: this.report.codigo || undefined,
       gestion: this.report.gestion || undefined,
       descripcionRendicion: this.report.description || undefined,
-      financiamientoSaldos: this.hasFinancingSaldos
-        ? this.financingSaldos.map(s => ({
-            tipo: this.financingSaldoTipo(s),
-            detalle: this.financingSaldoLabel(s),
-            monto: Number(s.amount) || 0,
-            fecha: s.deposit?.operationDate
-              || (s.createdAt ? new Date(s.createdAt).toLocaleDateString('es-PE') : ''),
-          }))
-        : undefined,
       colaborador: this.getCollaboratorDisplayName(),
       presupuesto: this.report.budget ?? 0,
       totalGastado: this.totalGastado,
       totalAnticipado: this.totalAnticipado,
-      saldoLibre: this.hasFinancingSaldos ? this.financingSaldoDisponible : this.saldoLibre,
+      saldoLibre: this.saldoLibre,
       fechaGeneracion: new Date().toLocaleString('es-PE', {
         dateStyle: 'short',
         timeStyle: 'short',
@@ -2209,43 +2128,15 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   returnVoucherOperationDate = signal<string | null>(null);
   returnVoucherOperationTime = signal<string | null>(null);
 
-  /** Saldo de esta rendición ya fue utilizado para crear otra solicitud o rendición directa. */
-  get isSaldoUsadoEnOtraRendicion(): boolean {
-    return !!(this.report as any)?.pendingBalanceUsedInAdvanceId
-      || !!(this.report as any)?.pendingBalanceUsedInRendicionId;
-  }
-
   /**
-   * La rendición se considera cerrada (a efectos de visualización) cuando su
-   * saldo pendiente ya fue resuelto: trasladado a otra solicitud, o devuelto
-   * por el colaborador mediante comprobante de depósito. En esos casos el
-   * label y el badge deben mostrarse como "Cerrada".
+   * La rendición se considera cerrada (a efectos de visualización) cuando llegó
+   * a un estado final o fue devuelta por el colaborador mediante comprobante de
+   * depósito. En esos casos el label y el badge deben mostrarse como "Cerrada".
    */
   get isEffectivelyClosed(): boolean {
     if (this.report?.status === 'closed') return true;
-    if (this.isSaldoUsadoEnOtraRendicion) return true;
     if ((this.report as any)?.returnVoucher) return true;
     return false;
-  }
-
-  /** Esta rendición directa fue creada usando el saldo de otra (saldo heredado). */
-  get hasPendingBalanceCredit(): boolean {
-    return !!(this.report?.isDirecta
-      && !this.report?.directaDeposit
-      && this.report?.pendingBalanceFromReportId
-      && (this.report?.pendingBalanceAmount ?? 0) > 0);
-  }
-
-  get pendingBalanceCreditAmount(): number {
-    return Number(this.report?.pendingBalanceAmount ?? 0);
-  }
-
-  /** Texto del origen del saldo heredado: el código de la rendición fuente si se conoce. */
-  get pendingBalanceFromLabel(): string {
-    const codigo = this.report?.pendingBalanceFromCodigo;
-    return codigo
-      ? `Traspasado desde ${codigo}`
-      : 'Traspasado desde rendición anterior';
   }
 
   /** Devuelve true cuando el saldo esperado corresponde a una devolución del colaborador. */
@@ -2257,7 +2148,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   /** Colaborador puede cargar su comprobante de devolución en cuanto la rendición está aprobada y tiene saldo a devolver. */
   get canUploadReturnVoucher(): boolean {
     if (this.isAdminView) return false;
-    if (this.isSaldoUsadoEnOtraRendicion) return false;
     const status = this.report?.status;
     if (status !== 'approved' && status !== 'closed') return false;
     if (!this.isDevolucionExpected) return false;
@@ -2267,7 +2157,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   /** Panel informativo para contabilidad: la rendición está aprobada con saldo a devolver pero el colaborador aún no adjuntó el comprobante. */
   get approvedPendingVoucher(): boolean {
     if (!this.isAdminView) return false;
-    if (this.isSaldoUsadoEnOtraRendicion) return false;
     if (this.report?.status !== 'approved') return false;
     return this.isDevolucionExpected && !(this.report as any)?.returnVoucher;
   }
@@ -3027,67 +2916,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.notificationService.show('Declaración jurada descargada', 'success');
   }
 
-  // ─── Nueva solicitud con saldo (bifurca según tipo de rendición) ─────────────
-
-  showNuevaDirectaConSaldoModal = signal(false);
-  nuevaDirectaGestion = signal('');
-  isCreatingDirectaConSaldo = signal(false);
-
-  openNuevaSolicitudConSaldo(): void {
-    if (this.report?.isDirecta) {
-      this.nuevaDirectaGestion.set('');
-      this.showNuevaDirectaConSaldoModal.set(true);
-    } else {
-      this.router.navigate(['/mis-rendiciones/solicitud-viaticos/nueva'], {
-        queryParams: {
-          pendingBalanceFromReportId: this.id,
-          pendingBalanceAmount: this.saldoLibre,
-        },
-      });
-    }
-  }
-
-  createNuevaDirectaConSaldo(): void {
-    const gestion = this.nuevaDirectaGestion().trim();
-    if (!gestion) {
-      this.notificationService.show('Ingresa una descripción de gestión', 'warning');
-      return;
-    }
-    const user = this.userStateService.getUser() as any;
-    const userId = user?._id ?? '';
-    const clientId =
-      user?.companyId ||
-      user?.client?._id ||
-      (typeof user?.clientId === 'string' ? user.clientId : user?.clientId?._id) ||
-      '';
-    if (!userId || !clientId) {
-      this.notificationService.show('No se pudo identificar al usuario o empresa.', 'error');
-      return;
-    }
-    this.isCreatingDirectaConSaldo.set(true);
-    this.expenseReportsService.create({
-      isDirecta: true,
-      gestion,
-      userId,
-      clientId,
-      pendingBalanceFromReportId: this.id,
-      pendingBalanceAmount: this.saldoLibre,
-    }).subscribe({
-      next: (_newReport) => {
-        this.isCreatingDirectaConSaldo.set(false);
-        this.showNuevaDirectaConSaldoModal.set(false);
-        this.notificationService.show('Nueva rendición creada con el saldo disponible.', 'success');
-        this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'directas' } });
-      },
-      error: (err) => {
-        this.isCreatingDirectaConSaldo.set(false);
-        const raw = err?.error?.message;
-        const msg = Array.isArray(raw) ? raw.join(', ') : raw;
-        this.notificationService.show(msg || 'Error al crear la nueva rendición.', 'error');
-      },
-    });
-  }
-
   // ─── Aprobación dual de comprobantes ─────────────────────────────────────────
 
   get canApproveExpenseAsCoord(): boolean {
@@ -3106,8 +2934,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get batchApproveCount(): number {
     const expenses = this.expensesPage()?.data ?? [];
     return expenses.filter((e: any) => {
-      const contStatus = e.approvalCont?.status ?? 'pending';
-      const coordStatus = e.approvalCoord?.status ?? 'pending';
+      const contStatus = this.getExpenseApprovalCont(e).status;
+      const coordStatus = this.getExpenseApprovalCoord(e).status;
       return contStatus === 'approved' && coordStatus !== 'approved';
     }).length;
   }
@@ -3115,17 +2943,31 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get collaboratorBatchCount(): number {
     const expenses = this.expensesPage()?.data ?? [];
     return expenses.filter((e: any) => {
-      const contStatus = e.approvalCont?.status ?? 'pending';
+      const contStatus = this.getExpenseApprovalCont(e).status;
       return contStatus === 'approved' && e.status !== 'approved';
     }).length;
   }
 
-  getExpenseApprovalCoord(expense: any): { status: string; userName?: string } {
-    return expense.approvalCoord ?? { status: 'pending' };
+  /**
+   * Estado real de la cadena de centro de costo (N1/N2/[N2 sel]) del comprobante,
+   * derivado de `approverChain`/`approvalLevel`/`requiredLevels` (lo que el backend
+   * realmente devuelve — `expense.approvalCoord` no existe en la API).
+   */
+  getExpenseApprovalCoord(expense: any): { status: 'pending' | 'approved' | 'rejected' } {
+    const contRejected = !!expense?.contabilidadRejectionReason;
+    if (expense?.status === 'rejected' && !contRejected) {
+      return { status: 'rejected' };
+    }
+    const chain = expense?.approverChain;
+    if (chain === undefined) return { status: 'pending' };
+    const required = expense?.requiredLevels ?? chain.length ?? 0;
+    const level = expense?.approvalLevel ?? 0;
+    return { status: level >= required ? 'approved' : 'pending' };
   }
 
-  getExpenseApprovalCont(expense: any): { status: string; userName?: string } {
-    return expense.approvalCont ?? { status: 'pending' };
+  /** Estado real del gate de Contabilidad (`contabilidadStatus` — no `approvalCont`, que no existe en la API). */
+  getExpenseApprovalCont(expense: any): { status: 'pending' | 'approved' | 'rejected' } {
+    return { status: expense?.contabilidadStatus ?? 'pending' };
   }
 
   approveExpenseByRole(expenseId: string, role: 'coord' | 'cont'): void {

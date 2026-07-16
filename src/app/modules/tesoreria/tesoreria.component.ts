@@ -946,11 +946,6 @@ export class TesoreriaComponent implements OnInit {
     });
   }
 
-  /** Abre la página independiente para crear una rendición directa con depósito. */
-  goToNuevaRendicionDirecta(): void {
-    this.router.navigate(['/tesoreria/rendicion-directa/nueva']);
-  }
-
   directaUserName(rep: any): string {
     const u = rep?.userId;
     if (u && typeof u === 'object') return u.name || u.email || '—';

@@ -262,14 +262,6 @@ export const routes: Routes = [
         canActivate: [AuthColaboradorGuard],
       },
       {
-        path: 'saldo',
-        loadComponent: () =>
-          import('./modules/saldo/saldo.component').then(
-            (m) => m.SaldoComponent
-          ),
-        canActivate: [AuthColaboradorGuard],
-      },
-      {
         path: 'mis-rendiciones/nueva',
         loadComponent: () =>
           import('./modules/mis-rendiciones/nueva-rendicion-directa/nueva-rendicion-directa.component').then(
@@ -334,14 +326,6 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./modules/tesoreria/tesoreria.component').then(
             (m) => m.TesoreriaComponent
-          ),
-        canActivate: [AuthTesoreroGuard],
-      },
-      {
-        path: 'tesoreria/rendicion-directa/nueva',
-        loadComponent: () =>
-          import('./modules/tesoreria/nueva-rendicion-directa-deposito/nueva-rendicion-directa-deposito.component').then(
-            (m) => m.NuevaRendicionDirectaDepositoComponent
           ),
         canActivate: [AuthTesoreroGuard],
       },
