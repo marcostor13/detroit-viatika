@@ -99,6 +99,8 @@ export interface IUserResponse {
   updatedAt: Date;
   permissions?: IUserPermissions;
   dni?: string;
+  /** Tipo de documento para pagos BBVA (R/L/P/E/M). */
+  documentType?: 'R' | 'L' | 'P' | 'E' | 'M';
   employeeCode?: string;
   /** Fase 3 — notificaciones viáticos. */
   area?: string;

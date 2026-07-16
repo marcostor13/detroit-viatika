@@ -50,6 +50,11 @@ export class ConfiguracionComponent implements OnInit {
   limitsMovilidadDiario: number | null = null;
   isSavingLimits = false;
 
+  // Cuenta de cargo para pagos BBVA (VD-7)
+  showPaymentAccountForm = false;
+  paymentAccount: string = '';
+  isSavingPaymentAccount = false;
+
   // Notifications
   showNotificationsForm = false;
   notificationsEnabled = false;
@@ -109,6 +114,7 @@ export class ConfiguracionComponent implements OnInit {
       (config: ICompanyConfig | null) => {
         this.companyConfig = config;
         this.limitsMovilidadDiario = config?.limits?.movilidadDiario ?? null;
+        this.paymentAccount = config?.paymentAccount ?? '';
         this.notificationsEnabled = config?.notificationSettings?.enabled ?? false;
         this.notificationsFrequency = config?.notificationSettings?.frequency ?? 'semanal';
         this.notificationsDay = config?.notificationSettings?.notificationDay ?? 1;
@@ -141,6 +147,33 @@ export class ConfiguracionComponent implements OnInit {
       error: () => {
         this.notificationService.show('Error al guardar los límites', 'error');
         this.isSavingLimits = false;
+      },
+    });
+  }
+
+  editPaymentAccount() {
+    this.paymentAccount = this.companyConfig?.paymentAccount ?? '';
+    this.showPaymentAccountForm = true;
+  }
+
+  cancelPaymentAccountEdit() {
+    this.showPaymentAccountForm = false;
+    this.paymentAccount = this.companyConfig?.paymentAccount ?? '';
+  }
+
+  savePaymentAccount() {
+    const companyId = this.companyConfig?._id || this.companyConfig?.companyId;
+    if (!companyId) return;
+    this.isSavingPaymentAccount = true;
+    this.companyConfigService.updatePaymentAccount(companyId, (this.paymentAccount ?? '').trim()).subscribe({
+      next: () => {
+        this.notificationService.show('Cuenta de cargo actualizada correctamente', 'success');
+        this.showPaymentAccountForm = false;
+        this.isSavingPaymentAccount = false;
+      },
+      error: () => {
+        this.notificationService.show('Error al guardar la cuenta de cargo', 'error');
+        this.isSavingPaymentAccount = false;
       },
     });
   }

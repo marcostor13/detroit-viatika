@@ -234,6 +234,7 @@ export class InvoicesService {
         logo: client.logo,
         limits: client.limits,
         notificationSettings: client.notificationSettings,
+        paymentAccount: client.paymentAccount,
       }))
     );
   }
@@ -257,6 +258,8 @@ export class InvoicesService {
     if (config.businessName) payload['businessName'] = config.businessName;
     if (config.logo) payload['logo'] = config.logo;
     if (config.limits !== undefined) payload['limits'] = config.limits;
+    if (config.paymentAccount !== undefined)
+      payload['paymentAccount'] = config.paymentAccount;
 
     return this.http.patch<any>(
       `${this.companyConfigUrl}/${companyId}`,
@@ -269,6 +272,7 @@ export class InvoicesService {
         businessName: client.comercialName || client.businessName,
         logo: client.logo,
         limits: client.limits,
+        paymentAccount: client.paymentAccount,
       }))
     );
   }
