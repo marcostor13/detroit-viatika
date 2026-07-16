@@ -29,7 +29,7 @@
       <div class="hidden sm:flex items-center gap-6 shrink-0">
         <div class="text-right">
           <p class="text-xs text-gray-400">Total general</p>
-          <p class="text-xl font-bold text-gray-900">S/ {{ totalGeneral() | number:'1.2-2' }}</p>
+          <p class="text-xl font-bold text-gray-900">{{ totalSymbol() }} {{ totalGeneral() | number:'1.2-2' }}</p>
         </div>
         <button
           type="button"
@@ -182,9 +182,9 @@
           </div>
 
           <!-- Monto requerido -->
-          <div class="md:col-span-2 flex flex-col gap-1.5">
+          <div class="flex flex-col gap-1.5">
             <label class="text-sm font-medium text-gray-700">
-              Monto requerido (S/) <span class="text-red-500">*</span>
+              Monto requerido ({{ totalSymbol() }}) <span class="text-red-500">*</span>
             </label>
             <input
               type="number"
@@ -199,6 +199,20 @@
             <p class="text-xs text-red-500">Indique el monto requerido para el viaje</p>
             }
           </div>
+
+          <!-- Moneda -->
+          <app-form-field #monedaField label="Moneda" [required]="true">
+            <select
+              [id]="monedaField.fieldId"
+              [attr.aria-describedby]="monedaField.describedBy()"
+              formControlName="moneda"
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow"
+            >
+              @for (m of monedasDisponibles(); track m.code) {
+                <option [value]="m.code">{{ m.label }} ({{ m.symbol }})</option>
+              }
+            </select>
+          </app-form-field>
 
 
           <!-- Observaciones -->
@@ -278,7 +292,7 @@
         <!-- Total general -->
         <div class="px-4 py-3.5 bg-gray-50 flex items-center justify-between gap-4 lg:justify-end">
           <span class="text-sm font-semibold text-gray-600 uppercase tracking-wide">Total general</span>
-          <span class="text-base font-bold text-gray-900 tabular-nums">S/ {{ totalGeneral() | number:'1.2-2' }}</span>
+          <span class="text-base font-bold text-gray-900 tabular-nums">{{ totalSymbol() }} {{ totalGeneral() | number:'1.2-2' }}</span>
         </div>
       </div>
 
@@ -290,7 +304,7 @@
   <div class="sm:hidden sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between gap-3 shadow-lg">
     <div>
       <p class="text-xs text-gray-400">Total</p>
-      <p class="text-base font-bold text-gray-900">S/ {{ totalGeneral() | number:'1.2-2' }}</p>
+      <p class="text-base font-bold text-gray-900">{{ totalSymbol() }} {{ totalGeneral() | number:'1.2-2' }}</p>
     </div>
     <button
       type="button"

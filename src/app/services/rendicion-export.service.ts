@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CompanyConfigService } from './company-config.service';
 import { parseFechaEmisionInput } from '../utils/fecha-emision.util';
+import { monedaSymbol } from '../constants/moneda';
 
 type JsPdfWithAutoTable = jsPDF & { lastAutoTable?: { finalY: number } };
 
@@ -88,6 +89,8 @@ export interface RendicionExportData {
   startDate?: string;
   endDate?: string;
   items?: RendicionExportBudgetItemRow[];
+  /** Código de moneda SUNAT del viático vinculado ('01' soles, '02' dólares). Default '01'. */
+  moneda?: string;
   signature?: string;
   approvedByName?: string;
   createdByName?: string;
@@ -530,7 +533,8 @@ export class RendicionExportService {
       ws.getCell(r, 1).value = 'RESUMEN DE SOLICITUD (PRESUPUESTO DETALLADO)';
       ws.getCell(r, 1).font = { bold: true };
       r++;
-      const budgetHeaders = ['Viáticos', 'Importe (S/)', 'Personas', 'Combustible GLP/dia', 'Días', 'Total (S/)'];
+      const sym = monedaSymbol(data.moneda);
+      const budgetHeaders = ['Viáticos', `Importe (${sym})`, 'Personas', 'Combustible GLP/dia', 'Días', `Total (${sym})`];
       budgetHeaders.forEach((h, i) => {
         const c = ws.getCell(r, i + 1);
         c.value = h;

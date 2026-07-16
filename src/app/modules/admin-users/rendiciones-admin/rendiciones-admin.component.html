@@ -196,7 +196,7 @@
 
           <!-- Presupuesto -->
           <td class="px-4 py-3.5 text-right">
-            <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
+            <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
           </td>
 
           <!-- Estado -->
@@ -335,7 +335,7 @@
 
         <div class="flex items-start justify-between gap-2 pl-[52px]">
           <span class="text-xs text-tertiary">{{ item.createdAt | date:'dd/MM/yyyy' }}</span>
-          <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
+          <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
         </div>
 
         <div class="flex items-center gap-2 pl-[52px] mt-3">
@@ -421,7 +421,7 @@
         </div>
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
-          <span class="text-lg font-bold text-secondary tabular-nums">S/ {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
         </div>
       </div>
       @if (approveViaticoLines().length > 0) {
@@ -440,7 +440,7 @@
                 @if (ln.detalle) { <span class="block text-xs text-tertiary truncate">{{ ln.detalle }}</span> }
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <span class="text-sm font-bold text-secondary tabular-nums">S/ {{ ln.lineTotal | number:'1.2-2' }}</span>
+                <span class="text-sm font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</span>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"
                   class="w-3.5 h-3.5 text-tertiary transition-transform duration-200"
                   [class.-rotate-180]="isApproveLineExpanded($index)">
@@ -451,7 +451,7 @@
             <!-- Detalle expandible -->
             @if (isApproveLineExpanded($index)) {
             <div class="px-3 pt-2 pb-2.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-tertiary">
-              <span>Importe <span class="font-medium text-secondary tabular-nums">S/ {{ ln.importe | number:'1.2-2' }}</span></span>
+              <span>Importe <span class="font-medium text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</span></span>
               <span>Pers. <span class="font-medium text-secondary tabular-nums">{{ ln.peopleCount }}</span></span>
               <span>Días <span class="font-medium text-secondary tabular-nums">{{ ln.days }}</span></span>
             </div>
@@ -479,10 +479,10 @@
                   {{ viaticoCategoryName(ln) }}
                   @if (ln.detalle) { <span class="block text-tertiary">{{ ln.detalle }}</span> }
                 </td>
-                <td class="px-3 py-2 text-right text-secondary tabular-nums">S/ {{ ln.importe | number:'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</td>
                 <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.peopleCount }}</td>
                 <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.days }}</td>
-                <td class="px-3 py-2 text-right font-semibold text-secondary tabular-nums">S/ {{ ln.lineTotal | number:'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right font-semibold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</td>
               </tr>
               }
             </tbody>
@@ -595,7 +595,7 @@
         }
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
-          <span class="text-lg font-bold text-secondary tabular-nums">S/ {{ detailItem()?.amount | number:'1.2-2' }}</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ detailItem()?.amount | number:'1.2-2' }}</span>
         </div>
       </div>
 
@@ -623,7 +623,7 @@
                 @if (ln.detalle) { <span class="block text-xs text-tertiary truncate">{{ ln.detalle }}</span> }
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <span class="text-sm font-bold text-secondary tabular-nums">S/ {{ ln.lineTotal | number:'1.2-2' }}</span>
+                <span class="text-sm font-bold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</span>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"
                   class="w-3.5 h-3.5 text-tertiary transition-transform duration-200"
                   [class.-rotate-180]="isDetailLineExpanded($index)">
@@ -633,7 +633,7 @@
             </button>
             @if (isDetailLineExpanded($index)) {
             <div class="px-3 pt-2 pb-2.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-tertiary">
-              <span>Importe <span class="font-medium text-secondary tabular-nums">S/ {{ ln.importe | number:'1.2-2' }}</span></span>
+              <span>Importe <span class="font-medium text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</span></span>
               <span>Pers. <span class="font-medium text-secondary tabular-nums">{{ ln.peopleCount }}</span></span>
               <span>Días <span class="font-medium text-secondary tabular-nums">{{ ln.days }}</span></span>
             </div>
@@ -661,10 +661,10 @@
                   {{ viaticoCategoryName(ln) }}
                   @if (ln.detalle) { <span class="block text-tertiary">{{ ln.detalle }}</span> }
                 </td>
-                <td class="px-3 py-2 text-right text-secondary tabular-nums">S/ {{ ln.importe | number:'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</td>
                 <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.peopleCount }}</td>
                 <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.days }}</td>
-                <td class="px-3 py-2 text-right font-semibold text-secondary tabular-nums">S/ {{ ln.lineTotal | number:'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right font-semibold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</td>
               </tr>
               }
             </tbody>
@@ -803,7 +803,7 @@
         <div>
           <h2 class="text-base font-bold text-secondary">Rechazar solicitud</h2>
           <p class="text-xs text-tertiary mt-0.5">
-            {{ selectedRejectItem()?.userName }} — S/ {{ selectedRejectItem()?.amount | number:'1.2-2' }}
+            {{ selectedRejectItem()?.userName }} — {{ selectedRejectItem()?.currencySymbol }} {{ selectedRejectItem()?.amount | number:'1.2-2' }}
           </p>
         </div>
       </div>

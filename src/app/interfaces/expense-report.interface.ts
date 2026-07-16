@@ -21,6 +21,8 @@ export interface IChainStep {
 
 export interface ICreateViaticoPayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   place: string;
   lat?: number;
   lng?: number;
@@ -38,6 +40,8 @@ export interface ICreateViaticoPayload {
 
 export interface IResubmitViaticoPayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   place: string;
   lat?: number;
   lng?: number;
@@ -149,6 +153,8 @@ export interface IExpenseReport {
   status: IExpenseReportStatus;
   // ─── Viático fields (type='viatico') ──────────────────────────────────────
   viaticoAmount?: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
+  viaticoMoneda?: string;
   viaticoPlace?: string;
   viaticoStartDate?: string;
   viaticoEndDate?: string;

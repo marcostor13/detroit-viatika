@@ -24,12 +24,15 @@ import {
   PlaceResult,
 } from '../../../directives/places-autocomplete.directive';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
+import { FormFieldComponent } from '../../../design-system/form-field/form-field.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import {
   ICreateAdvancePayload,
   IAdvance,
 } from '../../../interfaces/advance.interface';
 import { ICreateViaticoPayload, IResubmitViaticoPayload, IExpenseReport } from '../../../interfaces/expense-report.interface';
+import { AccountingConfigService } from '../../../services/accounting-config.service';
+import { MONEDA_CATALOG, DEFAULT_MONEDA, MonedaInfo, monedaSymbol } from '../../../constants/moneda';
 
 @Component({
   selector: 'app-solicitud-viaticos',
@@ -39,6 +42,7 @@ import { ICreateViaticoPayload, IResubmitViaticoPayload, IExpenseReport } from '
     ReactiveFormsModule,
     PlacesAutocompleteDirective,
     ProjectSelectComponent,
+    FormFieldComponent,
   ],
   templateUrl: './solicitud-viaticos.component.html',
 })
@@ -52,8 +56,11 @@ export class SolicitudViaticosComponent implements OnInit {
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
+  private accountingConfigService = inject(AccountingConfigService);
 
   ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
+  /** Monedas disponibles para la empresa (Plan de Cuentas y Bancos). Fallback: solo soles. */
+  monedasDisponibles = signal<MonedaInfo[]>([MONEDA_CATALOG[DEFAULT_MONEDA]]);
 
   submitting = signal(false);
   useCustomBank = signal(false);
@@ -90,6 +97,7 @@ export class SolicitudViaticosComponent implements OnInit {
     accountNumber: [''],
     cci: [''],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
+    moneda: [DEFAULT_MONEDA, Validators.required],
   });
 
   get isResubmit(): boolean {
@@ -115,6 +123,11 @@ export class SolicitudViaticosComponent implements OnInit {
   totalGeneral(): number {
     const n = Number(this.form.value.amount);
     return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+  }
+
+  /** Símbolo de la moneda elegida ('S/' / '$'), para labels y totales. */
+  totalSymbol(): string {
+    return monedaSymbol(this.form.value.moneda);
   }
 
   ngOnInit(): void {
@@ -195,10 +208,19 @@ export class SolicitudViaticosComponent implements OnInit {
       next: (list) => this.ordenesTrabajo.set((list || []).filter((o) => o.isActive !== false)),
       error: () => this.ordenesTrabajo.set([]),
     });
+    this.accountingConfigService.getAvailableCurrencies(clientId).subscribe({
+      next: (codes) => {
+        const infos = (codes || [])
+          .map((c) => MONEDA_CATALOG[c])
+          .filter((m): m is MonedaInfo => !!m);
+        this.monedasDisponibles.set(infos.length ? infos : [MONEDA_CATALOG[DEFAULT_MONEDA]]);
+      },
+      error: () => this.monedasDisponibles.set([MONEDA_CATALOG[DEFAULT_MONEDA]]),
+    });
   }
 
   private bootstrapFromAdvance(adv: IAdvance): void {
-    this.form.patchValue({ amount: adv.amount });
+    this.form.patchValue({ amount: adv.amount, moneda: adv.moneda ?? DEFAULT_MONEDA });
 
     const pid =
       typeof adv.projectId === 'object' && adv.projectId
@@ -223,7 +245,7 @@ export class SolicitudViaticosComponent implements OnInit {
 
   /** Precarga el formulario desde un viático unificado (ExpenseReport) en edición. */
   private bootstrapFromViatico(report: IExpenseReport): void {
-    this.form.patchValue({ amount: report.viaticoAmount ?? null });
+    this.form.patchValue({ amount: report.viaticoAmount ?? null, moneda: report.viaticoMoneda ?? DEFAULT_MONEDA });
 
     const pid =
       typeof report.projectId === 'object' && report.projectId
@@ -322,6 +344,7 @@ export class SolicitudViaticosComponent implements OnInit {
     const projectId = (this.form.getRawValue().projectId as string) ?? '';
     const ordenTrabajoId = (this.form.value.ordenTrabajoId as string) || undefined;
     const montoRequerido = this.totalGeneral();
+    const moneda = (this.form.value.moneda as string) || DEFAULT_MONEDA;
 
     const customBank = this.useCustomBank() ? {
       bankName: (this.form.value.bankName || '').trim() || undefined,
@@ -336,6 +359,7 @@ export class SolicitudViaticosComponent implements OnInit {
     if (viatico) {
       const resubmitPayload: IResubmitViaticoPayload = {
         amount: montoRequerido,
+        moneda,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
         ...(this.selectedLng != null && { lng: this.selectedLng }),
@@ -359,6 +383,7 @@ export class SolicitudViaticosComponent implements OnInit {
       // Resubmit of a legacy Advance (old system)
       const legacyPayload: ICreateAdvancePayload = {
         amount: montoRequerido,
+        moneda,
         description: `Viático: ${place} (${startStr} → ${endStr})`,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
@@ -379,6 +404,7 @@ export class SolicitudViaticosComponent implements OnInit {
     // New unified viatico (ExpenseReport type='viatico')
     const viaticoPayload: ICreateViaticoPayload = {
       amount: montoRequerido,
+      moneda,
       place,
       ...(this.selectedLat != null && { lat: this.selectedLat }),
       ...(this.selectedLng != null && { lng: this.selectedLng }),

@@ -1731,6 +1731,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         dias: i.daysCount,
         total: i.total
       })),
+      moneda: this.report.viaticoMoneda,
       signature: this.getCollaboratorSignature(),
       approvedByName: this.getApprovedByName(),
       createdByName: this.getCreatedByName(),

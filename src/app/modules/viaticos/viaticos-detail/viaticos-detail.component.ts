@@ -14,6 +14,7 @@ import {
   ADVANCE_STATUS_LABELS,
   ADVANCE_STATUS_COLORS,
 } from '../../../interfaces/advance.interface';
+import { monedaSymbol } from '../../../constants/moneda';
 
 type JsPdfAT = jsPDF & { lastAutoTable?: { finalY: number } };
 
@@ -152,6 +153,10 @@ export class ViaticosDetailComponent implements OnInit {
         this.notifications.show(e?.error?.message || 'Error al cancelar la solicitud.', 'error');
       },
     });
+  }
+
+  currencySymbol(): string {
+    return monedaSymbol(this.advance()?.moneda);
   }
 
   collaboratorName(): string {
@@ -339,6 +344,7 @@ export class ViaticosDetailComponent implements OnInit {
     try {
       const { responsible, accountStr, dni, peopleMax, place, startFmt, endFmt, projectName, lines, catName } =
         this.exportData();
+      const sym = this.currencySymbol();
 
       const DARK_RED: [number, number, number] = [126, 29, 29];
       const WHITE: [number, number, number] = [255, 255, 255];
@@ -404,11 +410,11 @@ export class ViaticosDetailComponent implements OnInit {
       const tableRows = lines.map((ln) => [
         catName(ln),
         ln.detalle ?? '',
-        `S/ ${ln.importe.toFixed(2)}`,
+        `${sym} ${ln.importe.toFixed(2)}`,
         String(ln.peopleCount),
         ln.glpPerDay > 0 ? ln.glpPerDay.toFixed(2) : '—',
         String(ln.days),
-        `S/ ${ln.lineTotal.toFixed(2)}`,
+        `${sym} ${ln.lineTotal.toFixed(2)}`,
       ]);
 
       autoTable(doc, {
@@ -424,7 +430,7 @@ export class ViaticosDetailComponent implements OnInit {
               styles: { halign: 'right' as const, fontStyle: 'bold' as const, fillColor: DARK_RED, textColor: WHITE },
             },
             {
-              content: `S/ ${a.amount.toFixed(2)}`,
+              content: `${sym} ${a.amount.toFixed(2)}`,
               styles: { halign: 'right' as const, fontStyle: 'bold' as const, fillColor: DARK_RED, textColor: WHITE },
             },
           ],
@@ -471,6 +477,7 @@ export class ViaticosDetailComponent implements OnInit {
 
       const { responsible, accountStr, dni, peopleMax, place, startFmt, endFmt, projectName, lines, catName } =
         this.exportData();
+      const sym = this.currencySymbol();
 
       const DR = 'FF7E1D1D';
       const WH = 'FFFFFFFF';
@@ -562,7 +569,7 @@ export class ViaticosDetailComponent implements OnInit {
       });
 
       // ── Líneas ──
-      const numFmt = '"S/ "#,##0.00';
+      const numFmt = `"${sym} "#,##0.00`;
       const numFmtPlain = '#,##0.00';
 
       lines.forEach((ln, i) => {

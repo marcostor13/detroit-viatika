@@ -15,6 +15,7 @@ import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.i
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
+import { monedaSymbol } from '../../../constants/moneda';
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   // Rendición normal
@@ -69,6 +70,7 @@ export type UnifiedRendicionItem = {
   projectName: string;
   projectId: string;
   amount: number;
+  currencySymbol: string;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -290,6 +292,7 @@ export class RendicionesAdminComponent implements OnInit {
         amount: isDirectaChain
           ? this.reportExpensesTotal(r)
           : (r.viaticoAmount ?? r.budget ?? 0),
+        currencySymbol: isDirectaChain ? monedaSymbol(undefined) : monedaSymbol(r.viaticoMoneda),
         status: r.status,
         statusLabel: REPORT_STATUS_LABELS[r.status] ?? r.status,
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
@@ -336,6 +339,7 @@ export class RendicionesAdminComponent implements OnInit {
         projectName,
         projectId: pid,
         amount: a.amount ?? 0,
+        currencySymbol: monedaSymbol(a.moneda),
         status: a.status,
         statusLabel: ADVANCE_STATUS_LABELS[a.status] ?? a.status,
         statusColor: ADVANCE_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-700',

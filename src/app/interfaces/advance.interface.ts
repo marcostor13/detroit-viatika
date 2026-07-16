@@ -133,6 +133,8 @@ export interface IAdvance {
   observations?: string;
   coordinatorNotification?: ICoordinatorNotification;
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
+  moneda?: string;
   description: string;
   status: AdvanceStatus;
   approvalLevel: number;
@@ -175,6 +177,8 @@ export interface IAdvanceStats {
 /** Legacy: solo amount + description. Fase 2: lugar, fechas, proyecto y monto requerido. */
 export interface ICreateAdvancePayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   description: string;
   expenseReportId?: string;
   place?: string;

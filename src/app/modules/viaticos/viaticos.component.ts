@@ -12,6 +12,7 @@ import {
   VIATICO_REPORT_STATUS_LABELS,
   VIATICO_REPORT_STATUS_COLORS,
 } from '../../interfaces/expense-report.interface';
+import { monedaSymbol } from '../../constants/moneda';
 
 type UnifiedSolicitudItem = {
   _id: string;
@@ -22,6 +23,7 @@ type UnifiedSolicitudItem = {
   projectLabel: string;
   dateRange: string;
   amount: number;
+  currencySymbol: string;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -156,6 +158,7 @@ export class ViaticosComponent implements OnInit {
         projectLabel,
         dateRange: this.viaDates(v),
         amount: v.viaticoAmount ?? v.budget ?? 0,
+        currencySymbol: monedaSymbol(v.viaticoMoneda),
         status: v.status,
         statusLabel,
         statusColor,

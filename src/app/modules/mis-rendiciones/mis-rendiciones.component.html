@@ -173,7 +173,7 @@
 
         <!-- Monto -->
         <ng-container *appColumn="'monto'; header: 'Monto'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let item">
-          S/ {{ item.amount | number:'1.2-2' }}
+          {{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}
         </ng-container>
 
         <!-- Comprobantes -->

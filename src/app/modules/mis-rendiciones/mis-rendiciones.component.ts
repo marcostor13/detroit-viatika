@@ -25,6 +25,7 @@ import {
   ADVANCE_STATUS_LABELS,
   ADVANCE_STATUS_COLORS,
 } from '../../interfaces/advance.interface';
+import { monedaSymbol } from '../../constants/moneda';
 
 type UnifiedViaticoItem = {
   _id: string;
@@ -36,6 +37,7 @@ type UnifiedViaticoItem = {
   place: string;
   dateRange: string;
   amount: number;
+  currencySymbol: string;
   expensesCount: number;
   canEdit: boolean;
   canResubmit: boolean;
@@ -893,6 +895,7 @@ export class MisRendicionesComponent implements OnInit {
         place: r.viaticoPlace ?? '—',
         dateRange: this.viaticoDates(r),
         amount: r.viaticoAmount ?? 0,
+        currencySymbol: monedaSymbol(r.viaticoMoneda),
         expensesCount: (r.expenseIds || []).length,
         canEdit: this.canEditViatico(r),
         canResubmit: this.canResubmitViatico(r),
@@ -914,6 +917,7 @@ export class MisRendicionesComponent implements OnInit {
         place: adv.place ?? '—',
         dateRange: this.advanceDateRange(adv),
         amount: adv.amount,
+        currencySymbol: monedaSymbol(adv.moneda),
         expensesCount: 0,
         canEdit: adv.status === 'pending_l1',
         canResubmit: adv.status === 'rejected',
@@ -937,6 +941,7 @@ export class MisRendicionesComponent implements OnInit {
         place: r.location ?? '—',
         dateRange: this.reportDateRange(r),
         amount: r.budget,
+        currencySymbol: monedaSymbol(undefined),
         expensesCount: (r.expenseIds || []).length,
         canEdit: false,
         canResubmit: false,

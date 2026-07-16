@@ -21,6 +21,7 @@ import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { TabsComponent, TabItem } from '../../design-system/tabs/tabs.component';
+import { monedaSymbol } from '../../constants/moneda';
 type Tab = 'pendientes' | 'aprobados' | 'reembolsos' | 'devoluciones' | 'rendiciones-directas';
 
 @Component({
@@ -280,6 +281,10 @@ export class TesoreriaComponent implements OnInit {
     return Math.max(Number(report.viaticoAmount ?? 0) - Number(report.viaticoPaidAmount ?? 0), 0);
   }
 
+  viaticoCurrencySymbol(report: IExpenseReport | null | undefined): string {
+    return monedaSymbol(report?.viaticoMoneda);
+  }
+
   /**
    * Contabilidad puede completar el pago de un viático con saldo del anticipo
    * pendiente. Incluye los estados posteriores al envío del colaborador
@@ -478,6 +483,10 @@ export class TesoreriaComponent implements OnInit {
 
   advanceRemaining(advance: IAdvance): number {
     return Math.max(Number(advance?.amount ?? 0) - this.advancePaid(advance), 0);
+  }
+
+  advanceCurrencySymbol(advance: IAdvance | null | undefined): string {
+    return monedaSymbol(advance?.moneda);
   }
 
   /** Contabilidad puede registrar/seguir registrando pagos mientras no se haya liquidado. */

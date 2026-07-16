@@ -11,6 +11,7 @@ import { IExpenseReport, IChainStep } from '../../interfaces/expense-report.inte
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
+import { monedaSymbol } from '../../constants/moneda';
 
 /** Fila normalizada que alimenta los listados del inicio (colaborador y coordinador). */
 export interface DashRow {
@@ -20,6 +21,7 @@ export interface DashRow {
   userName: string;
   project: string;
   amount: number;
+  currencySymbol: string;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -435,6 +437,7 @@ export class InicioComponent implements OnInit {
       userName: this.resolveUserName(r.userId),
       project: this.resolveProject((r as any).projectId),
       amount: (r as any).viaticoAmount ?? r.budget ?? 0,
+      currencySymbol: monedaSymbol((r as any).viaticoMoneda),
       status: r.status,
       statusLabel: this.REPORT_STATUS_LABELS[r.status] ?? r.status,
       statusColor: this.REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600',
@@ -452,6 +455,7 @@ export class InicioComponent implements OnInit {
       userName: this.resolveUserName(a.userId),
       project: this.resolveProject((a as any).projectId),
       amount: (a as any).amount ?? 0,
+      currencySymbol: monedaSymbol((a as any).moneda),
       status: a.status,
       statusLabel: this.STATUS_LABELS[a.status] ?? a.status,
       statusColor: this.STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600',
