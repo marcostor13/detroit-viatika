@@ -45,7 +45,7 @@ export class TesoreriaComponent implements OnInit {
     const tabs: TabItem[] = [
       // VD-32: se renombran las etiquetas visibles (no los `value`, que se usan en la lógica).
       { value: 'pendientes', label: 'Fondos' },
-      { value: 'aprobados', label: 'En pago' },
+      { value: 'aprobados', label: 'Pagar' },
     ];
     if (this.canPayAndSettle) {
       // VD-37: la pestaña "Reembolsos" muestra los reembolsos al colaborador
