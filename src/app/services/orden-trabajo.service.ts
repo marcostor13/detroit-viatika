@@ -4,6 +4,12 @@ import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { IOrdenTrabajo } from '../interfaces/orden-trabajo.interface';
 import { IPaginatedResult } from '../interfaces/paginated-result.interface';
+import { UserStateService } from './user-state.service';
+
+export interface IBulkImportResult {
+  created: number;
+  errors: { row: number; reason: string }[];
+}
 
 /**
  * El httpInterceptor agrega automáticamente el companyId:
@@ -14,6 +20,7 @@ import { IPaginatedResult } from '../interfaces/paginated-result.interface';
 @Injectable({ providedIn: 'root' })
 export class OrdenTrabajoService {
   private http = inject(HttpClient);
+  private userState = inject(UserStateService);
   private apiUrl = `${environment.api}/orden-trabajo`;
 
   getAllPaginated(opts?: {
@@ -49,5 +56,12 @@ export class OrdenTrabajoService {
 
   delete(id: string): Observable<unknown> {
     return this.http.delete(`${this.apiUrl}/${id}`);
+  }
+
+  importFromExcel(file: File): Observable<IBulkImportResult> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('clientId', this.userState.getUser()?.companyId || '');
+    return this.http.post<IBulkImportResult>(`${this.apiUrl}/import`, formData);
   }
 }

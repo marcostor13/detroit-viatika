@@ -1,9 +1,10 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, ElementRef, inject, OnInit, signal, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { OrdenTrabajoService } from '../../services/orden-trabajo.service';
+import * as ExcelJS from 'exceljs';
+import { OrdenTrabajoService, IBulkImportResult } from '../../services/orden-trabajo.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmationService } from '../../services/confirmation.service';
 import { UserStateService } from '../../services/user-state.service';
@@ -36,6 +37,8 @@ import { PaginatorComponent } from '../../design-system/paginator/paginator.comp
   templateUrl: './ordenes-trabajo.component.html',
 })
 export class OrdenesTrabajoComponent implements OnInit {
+  @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+
   private ordenTrabajoService = inject(OrdenTrabajoService);
   private notificationService = inject(NotificationService);
   private confirmationService = inject(ConfirmationService);
@@ -54,6 +57,8 @@ export class OrdenesTrabajoComponent implements OnInit {
   limit = signal(20);
   search = signal('');
   filterCostCenter = signal('');
+  importResult = signal<IBulkImportResult | null>(null);
+  importing = signal(false);
 
   ngOnInit() {
     this.loadCentrosCosto();
@@ -135,5 +140,92 @@ export class OrdenesTrabajoComponent implements OnInit {
         });
       },
     });
+  }
+
+  // --- Import / Template ---
+
+  triggerFileInput() {
+    this.fileInput.nativeElement.value = '';
+    this.fileInput.nativeElement.click();
+  }
+
+  onFileSelected(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    this.importing.set(true);
+    this.importResult.set(null);
+    this.ordenTrabajoService.importFromExcel(file).subscribe({
+      next: (res) => {
+        this.importing.set(false);
+        this.importResult.set(res);
+        if (res.created > 0) {
+          this.notificationService.show(`${res.created} orden(es) de trabajo importada(s)`, 'success');
+          this.load();
+        }
+        if (res.errors.length > 0) {
+          this.notificationService.show(`${res.errors.length} fila(s) con error`, 'warning');
+        }
+      },
+      error: (err: HttpErrorResponse) => {
+        this.importing.set(false);
+        this.notificationService.show('Error al importar: ' + (err.error?.message || err.message), 'error');
+      },
+    });
+  }
+
+  async downloadTemplate() {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Viatika';
+
+    const sheet = workbook.addWorksheet('Ordenes de Trabajo');
+    const headers = ['Nombre*', 'Código Centro de Costo*', 'Activo'];
+    sheet.addRow(headers);
+
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+    sheet.columns = [
+      { key: 'Nombre*', width: 28 },
+      { key: 'Código Centro de Costo*', width: 26 },
+      { key: 'Activo', width: 12 },
+    ];
+    headerRow.height = 22;
+
+    const sampleCode = this.centrosCosto()[0]?.code || 'CC-001';
+    sheet.addRow(['Lim-Com-1', sampleCode, 'Sí']);
+    sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } };
+
+    const instrSheet = workbook.addWorksheet('Instrucciones');
+    instrSheet.addRow(['Campo', 'Requerido', 'Descripción']);
+    instrSheet.getRow(1).font = { bold: true };
+    instrSheet.addRow(['Nombre*', 'Sí', 'Nombre/código único de la OT dentro de la empresa (ej. "Lim-Com-1")']);
+    instrSheet.addRow(['Código Centro de Costo*', 'Sí', 'Código (o nombre) de un centro de costo existente en la empresa']);
+    instrSheet.addRow(['Activo', 'No', '"Sí" o "No" (vacío = Sí)']);
+    instrSheet.columns = [
+      { key: 'Campo', width: 26 },
+      { key: 'Requerido', width: 12 },
+      { key: 'Descripción', width: 55 },
+    ];
+    instrSheet.addRow([]);
+
+    const codesSheet = workbook.addWorksheet('Centros de Costo Disponibles');
+    codesSheet.addRow(['Código', 'Nombre']);
+    codesSheet.getRow(1).font = { bold: true };
+    for (const cc of this.centrosCosto()) {
+      codesSheet.addRow([cc.code, cc.name]);
+    }
+    codesSheet.columns = [{ key: 'Código', width: 20 }, { key: 'Nombre', width: 32 }];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'plantilla_ordenes_trabajo.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }

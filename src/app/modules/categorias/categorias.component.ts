@@ -132,7 +132,7 @@ export class CategoriasComponent implements OnInit {
     workbook.creator = 'Viatika';
 
     const sheet = workbook.addWorksheet('Categorías');
-    const headers = ['Nombre*', 'Cuenta', 'Descripción', 'Observaciones', 'Límite'];
+    const headers = ['Nombre*', 'Cuenta', 'Cuenta Destino 6x', 'Descripción', 'Observaciones', 'Límite', 'Perfil de Categoría'];
     sheet.addRow(headers);
 
     const headerRow = sheet.getRow(1);
@@ -144,14 +144,16 @@ export class CategoriasComponent implements OnInit {
     sheet.columns = [
       { key: 'Nombre*', width: 28 },
       { key: 'Cuenta', width: 18 },
+      { key: 'Cuenta Destino 6x', width: 18 },
       { key: 'Descripción', width: 30 },
       { key: 'Observaciones', width: 30 },
       { key: 'Límite', width: 14 },
+      { key: 'Perfil de Categoría', width: 24 },
     ];
     headerRow.height = 22;
 
     // Sample row
-    sheet.addRow(['Viáticos de transporte', '6310', 'Gastos de movilidad del colaborador', 'Solo traslados locales', 500]);
+    sheet.addRow(['Viáticos de transporte', '6310', '6310001', 'Gastos de movilidad del colaborador', 'Solo traslados locales', 500, 'Movilidad']);
     sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } };
 
     const instrSheet = workbook.addWorksheet('Instrucciones');
@@ -159,13 +161,15 @@ export class CategoriasComponent implements OnInit {
     instrSheet.getRow(1).font = { bold: true };
     instrSheet.addRow(['Nombre*', 'Sí', 'Nombre único de la categoría']);
     instrSheet.addRow(['Cuenta', 'No', 'Número de cuenta contable (ej. 6310)']);
+    instrSheet.addRow(['Cuenta Destino 6x', 'No', 'Cuenta contable clase 6 destino (asientos Contanet)']);
     instrSheet.addRow(['Descripción', 'No', 'Descripción breve de la categoría']);
     instrSheet.addRow(['Observaciones', 'No', 'Notas adicionales o restricciones']);
     instrSheet.addRow(['Límite', 'No', 'Límite de gasto en soles (solo número, sin S/)']);
+    instrSheet.addRow(['Perfil de Categoría', 'No', 'Nombre del perfil al que se agrega esta categoría. Si el perfil no existe, se crea automáticamente']);
     instrSheet.columns = [
       { key: 'Campo', width: 22 },
       { key: 'Requerido', width: 12 },
-      { key: 'Descripción', width: 50 },
+      { key: 'Descripción', width: 60 },
     ];
     instrSheet.addRow([]);
     instrSheet.addRow(['Nota: La fila de ejemplo en la hoja "Categorías" puede eliminarse antes de cargar.']);
