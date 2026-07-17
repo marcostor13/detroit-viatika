@@ -49,6 +49,8 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/sunat-config/',
     '/config',
     '/logo',
+    '/accounting-config',
+    '/accounting-config/',
     '/api/client',
     '/dashboard',
     '/expense-report',

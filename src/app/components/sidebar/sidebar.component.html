@@ -146,6 +146,7 @@
 
       <!-- Aprobador de algún centro de costo: nav fijo -->
       @if (isApprover()) {
+      @if (!isColaborador()) {
       <a
         [routerLink]="['/inicio']"
         routerLinkActive="bg-primary text-white"
@@ -155,6 +156,7 @@
       >
         <span class="font-medium">Inicio</span>
       </a>
+      }
       <a
         [routerLink]="['/rendiciones']"
         routerLinkActive="bg-primary text-white"
@@ -548,6 +550,7 @@
 
         <!-- Aprobador de algún centro de costo: nav fijo -->
         @if (isApprover()) {
+        @if (!isColaborador()) {
         <a
           [routerLink]="['/inicio']"
           (click)="toggleSidebar()"
@@ -557,6 +560,7 @@
         >
           <span class="font-medium text-lg">Inicio</span>
         </a>
+        }
         <a
           [routerLink]="['/rendiciones']"
           (click)="toggleSidebar()"
