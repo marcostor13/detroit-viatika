@@ -1115,7 +1115,7 @@ export class RendicionExportService {
     doc.setFont('helvetica', 'bold');
     doc.text('FIRMA Trabajador', sigWorkerCX, y, { align: 'center' });
     doc.line(sigWorkerCX - 35, y + 1.5, sigWorkerCX + 35, y + 1.5);
-    doc.text('FIRMA Coordinador', sigCoordCX, y, { align: 'center' });
+    doc.text('FIRMA Aprobador', sigCoordCX, y, { align: 'center' });
     doc.line(sigCoordCX - 35, y + 1.5, sigCoordCX + 35, y + 1.5);
     y += 7;
     doc.setFont('helvetica', 'normal');

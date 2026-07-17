@@ -15,6 +15,12 @@ por auto-aprobación** (regla 1.5).
 - **Asignado** = el centro seleccionado está entre los centros asignados al colaborador.
 - Un paso con **slot vacío** se **omite** (no se renumera); la cadena continúa con el
   siguiente paso definido.
+- **Los pasos de nivel (N1/N2/N3…) se aprueban EN PARALELO, no en fila.** Las flechas
+  `-->` de los diagramas siguientes muestran el orden en que aparecen en la cadena
+  (para resolver escalamiento y omisión de slots), **no** un orden obligatorio de
+  aprobación — ver [sección 2.5](#25-aprobación-en-paralelo-entre-niveles). La única
+  etapa realmente secuencial es **Contabilidad**: exige que todos los niveles previos
+  ya estén aprobados, sin importar en qué orden lo hicieron.
 
 ---
 
@@ -38,6 +44,10 @@ flowchart TD
 | **A** — centro asignado | `N2(seleccionado)` → `Contabilidad` |
 | **B** — centro no asignado | `N2(principal)` → `N2(seleccionado)` |
 
+> En el Caso B, `N2(principal)` y `N2(seleccionado)` se aprueban **en cualquier orden**
+> (aprobación en paralelo, ver [sección 2.5](#25-aprobación-en-paralelo-entre-niveles));
+> recién cuando ambos aprobaron pasa a Contabilidad.
+
 ---
 
 ## 2. RENDICIÓN, documentos y RENDICIONES DIRECTAS (regla 1.4)
@@ -60,6 +70,36 @@ flowchart TD
 |---|---|
 | **A** — centro asignado | `N1(principal)` → `N2(principal)` → `Contabilidad` |
 | **B** — centro no asignado | `N1(principal)` → `N2(principal)` → `N2(seleccionado)` → `Contabilidad` |
+
+---
+
+## 2.5 Aprobación en paralelo entre niveles
+
+Los pasos de nivel de una misma cadena (N1/N2/[N2 sel] de la solicitud o la rendición)
+**no tienen que aprobarse en orden**. Cualquiera de sus aprobadores puede actuar en
+cualquier momento, sin esperar a que otro nivel apruebe primero. **Contabilidad es la
+única etapa que sí espera**: solo se habilita cuando **todos** los niveles anteriores
+quedaron aprobados, sin importar el orden en que ocurrió.
+
+```mermaid
+flowchart LR
+    A[Rendición enviada] --> N1["N1 del principal"]
+    A --> N2["N2 del principal"]
+    N1 -.->|"cualquier orden"| C{¿Todos<br/>aprobados?}
+    N2 -.->|"cualquier orden"| C
+    C -->|Sí| D[Contabilidad]
+    D --> E([Aprobada])
+```
+
+Ejemplo: N2 aprueba primero (antes que N1). El comprobante queda con 1 de 2 niveles
+aprobados y **sigue esperando a N1** — Contabilidad no puede actuar todavía. Cuando N1
+también aprueba (sin importar cuánto tiempo después), recién se habilita Contabilidad.
+
+> Implementación: cada paso de la cadena (`ChainStep`) tiene su propio flag `approved`
+> (más `approvedBy`/`approvedAt`) — ver `findActionableChainStep`/`isChainFullyApproved`
+> en `approval-chain.util.ts`. El motor ya no avanza un puntero secuencial
+> (`chain[approvalLevel]`); cualquier aprobador de cualquier paso aún no aprobado puede
+> actuar sobre ESE paso específico.
 
 ---
 

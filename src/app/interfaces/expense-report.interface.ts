@@ -17,6 +17,10 @@ export interface IChainStep {
   approverIds: ({ _id: string; name: string; email: string } | string)[];
   /** Presente si este paso es resultado de un escalamiento (regla 1.5). */
   escalatedFrom?: number;
+  /** Aprobación en paralelo entre niveles: este paso específico ya fue resuelto, sin importar el orden de los demás. */
+  approved?: boolean;
+  approvedBy?: { _id: string; name: string; email: string } | string;
+  approvedAt?: string;
 }
 
 export interface ICreateViaticoPayload {
@@ -59,7 +63,7 @@ export interface IResubmitViaticoPayload {
 
 export const VIATICO_REPORT_STATUS_LABELS: Partial<Record<IExpenseReportStatus, string>> = {
   pending_l1: 'En solicitud',
-  pending_l2: 'Aprobada por coordinador',
+  pending_l2: 'Aprobada por aprobadores',
   pending_contabilidad: 'Pendiente de Contabilidad',
   viatico_approved: 'Aprobada',
   partially_paid: 'Pago parcial',
@@ -151,6 +155,8 @@ export interface IExpenseReport {
   clientId: string;
   type?: ExpenseReportType;
   status: IExpenseReportStatus;
+  /** Coordinador snapshot de la rendición (regla 1.4), poblado con nombre/email. */
+  assignedCoordinatorId?: { _id: string; name: string; email?: string } | string;
   // ─── Viático fields (type='viatico') ──────────────────────────────────────
   viaticoAmount?: number;
   /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
@@ -166,6 +172,13 @@ export interface IExpenseReport {
   /** Cadena por centro de costo (N2 principal/seleccionado) asignada al crear la solicitud. */
   viaticoApproverChain?: IChainStep[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /**
+   * Aprobación final de Contabilidad de la SOLICITUD (regla 1.3). Distinto de
+   * `contabilidadApprovedAt`/`contabilidadApprovedBy`, que pertenecen a la
+   * aprobación de la RENDICIÓN de comprobantes (regla 1.4, posterior al pago).
+   */
+  viaticoSolicitudContabilidadApprovedAt?: string;
+  viaticoSolicitudContabilidadApprovedBy?: any;
   viaticoRejectionReason?: string;
   /** Quién rechazó: aprobador de centro de costo, o Contabilidad (gate final). */
   viaticoRejectedByRole?: 'centro_costo' | 'contabilidad';

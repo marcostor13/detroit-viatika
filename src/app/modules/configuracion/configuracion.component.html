@@ -432,7 +432,7 @@
     <div class="flex justify-between items-center mb-6">
       <div>
         <h2 class="text-xl font-semibold text-secondary">Notificaciones Automaticas</h2>
-        <p class="text-sm text-tertiary mt-1">Configura el envio automatico de recordatorios de rendicion a colaboradores y coordinadores.</p>
+        <p class="text-sm text-tertiary mt-1">Configura el envio automatico de recordatorios de rendicion a colaboradores y aprobadores.</p>
       </div>
       @if (!showNotificationsForm) {
         <app-button label="Editar Notificaciones" variant="primary" size="md" (clicked)="editNotifications()" />
@@ -536,14 +536,14 @@
           <option [ngValue]="6">Sabado</option>
         </select>
         <p class="text-xs text-tertiary mt-1">
-          Dia en que se envian recordatorios semanales a coordinadores y contabilidad.
+          Dia en que se envian recordatorios semanales a aprobadores y contabilidad.
         </p>
       </div>
       }
 
       <p class="text-xs text-tertiary">
         El colaborador recibe un aviso el ultimo dia de su viatico.<br>
-        El coordinador recibe un recordatorio de rendiciones pendientes de revision.<br>
+        El aprobador recibe un recordatorio de rendiciones pendientes de revision.<br>
         Contabilidad recibe un recordatorio de rendiciones pendientes de aprobacion contable.<br>
         Para viáticos de menos de 7 dias, se envia una notificacion urgente 1 dia antes del vencimiento.
       </p>

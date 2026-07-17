@@ -31,7 +31,7 @@
   <div class="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
 
     <div class="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-sm text-primary">
-      Crea una rendición directa para un colaborador o coordinador con este depósito ya vinculado. Si fue por depósito o transferencia, adjunta el comprobante y el monto se detecta automáticamente. Si fue en efectivo, el comprobante es opcional.
+      Crea una rendición directa para un colaborador o aprobador con este depósito ya vinculado. Si fue por depósito o transferencia, adjunta el comprobante y el monto se detecta automáticamente. Si fue en efectivo, el comprobante es opcional.
     </div>
 
     <form [formGroup]="form" class="bg-quaternary rounded-2xl border border-divider shadow-soft overflow-hidden divide-y divide-divider">
@@ -39,7 +39,7 @@
       <!-- Destinatario -->
       <div class="p-5">
         <label class="block text-sm font-semibold text-secondary mb-1.5">Destinatario <span class="text-error">*</span></label>
-        <p class="text-xs text-tertiary mb-2">Colaborador o coordinador que recibirá el saldo.</p>
+        <p class="text-xs text-tertiary mb-2">Colaborador o aprobador que recibirá el saldo.</p>
         <select formControlName="userId"
           class="w-full border rounded-xl px-3 py-2.5 text-sm bg-quaternary text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
           [class]="isInvalid('userId') ? 'border-error' : 'border-tertiary/30'">

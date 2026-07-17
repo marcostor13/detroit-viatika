@@ -29,10 +29,6 @@ export class AdvanceService {
     return user?._id || '';
   }
 
-  create(payload: ICreateAdvancePayload): Observable<IAdvance> {
-    return this.http.post<IAdvance>(this.url, payload);
-  }
-
   findMy(): Observable<IAdvance[]> {
     return this.http.get<IAdvance[]>(`${this.url}/my/${this.userId}/client/${this.clientId}`);
   }
@@ -103,20 +99,6 @@ export class AdvanceService {
 
   findPendingReturns(clientId: string): Observable<IAdvance[]> {
     return this.http.get<IAdvance[]>(`${this.url}/pending-returns/client/${clientId}`);
-  }
-
-  findForViaticosPage(filters: {
-    status?: string;
-    dateFrom?: string;
-    dateTo?: string;
-  } = {}): Observable<IAdvance[]> {
-    let params = '';
-    const parts: string[] = [];
-    if (filters.status) parts.push(`status=${encodeURIComponent(filters.status)}`);
-    if (filters.dateFrom) parts.push(`dateFrom=${encodeURIComponent(filters.dateFrom)}`);
-    if (filters.dateTo) parts.push(`dateTo=${encodeURIComponent(filters.dateTo)}`);
-    if (parts.length) params = '?' + parts.join('&');
-    return this.http.get<IAdvance[]>(`${this.url}/viaticos/list${params}`);
   }
 
   // ─── Pagos por lote BBVA (VD-7) ─────────────────────────────────────────────

@@ -30,7 +30,7 @@ const REPORT_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelada',
   // Fases de viático (estados iniciales = solicitud)
   pending_l1: 'En solicitud',
-  pending_l2: 'Aprobada por coordinador',
+  pending_l2: 'Aprobada por aprobadores',
   pending_contabilidad: 'Pendiente de Contabilidad',
   viatico_approved: 'Aprobada',
   partially_paid: 'Pago parcial',
@@ -174,11 +174,15 @@ export class RendicionesAdminComponent implements OnInit {
     return typeof entry === 'object' ? entry._id : entry;
   }
 
-  /** ¿El usuario actual está entre los `approverIds` del paso `level` de una cadena por centro de costo? */
-  private isApproverOfStep(chain: IChainStep[] | undefined, level: number): boolean {
-    const step = chain?.[level];
-    if (!step) return false;
-    return step.approverIds.some(a => (typeof a === 'object' ? a._id : a) === this.currentUserId);
+  /**
+   * ¿El usuario actual es aprobador de algún paso AÚN PENDIENTE de la cadena
+   * por centro de costo? Aprobación en paralelo entre niveles: cualquier paso
+   * no aprobado es accionable, sin importar su posición.
+   */
+  private hasActionableStep(chain: IChainStep[] | undefined): boolean {
+    return (chain ?? []).some(
+      (step: any) => !step.approved && step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    );
   }
 
   ngOnInit(): void {
@@ -303,12 +307,12 @@ export class RendicionesAdminComponent implements OnInit {
         // Esta bandeja solo ofrece acción report-level para viático.
         canApproveNow: isViatico && (
           (r.status === 'pending_l1' &&
-            (this.isSuperAdmin || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0))) ||
+            (this.isSuperAdmin || this.hasActionableStep(r.viaticoApproverChain))) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
         ),
         canReject: isViatico && (
           (r.status === 'pending_l1' &&
-            (this.isSuperAdmin || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0))) ||
+            (this.isSuperAdmin || this.hasActionableStep(r.viaticoApproverChain))) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
         ),
         isContabilidadGate: r.status === 'pending_contabilidad',

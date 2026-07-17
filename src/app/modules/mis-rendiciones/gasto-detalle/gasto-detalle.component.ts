@@ -389,26 +389,20 @@ emissionDateText(exp: Record<string, unknown>): string {
       .join(' / ');
   }
 
-  private getApprovalLevel(exp: Record<string, unknown>): number {
-    return (exp['approvalLevel'] as number) ?? 0;
-  }
-
-  /** Cadena ordenada de niveles del comprobante, con estado y aprobador(es) de cada paso. */
+  /** Cadena de niveles del comprobante, con estado y aprobador(es) de cada paso. Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
   chainSteps(exp: Record<string, unknown>): Array<{
     level: number;
-    state: 'completado' | 'pendiente' | 'futuro';
+    state: 'completado' | 'pendiente';
     approverNames: string;
     escalatedFrom?: number;
     approvedBy?: string;
     date?: string;
   }> {
     const chain = (exp['approverChain'] as any[]) ?? [];
-    const approvalLevel = this.getApprovalLevel(exp);
     const history = (exp['approvalHistory'] as any[]) ?? [];
-    return chain.map((step: any, idx: number) => {
-      const state: 'completado' | 'pendiente' | 'futuro' =
-        idx < approvalLevel ? 'completado' : idx === approvalLevel ? 'pendiente' : 'futuro';
-      const entry = history.find((h: any) => h.level === step.level);
+    return chain.map((step: any) => {
+      const state: 'completado' | 'pendiente' = step.approved ? 'completado' : 'pendiente';
+      const entry = history.find((h: any) => h.level === step.level && h.action === 'approved');
       return {
         level: step.level,
         state,
