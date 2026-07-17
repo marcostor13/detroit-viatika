@@ -2,11 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { ICategoryGroup } from '../modules/categorias/interfaces/category-group.interface';
+import { ICategoryProfile } from '../interfaces/category-profile.interface';
 import { UserStateService } from './user-state.service';
 
 @Injectable({ providedIn: 'root' })
-export class CategoryGroupService {
+export class CategoryProfileService {
   private readonly baseUrl = `${environment.api}/category-profile`;
   private readonly http = inject(HttpClient);
   private readonly userState = inject(UserStateService);
@@ -15,19 +15,19 @@ export class CategoryGroupService {
     return this.userState.getUser()?.companyId ?? '';
   }
 
-  getAll(): Observable<ICategoryGroup[]> {
-    return this.http.get<ICategoryGroup[]>(`${this.baseUrl}/${this.companyId}`);
+  getAll(): Observable<ICategoryProfile[]> {
+    return this.http.get<ICategoryProfile[]>(`${this.baseUrl}/${this.companyId}`);
   }
 
-  create(dto: { name: string; description?: string; categoryIds?: string[] }): Observable<ICategoryGroup> {
-    return this.http.post<ICategoryGroup>(this.baseUrl, {
+  create(dto: { name: string; categoryIds: string[] }): Observable<ICategoryProfile> {
+    return this.http.post<ICategoryProfile>(this.baseUrl, {
       ...dto,
       clientId: this.companyId,
     });
   }
 
-  update(id: string, dto: { name?: string; description?: string; categoryIds?: string[] }): Observable<ICategoryGroup> {
-    return this.http.patch<ICategoryGroup>(`${this.baseUrl}/${id}/${this.companyId}`, dto);
+  update(id: string, dto: { name?: string; categoryIds?: string[] }): Observable<ICategoryProfile> {
+    return this.http.patch<ICategoryProfile>(`${this.baseUrl}/${id}/${this.companyId}`, dto);
   }
 
   remove(id: string): Observable<void> {

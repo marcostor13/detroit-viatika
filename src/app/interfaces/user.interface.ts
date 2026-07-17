@@ -65,18 +65,19 @@ export interface IUserPermissions {
   modules: string[];
   canApproveL1: boolean;
   canApproveL2: boolean;
-  /** Categorías sueltas asignadas directamente (independientes de los perfiles). */
+  /** Categorías sueltas asignadas directamente al usuario. */
   categoryIds?: string[];
-  /** @deprecated usar categoryProfileIds. */
-  categoryProfileId?: string | null;
-  /** Perfiles de categoría asignados (deriva centros de costo y categorías visibles). */
-  categoryProfileIds?: string[];
   /**
    * Centros de costo (Project) asignados, ORDENADOS: el primero es el centro
    * de costo principal del colaborador (primer aprobador cuando solicita
    * hacia un centro de costo que no tiene asignado).
    */
   projectIds?: string[];
+  /**
+   * Centro de costo principal explícito. Debe estar contenido en projectIds.
+   * Si no se envía, el backend usa projectIds[0] como fallback.
+   */
+  primaryProjectId?: string;
 }
 
 export interface IUserResponse {
@@ -98,6 +99,8 @@ export interface IUserResponse {
   updatedAt: Date;
   permissions?: IUserPermissions;
   dni?: string;
+  /** Tipo de documento para pagos BBVA (R/L/P/E/M). */
+  documentType?: 'R' | 'L' | 'P' | 'E' | 'M';
   employeeCode?: string;
   /** Fase 3 — notificaciones viáticos. */
   area?: string;

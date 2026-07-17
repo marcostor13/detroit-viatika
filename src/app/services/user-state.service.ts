@@ -14,6 +14,8 @@ const HUB_USER_KEY = 'hub_user_data';
 })
 export class UserStateService {
   private _user = signal<IUserResponse | null>(null);
+  /** null = aún no se consultó. Se llena vía refreshApproverStatus(). */
+  private _isApprover = signal<boolean | null>(null);
   private http = inject(HttpClient);
 
   constructor() {
@@ -37,6 +39,7 @@ export class UserStateService {
         }
       }
       this._user.set(parsedUser);
+      this.refreshApproverStatus().subscribe();
     }
   }
 
@@ -67,6 +70,7 @@ export class UserStateService {
     if (user.access_token) {
       localStorage.setItem('token', user.access_token);
     }
+    this.refreshApproverStatus().subscribe();
   }
 
   /** Save hub token for Contabilidad "go back to hub" */
@@ -137,6 +141,36 @@ export class UserStateService {
     this.clearUser();
   }
 
+  /**
+   * Consulta si el usuario actual es aprobador (cualquier nivel) de algún
+   * centro de costo — reemplaza isCoordinador() como gate de UI: la
+   * autorización real depende de estar en approverLevels, no del rol.
+   * Llamar tras login y al rehidratar sesión desde localStorage; se cachea
+   * en un signal para que los guards/componentes la lean en sync.
+   */
+  refreshApproverStatus(): Observable<boolean> {
+    const token = this.getToken();
+    if (!token) {
+      this._isApprover.set(false);
+      return of(false);
+    }
+    return this.http.get<{ isApprover: boolean }>(`${environment.api}/project/me/am-i-approver`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).pipe(
+      map((res) => !!res?.isApprover),
+      tap((isApprover) => this._isApprover.set(isApprover)),
+      catchError(() => {
+        this._isApprover.set(false);
+        return of(false);
+      }),
+    );
+  }
+
+  /** Cacheado por refreshApproverStatus(); false hasta que se resuelva la primera consulta. */
+  isApprover(): boolean {
+    return this._isApprover() === true;
+  }
+
   isAuthenticated() {
     return !!(this._user() && this.getToken());
   }
@@ -179,7 +213,7 @@ export class UserStateService {
   }
 
   canApproveL2(): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin() || this.isTesoreria()) return true;
     return this.getPermissions().canApproveL2 === true;
   }
 

@@ -230,7 +230,6 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
       planilla_movilidad: 'Plan. Movilidad',
       recibo_caja: 'Recibo de Caja',
       otros_gastos: 'Otros Gastos',
-      comprobante_caja: 'Comp. Caja',
     };
     return map[type] ?? type ?? '-';
   }
@@ -298,12 +297,6 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
   getInvProveedor(inv: any): string {
     const type = inv?.expenseType;
     if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
-    if (type === 'comprobante_caja') {
-      try {
-        const parsed = typeof inv?.description === 'string' ? JSON.parse(inv.description) : null;
-        return parsed?.entregadoA || '-';
-      } catch { return '-'; }
-    }
     const d = this.parseInvData(inv);
     return (typeof d['razonSocial'] === 'string' && d['razonSocial'].trim())
       ? d['razonSocial'].trim()
@@ -317,12 +310,6 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
       return firstRow?.gestion || `${inv?.mobilityRows?.length || 0} filas`;
     }
     if (type === 'otros_gastos') return inv?.description || 'DJ firmada';
-    if (type === 'comprobante_caja') {
-      try {
-        const parsed = typeof inv?.description === 'string' ? JSON.parse(inv.description) : null;
-        return parsed?.concepto || 'Comprobante interno';
-      } catch { return 'Comprobante interno'; }
-    }
     if (type === 'recibo_caja') {
       try {
         const d = typeof inv?.data === 'string' ? JSON.parse(inv.data) : inv?.data || {};
@@ -335,7 +322,7 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
 
   getInvNumDoc(inv: any): string {
     const type = inv?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return typeof inv?.internalCode === 'string' && inv.internalCode ? inv.internalCode : '-';
     }
     if (type === 'recibo_caja') {

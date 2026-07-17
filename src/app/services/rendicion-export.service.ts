@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { CompanyConfigService } from './company-config.service';
 import { parseFechaEmisionInput } from '../utils/fecha-emision.util';
+import { monedaSymbol } from '../constants/moneda';
 
 type JsPdfWithAutoTable = jsPDF & { lastAutoTable?: { finalY: number } };
 
@@ -16,6 +17,7 @@ export interface RendicionExportComprobanteRow {
   tipo: string;
   fecha: string;
   descripcion: string;
+  /** Monto del gasto en SOLES (columna SOLES del formato ADF-FOR-004). */
   monto: number;
   estadoComprobante: string;
   proveedor?: string;
@@ -24,6 +26,19 @@ export interface RendicionExportComprobanteRow {
   placaVehiculo?: string;
   /** Proyecto del gasto (Rendiciones Directas: el proyecto es individual por comprobante). */
   proyecto?: string;
+  // --- Columnas contables del formato ADF-FOR-004 (Rendición de Fondos) ---
+  /** RUC del emisor del comprobante. */
+  ruc?: string;
+  /** Nombre de la Orden de Trabajo del gasto. */
+  ot?: string;
+  /** Centro de costo (nombre) del gasto, derivado de la OT. */
+  centroCosto?: string;
+  /** Cuenta contable de destino. Pendiente de definir con el cliente: por ahora vacío. */
+  ctaDestino?: string;
+  /** Monto en dólares cuando la moneda del gasto es USD. */
+  dolares?: number;
+  /** Tipo de cambio aplicado (si el gasto está en USD y se capturó). */
+  tipoCambio?: number;
 }
 
 export interface RendicionExportAnticipoRow {
@@ -74,16 +89,45 @@ export interface RendicionExportData {
   startDate?: string;
   endDate?: string;
   items?: RendicionExportBudgetItemRow[];
+  /** Código de moneda SUNAT del viático vinculado ('01' soles, '02' dólares). Default '01'. */
+  moneda?: string;
   signature?: string;
   approvedByName?: string;
   createdByName?: string;
   projectName?: string;
+  // --- Cabecera contable del formato ADF-FOR-004 (Rendición de Fondos) ---
+  /** N° de rendición (correlativo/código del reporte). */
+  nRendicion?: string;
+  /** Fecha del documento (emisión de la rendición). */
+  fechaDocumento?: string;
+  /** Concepto/motivo global de la rendición. */
+  concepto?: string;
+  /** Destino del gasto/viaje. */
+  destino?: string;
+  /** Departamento (área) del colaborador. */
+  departamento?: string;
+  /** Periodo (mes) de la rendición. */
+  periodo?: string;
+  /** Centro de costo de cabecera (de la OT de la rendición). */
+  centroCostoCabecera?: string;
+  /** Monto inicial entregado al colaborador (suma de anticipos/depósitos). */
+  montoInicialEntregado?: number;
+  /** Nombre del Jefe Inmediato (aprobador) para el recuadro V°B° JEFE INMEDIATO. */
+  jefeInmediatoName?: string;
+  /** Firma del Jefe Inmediato, si existe. */
+  jefeSignature?: string;
+  /** Nombre de Finanzas para el recuadro V°B° FINANZAS. */
+  financeName?: string;
+  /** Firma de Finanzas, si existe. */
+  financeSignature?: string;
   /**
    * Rendición directa: el proyecto no es único de la rendición sino individual
    * por gasto. En el reporte se omite el proyecto del título y se añade una
    * columna "Proyecto" en la tabla de comprobantes.
    */
   isDirecta?: boolean;
+  /** Saldos de la bolsa (pagos de contabilidad / remanentes) que financiaron la rendición directa. */
+  financiamientoSaldos?: { tipo: string; detalle: string; monto: number; fecha?: string }[];
 }
 
 export interface AffidavitExportRow {
@@ -118,7 +162,6 @@ export interface MobilitySheetExportData {
   proyecto?: string;
   rows: Array<{
     fecha: string;
-    clienteProveedor: string;
     origen: string;
     destino: string;
     gestion: string;
@@ -130,22 +173,10 @@ export interface MobilitySheetExportData {
   }>;
   total: number;
   signature?: string;
-}
-
-export interface CashVoucherExportData {
-  fileBaseName: string;
-  collaborator: string;
-  collaboratorDni?: string;
-  internalCode?: string;
-  entregadoA: string;
-  direccion?: string;
-  concepto: string;
-  monto: number;
-  generatedAt: string;
-  signature?: string;
-  projectName?: string;
-  clientName?: string;
-  fechaEmision?: string;
+  /** Coordinador que aprobó (VD-33): su firma aparece junto a la del colaborador. */
+  coordinator?: string;
+  coordinatorDni?: string;
+  coordinatorSignature?: string;
 }
 
 export interface ReceiptExportData {
@@ -195,7 +226,6 @@ export type ComprobantePage =
   | { type: 'factura_image'; url: string; label: string }
   | { type: 'factura_pdf'; url: string; label: string }
   | { type: 'mobility'; data: MobilitySheetExportData }
-  | { type: 'cash_voucher'; data: CashVoucherExportData }
   | { type: 'receipt'; data: ReceiptExportData }
   | { type: 'affidavit'; data: SingleExpenseAffidavitData };
 
@@ -205,6 +235,33 @@ const YELLOW_CELL = 'FFFFFF00'; // Yellow for summary cell
 @Injectable({ providedIn: 'root' })
 export class RendicionExportService {
   private companyConfigService = inject(CompanyConfigService);
+
+  /**
+   * Convierte cada carácter fuera de Latin-1 imprimible a un equivalente seguro
+   * (WinAnsi). La fuente estándar de jsPDF (Helvetica no embebida) no tiene glifos
+   * para flechas/comillas tipográficas/control; si aparece uno, el visor sustituye
+   * la fuente de TODA la cadena por una más ancha y el texto se sale del PDF
+   * (jsPDF lo mide con Helvetica, más angosta). También limpia el Excel.
+   */
+  private sanitizeText(s?: string): string {
+    return Array.from(String(s ?? '').normalize('NFC'))
+      .map((ch) => {
+        const c = ch.charCodeAt(0);
+        if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) return ''; // control
+        if (c === 0xa0) return ' '; // espacio duro (nbsp)
+        if (c >= 0x2010 && c <= 0x2015) return '-'; // guiones tipográficos
+        if (c === 0x2212) return '-'; // signo menos
+        if (c === 0x2018 || c === 0x2019 || c === 0x201b) return "'"; // comillas simples
+        if (c === 0x201c || c === 0x201d) return '"'; // comillas dobles
+        if (c === 0x2026) return '...'; // elipsis
+        if (c >= 0x2190 && c <= 0x27bf) return '-'; // flechas/símbolos -> guion
+        if (c > 0xff) return ''; // resto fuera de Latin-1
+        return ch;
+      })
+      .join('')
+      .replace(/ {2,}/g, ' ')
+      .trim();
+  }
 
   private formatDateDdMmYyyy(raw: string | null | undefined): string {
     if (!raw) return '';
@@ -276,297 +333,274 @@ export class RendicionExportService {
     }
   }
 
+  /**
+   * Excel de rendición con el formato oficial "RENDICIÓN DE FONDOS (GASTOS)"
+   * (ADF-FOR-004). Replica el mismo layout que el PDF: Item + 11 columnas
+   * contables, cabecera, pie de totales y tres firmas.
+   */
   async exportToExcel(data: RendicionExportData): Promise<void> {
-    data = { ...data, signature: await this.resolveSignature(data.signature) };
+    data = {
+      ...data,
+      signature: await this.resolveSignature(data.signature),
+      jefeSignature: await this.resolveSignature(data.jefeSignature),
+      financeSignature: await this.resolveSignature(data.financeSignature),
+    };
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Viatika';
     wb.created = new Date();
     const ws = wb.addWorksheet('Rendición', { views: [{ showGridLines: false }] });
 
-    const logoB64 = await this.getLogoBase64();
-    if (logoB64) {
-      const imageId = wb.addImage({
-        base64: logoB64,
-        extension: 'png',
-      });
-      ws.addImage(imageId, {
-        tl: { col: 0, row: 0 },
-        ext: { width: 140, height: 40 },
-      });
-    }
+    const allBorder = {
+      top: { style: 'thin' as const }, left: { style: 'thin' as const },
+      bottom: { style: 'thin' as const }, right: { style: 'thin' as const },
+    };
 
-    // Rendición directa: el proyecto es por gasto → columna "Proyecto" extra.
-    const showProyecto = !!data.isDirecta;
-    const ingresosCol = showProyecto ? 9 : 8;
-    const gastosCol = showProyecto ? 10 : 9;
-    const lastCol = gastosCol;
-
+    // 12 columnas: ITEM·FECHA·RUC·No.DOC·PROVEEDOR·DESCRIPCIÓN·OT·C.COSTO·CTA.DESTINO·DÓLARES·T.C.·SOLES
     ws.columns = [
-      { width: 6 },  // Item
-      { width: 12 }, // Fecha
-      { width: 16 }, // Tipo
-      { width: 18 }, // No Doc
-      { width: 28 }, // Proveedor
-      { width: 40 }, // Concepto (incluye comentario)
-      ...(showProyecto ? [{ width: 24 }] : []), // Proyecto (solo directas)
-      { width: 14 }, // Placa
-      { width: 12 }, // Ingresos
-      { width: 12 }, // Gastos
+      { width: 6 },  // A ITEM
+      { width: 12 }, // B FECHA
+      { width: 14 }, // C RUC
+      { width: 14 }, // D No. DOC
+      { width: 26 }, // E PROVEEDOR
+      { width: 34 }, // F DESCRIPCIÓN
+      { width: 12 }, // G OT
+      { width: 16 }, // H C.COSTO
+      { width: 16 }, // I CTA. DESTINO
+      { width: 11 }, // J DÓLARES
+      { width: 9 },  // K T.C.
+      { width: 12 }, // L SOLES
     ];
 
-    // Title Block
-    ws.mergeCells(4, 1, 4, lastCol);
-    const titleCell = ws.getCell('A4');
-    titleCell.value = 'RENDICIÓN DE VIÁTICOS';
-    titleCell.font = { bold: true, size: 12 };
-    titleCell.alignment = { horizontal: 'center' };
-
-    ws.mergeCells(5, 1, 5, lastCol);
-    const subtitleCell = ws.getCell('A5');
-    if (showProyecto) {
-      // En directas el proyecto va por gasto, no en el título.
-      subtitleCell.value = data.titulo || '';
-    } else {
-      const proyectoLabel = data.projectName && data.projectName !== '—'
-        ? data.projectName
-        : (data.titulo || '');
-      subtitleCell.value = `PROYECTO:\n${proyectoLabel}`;
-    }
-    subtitleCell.font = { size: 10 };
-    subtitleCell.alignment = { horizontal: 'center', wrapText: true };
-    ws.getRow(5).height = 28;
-
-    ws.mergeCells(7, 1, 7, lastCol);
-    const dateCell = ws.getCell('A7');
-    if (data.startDate && data.endDate) {
-      dateCell.value = `DEL ${data.startDate} AL ${data.endDate}`;
-    } else {
-      dateCell.value = `Rendición de la fecha`;
-    }
-    dateCell.font = { bold: true, size: 10 };
-    dateCell.alignment = { horizontal: 'center' };
-
-    if (data.codigo || data.gestion) {
-      ws.mergeCells(8, 1, 8, lastCol);
-      const infoCell = ws.getCell('A8');
-      const parts: string[] = [];
-      if (data.codigo) parts.push(`CÓDIGO: ${data.codigo}`);
-      if (data.gestion) parts.push(`GESTIÓN: ${data.gestion}`);
-      infoCell.value = parts.join('      ');
-      infoCell.font = { bold: true, size: 10 };
-      infoCell.alignment = { horizontal: 'center', wrapText: true };
-      ws.getRow(8).height = 22;
+    // --- Membrete: logo + título + recuadro de control ---
+    const logoB64 = await this.getLogoBase64();
+    if (logoB64) {
+      const imageId = wb.addImage({ base64: logoB64, extension: 'png' });
+      ws.addImage(imageId, { tl: { col: 0, row: 0 }, ext: { width: 150, height: 46 } });
     }
 
-    ws.getCell('A9').value = 'Colaborador:';
-    ws.mergeCells('B9:D9');
-    ws.getCell('B9').value = data.colaborador;
-    
-    ws.getCell('A10').value = 'Localidad:';
-    ws.mergeCells('B10:D10');
-    ws.getCell('B10').value = data.location || '';
+    ws.mergeCells('D1:I2');
+    const titleCell = ws.getCell('D1');
+    titleCell.value = 'RENDICIÓN DE FONDOS (GASTOS)';
+    titleCell.font = { bold: true, size: 13 };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    ws.getCell('E9').value = 'DNI:';
-    ws.getCell('F9').value = data.idDocument || '';
-    ws.getCell('E10').value = 'Cta / CCI:';
-    ws.getCell('F10').value = data.accountNumber || '';
+    // Recuadro de control documentario (J..L).
+    const controlLines: [string, string][] = [
+      ['J1', 'Código: ADF-FOR-004'],
+      ['J2', 'Versión: 01'],
+      ['J3', 'F. Emisión: 18/04/2023'],
+    ];
+    controlLines.forEach(([addr, val], i) => {
+      ws.mergeCells(`J${i + 1}:L${i + 1}`);
+      const c = ws.getCell(addr);
+      c.value = val;
+      c.font = { size: 8 };
+      c.border = allBorder;
+    });
+    // N° RENDICIÓN / FECHA.
+    ws.getCell('J4').value = 'N° RENDICIÓN';
+    ws.getCell('J4').font = { bold: true, size: 8 };
+    ws.getCell('J4').border = allBorder;
+    ws.mergeCells('K4:L4');
+    ws.getCell('K4').value = this.sanitizeText(data.nRendicion || data.codigo || '');
+    ws.getCell('K4').border = allBorder;
+    ws.getCell('J5').value = 'FECHA';
+    ws.getCell('J5').font = { bold: true, size: 8 };
+    ws.getCell('J5').border = allBorder;
+    ws.mergeCells('K5:L5');
+    ws.getCell('K5').value = this.sanitizeText(data.fechaDocumento || '');
+    ws.getCell('K5').border = allBorder;
 
-    if (data.peopleNames && data.peopleNames.length > 0) {
-      ws.getCell('A11').value = 'Personas:';
-      ws.mergeCells('B11:F11');
-      ws.getCell('B11').value = data.peopleNames.join(', ');
-    }
+    // --- Cabecera contable ---
+    const setLabel = (addr: string, val: string) => {
+      const c = ws.getCell(addr);
+      c.value = val;
+      c.font = { bold: true, size: 9 };
+    };
+    const setValue = (addr: string, val: string) => {
+      ws.getCell(addr).value = this.sanitizeText(val);
+    };
+    setLabel('A6', 'NOMBRE:');
+    ws.mergeCells('B6:E6'); setValue('B6', data.colaborador || '');
+    setLabel('G6', 'CONCEPTO:');
+    ws.mergeCells('H6:L6'); setValue('H6', data.concepto || '');
 
-    // Table Header
-    let r = 13;
-    const headers = ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', ...(showProyecto ? ['Proyecto'] : []), 'Placa', 'Ingresos', 'Gastos'];
+    setLabel('A7', 'DNI:');
+    ws.mergeCells('B7:E7'); setValue('B7', data.idDocument || '');
+    setLabel('G7', 'DESTINO:');
+    ws.mergeCells('H7:I7'); setValue('H7', data.destino || data.location || '');
+    setLabel('J7', 'CC:');
+    ws.mergeCells('K7:L7'); setValue('K7', data.centroCostoCabecera || '');
+
+    setLabel('A8', 'PERIODO/FECHA:');
+    ws.mergeCells('B8:E8'); setValue('B8', data.periodo || '');
+    setLabel('G8', 'DEPARTAMENTO (ÁREA):');
+    ws.mergeCells('H8:L8'); setValue('H8', data.departamento || '');
+
+    // --- Cabecera de tabla (fila 10) ---
+    let r = 10;
+    const headers = ['ITEM', 'FECHA', 'RUC', 'No. DOC', 'PROVEEDOR (RAZON SOCIAL)', 'DESCRIPCIÓN (DETALLE)', 'OT', 'C.COSTO', 'CTA. DESTINO', 'DÓLARES', 'T.C.', 'SOLES'];
     headers.forEach((h, i) => {
       const c = ws.getCell(r, i + 1);
       c.value = h;
-      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 9 };
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
       c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      c.border = {
-        top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' }
-      };
+      c.border = allBorder;
     });
-    ws.getRow(r).height = 30;
+    ws.getRow(r).height = 26;
     r++;
 
-    let itemIndex = 1;
-    let sumIngresos = 0;
-    let sumGastos = 0;
-
-    const addDataRow = (rowVals: any[]) => {
-      rowVals.forEach((val, i) => {
+    // --- Filas de gastos ---
+    let sumSoles = 0;
+    const addDataRow = (vals: (string | number)[]) => {
+      vals.forEach((val, i) => {
         const c = ws.getCell(r, i + 1);
-        c.value = val;
-        c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-        if (i === ingresosCol - 1 || i === gastosCol - 1) {
-           c.numFmt = '#,##0.00';
-           if (val === 0 || !val) c.value = ''; // Hide 0s to match screenshot
-           c.alignment = { horizontal: 'right' };
+        c.value = val === 0 || val === '' ? '' : val;
+        c.border = allBorder;
+        if (i >= 9) {
+          // DÓLARES (9), T.C. (10), SOLES (11)
+          c.numFmt = i === 10 ? '#,##0.000' : '#,##0.00';
+          c.alignment = { horizontal: 'right' };
         } else {
-           c.alignment = { horizontal: i === 0 || i === 1 || i === 2 ? 'center' : 'left', wrapText: true };
+          // ITEM (0), FECHA (1), RUC (2), No. DOC (3), OT (6) centrados.
+          c.alignment = { horizontal: i <= 3 || i === 6 ? 'center' : 'left', wrapText: true };
         }
       });
       r++;
     };
 
-    // Advances as "Ingresos"
-    data.anticipos.forEach(a => {
+    data.comprobantes.forEach((exp, idx) => {
       addDataRow([
-        itemIndex++,
-        a.fechaSolicitud,
-        '',
-        '',
-        'Transferencia',
-        a.descripcion || '',
-        ...(showProyecto ? [''] : []),
-        '',
-        a.monto,
-        ''
+        idx + 1,
+        this.sanitizeText(exp.fecha),
+        this.sanitizeText(exp.ruc),
+        this.sanitizeText(exp.numeroDocumento),
+        this.sanitizeText(exp.proveedor),
+        this.sanitizeText(exp.comentario || exp.descripcion),
+        this.sanitizeText(exp.ot),
+        this.sanitizeText(exp.centroCosto),
+        this.sanitizeText(exp.ctaDestino),
+        exp.dolares && exp.dolares > 0 ? exp.dolares : '',
+        exp.tipoCambio && exp.tipoCambio > 0 ? exp.tipoCambio : '',
+        exp.monto && exp.monto > 0 ? exp.monto : '',
       ]);
-      sumIngresos += a.monto;
+      sumSoles += exp.monto || 0;
     });
 
-    // Expenses as "Gastos"
-    data.comprobantes.forEach(exp => {
-      addDataRow([
-        itemIndex++,
-        exp.fecha,
-        exp.tipo,
-        exp.numeroDocumento || '',
-        exp.proveedor || '',
-        exp.comentario || exp.descripcion || '',
-        ...(showProyecto ? [exp.proyecto || ''] : []),
-        exp.placaVehiculo || '',
-        '',
-        exp.monto
-      ]);
-      sumGastos += exp.monto;
-    });
-
-    // Fill some empty rows to make it look like a complete table (min 5 rows)
-    const minRows = Math.max(5, itemIndex);
-    while (itemIndex <= minRows) {
-      addDataRow([itemIndex++, ...Array(lastCol - 1).fill('')]);
+    // Filas vacías para aspecto de formulario (mínimo 8), numeradas de forma continua.
+    const minRows = 8;
+    let filled = data.comprobantes.length;
+    while (filled < minRows) {
+      addDataRow([filled + 1, '', '', '', '', '', '', '', '', '', '', '']);
+      filled++;
     }
 
-    // Totals row
-    ws.mergeCells(r, 1, r, ingresosCol - 1);
-    let cTotalId = ws.getCell(r, ingresosCol - 1);
-    cTotalId.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    // --- Pie de totales (etiqueta cols H..K sombreada, valor col L) ---
+    const montoInicial = data.montoInicialEntregado ?? data.totalAnticipado ?? 0;
+    const saldo = montoInicial - sumSoles;
+    const totalRow = (label: string, val: number, isSaldo: boolean) => {
+      ws.getRow(r).height = 16;
+      ws.mergeCells(r, 8, r, 11);
+      const l = ws.getCell(r, 8);
+      l.value = label;
+      l.font = {
+        bold: true,
+        size: 10,
+        color: { argb: isSaldo ? 'FFFFFFFF' : 'FF000000' },
+      };
+      l.alignment = { horizontal: 'right', vertical: 'middle' };
+      // Solo el SALDO lleva relleno (marca); las demás filas quedan transparentes.
+      if (isSaldo) {
+        l.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
+      }
+      l.border = allBorder;
+      const v = ws.getCell(r, 12);
+      v.value = val;
+      v.numFmt = '#,##0.00';
+      v.alignment = { horizontal: 'right', vertical: 'middle' };
+      v.font = { bold: true, size: 10, color: { argb: 'FF000000' } };
+      v.border = allBorder;
+      r++;
+    };
+    totalRow('TOTAL GASTOS', sumSoles, false);
+    totalRow('MONTO INICIAL ENTREGADO', montoInicial, false);
+    totalRow('SALDO (REEMB. / DEV.)', saldo, true);
 
-    const cIng = ws.getCell(r, ingresosCol);
-    cIng.value = sumIngresos;
-    cIng.font = { color: { argb: 'FFFFFFFF' } };
-    cIng.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
-    cIng.numFmt = '#,##0.00';
-    cIng.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-
-    const cGas = ws.getCell(r, gastosCol);
-    cGas.value = sumGastos;
-    cGas.font = { color: { argb: 'FFFFFFFF' } };
-    cGas.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
-    cGas.numFmt = '#,##0.00';
-    cGas.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-    r += 1;
-
-    // Indicadores POR REEMBOLSAR y POR RENDIR (siempre se muestran ambos)
-    const diferencia = sumIngresos - sumGastos;
-    const montoReembolsar = diferencia < 0 ? Math.abs(diferencia) : 0;
-    const montoRendir = diferencia > 0 ? diferencia : 0;
-
-    ws.mergeCells(r, 1, r, ingresosCol - 1);
-    const cReembLabel = ws.getCell(r, ingresosCol - 1);
-    cReembLabel.value = 'POR REEMBOLSAR';
-    cReembLabel.font = { bold: true };
-    cReembLabel.alignment = { horizontal: 'right' };
-    ws.mergeCells(r, ingresosCol, r, gastosCol);
-    const cReembMonto = ws.getCell(r, ingresosCol);
-    cReembMonto.value = montoReembolsar;
-    cReembMonto.numFmt = '#,##0.00';
-    cReembMonto.alignment = { horizontal: 'right' };
-    cReembMonto.font = { bold: true };
-    r++;
-
-    ws.mergeCells(r, 1, r, ingresosCol - 1);
-    const cRendLabel = ws.getCell(r, ingresosCol - 1);
-    cRendLabel.value = 'POR RENDIR';
-    cRendLabel.font = { bold: true };
-    cRendLabel.alignment = { horizontal: 'right' };
-    ws.mergeCells(r, ingresosCol, r, gastosCol);
-    const cRendMonto = ws.getCell(r, ingresosCol);
-    cRendMonto.value = montoRendir;
-    cRendMonto.numFmt = '#,##0.00';
-    cRendMonto.alignment = { horizontal: 'right' };
-    cRendMonto.font = { bold: true };
-    r++;
-
-    r += 2;
-
-    r += 1;
+    // --- Resumen de solicitud (presupuesto), si aplica ---
     if (data.items && data.items.length > 0) {
+      r += 2;
       ws.getCell(r, 1).value = 'RESUMEN DE SOLICITUD (PRESUPUESTO DETALLADO)';
       ws.getCell(r, 1).font = { bold: true };
       r++;
-      const budgetHeaders = ['Viáticos', 'Importe (S/)', 'Personas', 'Combustible GLP/dia', 'Días', 'Total (S/)'];
+      const sym = monedaSymbol(data.moneda);
+      const budgetHeaders = ['Viáticos', `Importe (${sym})`, 'Personas', 'Combustible GLP/dia', 'Días', `Total (${sym})`];
       budgetHeaders.forEach((h, i) => {
         const c = ws.getCell(r, i + 1);
         c.value = h;
         c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
         c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: RED_HEADER } };
         c.alignment = { horizontal: 'center' };
-        c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        c.border = allBorder;
       });
       r++;
-      data.items.forEach(item => {
+      data.items.forEach((item) => {
         ws.getCell(r, 1).value = item.descripcion;
         ws.getCell(r, 2).value = item.importe;
         ws.getCell(r, 3).value = item.personas;
         ws.getCell(r, 4).value = item.combustible;
         ws.getCell(r, 5).value = item.dias;
         ws.getCell(r, 6).value = item.total;
-        [2, 4, 6].forEach(col => ws.getCell(r, col).numFmt = '#,##0.00');
-        for (let i = 1; i <= 6; i++) {
-          ws.getCell(r, i).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-        }
+        [2, 4, 6].forEach((col) => (ws.getCell(r, col).numFmt = '#,##0.00'));
+        for (let i = 1; i <= 6; i++) ws.getCell(r, i).border = allBorder;
         r++;
       });
-      r++;
     }
 
+    // --- Tres firmas: SOLICITANTE / JEFE INMEDIATO / FINANZAS ---
     r += 2;
-
-    if (data.signature) {
-      ws.getRow(r - 1).height = 45; // Make some room
-      const sigImgId = wb.addImage({
-        base64: data.signature,
-        extension: 'png',
-      });
-      ws.addImage(sigImgId, {
-        tl: { col: 2, row: r - 2 },
-        ext: { width: 150, height: 75 },
-      });
-    }
-
-    // Signature
-    ws.mergeCells(r, 3, r, 6);
-    const cSigLine = ws.getCell(r, 3);
-    cSigLine.border = { bottom: { style: 'medium' } };
-    r++;
-    ws.mergeCells(r, 3, r, 6);
-    const cSigName = ws.getCell(r, 3);
-    cSigName.value = data.colaborador.toUpperCase();
-    cSigName.alignment = { horizontal: 'center' };
-    cSigName.font = { size: 9 };
-    r++;
-    ws.mergeCells(r, 3, r, 6);
-    const cSigDoc = ws.getCell(r, 3);
-    cSigDoc.value = data.idDocument ? `DNI N° ${data.idDocument}` : '';
-    cSigDoc.alignment = { horizontal: 'center' };
-    cSigDoc.font = { size: 9 };
+    const sigTitleRow = r;
+    const drawSigBlock = (
+      col1: number, col2: number, title: string, sig?: string, name?: string, dni?: string,
+    ) => {
+      ws.mergeCells(sigTitleRow, col1, sigTitleRow, col2);
+      const t = ws.getCell(sigTitleRow, col1);
+      t.value = title;
+      t.font = { bold: true, size: 9 };
+      t.alignment = { horizontal: 'center' };
+      if (sig) {
+        try {
+          const imgId = wb.addImage({ base64: sig, extension: 'png' });
+          ws.addImage(imgId, { tl: { col: col1 - 1 + 0.2, row: sigTitleRow }, ext: { width: 120, height: 50 } });
+        } catch { /* firma inválida */ }
+      }
+      // Línea de firma.
+      const lineRow = sigTitleRow + 3;
+      ws.mergeCells(lineRow, col1, lineRow, col2);
+      ws.getCell(lineRow, col1).border = { bottom: { style: 'medium' } };
+      // Nombre.
+      ws.mergeCells(lineRow + 1, col1, lineRow + 1, col2);
+      const n = ws.getCell(lineRow + 1, col1);
+      n.value = name && name !== '—' ? this.sanitizeText(name).toUpperCase() : '';
+      n.alignment = { horizontal: 'center' };
+      n.font = { size: 9 };
+      // NOMBRE Y FIRMA.
+      ws.mergeCells(lineRow + 2, col1, lineRow + 2, col2);
+      const nf = ws.getCell(lineRow + 2, col1);
+      nf.value = 'NOMBRE Y FIRMA';
+      nf.alignment = { horizontal: 'center' };
+      nf.font = { size: 8 };
+      if (dni) {
+        ws.mergeCells(lineRow + 3, col1, lineRow + 3, col2);
+        const d = ws.getCell(lineRow + 3, col1);
+        d.value = `DNI: ${dni}`;
+        d.alignment = { horizontal: 'center' };
+        d.font = { size: 8 };
+      }
+    };
+    drawSigBlock(1, 4, 'V°B° SOLICITANTE', data.signature, data.colaborador, data.idDocument);
+    drawSigBlock(5, 8, 'V°B° JEFE INMEDIATO', data.jefeSignature, data.jefeInmediatoName);
+    drawSigBlock(9, 12, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     const buf = await wb.xlsx.writeBuffer();
     this.triggerDownload(
@@ -575,229 +609,252 @@ export class RendicionExportService {
     );
   }
 
+  /**
+   * PDF de rendición con el formato oficial de Detroit "RENDICIÓN DE FONDOS
+   * (GASTOS)" (ADF-FOR-004): membrete de control documentario, cabecera contable
+   * (NOMBRE/DNI/PERIODO/CONCEPTO/DESTINO/CC/DEPARTAMENTO), tabla de 11 columnas
+   * (FECHA·RUC·No.DOC·PROVEEDOR·DESCRIPCIÓN·OT·C.COSTO·CTA.DESTINO·DÓLARES·T.C.·SOLES),
+   * pie TOTAL GASTOS / MONTO INICIAL ENTREGADO / SALDO y tres firmas.
+   */
   async exportToPdf(data: RendicionExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
-    data = { ...data, signature: await this.resolveSignature(data.signature) };
+    data = {
+      ...data,
+      signature: await this.resolveSignature(data.signature),
+      jefeSignature: await this.resolveSignature(data.jefeSignature),
+      financeSignature: await this.resolveSignature(data.financeSignature),
+    };
     const doc = inDoc ?? new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    let y = 15;
+    const W = doc.internal.pageSize.getWidth();
+    const H = doc.internal.pageSize.getHeight();
+    const LM = 14;
+    const RM = W - 14;
 
+    // Formatos de número: celda vacía cuando no hay valor (como en el formato impreso).
+    const money = (n?: number): string => (n != null && n > 0 ? n.toFixed(2) : '');
+    const tc = (n?: number): string => (n != null && n > 0 ? n.toFixed(3) : '');
+    // Saneado de texto (ver sanitizeText): evita glifos ausentes que ensanchan el
+    // render y hacen que el texto se salga del PDF.
+    const sanitize = (s?: string): string => this.sanitizeText(s);
+    // Recorta un texto con "…" para que no se salga del ancho disponible (mm).
+    // Debe llamarse con la fuente/tamaño ya seteados (usa getTextWidth).
+    const clip = (text: string, maxW: number): string => {
+      if (!text) return '';
+      if (doc.getTextWidth(text) <= maxW) return text;
+      let t = text;
+      while (t.length > 1 && doc.getTextWidth(t + '…') > maxW) t = t.slice(0, -1);
+      return t.replace(/\s+$/, '') + '…';
+    };
+
+    // --- Membrete: logo + título + recuadro de control documentario ---
     const logoB64 = await this.getLogoBase64();
     if (logoB64) {
-      doc.addImage(logoB64, 'PNG', 14, 10, 45, 12);
+      doc.addImage(logoB64, 'PNG', LM, 9, 45, 14);
     }
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text('RENDICIÓN DE VIÁTICOS', doc.internal.pageSize.getWidth() / 2, 25, { align: 'center' });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    if (data.isDirecta) {
-      // En directas el proyecto va por gasto, no en el título.
-      doc.text(data.titulo || '', doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
-    } else {
-      const proyectoLabelPdf = data.projectName && data.projectName !== '—'
-        ? data.projectName
-        : (data.titulo || '');
-      doc.text(`PROYECTO:\n${proyectoLabelPdf}`, doc.internal.pageSize.getWidth() / 2, 30, { align: 'center' });
+    // Recuadro de control (Código / Versión / F. Emisión) arriba a la derecha.
+    const boxX = 205;
+    const boxW = RM - boxX;
+    doc.setLineWidth(0.2);
+    doc.rect(boxX, 9, boxW, 9);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.text('Código: ADF-FOR-004', boxX + 2, 12.5);
+    doc.text('Versión: 01', boxX + 2, 15.5);
+    doc.text('F. Emisión: 18/04/2023', boxX + boxW - 2, 15.5, { align: 'right' });
+
+    // Recuadro N° RENDICIÓN / FECHA.
+    doc.rect(boxX, 19, boxW, 11);
+    doc.line(boxX, 24.5, boxX + boxW, 24.5);
+    doc.line(boxX + boxW * 0.5, 19, boxX + boxW * 0.5, 30);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.text('N° RENDICIÓN', boxX + 2, 23);
+    doc.text('FECHA', boxX + 2, 28.5);
+    doc.setFont('helvetica', 'normal');
+    const boxValMaxW = boxW * 0.5 - 4;
+    doc.text(clip(sanitize(data.nRendicion || data.codigo || ''), boxValMaxW), boxX + boxW * 0.5 + 2, 23);
+    doc.text(clip(sanitize(data.fechaDocumento || ''), boxValMaxW), boxX + boxW * 0.5 + 2, 28.5);
+
+    // Título centrado (entre el logo y el recuadro de control).
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('RENDICIÓN DE FONDOS (GASTOS)', (60 + boxX) / 2, 17, { align: 'center' });
+
+    // --- Cabecera contable ---
+    // Dibuja label (negrita) + valor envuelto en varias líneas; devuelve el nº de líneas
+    // usado por el valor para poder calcular el alto real de la fila (texto flexible).
+    const lineH = 3.8;
+    // Margen de seguridad: el visor puede sustituir la fuente por una más ancha, así
+    // que reservamos ~4% del ancho para evitar que el texto se salga.
+    const field = (label: string, val: string, lx: number, vx: number, yy: number, maxW: number): number => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(label, lx, yy);
+      doc.setFont('helvetica', 'normal');
+      const lines = doc.splitTextToSize(sanitize(val), maxW * 0.9) as string[];
+      if (lines.length) doc.text(lines, vx, yy);
+      return Math.max(1, lines.length);
+    };
+    // Posiciones de columna del bloque derecho.
+    const rlx = 150;      // label derecho
+    const rvx = 178;      // valor derecho
+    const ccLx = 232;     // label CC
+    const ccVx = 242;     // valor CC
+    let hy = 38;
+    let rowLines = Math.max(
+      field('NOMBRE:', data.colaborador || '', LM, LM + 20, hy, rlx - (LM + 20) - 3),
+      field('CONCEPTO:', data.concepto || '', rlx, rvx, hy, RM - rvx),
+    );
+    hy += rowLines * lineH + 2.4;
+    rowLines = Math.max(
+      field('DNI:', data.idDocument || '', LM, LM + 20, hy, rlx - (LM + 20) - 3),
+      field('DESTINO:', data.destino || data.location || '', rlx, rvx, hy, ccLx - rvx - 3),
+      field('CC:', data.centroCostoCabecera || '', ccLx, ccVx, hy, RM - ccVx),
+    );
+    hy += rowLines * lineH + 2.4;
+    rowLines = Math.max(
+      field('PERIODO/FECHA:', data.periodo || '', LM, LM + 30, hy, rlx - (LM + 30) - 3),
+      field('DEPARTAMENTO (ÁREA):', data.departamento || '', rlx, 200, hy, RM - 200),
+    );
+    hy += rowLines * lineH + 3;
+
+    // --- Tabla de gastos (Item + 11 columnas del formato) ---
+    const bodyData: (string | number)[][] = data.comprobantes.map((exp, i) => [
+      i + 1,
+      sanitize(exp.fecha),
+      sanitize(exp.ruc),
+      sanitize(exp.numeroDocumento),
+      sanitize(exp.proveedor),
+      sanitize(exp.comentario || exp.descripcion),
+      sanitize(exp.ot),
+      sanitize(exp.centroCosto),
+      sanitize(exp.ctaDestino),
+      money(exp.dolares),
+      tc(exp.tipoCambio),
+      money(exp.monto),
+    ]);
+    // Filas vacías para dar aspecto de formulario (mínimo 8), numeradas de forma continua.
+    const minRows = 8;
+    let itemNo = bodyData.length;
+    while (bodyData.length < minRows) {
+      itemNo++;
+      bodyData.push([itemNo, '', '', '', '', '', '', '', '', '', '', '']);
     }
-    
-    if (data.startDate && data.endDate) {
-      doc.setFont("helvetica", "bold");
-      doc.text(`DEL ${data.startDate} AL ${data.endDate}`, doc.internal.pageSize.getWidth() / 2, 40, { align: 'center' });
-    }
-
-    if (data.codigo) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text(`CÓDIGO: ${data.codigo}`, doc.internal.pageSize.getWidth() / 2, 45, { align: 'center' });
-    }
-
-    y = 50;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Colaborador:  ${data.colaborador}`, 14, y);
-    y += 5;
-    doc.text(`Localidad:    ${data.location || ''}`, 14, y);
-    y += 5;
-    doc.text(`DNI:          ${data.idDocument || ''}`, 14, y);
-    y += 5;
-    doc.text(`Cta / CCI:    ${data.accountNumber || ''}`, 14, y);
-    y += 5;
-    if (data.peopleNames && data.peopleNames.length > 0) {
-      doc.text(`Personas:     ${data.peopleNames.join(', ')}`, 14, y);
-      y += 5;
-    }
-    if (data.gestion) {
-      doc.text(`Gestión:      ${data.gestion}`, 14, y);
-      y += 5;
-    }
-    y += 3;
-
-    let itemIndex = 1;
-    let sumIngresos = 0;
-    let sumGastos = 0;
-
-    const showProyecto = !!data.isDirecta;
-    const bodyData: any[] = [];
-
-    data.anticipos.forEach(a => {
-      bodyData.push([
-        itemIndex++,
-        a.fechaSolicitud,
-        '',
-        '',
-        'Transferencia',
-        a.descripcion || '',
-        ...(showProyecto ? [''] : []),
-        '',
-        a.monto.toFixed(2),
-        ''
-      ]);
-      sumIngresos += a.monto;
-    });
-
-    data.comprobantes.forEach(exp => {
-      bodyData.push([
-        itemIndex++,
-        exp.fecha,
-        exp.tipo,
-        exp.numeroDocumento || '',
-        exp.proveedor || '',
-        exp.comentario || exp.descripcion || '',
-        ...(showProyecto ? [exp.proyecto || ''] : []),
-        exp.placaVehiculo || '',
-        '',
-        (exp.monto || 0).toFixed(2)
-      ]);
-      sumGastos += exp.monto || 0;
-    });
-
-    const minRows = Math.max(5, itemIndex);
-    while (itemIndex <= minRows) {
-      bodyData.push([itemIndex++, ...Array(showProyecto ? 9 : 8).fill('')]);
-    }
-
-    const head = showProyecto
-      ? ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', 'Proyecto', 'Placa', 'Ingresos', 'Gastos']
-      : ['Item', 'Fecha\nEmisión', 'Tipo\nde\nDoc.', 'Nº del Documento', 'Proveedor', 'Concepto', 'Placa', 'Ingresos', 'Gastos'];
-    const columnStyles: Record<number, any> = showProyecto
-      ? {
-          0: { halign: 'center', cellWidth: 8 },
-          1: { halign: 'center', cellWidth: 15 },
-          2: { halign: 'center', cellWidth: 14 },
-          3: { cellWidth: 20 },
-          4: { cellWidth: 30 },
-          5: { cellWidth: 'auto' },
-          6: { cellWidth: 28 },
-          7: { halign: 'center', cellWidth: 14 },
-          8: { halign: 'right', cellWidth: 15 },
-          9: { halign: 'right', cellWidth: 15 },
-        }
-      : {
-          0: { halign: 'center', cellWidth: 9 },
-          1: { halign: 'center', cellWidth: 17 },
-          2: { halign: 'center', cellWidth: 18 },
-          3: { cellWidth: 24 },
-          4: { cellWidth: 36 },
-          5: { cellWidth: 'auto' },
-          6: { halign: 'center', cellWidth: 16 },
-          7: { halign: 'right', cellWidth: 16 },
-          8: { halign: 'right', cellWidth: 16 },
-        };
 
     autoTable(doc, {
-      startY: y,
-      head: [head],
+      startY: hy,
+      head: [[
+        'ITEM', 'FECHA', 'RUC', 'No. DOC', 'PROVEEDOR (RAZON SOCIAL)', 'DESCRIPCIÓN (DETALLE)',
+        'OT', 'C.COSTO', 'CTA. DESTINO', 'DÓLARES', 'T.C.', 'SOLES',
+      ]],
       body: bodyData,
       theme: 'grid',
-      headStyles: { fillColor: [145, 47, 44], textColor: 255, halign: 'center', valign: 'middle' },
-      styles: { fontSize: 7, cellPadding: 2, textColor: 0 },
-      columnStyles,
-      margin: { left: 14, right: 14 }
+      headStyles: { fillColor: [145, 47, 44], textColor: 255, halign: 'center', valign: 'middle', fontSize: 7 },
+      styles: { fontSize: 7, cellPadding: 1.5, textColor: 0, overflow: 'linebreak' },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 9 },
+        1: { halign: 'center', cellWidth: 16 },
+        2: { halign: 'center', cellWidth: 20 },
+        3: { halign: 'center', cellWidth: 18 },
+        4: { cellWidth: 36 },
+        5: { cellWidth: 'auto' },
+        6: { halign: 'center', cellWidth: 18 },
+        7: { cellWidth: 22 },
+        8: { halign: 'center', cellWidth: 20 },
+        9: { halign: 'right', cellWidth: 16 },
+        10: { halign: 'right', cellWidth: 13 },
+        11: { halign: 'right', cellWidth: 18 },
+      },
+      margin: { left: LM, right: 14 },
     });
 
-    y = afterTable(doc);
+    let y = afterTable(doc);
 
-    // Totals row (simulated below table)
-    const rightEdge = doc.internal.pageSize.getWidth() - 14;
-    const colW = 16;
-    doc.setFillColor(145, 47, 44);
-    doc.rect(rightEdge - colW * 2, y, colW, 6, 'F');
-    doc.rect(rightEdge - colW, y, colW, 6, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "normal");
-    doc.text(sumIngresos.toFixed(2), rightEdge - colW - 2, y + 4, { align: 'right' });
-    doc.text(sumGastos.toFixed(2), rightEdge - 2, y + 4, { align: 'right' });
-    doc.setTextColor(0, 0, 0);
+    // --- Pie de totales (derecha): TOTAL GASTOS / MONTO INICIAL / SALDO ---
+    const totalGastos = data.comprobantes.reduce((s, e) => s + (e.monto || 0), 0);
+    const montoInicial = data.montoInicialEntregado ?? data.totalAnticipado ?? 0;
+    const saldo = montoInicial - totalGastos;
 
-    y += 8;
+    // Mini-tabla de totales: etiqueta sombreada + valor con borde; SALDO destacado.
+    const totBoxW = 80;
+    const totLabW = 54;
+    const totValW = totBoxW - totLabW;
+    const totX = RM - totBoxW;
+    const rowH = 6.5;
+    y += 4;
+    doc.setFontSize(8);
+    doc.setLineWidth(0.2);
+    const totalRows: [string, number, boolean][] = [
+      ['TOTAL GASTOS', totalGastos, false],
+      ['MONTO INICIAL ENTREGADO', montoInicial, false],
+      ['SALDO (REEMB. / DEV.)', saldo, true],
+    ];
+    for (const [label, val, isSaldo] of totalRows) {
+      // Celda etiqueta (fondo blanco; solo el SALDO lleva el fondo de la marca).
+      if (isSaldo) doc.setFillColor(145, 47, 44);
+      else doc.setFillColor(255, 255, 255);
+      doc.rect(totX, y, totLabW, rowH, 'FD');
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(isSaldo ? 255 : 0, isSaldo ? 255 : 0, isSaldo ? 255 : 0);
+      doc.text(label, totX + totLabW - 2, y + 4.3, { align: 'right' });
+      // Celda valor (texto negro; el SALDO solo se resalta en negrita).
+      doc.setFillColor(255, 255, 255);
+      doc.rect(totX + totLabW, y, totValW, rowH, 'FD');
+      doc.setFont('helvetica', isSaldo ? 'bold' : 'normal');
+      doc.setTextColor(0, 0, 0);
+      doc.text(val.toFixed(2), RM - 2, y + 4.3, { align: 'right' });
+      y += rowH;
+    }
+    y += 2;
 
-    // Indicadores POR REEMBOLSAR y POR RENDIR (siempre se muestran ambos)
-    const diferenciaPdf = sumIngresos - sumGastos;
-    const montoReembolsarPdf = diferenciaPdf < 0 ? Math.abs(diferenciaPdf) : 0;
-    const montoRendirPdf = diferenciaPdf > 0 ? diferenciaPdf : 0;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text('POR REEMBOLSAR:', rightEdge - colW * 2 - 4, y + 4, { align: 'right' });
-    doc.text(`S/ ${montoReembolsarPdf.toFixed(2)}`, rightEdge - 2, y + 4, { align: 'right' });
-    y += 6;
-    doc.text('POR RENDIR:', rightEdge - colW * 2 - 4, y + 4, { align: 'right' });
-    doc.text(`S/ ${montoRendirPdf.toFixed(2)}`, rightEdge - 2, y + 4, { align: 'right' });
-    doc.setFont("helvetica", "normal");
-    y += 10;
-
+    // --- Resumen de solicitud (presupuesto), si aplica: bloque suplementario ---
     if (data.items && data.items.length > 0) {
-      y += 10;
-      if (y > doc.internal.pageSize.getHeight() - 60) {
-        doc.addPage();
-        y = 20;
-      }
-      doc.setFont("helvetica", "bold");
-      doc.text('RESUMEN DE SOLICITUD (PRESUPUESTO DETALLADO)', 14, y);
-      y += 5;
+      if (y > H - 70) { doc.addPage(); y = 20; }
+      y += 4;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('RESUMEN DE SOLICITUD (PRESUPUESTO DETALLADO)', LM, y);
+      y += 4;
       autoTable(doc, {
         startY: y,
         head: [['Viáticos', 'Importe', 'Personas', 'Combustible', 'Días', 'Total']],
-        body: data.items.map(i => [
-          i.descripcion,
-          i.importe.toFixed(2),
-          i.personas,
-          i.combustible.toFixed(2),
-          i.dias,
-          i.total.toFixed(2)
+        body: data.items.map((i) => [
+          i.descripcion, i.importe.toFixed(2), i.personas, i.combustible.toFixed(2), i.dias, i.total.toFixed(2),
         ]),
         theme: 'grid',
         headStyles: { fillColor: [145, 47, 44], textColor: 255 },
         styles: { fontSize: 8 },
-        columnStyles: {
-          1: { halign: 'right' },
-          2: { halign: 'center' },
-          3: { halign: 'right' },
-          4: { halign: 'center' },
-          5: { halign: 'right' },
-        },
-        margin: { left: 14, right: 14 }
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'center' }, 5: { halign: 'right' } },
+        margin: { left: LM, right: 14 },
       });
       y = afterTable(doc);
     }
 
-    y += 30;
-    if (y > doc.internal.pageSize.getHeight() - 20) {
-      doc.addPage();
-      y = 30;
-    }
-
-    const centerPage = doc.internal.pageSize.getWidth() / 2;
-    if (data.signature) {
-      doc.addImage(data.signature, 'PNG', centerPage - 25, y - 25, 50, 25);
-    }
-    const lineY = y;
-    doc.setLineWidth(0.5);
-    doc.line(centerPage - 40, lineY, centerPage + 40, lineY);
-    doc.setFontSize(8);
-    doc.text(data.colaborador.toUpperCase(), centerPage, lineY + 4, { align: 'center' });
-    if (data.idDocument) {
-      doc.text(`DNI N° ${data.idDocument}`, centerPage, lineY + 8, { align: 'center' });
-    }
+    // --- Tres firmas: SOLICITANTE / JEFE INMEDIATO / FINANZAS ---
+    let sigY = Math.max(y + 12, H - 42);
+    if (sigY > H - 34) { doc.addPage(); sigY = 30; }
+    const drawSignature = (
+      cx: number, title: string, sig?: string, name?: string, dni?: string,
+    ) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(title, cx, sigY, { align: 'center' });
+      if (sig) {
+        try { doc.addImage(sig, 'PNG', cx - 22, sigY + 2, 44, 16); } catch { /* firma inválida */ }
+      }
+      const lineY = sigY + 20;
+      doc.setLineWidth(0.4);
+      doc.line(cx - 35, lineY, cx + 35, lineY);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      // Nombre saneado y recortado al ancho del recuadro (70mm) para que no se solape.
+      if (name && name !== '—') doc.text(clip(sanitize(name).toUpperCase(), 70), cx, lineY + 4, { align: 'center' });
+      doc.text('NOMBRE Y FIRMA', cx, lineY + 8, { align: 'center' });
+      if (dni) doc.text(`DNI: ${dni}`, cx, lineY + 12, { align: 'center' });
+    };
+    drawSignature(56, 'V°B° SOLICITANTE', data.signature, data.colaborador, data.idDocument);
+    drawSignature(148, 'V°B° JEFE INMEDIATO', data.jefeSignature, data.jefeInmediatoName);
+    drawSignature(240, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     if (!inDoc) {
       if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
@@ -846,7 +903,11 @@ export class RendicionExportService {
   }
 
   async exportMobilitySheetToPdf(data: MobilitySheetExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
-    data = { ...data, signature: await this.resolveSignature(data.signature) };
+    data = {
+      ...data,
+      signature: await this.resolveSignature(data.signature),
+      coordinatorSignature: await this.resolveSignature(data.coordinatorSignature),
+    };
     const isNew = !inDoc;
     const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     if (!isNew) doc.addPage([210, 297], 'portrait');
@@ -860,8 +921,8 @@ export class RendicionExportService {
 
     const logoB64 = await this.getLogoBase64();
 
-    // Col X positions: Fecha | Colaborador | CliProv | Proyecto | Origen | Destino | Gestión | TOTALES | end
-    const cols = [14, 30, 56, 80, 96, 122, 148, 170, 196];
+    // Col X positions: Fecha | Colaborador | Proyecto | Origen | Destino | Gestión | TOTALES | end
+    const cols = [14, 32, 62, 82, 112, 142, 170, 196];
 
     // Title
     doc.setFont('helvetica', 'bold');
@@ -932,8 +993,8 @@ export class RendicionExportService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
 
-    const headers = ['Fecha', 'Colaborador', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    for (let i = 0; i < 8; i++) {
+    const headers = ['Fecha', 'Colaborador', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
+    for (let i = 0; i < 7; i++) {
       doc.rect(cols[i], y, cols[i + 1] - cols[i], hdr, 'S');
       doc.text(headers[i], (cols[i] + cols[i + 1]) / 2, y + 5, { align: 'center' });
     }
@@ -943,7 +1004,7 @@ export class RendicionExportService {
     // Data rows (min 10)
     const dataRows = [...data.rows];
     while (dataRows.length < 10) {
-      dataRows.push({ fecha: '', clienteProveedor: '', origen: '', destino: '', gestion: '', total: 0 });
+      dataRows.push({ fecha: '', origen: '', destino: '', gestion: '', total: 0 });
     }
 
     const rowH = 7;
@@ -951,7 +1012,7 @@ export class RendicionExportService {
     doc.setFontSize(8);
 
     for (const row of dataRows) {
-      for (let c = 0; c < 8; c++) {
+      for (let c = 0; c < 7; c++) {
         doc.rect(cols[c], y, cols[c + 1] - cols[c], rowH, 'S');
       }
       const hasContent = !!(row.fecha || row.origen || row.destino || row.gestion);
@@ -968,45 +1029,42 @@ export class RendicionExportService {
         });
         doc.setFontSize(prevSize);
       }
-      if (row.clienteProveedor) {
-        doc.text(doc.splitTextToSize(row.clienteProveedor, cols[3] - cols[2] - 2)[0], cols[2] + 1, y + 4.5);
-      }
       const proyectoCell = row.proyecto || data.proyecto;
       if (proyectoCell && hasContent) {
-        doc.text(doc.splitTextToSize(proyectoCell, cols[4] - cols[3] - 2)[0], cols[3] + 1, y + 4.5);
+        doc.text(doc.splitTextToSize(proyectoCell, cols[3] - cols[2] - 2)[0], cols[2] + 1, y + 4.5);
       }
       if (row.origen) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const oLines = (doc.splitTextToSize(row.origen, cols[5] - cols[4] - 2) as string[]).slice(0, 2);
+        const oLines = (doc.splitTextToSize(row.origen, cols[4] - cols[3] - 2) as string[]).slice(0, 2);
         const oStartY = oLines.length > 1 ? y + 2.8 : y + 4.5;
         oLines.forEach((line, i) => {
-          doc.text(line, cols[4] + 1, oStartY + i * 3);
+          doc.text(line, cols[3] + 1, oStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.destino) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const dLines = (doc.splitTextToSize(row.destino, cols[6] - cols[5] - 2) as string[]).slice(0, 2);
+        const dLines = (doc.splitTextToSize(row.destino, cols[5] - cols[4] - 2) as string[]).slice(0, 2);
         const dStartY = dLines.length > 1 ? y + 2.8 : y + 4.5;
         dLines.forEach((line, i) => {
-          doc.text(line, cols[5] + 1, dStartY + i * 3);
+          doc.text(line, cols[4] + 1, dStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.gestion) {
         const prevSize = doc.getFontSize();
         doc.setFontSize(6.5);
-        const gLines = (doc.splitTextToSize(row.gestion, cols[7] - cols[6] - 2) as string[]).slice(0, 2);
+        const gLines = (doc.splitTextToSize(row.gestion, cols[6] - cols[5] - 2) as string[]).slice(0, 2);
         const gStartY = gLines.length > 1 ? y + 2.8 : y + 4.5;
         gLines.forEach((line, i) => {
-          doc.text(line, cols[6] + 1, gStartY + i * 3);
+          doc.text(line, cols[5] + 1, gStartY + i * 3);
         });
         doc.setFontSize(prevSize);
       }
       if (row.total) {
-        doc.text(row.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
+        doc.text(row.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
       }
       y += rowH;
     }
@@ -1020,45 +1078,58 @@ export class RendicionExportService {
     doc.setTextColor(145, 47, 44);
     doc.text('IMPORTE TOTAL PLANILLA DE MOVILIDAD', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
-    doc.text(data.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
+    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
+    doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
     y += footerH;
 
     doc.setTextColor(145, 47, 44);
     doc.text('CANTIDAD RECIBIDA  A CUENTA', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
+    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
     y += footerH;
 
     doc.setTextColor(145, 47, 44);
     doc.text('DIFERENCIA A MI FAVOR', lm + 2, y + 4.5);
     doc.setTextColor(0, 0, 0);
-    doc.text('S/.', cols[7] - 2, y + 4.5, { align: 'right' });
-    doc.rect(cols[7], y, cols[8] - cols[7], footerH, 'S');
-    doc.text(data.total.toFixed(2), cols[8] - 1, y + 4.5, { align: 'right' });
+    doc.text('S/.', cols[6] - 2, y + 4.5, { align: 'right' });
+    doc.rect(cols[6], y, cols[7] - cols[6], footerH, 'S');
+    doc.text(data.total.toFixed(2), cols[7] - 1, y + 4.5, { align: 'right' });
     y += footerH + 10;
 
-    // Signature area
+    // Signature area — dos firmas: colaborador (izquierda) y coordinador (derecha). VD-33.
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.text('LUGAR Y FECHA:', lm, y);
+    y += 6;
 
-    const sigCX = pageW / 2;
+    const sigWorkerCX = 62;
+    const sigCoordCX = 150;
+    const sigTop = y;
     if (data.signature) {
-      doc.addImage(data.signature, 'PNG', sigCX - 25, y + 2, 50, 16);
+      doc.addImage(data.signature, 'PNG', sigWorkerCX - 25, sigTop, 50, 16);
     }
-    y += 20;
+    if (data.coordinatorSignature) {
+      doc.addImage(data.coordinatorSignature, 'PNG', sigCoordCX - 25, sigTop, 50, 16);
+    }
+    y = sigTop + 18;
     doc.setFont('helvetica', 'bold');
-    doc.text('FIRMA Trabajador', sigCX, y, { align: 'center' });
-    doc.line(sigCX - 35, y + 1.5, sigCX + 35, y + 1.5);
+    doc.text('FIRMA Trabajador', sigWorkerCX, y, { align: 'center' });
+    doc.line(sigWorkerCX - 35, y + 1.5, sigWorkerCX + 35, y + 1.5);
+    doc.text('FIRMA Coordinador', sigCoordCX, y, { align: 'center' });
+    doc.line(sigCoordCX - 35, y + 1.5, sigCoordCX + 35, y + 1.5);
     y += 7;
     doc.setFont('helvetica', 'normal');
     doc.text(
       data.collaboratorDni ? `DNI   ${data.collaboratorDni}` : 'DNI',
-      sigCX,
+      sigWorkerCX,
       y,
       { align: 'center' },
     );
+    if (data.coordinator) {
+      doc.text(data.coordinator.toUpperCase(), sigCoordCX, y, { align: 'center' });
+    } else {
+      doc.text(data.coordinatorDni ? `DNI   ${data.coordinatorDni}` : 'DNI', sigCoordCX, y, { align: 'center' });
+    }
     y += 12;
 
     // Cargar a / Cuenta
@@ -1079,130 +1150,6 @@ export class RendicionExportService {
       lm,
       y,
     );
-
-    if (isNew) {
-      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
-      doc.save(`${data.fileBaseName}.pdf`);
-    }
-  }
-
-  async exportCashVoucherToPdf(data: CashVoucherExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
-    data = { ...data, signature: await this.resolveSignature(data.signature) };
-    const isNew = !inDoc;
-    // Quarter A4: 105 x 148 mm
-    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: [105, 148] });
-    if (!isNew) doc.addPage([105, 148], 'portrait');
-    const pageW = 105;
-    const lm = 7;
-    const rm = 98;
-
-    // Title
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('COMPROBANTE DE CAJA', pageW / 2, 10, { align: 'center' });
-
-    // Logo + company name + N°
-    const logoB64 = await this.getLogoBase64();
-    const headerY = 19;
-    if (logoB64) {
-      doc.addImage(logoB64, 'PNG', lm, headerY - 5, 14, 8);
-    }
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(data.clientName || '', logoB64 ? lm + 17 : lm, headerY);
-    doc.setTextColor(145, 47, 44);
-    doc.text(`Nº  ${data.internalCode || '-'}`, rm, headerY, { align: 'right' });
-    doc.setTextColor(0, 0, 0);
-
-    // Separator
-    doc.setLineWidth(0.3);
-    let y = headerY + 5;
-    doc.line(lm, y, rm, y);
-    y += 6;
-
-    // Entregado a / Dirección
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    const labelW = 24;
-    doc.text('Entregado a:', lm, y);
-    doc.text(data.entregadoA, lm + labelW, y);
-    doc.line(lm + labelW, y + 0.5, rm, y + 0.5);
-    y += 6;
-    doc.text('Dirección:', lm, y);
-    const direccionLines = (doc.splitTextToSize(data.direccion || '', rm - (lm + labelW)) as string[]).slice(0, 2);
-    doc.text(direccionLines[0] || '', lm + labelW, y);
-    doc.line(lm + labelW, y + 0.5, rm, y + 0.5);
-    y += 7;
-
-    // Segunda línea (si la dirección es larga) va sobre la línea separadora existente
-    if (direccionLines.length > 1) {
-      doc.text(direccionLines[1], lm, y - 1);
-    }
-    doc.line(lm, y, rm, y);
-    y += 5;
-
-    // He recibido de / concepto
-    doc.text(`He recibido de ${data.clientName || ''}`, lm, y);
-    y += 5;
-    const conceptoLabel = 'Por concepto de:  ';
-    doc.text(conceptoLabel, lm, y);
-    const conceptoX = lm + doc.getTextWidth(conceptoLabel);
-    const conceptoLines = (doc.splitTextToSize(data.concepto || '', rm - conceptoX) as string[]).slice(0, 2);
-    doc.text(conceptoLines[0] || '', conceptoX, y);
-    doc.line(conceptoX, y + 0.5, rm, y + 0.5);
-    y += 7;
-
-    // Segunda línea (si el concepto es largo) va sobre la línea separadora existente
-    if (conceptoLines.length > 1) {
-      doc.text(conceptoLines[1], lm, y - 1);
-    }
-    doc.line(lm, y, rm, y);
-    y += 5;
-
-    // La Suma de / Proyecto
-    const sumaLabel = 'La Suma de:  ';
-    doc.text(sumaLabel, lm, y);
-    const sumaX = lm + doc.getTextWidth(sumaLabel);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`S/ ${data.monto.toFixed(2)}`, sumaX, y);
-    doc.setFont('helvetica', 'normal');
-    doc.line(sumaX, y + 0.5, rm, y + 0.5);
-    y += 6;
-    const proyLabel = 'Proyecto:  ';
-    doc.text(proyLabel, lm, y);
-    const proyX = lm + doc.getTextWidth(proyLabel);
-    doc.text(data.projectName || '-', proyX, y);
-    doc.line(proyX, y + 0.5, rm, y + 0.5);
-    y += 12;
-
-    // Signature block (right side)
-    const sigX1 = 58;
-    const sigX2 = rm;
-    const sigCX = (sigX1 + sigX2) / 2;
-    if (data.signature) {
-      doc.addImage(data.signature, 'PNG', sigCX - 16, y - 10, 32, 10);
-    }
-    doc.line(sigX1, y, sigX2, y);
-    doc.setFontSize(7);
-    doc.text('Firma', sigCX, y + 4, { align: 'center' });
-    doc.text(`DNI: ${data.collaboratorDni || ''}`, sigCX, y + 8, { align: 'center' });
-    y += 14;
-
-    // Date
-    doc.setFontSize(8);
-    const dateObj = parseFechaEmisionInput(data.fechaEmision) ?? new Date();
-    const day = dateObj.getDate();
-    const month = dateObj.getMonth() + 1;
-    const year = dateObj.getFullYear();
-    doc.text(`Lima,   ${day}   de   ${month}   de   ${year}`, lm, y);
-
-    // Footer
-    doc.setLineWidth(0.2);
-    doc.line(lm, 140, rm, 140);
-    doc.setFontSize(6);
-    doc.setTextColor(100, 100, 100);
-    doc.text(data.clientName || '', pageW / 2, 144, { align: 'center' });
-    doc.setTextColor(0, 0, 0);
 
     if (isNew) {
       if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
@@ -1268,12 +1215,11 @@ export class RendicionExportService {
     ws.columns = [
       { width: 14 },  // A: Fecha
       { width: 22 },  // B: Colaborador
-      { width: 24 },  // C: Cliente/Proveedor
-      { width: 14 },  // D: Proyecto
-      { width: 22 },  // E: Origen
-      { width: 22 },  // F: Destino
-      { width: 24 },  // G: Gestión
-      { width: 13 },  // H: TOTALES
+      { width: 14 },  // C: Proyecto
+      { width: 22 },  // D: Origen
+      { width: 22 },  // E: Destino
+      { width: 24 },  // F: Gestión
+      { width: 13 },  // G: TOTALES
     ];
 
     const cfg = this.companyConfigService.getCompanyConfig();
@@ -1286,7 +1232,7 @@ export class RendicionExportService {
     };
 
     // Row 1: Title
-    ws.mergeCells('A1:H1');
+    ws.mergeCells('A1:G1');
     const titleCell = ws.getCell('A1');
     titleCell.value = 'PLANILLA DE MOVILIDAD';
     titleCell.font = { bold: true, size: 13 };
@@ -1318,24 +1264,24 @@ export class RendicionExportService {
     ws.getCell('A5').value = 'Nombre Completo :';
     ws.getCell('A5').font = { bold: true, size: 9 };
     ws.getCell('A5').border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-    ws.mergeCells('B5:F5');
+    ws.mergeCells('B5:E5');
     ws.getCell('B5').value = data.collaborator;
     ws.getCell('B5').border = { top: { style: 'thin' }, bottom: { style: 'thin' } };
-    ws.getCell('G5').value = 'Nº';
-    ws.getCell('G5').font = { bold: true, size: 9 };
+    ws.getCell('F5').value = 'Nº';
+    ws.getCell('F5').font = { bold: true, size: 9 };
+    ws.getCell('F5').border = bt;
+    ws.getCell('G5').value = data.internalCode || '';
+    ws.getCell('G5').font = { size: 9 };
     ws.getCell('G5').border = bt;
-    ws.getCell('H5').value = data.internalCode || '';
-    ws.getCell('H5').font = { size: 9 };
-    ws.getCell('H5').border = bt;
 
     // Row 6: Vo.Bo.
     ws.getCell('A6').border = { bottom: { style: 'thin' } };
     ws.getCell('B6').border = { bottom: { style: 'thin' } };
-    ws.mergeCells('G6:H6');
-    ws.getCell('G6').value = 'Vo.Bo. Gerencia Adm y Finanzas';
-    ws.getCell('G6').alignment = { horizontal: 'center' };
-    ws.getCell('G6').font = { size: 8 };
-    ws.getCell('G6').border = bt;
+    ws.mergeCells('F6:G6');
+    ws.getCell('F6').value = 'Vo.Bo. Gerencia Adm y Finanzas';
+    ws.getCell('F6').alignment = { horizontal: 'center' };
+    ws.getCell('F6').font = { size: 8 };
+    ws.getCell('F6').border = bt;
 
     // Row 7: Periodo
     ws.getCell('A7').value = 'Periodo:';
@@ -1347,7 +1293,7 @@ export class RendicionExportService {
     ws.getRow(8).height = 4;
 
     // Row 9: Table title bar
-    ws.mergeCells('A9:H9');
+    ws.mergeCells('A9:G9');
     const tableTitle = ws.getCell('A9');
     tableTitle.value = 'DETALLE DE GASTOS DE MOVILIDAD';
     tableTitle.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
@@ -1356,8 +1302,8 @@ export class RendicionExportService {
     ws.getRow(9).height = 18;
 
     // Row 10: Single header row
-    const hdrLabels = ['Fecha', 'Colaborador', 'Cliente/Proveedor', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    const hdrCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const hdrLabels = ['Fecha', 'Colaborador', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
+    const hdrCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
     for (let i = 0; i < hdrLabels.length; i++) {
       const cell = ws.getCell(`${hdrCols[i]}10`);
       cell.value = hdrLabels[i];
@@ -1371,7 +1317,7 @@ export class RendicionExportService {
     let r = 11;
     const dataRows = [...data.rows];
     while (dataRows.length < 10) {
-      dataRows.push({ fecha: '', clienteProveedor: '', origen: '', destino: '', gestion: '', total: 0 });
+      dataRows.push({ fecha: '', origen: '', destino: '', gestion: '', total: 0 });
     }
 
     for (const row of dataRows) {
@@ -1379,20 +1325,19 @@ export class RendicionExportService {
       ws.getCell(r, 1).value = this.formatDateDdMmYyyy(row.fecha);
       ws.getCell(r, 2).value = hasContent ? (row.colaborador || '') : '';
       ws.getCell(r, 2).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 3).value = row.clienteProveedor || '';
-      ws.getCell(r, 4).value = hasContent ? (row.proyecto || data.proyecto || '') : '';
-      ws.getCell(r, 5).value = row.origen || '';
+      ws.getCell(r, 3).value = hasContent ? (row.proyecto || data.proyecto || '') : '';
+      ws.getCell(r, 4).value = row.origen || '';
+      ws.getCell(r, 4).alignment = { wrapText: true, vertical: 'middle' };
+      ws.getCell(r, 5).value = row.destino || '';
       ws.getCell(r, 5).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 6).value = row.destino || '';
+      ws.getCell(r, 6).value = row.gestion || '';
       ws.getCell(r, 6).alignment = { wrapText: true, vertical: 'middle' };
-      ws.getCell(r, 7).value = row.gestion || '';
-      ws.getCell(r, 7).alignment = { wrapText: true, vertical: 'middle' };
       if (row.total) {
-        ws.getCell(r, 8).value = row.total;
-        ws.getCell(r, 8).numFmt = '#,##0.00';
-        ws.getCell(r, 8).alignment = { horizontal: 'right' };
+        ws.getCell(r, 7).value = row.total;
+        ws.getCell(r, 7).numFmt = '#,##0.00';
+        ws.getCell(r, 7).alignment = { horizontal: 'right' };
       }
-      for (let i = 1; i <= 8; i++) {
+      for (let i = 1; i <= 7; i++) {
         ws.getCell(r, i).border = bt;
         ws.getCell(r, i).font = { size: 8.5 };
       }
@@ -1403,33 +1348,33 @@ export class RendicionExportService {
     // Footer rows
     const redFont = { bold: true, color: { argb: 'FF912f2c' } };
 
-    ws.mergeCells(r, 1, r, 7);
+    ws.mergeCells(r, 1, r, 6);
     ws.getCell(r, 1).value = 'IMPORTE TOTAL PLANILLA DE MOVILIDAD';
     ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 8).value = data.total;
-    ws.getCell(r, 8).numFmt = '#,##0.00';
-    ws.getCell(r, 8).alignment = { horizontal: 'right' };
-    ws.getCell(r, 8).border = bt;
-    ws.getRow(r).height = 16;
-    r++;
-
-    ws.mergeCells(r, 1, r, 7);
-    ws.getCell(r, 1).value = 'CANTIDAD RECIBIDA  A CUENTA';
-    ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 8).border = bt;
+    ws.getCell(r, 7).value = data.total;
+    ws.getCell(r, 7).numFmt = '#,##0.00';
+    ws.getCell(r, 7).alignment = { horizontal: 'right' };
+    ws.getCell(r, 7).border = bt;
     ws.getRow(r).height = 16;
     r++;
 
     ws.mergeCells(r, 1, r, 6);
+    ws.getCell(r, 1).value = 'CANTIDAD RECIBIDA  A CUENTA';
+    ws.getCell(r, 1).font = redFont;
+    ws.getCell(r, 7).border = bt;
+    ws.getRow(r).height = 16;
+    r++;
+
+    ws.mergeCells(r, 1, r, 5);
     ws.getCell(r, 1).value = 'DIFERENCIA A MI FAVOR';
     ws.getCell(r, 1).font = redFont;
-    ws.getCell(r, 7).value = 'S/.';
-    ws.getCell(r, 7).font = { bold: true };
+    ws.getCell(r, 6).value = 'S/.';
+    ws.getCell(r, 6).font = { bold: true };
+    ws.getCell(r, 6).alignment = { horizontal: 'right' };
+    ws.getCell(r, 7).value = data.total;
+    ws.getCell(r, 7).numFmt = '#,##0.00';
     ws.getCell(r, 7).alignment = { horizontal: 'right' };
-    ws.getCell(r, 8).value = data.total;
-    ws.getCell(r, 8).numFmt = '#,##0.00';
-    ws.getCell(r, 8).alignment = { horizontal: 'right' };
-    ws.getCell(r, 8).border = bt;
+    ws.getCell(r, 7).border = bt;
     ws.getRow(r).height = 16;
     r += 2;
 
@@ -1508,12 +1453,12 @@ export class RendicionExportService {
     if (data.mobilityRows && data.mobilityRows.length > 0) {
       autoTable(doc, {
         startY: y,
-        head: [['Fecha', 'Cliente / Proveedor', 'Origen', 'Destino', 'Gestión', 'Total (S/)']],
-        body: data.mobilityRows.map(r => [r.fecha, r.clienteProveedor || '—', r.origen || '—', r.destino || '—', r.gestion || '—', r.total.toFixed(2)]),
+        head: [['Fecha', 'Origen', 'Destino', 'Gestión', 'Total (S/)']],
+        body: data.mobilityRows.map(r => [r.fecha, r.origen || '—', r.destino || '—', r.gestion || '—', r.total.toFixed(2)]),
         theme: 'grid',
         headStyles: { fillColor: [145, 47, 44], textColor: 255 },
         styles: { fontSize: 8 },
-        columnStyles: { 5: { halign: 'right' } },
+        columnStyles: { 4: { halign: 'right' } },
         margin: { left: 14, right: 14 },
       });
       tableRendered = true;
@@ -1623,9 +1568,6 @@ export class RendicionExportService {
         switch (page.type) {
           case 'mobility':
             bytes = (await this.exportMobilitySheetToPdf(page.data, undefined, true)) as Uint8Array ?? null;
-            break;
-          case 'cash_voucher':
-            bytes = (await this.exportCashVoucherToPdf(page.data, undefined, true)) as Uint8Array ?? null;
             break;
           case 'receipt':
             bytes = (await this.exportReceiptToPdf(page.data, undefined, true)) as Uint8Array ?? null;

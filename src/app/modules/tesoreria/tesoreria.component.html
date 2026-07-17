@@ -1,9 +1,30 @@
 <div class="p-5 max-w-7xl mx-auto flex flex-col gap-6">
 
   <!-- Header -->
-  <div>
-    <h1 class="text-2xl font-bold text-secondary">Pagos</h1>
-    <p class="text-sm text-tertiary mt-0.5">Gestión de viáticos y comprobantes de pago</p>
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">Pagos</h1>
+      <p class="text-sm text-tertiary mt-0.5">Gestión de viáticos y comprobantes de pago</p>
+    </div>
+    @if (canUseBatchPayments) {
+    <div class="flex items-center gap-2">
+      <app-button variant="primary" size="sm"
+        [label]="isGeneratingTxt() ? 'Generando...' : 'Generar archivo de pagos'"
+        [disabled]="isGeneratingTxt()" (clicked)="generatePaymentsTxt()" />
+      <label
+        class="inline-flex items-center gap-2 h-[38px] px-3 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium cursor-pointer"
+        [class.opacity-50]="isReconciling()" [class.pointer-events-none]="isReconciling()">
+        <app-icon name="upload" size="sm" />
+        {{ isReconciling() ? 'Procesando...' : 'Cargar pagos' }}
+        <input type="file" accept="application/pdf" class="hidden"
+          (change)="onReconcileFileSelected($event)" />
+      </label>
+      <!-- PRUEBAS: simula el PDF de BBVA para continuar el proceso sin el banco. -->
+      <app-button variant="secondary" size="sm"
+        [label]="isSimulatingPdf() ? 'Simulando...' : 'Simular PDF BBVA'"
+        [disabled]="isSimulatingPdf() || isReconciling()" (clicked)="simulateBbvaPdf()" />
+    </div>
+    }
   </div>
 
   <!-- Stats Cards -->
@@ -24,29 +45,33 @@
   </div>
   }
 
-  <!-- Reembolsos pendientes -->
-  @if (canPayAndSettle && pendingReimbursements.length > 0) {
-  <div class="rounded-2xl border border-warning/30 bg-warning/10 p-5">
-    <h2 class="text-sm font-bold text-secondary mb-1">Reembolsos pendientes</h2>
-    <p class="text-xs text-tertiary mb-4">Rendiciones liquidadas con saldo a favor del colaborador — pendiente de transferencia.</p>
+  <!-- Tabs -->
+  <app-tabs [tabs]="tabsList" [active]="activeTab()" (activeChange)="onTabChange($event)" />
+
+  <!-- Reembolsos tab: reembolsos al colaborador pendientes de pago (VD-37) -->
+  @if (activeTab() === 'reembolsos') {
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft overflow-hidden">
+    @if (pendingReimbursements.length === 0) {
+    <div class="p-12 text-center text-tertiary text-sm">No hay reembolsos pendientes.</div>
+    } @else {
     <!-- Desktop -->
-    <div class="hidden sm:block overflow-x-auto rounded-xl border border-amber-100 bg-quaternary">
+    <div class="hidden sm:block overflow-x-auto">
       <table class="min-w-full text-sm">
-        <thead class="border-b border-tertiary/20">
+        <thead class="border-b border-tertiary/20 bg-background">
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-semibold text-tertiary uppercase tracking-wider">Colaborador</th>
-            <th class="px-4 py-3 text-left text-xs font-semibold text-tertiary uppercase tracking-wider">Rendición</th>
-            <th class="px-4 py-3 text-right text-xs font-semibold text-tertiary uppercase tracking-wider">A reembolsar</th>
-            <th class="px-4 py-3 text-right text-xs font-semibold text-tertiary uppercase tracking-wider">Acciones</th>
+            <th class="px-5 py-3 text-left text-xs font-semibold text-tertiary uppercase tracking-wider">Colaborador</th>
+            <th class="px-5 py-3 text-left text-xs font-semibold text-tertiary uppercase tracking-wider">Rendición</th>
+            <th class="px-5 py-3 text-right text-xs font-semibold text-tertiary uppercase tracking-wider">A reembolsar</th>
+            <th class="px-5 py-3 text-right text-xs font-semibold text-tertiary uppercase tracking-wider">Acciones</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-tertiary/10">
           @for (rep of pendingReimbursements; track rep._id) {
           <tr class="hover:bg-background/60 transition-colors">
-            <td class="px-4 py-3 font-medium text-secondary">{{ collaboratorReportName(rep) }}</td>
-            <td class="px-4 py-3 text-tertiary">{{ rep.title }}</td>
-            <td class="px-4 py-3 text-right font-bold text-success-ink">S/ {{ reimbursementAmount(rep) }}</td>
-            <td class="px-4 py-3 text-right">
+            <td class="px-5 py-3.5 font-medium text-secondary">{{ collaboratorReportName(rep) }}</td>
+            <td class="px-5 py-3.5 text-tertiary">{{ rep.title }}</td>
+            <td class="px-5 py-3.5 text-right font-bold text-success-ink">S/ {{ reimbursementAmount(rep) }}</td>
+            <td class="px-5 py-3.5 text-right">
               <div class="flex items-center justify-end gap-2">
                 <a [routerLink]="['/mis-rendiciones', rep._id, 'detalle']"
                   class="text-xs px-3 py-1.5 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors font-medium">
@@ -61,9 +86,9 @@
       </table>
     </div>
     <!-- Mobile cards -->
-    <div class="sm:hidden flex flex-col gap-3">
+    <div class="sm:hidden flex flex-col gap-3 p-3">
       @for (rep of pendingReimbursements; track rep._id) {
-      <div class="bg-quaternary rounded-xl border border-amber-100 p-4">
+      <div class="bg-quaternary rounded-xl border border-tertiary/15 p-4">
         <div class="flex items-start justify-between gap-2 mb-2">
           <div>
             <p class="text-sm font-semibold text-secondary">{{ collaboratorReportName(rep) }}</p>
@@ -81,11 +106,9 @@
       </div>
       }
     </div>
+    }
   </div>
   }
-
-  <!-- Tabs -->
-  <app-tabs [tabs]="tabsList" [active]="activeTab()" (activeChange)="onTabChange($event)" />
 
   <!-- Devoluciones tab -->
   @if (activeTab() === 'devoluciones') {
@@ -247,7 +270,7 @@
   }
 
   <!-- Tabla unificada: viáticos (pendientes) + anticipos -->
-  @if (activeTab() !== 'devoluciones' && activeTab() !== 'rendiciones-directas') {
+  @if (activeTab() !== 'reembolsos' && activeTab() !== 'devoluciones' && activeTab() !== 'rendiciones-directas') {
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft overflow-hidden">
     @if(isLoading()) {
     <div class="flex justify-center p-12">
@@ -278,9 +301,9 @@
               <td class="px-5 py-3.5 font-medium text-secondary">{{ viaticoUserName(rep) }}</td>
               <td class="px-5 py-3.5 text-tertiary max-w-[160px] truncate">{{ rep.viaticoPlace || rep.title || '—' }}</td>
               <td class="px-5 py-3.5 text-right">
-                <span class="font-bold text-secondary">S/ {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</span>
+                <span class="font-bold text-secondary">{{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</span>
                 @if ((rep.viaticoPaidAmount ?? 0) > 0) {
-                <span class="block text-xs text-tertiary">Pagado: S/ {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</span>
+                <span class="block text-xs text-tertiary">Pagado: {{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</span>
                 }
               </td>
               <td class="px-5 py-3.5 text-center">
@@ -310,8 +333,8 @@
               <td class="px-5 py-3.5 font-medium text-secondary">{{ viaticoUserName(rep) }}</td>
               <td class="px-5 py-3.5 text-tertiary max-w-[160px] truncate">{{ rep.viaticoPlace || rep.title || '—' }}</td>
               <td class="px-5 py-3.5 text-right">
-                <span class="font-bold text-secondary">S/ {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</span>
-                <span class="block text-xs text-tertiary">Pagado: S/ {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</span>
+                <span class="font-bold text-secondary">{{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</span>
+                <span class="block text-xs text-tertiary">Pagado: {{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</span>
               </td>
               <td class="px-5 py-3.5 text-center">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
@@ -391,9 +414,9 @@
               <p class="text-xs text-tertiary mt-0.5 truncate">{{ rep.viaticoPlace || rep.title || '—' }}</p>
             </div>
             <div class="text-right shrink-0">
-              <p class="text-base font-bold text-secondary">S/ {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</p>
+              <p class="text-base font-bold text-secondary">{{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</p>
               @if ((rep.viaticoPaidAmount ?? 0) > 0) {
-              <p class="text-xs text-tertiary">Pagado: S/ {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</p>
+              <p class="text-xs text-tertiary">Pagado: {{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</p>
               }
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1"
                 [class]="rep.status === 'partially_paid' ? 'bg-warning/15 text-warning-ink' : 'bg-primary/10 text-primary'">
@@ -423,8 +446,8 @@
               <p class="text-xs text-tertiary mt-0.5 truncate">{{ rep.viaticoPlace || rep.title || '—' }}</p>
             </div>
             <div class="text-right shrink-0">
-              <p class="text-base font-bold text-secondary">S/ {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</p>
-              <p class="text-xs text-tertiary">Pagado: S/ {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</p>
+              <p class="text-base font-bold text-secondary">{{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoAmount ?? 0) | number:'1.2-2' }}</p>
+              <p class="text-xs text-tertiary">Pagado: {{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</p>
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1"
                 [class]="viaticoRemaining(rep) > 0.009 ? 'bg-warning/15 text-warning-ink' : 'bg-success/15 text-success-ink'">
                 {{ viaticoRemaining(rep) > 0.009 ? 'Pago parcial' : 'Pagado' }}
@@ -457,7 +480,7 @@
             }
           </div>
           <div class="text-right shrink-0">
-            <p class="text-base font-bold text-secondary">S/ {{ adv.amount | number:'1.2-2' }}</p>
+            <p class="text-base font-bold text-secondary">{{ advanceCurrencySymbol(adv) }} {{ adv.amount | number:'1.2-2' }}</p>
             <span [class]="STATUS_COLORS[adv.status]" class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1">
               {{ STATUS_LABELS[adv.status] }}
             </span>
@@ -506,12 +529,12 @@
       </div>
       <p class="text-sm text-tertiary mb-2">
         <span class="font-semibold text-secondary">{{ getUserName(selectedAdvance) }}</span>
-        &nbsp;·&nbsp;Solicitado S/ {{ selectedAdvance.amount | number:'1.2-2' }}
+        &nbsp;·&nbsp;Solicitado {{ advanceCurrencySymbol(selectedAdvance) }} {{ selectedAdvance.amount | number:'1.2-2' }}
       </p>
       @if (advancePaid(selectedAdvance) > 0) {
       <div class="mb-4 rounded-xl bg-background/70 border border-tertiary/20 px-3 py-2 text-xs text-tertiary flex items-center justify-between">
-        <span>Pagado: <span class="font-semibold text-secondary">S/ {{ advancePaid(selectedAdvance) | number:'1.2-2' }}</span></span>
-        <span>Falta: <span class="font-semibold" [class.text-error]="advanceRemaining(selectedAdvance) > 0">S/ {{ advanceRemaining(selectedAdvance) | number:'1.2-2' }}</span></span>
+        <span>Pagado: <span class="font-semibold text-secondary">{{ advanceCurrencySymbol(selectedAdvance) }} {{ advancePaid(selectedAdvance) | number:'1.2-2' }}</span></span>
+        <span>Falta: <span class="font-semibold" [class.text-error]="advanceRemaining(selectedAdvance) > 0">{{ advanceCurrencySymbol(selectedAdvance) }} {{ advanceRemaining(selectedAdvance) | number:'1.2-2' }}</span></span>
       </div>
       }
 
@@ -557,11 +580,11 @@
 
         <!-- Monto de este pago (autocompletado del escaneo, editable) -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Monto de este pago S/ <span class="text-error">*</span></label>
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Monto de este pago {{ advanceCurrencySymbol(selectedAdvance) }} <span class="text-error">*</span></label>
           <input type="number" formControlName="amount" min="0" step="0.01" placeholder="0.00"
             class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30" />
           @if (paymentScannedAmount !== null) {
-          <p class="text-[11px] text-tertiary">Monto detectado: S/ {{ paymentScannedAmount | number:'1.2-2' }}@if (paymentScannedTitular) { · {{ paymentScannedTitular }} }. Puedes editarlo.</p>
+          <p class="text-[11px] text-tertiary">Monto detectado: {{ advanceCurrencySymbol(selectedAdvance) }} {{ paymentScannedAmount | number:'1.2-2' }}@if (paymentScannedTitular) { · {{ paymentScannedTitular }} }. Puedes editarlo.</p>
           }
         </div>
 
@@ -934,12 +957,12 @@
       <h3 class="text-lg font-bold text-secondary mb-0.5">Registrar pago de viático</h3>
       <p class="text-sm text-tertiary mb-2">
         <span class="font-semibold text-secondary">{{ viaticoUserName(selectedViaticoReport) }}</span>
-        &nbsp;·&nbsp;S/ {{ (selectedViaticoReport.viaticoAmount ?? 0) | number:'1.2-2' }}
+        &nbsp;·&nbsp;{{ viaticoCurrencySymbol(selectedViaticoReport) }} {{ (selectedViaticoReport.viaticoAmount ?? 0) | number:'1.2-2' }}
       </p>
       @if ((selectedViaticoReport.viaticoPaidAmount ?? 0) > 0) {
       <div class="mb-4 rounded-xl bg-background/70 border border-tertiary/20 px-3 py-2 text-xs text-tertiary flex items-center justify-between">
-        <span>Pagado: <span class="font-semibold text-secondary">S/ {{ (selectedViaticoReport.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</span></span>
-        <span>Falta: <span class="font-semibold text-error">S/ {{ viaticoRemaining(selectedViaticoReport) | number:'1.2-2' }}</span></span>
+        <span>Pagado: <span class="font-semibold text-secondary">{{ viaticoCurrencySymbol(selectedViaticoReport) }} {{ (selectedViaticoReport.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</span></span>
+        <span>Falta: <span class="font-semibold text-error">{{ viaticoCurrencySymbol(selectedViaticoReport) }} {{ viaticoRemaining(selectedViaticoReport) | number:'1.2-2' }}</span></span>
       </div>
       }
 
@@ -983,11 +1006,11 @@
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Monto S/ <span class="text-error">*</span></label>
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Monto {{ viaticoCurrencySymbol(selectedViaticoReport) }} <span class="text-error">*</span></label>
           <input type="number" formControlName="amount" min="0" step="0.01" placeholder="0.00"
             class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30" />
           @if (viaticoScannedAmount !== null) {
-          <p class="text-[11px] text-tertiary">Monto detectado: S/ {{ viaticoScannedAmount | number:'1.2-2' }}. Puedes editarlo.</p>
+          <p class="text-[11px] text-tertiary">Monto detectado: {{ viaticoCurrencySymbol(selectedViaticoReport) }} {{ viaticoScannedAmount | number:'1.2-2' }}. Puedes editarlo.</p>
           }
         </div>
 
@@ -1059,6 +1082,110 @@
           {{ isActing() ? 'Registrando...' : 'Registrar pago' }}
         </button>
       </div>
+    </div>
+  </div>
+</div>
+}
+
+<!-- ── Modal resumen de pagos por lote BBVA (VD-7) ──────────────────────────── -->
+@if (showBatchModal()) {
+<div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" (click)="closeBatchModal()">
+  <div class="bg-quaternary rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6" (click)="$event.stopPropagation()">
+
+    <!-- Resumen de generación -->
+    @if (batchMode() === 'generate' && generateResult(); as gen) {
+    @if (gen.count > 0) {
+    <h2 class="text-lg font-bold text-secondary mb-1">Archivo de pagos generado</h2>
+    <p class="text-sm text-tertiary mb-4">Se descargó <span class="font-medium text-secondary">{{ gen.fileName }}</span>. Súbelo a BBVA Net Cash → Pagos Masivos.</p>
+    } @else {
+    <h2 class="text-lg font-bold text-warning-ink mb-1">No se generó el archivo</h2>
+    <p class="text-sm text-tertiary mb-4">Hay pagos pendientes, pero ninguno tiene datos bancarios completos. Corrige los datos de los beneficiarios y vuelve a intentarlo.</p>
+    }
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Pagos incluidos</p>
+        <p class="text-2xl font-bold text-primary">{{ gen.count }}</p>
+      </div>
+      <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Total</p>
+        <p class="text-2xl font-bold text-secondary">S/ {{ gen.totalSoles | number:'1.2-2' }}</p>
+      </div>
+    </div>
+    @if (gen.excluded.length > 0) {
+    <div class="rounded-xl border border-warning/30 bg-warning/5 p-3 mb-2">
+      <p class="text-sm font-semibold text-warning-ink mb-2">{{ gen.excluded.length }} beneficiario(s) excluido(s) por datos bancarios incompletos:</p>
+      <ul class="space-y-1">
+        @for (ex of gen.excluded; track ex.id) {
+        <li class="flex justify-between gap-3 text-xs">
+          <span class="text-secondary font-medium">{{ ex.beneficiaryName }}</span>
+          <span class="text-tertiary text-right">S/ {{ ex.amount | number:'1.2-2' }} · {{ ex.reason }}</span>
+        </li>
+        }
+      </ul>
+    </div>
+    }
+    }
+
+    <!-- Resumen de conciliación -->
+    @if (batchMode() === 'reconcile' && reconcileResult(); as rec) {
+    <h2 class="text-lg font-bold text-secondary mb-1">Conciliación de pagos</h2>
+    @if (rec.operationNumber) {
+    <p class="text-sm text-tertiary mb-4">N° de operación del lote: <span class="font-medium text-secondary">{{ rec.operationNumber }}</span>@if (rec.executedAt) { · {{ rec.executedAt }} }</p>
+    }
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="rounded-xl border border-success/30 bg-success/5 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Conciliados</p>
+        <p class="text-2xl font-bold text-success-ink">{{ rec.conciliados.length }}</p>
+      </div>
+      <div class="rounded-xl border border-warning/30 bg-warning/5 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Sin conciliar</p>
+        <p class="text-2xl font-bold text-warning-ink">{{ rec.sinConciliar.length }}</p>
+      </div>
+      <div class="rounded-xl border border-error/30 bg-error/5 p-3">
+        <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">No abonados</p>
+        <p class="text-2xl font-bold text-error">{{ rec.noAbonados.length }}</p>
+      </div>
+    </div>
+    @if (rec.conciliados.length > 0) {
+    <p class="text-sm font-semibold text-secondary mb-1.5">Pagos marcados como pagados</p>
+    <ul class="space-y-1 mb-3">
+      @for (c of rec.conciliados; track c.id) {
+      <li class="flex justify-between gap-3 text-xs">
+        <span class="text-secondary font-medium">{{ c.beneficiaryName }} <span class="text-tertiary">({{ c.documentNumber }})</span></span>
+        <span class="text-success-ink text-right font-medium">S/ {{ c.amount | number:'1.2-2' }}</span>
+      </li>
+      }
+    </ul>
+    }
+    @if (rec.sinConciliar.length > 0) {
+    <p class="text-sm font-semibold text-warning-ink mb-1.5">Sin conciliar (revisar manualmente)</p>
+    <ul class="space-y-1 mb-3">
+      @for (s of rec.sinConciliar; track s.documentNumber + s.amount) {
+      <li class="flex justify-between gap-3 text-xs">
+        <span class="text-secondary font-medium">{{ s.titular || '—' }} <span class="text-tertiary">({{ s.documentNumber }})</span></span>
+        <span class="text-tertiary text-right">S/ {{ s.amount | number:'1.2-2' }} · {{ s.reason }}</span>
+      </li>
+      }
+    </ul>
+    }
+    @if (rec.noAbonados.length > 0) {
+    <p class="text-sm font-semibold text-error mb-1.5">Abonos no exitosos</p>
+    <ul class="space-y-1">
+      @for (n of rec.noAbonados; track n.documentNumber) {
+      <li class="flex justify-between gap-3 text-xs">
+        <span class="text-secondary font-medium">{{ n.titular || '—' }} <span class="text-tertiary">({{ n.documentNumber }})</span></span>
+        <span class="text-error text-right">{{ n.situacion }}</span>
+      </li>
+      }
+    </ul>
+    }
+    }
+
+    <div class="flex justify-end mt-6">
+      <button type="button" (click)="closeBatchModal()"
+        class="h-[42px] px-5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">
+        Entendido
+      </button>
     </div>
   </div>
 </div>

@@ -63,6 +63,7 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/accounting-entries',
     '/upload',
     '/upload/',
+    '/am-i-approver',
   ];
 
   const isExcludedEndpoint = excludedEndpoints.some(

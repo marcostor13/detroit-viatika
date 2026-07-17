@@ -3,17 +3,19 @@ import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
-import { ExpenseReportsService } from '../../../services/expense-reports.service';
+import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
+import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { NotificationService } from '../../../services/notification.service';
 import { AdvanceService } from '../../../services/advance.service';
 import { CategoriaService } from '../../../services/categoria.service';
-import { IExpenseReport } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
+import { monedaSymbol } from '../../../constants/moneda';
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   // Rendición normal
@@ -57,6 +59,10 @@ const REPORT_STATUS_COLORS: Record<string, string> = {
 export type UnifiedRendicionItem = {
   _id: string;
   source: 'report' | 'advance';
+  /** Tipo de solicitud, para distinguirlas en la tabla. */
+  kind: 'viatico' | 'directa' | 'anticipo';
+  kindLabel: string;
+  kindColor: string;
   userName: string;
   userInitials: string;
   userId: string;
@@ -64,6 +70,7 @@ export type UnifiedRendicionItem = {
   projectName: string;
   projectId: string;
   amount: number;
+  currencySymbol: string;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -76,6 +83,8 @@ export type UnifiedRendicionItem = {
   isContabilidadGate: boolean;
   approvalLevel: number;
   requiredLevels: number;
+  /** Progreso agregado por comprobante (solo directa: ya no tiene cadena a nivel de reporte). */
+  directaProgress: { approved: number; total: number } | null;
   raw: IExpenseReport | IAdvance;
 };
 
@@ -120,11 +129,19 @@ export class RendicionesAdminComponent implements OnInit {
   isExpanded(id: string): boolean { return this.expandedRows().has(id); }
   reportToDelete: IExpenseReport | null = null;
   isDeleting = false;
+  loadingDeletionPreview = signal(false);
+  deletionPreview = signal<IExpenseReportDeletionPreview | null>(null);
 
   filterUserId = '';
   filterProjectId = '';
+  filterStatus = '';
+  filterKind = '';
   filterDateFrom = '';
   filterDateTo = '';
+  /** Estados presentes en la lista (para el filtro por estado). Se recalcula en applyFilters. */
+  statusOptions: { value: string; label: string }[] = [];
+  /** Tipos presentes en la lista (Directa/Viático/Anticipo). Se recalcula en applyFilters. */
+  kindOptions: { value: string; label: string }[] = [];
 
   // Approve modal
   showApproveModal = signal(false);
@@ -134,6 +151,11 @@ export class RendicionesAdminComponent implements OnInit {
   showRejectModal = signal(false);
   selectedRejectItem = signal<UnifiedRendicionItem | null>(null);
   rejectForm!: FormGroup;
+
+  // Detalle de solicitud (modal, en vez de redirigir cuando hay que aprobar/rechazar)
+  showDetailModal = signal(false);
+  detailItem = signal<UnifiedRendicionItem | null>(null);
+  expandedDetailLineIds = signal<Set<number>>(new Set());
 
   private get currentUserId(): string {
     return (this.userStateService.getUser() as any)?._id ?? '';
@@ -150,6 +172,13 @@ export class RendicionesAdminComponent implements OnInit {
     const entry = chain?.[level];
     if (!entry) return '';
     return typeof entry === 'object' ? entry._id : entry;
+  }
+
+  /** ¿El usuario actual está entre los `approverIds` del paso `level` de una cadena por centro de costo? */
+  private isApproverOfStep(chain: IChainStep[] | undefined, level: number): boolean {
+    const step = chain?.[level];
+    if (!step) return false;
+    return step.approverIds.some(a => (typeof a === 'object' ? a._id : a) === this.currentUserId);
   }
 
   ngOnInit(): void {
@@ -171,7 +200,15 @@ export class RendicionesAdminComponent implements OnInit {
       advances: this.advanceService.findOrphaned(clientId),
     }).subscribe({
       next: ({ reports, advances }) => {
-        this.allReports = reports.filter((r) => !r.isDirecta);
+        // Para un aprobador (cualquiera de los comprobantes de la directa, no un
+        // rol específico), el backend (findAllByCoordinator) ya limita las
+        // directas a las que le corresponden — se muestran aquí para que pueda
+        // aprobarlas/rechazarlas por comprobante desde el detalle. Para el resto
+        // de roles no-aprobadores (Admin/Contabilidad/SuperAdmin sin cadena
+        // propia) se siguen ocultando: ya tienen su propia vista dedicada en
+        // /rendiciones?tab=directas.
+        const isApprover = this.userStateService.isApprover();
+        this.allReports = reports.filter((r) => !r.isDirecta || isApprover);
         this.allOrphanedAdvances = advances;
         this.applyFilters();
         this.isLoading = false;
@@ -198,12 +235,17 @@ export class RendicionesAdminComponent implements OnInit {
     });
   }
 
-  /** Líneas por categoría del viático en revisión (vacío si no es viático). */
-  approveViaticoLines(): any[] {
-    const item = this.pendingApproveItem();
-    if (!item || item.source !== 'report') return [];
+  /** Líneas por categoría de una solicitud (viático o anticipo). Vacío si no aplica. */
+  linesForItem(item: UnifiedRendicionItem | null): any[] {
+    if (!item) return [];
+    if (item.source === 'advance') return (item.raw as IAdvance).lines ?? [];
     const raw = item.raw as IExpenseReport;
     return raw.type === 'viatico' ? ((raw as any).viaticoLines ?? []) : [];
+  }
+
+  /** Líneas por categoría del viático en revisión (vacío si no es viático). */
+  approveViaticoLines(): any[] {
+    return this.linesForItem(this.pendingApproveItem());
   }
 
   /** Nombre de la categoría de una línea (acepta id suelto o ya poblado). */
@@ -232,34 +274,47 @@ export class RendicionesAdminComponent implements OnInit {
       const pid = typeof r.projectId === 'object' ? r.projectId?._id : r.projectId;
       const name = this.getReportUserName(r);
       const isViatico = r.type === 'viatico';
+      const isDirectaChain = r.isDirecta === true;
       return {
         _id: r._id,
         source: 'report' as const,
+        kind: (isDirectaChain ? 'directa' : 'viatico') as UnifiedRendicionItem['kind'],
+        kindLabel: isDirectaChain ? 'Directa' : 'Viático',
+        kindColor: isDirectaChain ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
         title: r.title || r.viaticoPlace || '—',
         projectName: this.getProjectName(r),
         projectId: pid ?? '',
-        amount: r.viaticoAmount ?? r.budget ?? 0,
+        // Directa: el monto a mostrar es la suma de los gastos cargados por el
+        // colaborador (no `budget`, que en una directa es 0). VD-25.
+        amount: isDirectaChain
+          ? this.reportExpensesTotal(r)
+          : (r.viaticoAmount ?? r.budget ?? 0),
+        currencySymbol: isDirectaChain ? monedaSymbol(undefined) : monedaSymbol(r.viaticoMoneda),
         status: r.status,
         statusLabel: REPORT_STATUS_LABELS[r.status] ?? r.status,
         statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
+        // La rendición directa ya no tiene aprobación a nivel de reporte — cada
+        // comprobante tiene su propia cadena (ver rendicion-detail/gasto-detalle).
+        // Esta bandeja solo ofrece acción report-level para viático.
         canApproveNow: isViatico && (
           (r.status === 'pending_l1' &&
-            (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+            (this.isSuperAdmin || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0))) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
         ),
         canReject: isViatico && (
           (r.status === 'pending_l1' &&
-            (this.isSuperAdmin || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
+            (this.isSuperAdmin || this.isApproverOfStep(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0))) ||
           (r.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userStateService.isContabilidad()))
         ),
         isContabilidadGate: r.status === 'pending_contabilidad',
-        approvalLevel: r.viaticoApprovalLevel ?? 0,
-        requiredLevels: r.viaticoRequiredLevels ?? 1,
+        approvalLevel: (isDirectaChain ? 0 : r.viaticoApprovalLevel) ?? 0,
+        requiredLevels: (isDirectaChain ? 1 : r.viaticoRequiredLevels) ?? 1,
+        directaProgress: isDirectaChain ? this.reportDirectaProgress(r) : null,
         raw: r,
       };
     });
@@ -274,6 +329,9 @@ export class RendicionesAdminComponent implements OnInit {
       return {
         _id: a._id,
         source: 'advance' as const,
+        kind: 'anticipo' as UnifiedRendicionItem['kind'],
+        kindLabel: 'Anticipo',
+        kindColor: 'bg-violet-100 text-violet-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
@@ -281,6 +339,7 @@ export class RendicionesAdminComponent implements OnInit {
         projectName,
         projectId: pid,
         amount: a.amount ?? 0,
+        currencySymbol: monedaSymbol(a.moneda),
         status: a.status,
         statusLabel: ADVANCE_STATUS_LABELS[a.status] ?? a.status,
         statusColor: ADVANCE_STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-700',
@@ -293,11 +352,39 @@ export class RendicionesAdminComponent implements OnInit {
         isContabilidadGate: false,
         approvalLevel: a.approvalLevel,
         requiredLevels: a.requiredLevels,
+        directaProgress: null,
         raw: a,
       };
     });
 
     const items = [...reportItems, ...advanceItems];
+
+    // Opciones del filtro por estado HOMOLOGADAS con la columna Estado de la tabla
+    // (VD-30): se agrupan por la ETIQUETA visible, no por el status crudo. Así se
+    // evita que aparezcan opciones duplicadas —p. ej. `approved` y `viatico_approved`
+    // ambas se muestran como "Aprobada"— y al elegir una opción se filtran TODAS las
+    // filas que muestran ese mismo estado, tal como se ven en la tabla.
+    const seenLabels = new Set<string>();
+    for (const it of items) seenLabels.add(it.statusLabel);
+    this.statusOptions = [...seenLabels]
+      .map(label => ({ value: label, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    // Si la etiqueta filtrada ya no existe en los datos, se limpia para no ocultar todo.
+    if (this.filterStatus && !seenLabels.has(this.filterStatus)) {
+      this.filterStatus = '';
+    }
+
+    // Opciones del filtro por tipo: los tipos presentes en la lista. VD-30.
+    const seenKinds = new Map<string, string>();
+    for (const it of items) {
+      if (!seenKinds.has(it.kind)) seenKinds.set(it.kind, it.kindLabel);
+    }
+    this.kindOptions = [...seenKinds.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (this.filterKind && !seenKinds.has(this.filterKind)) {
+      this.filterKind = '';
+    }
 
     let result = items;
 
@@ -306,6 +393,14 @@ export class RendicionesAdminComponent implements OnInit {
     }
     if (this.filterProjectId) {
       result = result.filter(i => i.projectId === this.filterProjectId);
+    }
+    if (this.filterStatus) {
+      // Se filtra por la etiqueta visible (homologada con la tabla), no por el
+      // status crudo, para que coincida 1:1 con lo que muestra la columna Estado.
+      result = result.filter(i => i.statusLabel === this.filterStatus);
+    }
+    if (this.filterKind) {
+      result = result.filter(i => i.kind === this.filterKind);
     }
     if (this.filterDateFrom) {
       const from = new Date(this.filterDateFrom).getTime();
@@ -325,21 +420,140 @@ export class RendicionesAdminComponent implements OnInit {
   clearFilters(): void {
     this.filterUserId = '';
     this.filterProjectId = '';
+    this.filterStatus = '';
+    this.filterKind = '';
     this.filterDateFrom = '';
     this.filterDateTo = '';
     this.applyFilters();
   }
 
   get hasActiveFilters(): boolean {
-    return !!(this.filterUserId || this.filterProjectId || this.filterDateFrom || this.filterDateTo);
+    return !!(this.filterUserId || this.filterProjectId || this.filterStatus || this.filterKind || this.filterDateFrom || this.filterDateTo);
   }
 
   goToDetail(item: UnifiedRendicionItem): void {
+    // Cuando la solicitud está pendiente de la acción del usuario (aprobar/rechazar),
+    // mostramos el detalle en un modal en lugar de redirigir a la vista completa.
+    if (item.canApproveNow || item.canReject) {
+      this.openDetailModal(item);
+      return;
+    }
+    this.navigateToDetail(item);
+  }
+
+  private navigateToDetail(item: UnifiedRendicionItem): void {
     if (item.source === 'advance') {
       this.router.navigate(['/viaticos', item._id]);
     } else {
       this.router.navigate(['/mis-rendiciones', item._id, 'detalle']);
     }
+  }
+
+  // ─── Detalle en modal ───────────────────────────────────────────────────────
+
+  /** Trazabilidad del flujo (VD-31) de la solicitud abierta en el modal de detalle. */
+  detailFlowSteps = signal<FlowStep[]>([]);
+
+  openDetailModal(item: UnifiedRendicionItem): void {
+    this.detailItem.set(item);
+    this.expandedDetailLineIds.set(new Set());
+    this.showDetailModal.set(true);
+    // Trazabilidad: solo para reportes (viático/directa/normal). Se trae el
+    // reporte completo porque la lista no puebla cadenas de aprobadores ni
+    // hitos de contabilidad; con eso el timeline sale con nombres y fechas.
+    this.detailFlowSteps.set(item.source === 'report' ? buildReportFlowSteps(item.raw) : []);
+    if (item.source === 'report') {
+      this.expenseReportsService.findOne(item._id).subscribe({
+        next: (full) => {
+          if (this.detailItem()?._id === item._id) {
+            this.detailFlowSteps.set(buildReportFlowSteps(full));
+          }
+        },
+        error: () => {},
+      });
+    }
+  }
+
+  /** Líneas por categoría de la solicitud abierta en el modal de detalle. */
+  detailLines(): any[] {
+    return this.linesForItem(this.detailItem());
+  }
+
+  /** Centro de costo con código (ej. "CC-01 — Obra Norte"). */
+  detailCentroCosto(): string {
+    const item = this.detailItem();
+    if (!item) return '—';
+    const p = (item.raw as any).projectId;
+    // Poblado por el API
+    if (p && typeof p === 'object' && p.name) {
+      return p.code ? `${p.code} — ${p.name}` : p.name;
+    }
+    // Sin poblar: buscar el código en la lista de centros de costo ya cargada
+    const project = this.projects.find(x => x._id === item.projectId);
+    if (project) {
+      return project.code ? `${project.code} — ${project.name}` : project.name;
+    }
+    return item.projectName || '—';
+  }
+
+  /** Orden de Trabajo imputada (solo viáticos). Vacío si no aplica. */
+  detailOrdenTrabajo(): string {
+    const item = this.detailItem();
+    if (!item || item.source !== 'report') return '';
+    const ot = (item.raw as IExpenseReport).viaticoOrdenTrabajoId;
+    if (!ot) return '';
+    return typeof ot === 'object' ? (ot.nombre ?? '') : '';
+  }
+
+  /** Observaciones del colaborador (viático o anticipo). */
+  detailObservations(): string {
+    const item = this.detailItem();
+    if (!item) return '';
+    return item.source === 'advance'
+      ? ((item.raw as IAdvance).observations ?? '')
+      : ((item.raw as IExpenseReport).viaticoObservations ?? '');
+  }
+
+  detailStartDate(): string | undefined {
+    const item = this.detailItem();
+    if (!item) return undefined;
+    return item.source === 'advance'
+      ? (item.raw as IAdvance).startDate
+      : (item.raw as IExpenseReport).viaticoStartDate;
+  }
+
+  detailEndDate(): string | undefined {
+    const item = this.detailItem();
+    if (!item) return undefined;
+    return item.source === 'advance'
+      ? (item.raw as IAdvance).endDate
+      : (item.raw as IExpenseReport).viaticoEndDate;
+  }
+
+  toggleDetailLine(index: number): void {
+    const s = new Set(this.expandedDetailLineIds());
+    if (s.has(index)) { s.delete(index); } else { s.add(index); }
+    this.expandedDetailLineIds.set(s);
+  }
+
+  isDetailLineExpanded(index: number): boolean {
+    return this.expandedDetailLineIds().has(index);
+  }
+
+  /** Aprobar desde el modal de detalle. */
+  approveFromDetail(): void {
+    const item = this.detailItem();
+    if (!item) return;
+    this.showDetailModal.set(false);
+    this.openApproveModal(item);
+  }
+
+  /** Rechazar desde el modal de detalle. */
+  rejectFromDetail(): void {
+    const item = this.detailItem();
+    if (!item) return;
+    this.showDetailModal.set(false);
+    this.openRejectModal(item);
   }
 
   // ─── Approve ──────────────────────────────────────────────────────────────────
@@ -409,13 +623,25 @@ export class RendicionesAdminComponent implements OnInit {
   // ─── Delete ───────────────────────────────────────────────────────────────────
 
   openDeleteModal(item: UnifiedRendicionItem): void {
-    if (item.source === 'report' && item.canDeleteItem) {
-      this.reportToDelete = item.raw as IExpenseReport;
-    }
+    if (item.source !== 'report' || !item.canDeleteItem) return;
+    this.reportToDelete = item.raw as IExpenseReport;
+    this.deletionPreview.set(null);
+    this.loadingDeletionPreview.set(true);
+    this.expenseReportsService.getDeletionPreview(this.reportToDelete._id).subscribe({
+      next: (preview) => {
+        this.loadingDeletionPreview.set(false);
+        this.deletionPreview.set(preview);
+      },
+      error: () => {
+        this.loadingDeletionPreview.set(false);
+        // Sin preview el usuario aún puede intentar eliminar; el backend valida igual.
+      },
+    });
   }
 
   cancelDelete(): void {
     this.reportToDelete = null;
+    this.deletionPreview.set(null);
   }
 
   confirmDelete(): void {
@@ -427,6 +653,7 @@ export class RendicionesAdminComponent implements OnInit {
         this.allReports = this.allReports.filter(r => r._id !== id);
         this.applyFilters();
         this.reportToDelete = null;
+        this.deletionPreview.set(null);
         this.isDeleting = false;
         this.notifications.show('Rendicion eliminada.', 'success');
       },
@@ -438,9 +665,99 @@ export class RendicionesAdminComponent implements OnInit {
     });
   }
 
+  /**
+   * Contabilidad puede eliminar cualquier rendición (el backend valida caso a
+   * caso: aprobaciones, anticipos pagados, caja chica ya consolidada, etc., y
+   * devuelve un mensaje claro si no procede). Los demás roles solo ven el botón
+   * cuando la rendición todavía no tiene comprobantes cargados.
+   */
   private canDeleteReport(report: IExpenseReport): boolean {
-    if (this.userStateService.isContabilidad()) return false;
+    if (this.userStateService.isContabilidad()) return true;
     return report.expenseIds.length === 0;
+  }
+
+  /**
+   * Suma el total de los gastos (comprobantes) cargados en una rendición. Usa
+   * `expense.total` de cada comprobante poblado; si `expenseIds` no viene
+   * poblado (solo IDs) devuelve 0. Sirve para mostrar el monto de una rendición
+   * directa, que no tiene `budget` propio. VD-25.
+   */
+  private reportExpensesTotal(report: IExpenseReport): number {
+    const expenses = report.expenseIds;
+    if (!Array.isArray(expenses)) return 0;
+    return expenses.reduce(
+      (sum, exp: any) =>
+        sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
+      0
+    );
+  }
+
+  /**
+   * Progreso agregado de una rendición directa: cuántos de sus comprobantes ya
+   * completaron su propia cadena N1/N2/[N2 sel] + Contabilidad (status === 'approved'
+   * en Expense, que refleja computeCombinedStatus). Reemplaza el gate a nivel de
+   * reporte que ya no existe para directa.
+   */
+  private reportDirectaProgress(report: IExpenseReport): { approved: number; total: number } {
+    const expenses = (report.expenseIds ?? []).filter(
+      (exp: any) => exp && typeof exp === 'object'
+    );
+    const approved = expenses.filter((exp: any) => exp.status === 'approved').length;
+    return { approved, total: expenses.length };
+  }
+
+  /**
+   * Comprobantes (facturas) cargados en una rendición directa, para mostrarlos
+   * en el modal de aprobación/detalle. Solo aplica a directas y solo devuelve
+   * comprobantes ya poblados (objetos). VD-25.
+   */
+  directaExpenses(item: UnifiedRendicionItem | null): any[] {
+    if (!item || item.source !== 'report') return [];
+    const raw = item.raw as IExpenseReport;
+    if (!raw.isDirecta || !Array.isArray(raw.expenseIds)) return [];
+    return raw.expenseIds.filter(e => e && typeof e === 'object');
+  }
+
+  /** `data` del comprobante como objeto (acepta JSON string o ya poblado). */
+  private expenseData(exp: any): Record<string, any> {
+    const raw = exp?.data;
+    try {
+      if (raw == null) return {};
+      if (typeof raw === 'string') return JSON.parse(raw);
+      if (typeof raw === 'object') return raw;
+    } catch { /* data mal formada: se ignora */ }
+    return {};
+  }
+
+  /** N° de comprobante (serie-correlativo) para el listado de la directa. */
+  expenseDocNumber(exp: any): string {
+    const d = this.expenseData(exp);
+    const serie = d['serie'] ? String(d['serie']) : '';
+    const correlativo = d['correlativo'] ? String(d['correlativo']) : '';
+    if (serie && correlativo) return `${serie}-${correlativo}`;
+    return serie || correlativo || '—';
+  }
+
+  /** Proveedor / razón social del comprobante para el listado de la directa. */
+  expenseProveedor(exp: any): string {
+    const d = this.expenseData(exp);
+    const razonSocial = d['razonSocial'];
+    if (typeof razonSocial === 'string' && razonSocial.trim()) return razonSocial.trim();
+    const provider = exp?.provider;
+    if (typeof provider === 'string' && provider.trim()) return provider.trim();
+    return '—';
+  }
+
+  /** URL del archivo adjunto del comprobante (imagen/PDF de la factura). */
+  expenseFileUrl(exp: any): string | null {
+    const f = exp?.file;
+    return typeof f === 'string' && f.trim() ? f.trim() : null;
+  }
+
+  /** Abre la factura adjunta del comprobante en una pestaña nueva. */
+  openExpenseFile(exp: any): void {
+    const url = this.expenseFileUrl(exp);
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   private getReportUserName(report: IExpenseReport): string {
@@ -468,5 +785,9 @@ export class RendicionesAdminComponent implements OnInit {
   }
   getDeleteItemTitle(): string {
     return this.reportToDelete?.title ?? '—';
+  }
+
+  advanceStatusLabel(status: string): string {
+    return ADVANCE_STATUS_LABELS[status as keyof typeof ADVANCE_STATUS_LABELS] ?? status;
   }
 }

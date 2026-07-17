@@ -8,8 +8,21 @@ export type IExpenseReportStatus =
   | 'pending_l1' | 'pending_l2' | 'pending_contabilidad' | 'viatico_approved'
   | 'partially_paid' | 'paid' | 'settled' | 'returned';
 
+/** Espeja `ChainStep` del backend (approval-chain.util.ts). */
+export interface IChainStep {
+  level: number;
+  projectId: { _id: string; code?: string; name?: string } | string;
+  projectRole: 'principal' | 'seleccionado';
+  /** Cualquiera de estos aprobadores puede completar el paso. */
+  approverIds: ({ _id: string; name: string; email: string } | string)[];
+  /** Presente si este paso es resultado de un escalamiento (regla 1.5). */
+  escalatedFrom?: number;
+}
+
 export interface ICreateViaticoPayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   place: string;
   lat?: number;
   lng?: number;
@@ -27,6 +40,8 @@ export interface ICreateViaticoPayload {
 
 export interface IResubmitViaticoPayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   place: string;
   lat?: number;
   lng?: number;
@@ -138,6 +153,8 @@ export interface IExpenseReport {
   status: IExpenseReportStatus;
   // ─── Viático fields (type='viatico') ──────────────────────────────────────
   viaticoAmount?: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
+  viaticoMoneda?: string;
   viaticoPlace?: string;
   viaticoStartDate?: string;
   viaticoEndDate?: string;
@@ -146,8 +163,8 @@ export interface IExpenseReport {
   viaticoPaidAmount?: number;
   viaticoApprovalLevel?: number;
   viaticoRequiredLevels?: number;
-  /** Cadena ordenada de aprobadores asignada al momento de crear la solicitud. */
-  viaticoApproverChain?: ({ _id: string; name: string; email: string } | string)[];
+  /** Cadena por centro de costo (N2 principal/seleccionado) asignada al crear la solicitud. */
+  viaticoApproverChain?: IChainStep[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
   viaticoRejectionReason?: string;
   /** Quién rechazó: aprobador de centro de costo, o Contabilidad (gate final). */
@@ -158,11 +175,19 @@ export interface IExpenseReport {
   viaticoAccountNumber?: string;
   viaticoCci?: string;
   /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, nombre, costCenterId}). */
-  viaticoOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string; isActive?: boolean } | string;
+  viaticoOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string } | string;
   /** Motivo indicado por el administrador al rechazar */
   rejectionReason?: string;
   /** Quién rechazó: coordinador (revisión inicial) o contabilidad (aprobación final). */
   rejectedByRole?: 'coordinador' | 'contabilidad';
+  // ─── Rendición directa: cadena de aprobadores por centro de costo ─────────
+  directaApprovalLevel?: number;
+  directaRequiredLevels?: number;
+  /** Cadena ordenada de aprobadores de centro de costo, armada al enviar la rendición. */
+  directaApproverChain?: ({ _id: string; name: string; email: string } | string)[];
+  directaApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /** Orden de Trabajo elegida al crear la rendición directa (heredada por todos sus comprobantes). */
+  directaOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string } | string;
   expenseIds: any[];
   createdBy: any; // User who created it
   approvedBy?: any; // Admin who approved it
@@ -211,6 +236,12 @@ export interface IExpenseReport {
    */
   createdByOther?: boolean;
   /**
+   * Derivado en backend: la rendición directa se creó con saldo heredado de otra
+   * rendición. Si es true, el dueño no puede eliminarla (rompería la cadena del
+   * saldo); solo Contabilidad.
+   */
+  inheritedBalance?: boolean;
+  /**
    * Derivado en backend: la caja chica ya fue incluida (jalada) por Contabilidad
    * en un reporte (borrador o finalizado). Si es true, el colaborador ya no puede
    * eliminarla; solo Contabilidad.
@@ -241,8 +272,9 @@ export interface IExpenseReport {
 
 export interface IDirectaDepositInfo {
   amount: number;
+  metodoPago?: 'deposito' | 'efectivo';
   scannedAmount?: number;
-  receiptUrl: string;
+  receiptUrl?: string;
   receiptFileName?: string;
   receiptMimeType?: string;
   receiptSizeBytes?: number;
@@ -262,6 +294,8 @@ export interface ICreateExpenseReport {
   userId: string;
   clientId: string;
   projectId?: string;
+  /** Orden de Trabajo elegida al crear la rendición directa (filtrada por el centro de costo). */
+  ordenTrabajoId?: string;
   motivo?: string;
   gestion?: string;
   isDirecta?: boolean;

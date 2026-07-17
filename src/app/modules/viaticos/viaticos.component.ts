@@ -3,24 +3,19 @@ import { Observable } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { AdvanceService } from '../../services/advance.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
 import {
-  IAdvance,
-  ADVANCE_STATUS_LABELS,
-  ADVANCE_STATUS_COLORS,
-} from '../../interfaces/advance.interface';
-import {
   IExpenseReport,
+  IChainStep,
   VIATICO_REPORT_STATUS_LABELS,
   VIATICO_REPORT_STATUS_COLORS,
 } from '../../interfaces/expense-report.interface';
+import { monedaSymbol } from '../../constants/moneda';
 
 type UnifiedSolicitudItem = {
   _id: string;
-  source: 'advance' | 'new';
   collaboratorName: string;
   collaboratorEmail: string;
   collaboratorInitials: string;
@@ -28,6 +23,7 @@ type UnifiedSolicitudItem = {
   projectLabel: string;
   dateRange: string;
   amount: number;
+  currencySymbol: string;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -37,11 +33,11 @@ type UnifiedSolicitudItem = {
   canReject: boolean;
   /** true cuando el paso pendiente es el gate final de Contabilidad (no la cadena de centro de costo). */
   isContabilidadGate: boolean;
-  /** Nombre del aprobador cuyo turno es actualmente, para mostrar en la lista. */
+  /** Nombre(s) del/los aprobador(es) cuyo turno es actualmente, para mostrar en la lista. */
   pendingApproverName: string;
   approvalLevel: number;
   requiredLevels: number;
-  raw: IAdvance | IExpenseReport;
+  raw: IExpenseReport;
 };
 
 @Component({
@@ -51,15 +47,12 @@ type UnifiedSolicitudItem = {
   templateUrl: './viaticos.component.html',
 })
 export class ViaticosComponent implements OnInit {
-  private advanceService = inject(AdvanceService);
   private expenseReportsService = inject(ExpenseReportsService);
   private userState = inject(UserStateService);
   private notifications = inject(NotificationService);
   private router = inject(Router);
   private fb = inject(FormBuilder);
 
-  readonly ADV_LABELS = ADVANCE_STATUS_LABELS;
-  readonly ADV_COLORS = ADVANCE_STATUS_COLORS;
   readonly VIA_LABELS = VIATICO_REPORT_STATUS_LABELS;
   readonly VIA_COLORS = VIATICO_REPORT_STATUS_COLORS;
 
@@ -69,10 +62,6 @@ export class ViaticosComponent implements OnInit {
     { value: 'pending_contabilidad', label: 'Pendiente de Contabilidad' },
     { value: 'viatico_approved', label: 'Aprobado' },
     { value: 'partially_paid', label: 'Pago parcial' },
-    { value: 'open', label: 'Registrando gastos' },
-    { value: 'submitted', label: 'Enviada' },
-    { value: 'pending_accounting', label: 'En contabilidad' },
-    { value: 'approved', label: 'Aprobada' },
     { value: 'settled', label: 'Liquidada' },
     { value: 'rejected', label: 'Rechazada' },
     { value: 'cancelled', label: 'Cancelada' },
@@ -81,9 +70,7 @@ export class ViaticosComponent implements OnInit {
   // Data
   isLoading = signal(false);
   isActing = signal(false);
-  allAdvances = signal<IAdvance[]>([]);
   allViaticoReports = signal<IExpenseReport[]>([]);
-  viaticoReportsLoading = signal(false);
 
   // Filters
   filterStatus = signal('all');
@@ -108,36 +95,36 @@ export class ViaticosComponent implements OnInit {
     return this.userState.isSuperAdmin();
   }
 
-  /** Extrae el id del aprobador en la posición `level` de la cadena (soporta poblado o sin poblar). */
-  private approverIdAt(chain: ({ _id: string } | string)[] | undefined, level: number): string {
-    const entry = chain?.[level];
-    if (!entry) return '';
-    return typeof entry === 'object' ? entry._id : entry;
+  /** ¿El usuario actual está entre los `approverIds` del paso `level` de la cadena? */
+  private isApproverOfStep(chain: IChainStep[] | undefined, level: number): boolean {
+    const step = chain?.[level];
+    if (!step) return false;
+    return step.approverIds.some(a => (typeof a === 'object' ? a._id : a) === this.currentUserId);
   }
 
-  private approverNameAt(chain: ({ _id: string; name?: string } | string)[] | undefined, level: number): string {
-    const entry = chain?.[level];
-    if (!entry) return '—';
-    return typeof entry === 'object' ? (entry.name ?? entry._id) : entry;
+  /** Nombres de los aprobadores del paso `level` (cualquiera de ellos puede completarlo). */
+  private stepApproverNames(chain: IChainStep[] | undefined, level: number): string {
+    const step = chain?.[level];
+    if (!step || step.approverIds.length === 0) return '—';
+    return step.approverIds
+      .map(a => (typeof a === 'object' ? (a.name ?? a._id) : a))
+      .join(' / ');
   }
 
   // ─── Stats ────────────────────────────────────────────────────────────────────
 
   stats = computed(() => {
-    const adv = this.allAdvances();
     const via = this.allViaticoReports();
     return {
-      pending_l1: adv.filter(a => a.status === 'pending_l1' && a.approvalLevel === 0).length +
-        via.filter(v => v.status === 'pending_l1' && (v.viaticoApprovalLevel ?? 0) === 0).length,
+      pending_l1: via.filter(v => v.status === 'pending_l1' && (v.viaticoApprovalLevel ?? 0) === 0).length,
       // Solicitudes con más de un aprobador donde ya se aprobó al menos un nivel pero falta el siguiente.
-      in_progress: adv.filter(a => a.status === 'pending_l1' && a.approvalLevel > 0).length +
-        via.filter(v => v.status === 'pending_l1' && (v.viaticoApprovalLevel ?? 0) > 0).length,
-      approved: adv.filter(a => a.status === 'approved').length + via.filter(v => v.status === 'viatico_approved').length,
-      paid: adv.filter(a => a.status === 'paid').length,
+      in_progress: via.filter(v => v.status === 'pending_l1' && (v.viaticoApprovalLevel ?? 0) > 0).length,
+      approved: via.filter(v => v.status === 'viatico_approved').length,
+      paid: via.filter(v => v.status === 'paid').length,
     };
   });
 
-  // ─── Unified list (advances legacy + new viatico ExpenseReports) ──────────────
+  // ─── Unified list (solicitudes de viático) ────────────────────────────────────
 
   unifiedFiltered = computed((): UnifiedSolicitudItem[] => {
     const search = this.filterSearch().toLowerCase().trim();
@@ -147,35 +134,6 @@ export class ViaticosComponent implements OnInit {
 
     const items: UnifiedSolicitudItem[] = [];
 
-    // Legacy advances
-    for (const a of this.allAdvances()) {
-      items.push({
-        _id: a._id,
-        source: 'advance',
-        collaboratorName: this.advCollaboratorName(a),
-        collaboratorEmail: typeof a.userId === 'object' ? a.userId.email : '',
-        collaboratorInitials: this.advCollaboratorInitials(a),
-        place: a.place ?? '—',
-        projectLabel: this.advProjectLabel(a),
-        dateRange: this.advDateRange(a),
-        amount: a.amount,
-        status: a.status,
-        statusLabel: this.ADV_LABELS[a.status] ?? a.status,
-        statusColor: this.ADV_COLORS[a.status] ?? 'bg-gray-100 text-gray-600',
-        createdAt: a.createdAt,
-        canApproveNow: a.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
-        canReject: a.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(a.approverChain, a.approvalLevel) === this.currentUserId),
-        isContabilidadGate: false,
-        pendingApproverName: this.approverNameAt(a.approverChain, a.approvalLevel),
-        approvalLevel: a.approvalLevel,
-        requiredLevels: a.requiredLevels,
-        raw: a,
-      });
-    }
-
-    // New unified viatico ExpenseReports (all phases)
     for (const v of this.allViaticoReports()) {
       const collab = typeof v.userId === 'object' ? v.userId : null;
       const name = (collab as any)?.name ?? '—';
@@ -185,10 +143,14 @@ export class ViaticosComponent implements OnInit {
       const projectLabel = proj && typeof proj === 'object' ? (proj.code ? `${proj.code} — ${proj.name}` : proj.name) : '—';
       const statusLabel = this.VIA_LABELS[v.status as keyof typeof VIATICO_REPORT_STATUS_LABELS] ?? v.status;
       const statusColor = this.VIA_COLORS[v.status as keyof typeof VIATICO_REPORT_STATUS_COLORS] ?? 'bg-gray-100 text-gray-600';
+      const approvalLevel = v.viaticoApprovalLevel ?? 0;
+
+      const chainCanAct = this.isApproverOfStep(v.viaticoApproverChain, approvalLevel);
+      const canActNow = (v.status === 'pending_l1' && (this.isSuperAdmin || chainCanAct)) ||
+        (v.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userState.isContabilidad()));
 
       items.push({
         _id: v._id,
-        source: 'new',
         collaboratorName: name,
         collaboratorEmail: email,
         collaboratorInitials: initials,
@@ -196,19 +158,16 @@ export class ViaticosComponent implements OnInit {
         projectLabel,
         dateRange: this.viaDates(v),
         amount: v.viaticoAmount ?? v.budget ?? 0,
+        currencySymbol: monedaSymbol(v.viaticoMoneda),
         status: v.status,
         statusLabel,
         statusColor,
         createdAt: v.createdAt,
-        canApproveNow: (v.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
-          (v.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userState.isContabilidad())),
-        canReject: (v.status === 'pending_l1' &&
-          (this.isSuperAdmin || this.approverIdAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0) === this.currentUserId)) ||
-          (v.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userState.isContabilidad())),
+        canApproveNow: canActNow,
+        canReject: canActNow,
         isContabilidadGate: v.status === 'pending_contabilidad',
-        pendingApproverName: v.status === 'pending_contabilidad' ? 'Contabilidad' : this.approverNameAt(v.viaticoApproverChain, v.viaticoApprovalLevel ?? 0),
-        approvalLevel: v.viaticoApprovalLevel ?? 0,
+        pendingApproverName: v.status === 'pending_contabilidad' ? 'Contabilidad' : this.stepApproverNames(v.viaticoApproverChain, approvalLevel),
+        approvalLevel,
         requiredLevels: v.viaticoRequiredLevels ?? 1,
         raw: v,
       });
@@ -233,34 +192,24 @@ export class ViaticosComponent implements OnInit {
     this.rejectForm = this.fb.group({
       rejectionReason: ['', [Validators.required, Validators.minLength(10)]],
     });
-    this.load();
     this.loadViaticoReports();
   }
 
-  load() {
-    this.isLoading.set(true);
-    this.advanceService.findForViaticosPage({}).subscribe({
-      next: (list) => { this.allAdvances.set(list ?? []); this.isLoading.set(false); },
-      error: () => { this.allAdvances.set([]); this.isLoading.set(false); },
-    });
-  }
-
   loadViaticoReports() {
-    this.viaticoReportsLoading.set(true);
+    this.isLoading.set(true);
     this.expenseReportsService.getViaticosList().subscribe({
-      next: (list) => { this.allViaticoReports.set(list ?? []); this.viaticoReportsLoading.set(false); },
-      error: () => { this.allViaticoReports.set([]); this.viaticoReportsLoading.set(false); },
+      next: (list) => { this.allViaticoReports.set(list ?? []); this.isLoading.set(false); },
+      error: () => { this.allViaticoReports.set([]); this.isLoading.set(false); },
     });
   }
 
   reloadAll() {
-    this.load();
     this.loadViaticoReports();
   }
 
   // ─── Filters ──────────────────────────────────────────────────────────────────
 
-  applyFilters() { this.load(); this.loadViaticoReports(); }
+  applyFilters() { this.loadViaticoReports(); }
   clearFilters() {
     this.filterStatus.set('all');
     this.filterSearch.set('');
@@ -275,24 +224,6 @@ export class ViaticosComponent implements OnInit {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  private advCollaboratorName(a: IAdvance): string {
-    return typeof a.userId === 'object' ? a.userId.name : '—';
-  }
-  private advCollaboratorInitials(a: IAdvance): string {
-    const name = this.advCollaboratorName(a);
-    return name.split(' ').slice(0, 2).map(w => w[0] ?? '').join('').toUpperCase() || '?';
-  }
-  private advProjectLabel(a: IAdvance): string {
-    const p = a.projectId;
-    if (!p || typeof p === 'string') return '—';
-    return p.code ? `${p.code} — ${p.name}` : p.name;
-  }
-  private advDateRange(a: IAdvance): string {
-    const fmt = (d: string) => new Date(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
-    if (a.startDate && a.endDate) return `${fmt(a.startDate)} al ${fmt(a.endDate)}`;
-    if (a.startDate) return fmt(a.startDate);
-    return '—';
-  }
   private viaDates(v: IExpenseReport): string {
     const fmt = (d: string) => new Date(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
     const s = v.viaticoStartDate;
@@ -313,11 +244,9 @@ export class ViaticosComponent implements OnInit {
     const item = this.pendingApproveItem();
     if (!item) return;
     this.isActing.set(true);
-    const action$: Observable<unknown> = item.source === 'advance'
-      ? this.advanceService.approve(item._id, {})
-      : item.isContabilidadGate
-        ? this.expenseReportsService.approveViaticoContabilidad(item._id)
-        : this.expenseReportsService.approveViatico(item._id);
+    const action$: Observable<unknown> = item.isContabilidadGate
+      ? this.expenseReportsService.approveViaticoContabilidad(item._id)
+      : this.expenseReportsService.approveViatico(item._id);
     action$.subscribe({
       next: () => {
         this.showApproveModal.set(false);
@@ -349,10 +278,7 @@ export class ViaticosComponent implements OnInit {
     if (!item || this.rejectForm.invalid) return;
     this.isActing.set(true);
     const reason: string = this.rejectForm.value.rejectionReason;
-    const action$: Observable<unknown> = item.source === 'advance'
-      ? this.advanceService.reject(item._id, { rejectionReason: reason })
-      : this.expenseReportsService.rejectViatico(item._id, reason);
-    action$.subscribe({
+    this.expenseReportsService.rejectViatico(item._id, reason).subscribe({
       next: () => {
         this.notifications.show('Solicitud rechazada', 'success');
         this.showRejectModal.set(false);
@@ -369,10 +295,6 @@ export class ViaticosComponent implements OnInit {
   // ─── Navigation ───────────────────────────────────────────────────────────────
 
   openDetail(item: UnifiedSolicitudItem) {
-    if (item.source === 'advance') {
-      this.router.navigate(['/viaticos', item._id]);
-    } else {
-      this.router.navigate(['/mis-rendiciones', item._id, 'detalle'], { queryParams: { from: 'rendiciones' } });
-    }
+    this.router.navigate(['/mis-rendiciones', item._id, 'detalle'], { queryParams: { from: 'rendiciones' } });
   }
 }

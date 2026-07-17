@@ -41,7 +41,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
   configOpen = false;
 
   isConfigSection(): boolean {
-    return ['/configuracion', '/mi-firma', '/categorias', '/centros-de-costo', '/lineas-negocio', '/perfiles-categoria', '/audit-log', '/mi-perfil']
+    return ['/configuracion', '/mi-firma', '/categorias', '/perfiles-categorias', '/centros-de-costo', '/lineas-negocio', '/audit-log', '/mi-perfil']
       .some(p => this.currentPath.startsWith(p));
   }
 
@@ -150,8 +150,8 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.userStateService.isContabilidad();
   }
 
-  isCoordinador(): boolean {
-    return this.userStateService.isCoordinador();
+  isApprover(): boolean {
+    return this.userStateService.isApprover();
   }
 
   canAccessTesoreria(): boolean {

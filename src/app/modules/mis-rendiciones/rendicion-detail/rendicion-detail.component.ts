@@ -15,12 +15,12 @@ import {
   IGeneratedFile,
   AsientoTipo,
 } from '../../../services/accounting-entries.service';
-import { IExpenseReport } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.interface';
+import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import {
-  CashVoucherExportData,
   MobilitySheetExportData,
   RendicionExportService,
   AffidavitExportData,
@@ -30,7 +30,6 @@ import {
   ComprobantePage,
   FacturaPageData,
 } from '../../../services/rendicion-export.service';
-import { SolicitudViaticosModalComponent } from '../solicitud-viaticos-modal/solicitud-viaticos-modal.component';
 import {
   formatFechaEmisionDdMmYyyy,
   resolveExpenseFechaEmision,
@@ -49,7 +48,6 @@ interface AsientoStep {
     CommonModule,
     FormsModule,
     ButtonComponent,
-    SolicitudViaticosModalComponent,
     RouterModule,
   ],
   templateUrl: './rendicion-detail.component.html',
@@ -74,7 +72,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   advances: IAdvance[] = [];
   /** Catálogo de proyectos del cliente, para resolver el proyecto por fila de las planillas (Rendiciones Directas). */
   projects: IProject[] = [];
-  showAdvanceModal = false;
 
   // Comprobantes paginados
   expensesPage = signal<{ data: any[]; total: number; page: number; limit: number; pages: number } | null>(null);
@@ -141,7 +138,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get saldoLibre(): number {
-    // Viáticos unificados: el fondo disponible es siempre viaticoPaidAmount − gastado.
+    // Viáticos unificados: el fondo disponible es siempre viaticoPaidAmount − gastado
+    // (incluye el depósito de contabilidad).
     if (this.report?.type === 'viatico') {
       const viaticoPaid = Number((this.report as any)?.viaticoPaidAmount ?? 0);
       return viaticoPaid - this.totalGastado;
@@ -272,12 +270,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   openAdvanceModal() {
-    this.showAdvanceModal = true;
-  }
-
-  onSolicitudViaticosClosed(success: boolean): void {
-    this.showAdvanceModal = false;
-    if (success) this.loadAdvances();
+    this.router.navigate(['/mis-rendiciones/solicitud-viaticos/nueva']);
   }
 
   private updateDocCounts(report: IExpenseReport): void {
@@ -411,11 +404,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get isAdminView(): boolean {
-    // Sobre su propia rendición, cualquier rol (incl. coordinador) actúa como
+    // Sobre su propia rendición, cualquier usuario (incl. aprobador) actúa como
     // colaborador: agrega/envía sus gastos y no puede auto-aprobarse.
     if (this.isOwnReport) return false;
     return this.userStateService.isAdmin() || this.userStateService.isSuperAdmin() || this.userStateService.isContabilidad() || this.userStateService.canApproveL2()
-      || (this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones'));
+      || (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones'));
   }
 
   // --- Descarga de asientos contables (solo Contabilidad) ---
@@ -579,7 +572,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get canApproveExpenses(): boolean {
     if (this.userStateService.isContabilidad()) return false;
-    if (this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones')) return true;
+    if (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones')) return true;
     return this.userStateService.canApproveL1();
   }
 
@@ -778,6 +771,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.canCoordinadorApprove || this.canContabilidadApprove;
   }
 
+  /**
+   * @removed canApproveDirectaChainStep/confirmApproveDirectaChainStep/
+   * openDirectaRejectModal/submitDirectaRejection — la rendición directa ya
+   * no tiene una cadena de aprobación a nivel de reporte (nunca llega a
+   * `pending_l1`); cada comprobante se aprueba/rechaza individualmente, ver
+   * confirmApproveExpense/rejectExpense más abajo.
+   */
+
   confirmApproveExpense(expenseId: string): void {
     this.confirmationService.show(
       '¿Aprobar este comprobante? Esta acción no se puede deshacer.',
@@ -893,7 +894,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (type === 'planilla_movilidad') return 'Planilla Movilidad';
     if (type === 'otros_gastos') return 'Otros Gastos';
     if (type === 'recibo_caja') return 'Recibo de Caja';
-    if (type === 'comprobante_caja') return 'Comprobante de Caja';
     return 'Factura';
   }
 
@@ -901,7 +901,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   getExpenseTypeCode(expense: any): string {
     const type = expense?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = expense?.subTipo ?? this.getExpenseDataObject(expense)['subTipo'];
@@ -935,7 +934,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getExpenseDocumentNumber(expense: any): string {
     const type = expense?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return typeof expense?.internalCode === 'string' && expense.internalCode ? expense.internalCode : '-';
     }
     if (type === 'recibo_caja') {
@@ -959,9 +958,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   getExpenseProveedor(expense: any): string {
     const type = expense?.expenseType;
     if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
-    if (type === 'comprobante_caja') {
-      return String(this.getCashVoucherPayload(expense)['entregadoA'] || '-');
-    }
     const d = this.getExpenseDataObject(expense);
     const razonSocial = d['razonSocial'];
     if (typeof razonSocial === 'string' && razonSocial.trim()) return razonSocial.trim();
@@ -1036,12 +1032,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (type === 'otros_gastos') {
       return expense?.description || 'DJ firmada';
     }
-    if (type === 'comprobante_caja') {
-      try {
-        const parsed = typeof expense?.description === 'string' ? JSON.parse(expense.description) : null;
-        return parsed?.concepto || 'Comprobante interno';
-      } catch { return 'Comprobante interno'; }
-    }
     if (type === 'recibo_caja') {
       try {
         const data = typeof expense?.data === 'string' ? JSON.parse(expense.data) : expense?.data || {};
@@ -1085,12 +1075,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
     if (type === 'otros_gastos') {
       return expense?.description || 'DJ firmada';
-    }
-    if (type === 'comprobante_caja') {
-      try {
-        const parsed = typeof expense?.description === 'string' ? JSON.parse(expense.description) : null;
-        return parsed?.concepto || 'Comprobante interno';
-      } catch { return 'Comprobante interno'; }
     }
     if (type === 'recibo_caja') {
       try {
@@ -1173,31 +1157,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return String(v);
   }
 
-  /** Payload del comprobante de caja (entregadoA, direccion, concepto, monto). */
-  getCashVoucherPayload(exp: Record<string, unknown>): Record<string, unknown> {
-    const rawData = this.getExpenseDataObject(exp);
-    const payloadRaw = rawData['payload'];
-    let payloadObj: Record<string, unknown> = {};
-    if (payloadRaw && typeof payloadRaw === 'string') {
-      try { payloadObj = JSON.parse(payloadRaw); } catch { /* empty */ }
-    } else if (payloadRaw && typeof payloadRaw === 'object') {
-      payloadObj = payloadRaw as Record<string, unknown>;
-    }
-    if (!payloadObj['concepto'] && exp['description']) {
-      try {
-        const descParsed = JSON.parse(String(exp['description']));
-        if (descParsed?.concepto) payloadObj = descParsed;
-      } catch { /* empty */ }
-    }
-    return payloadObj;
-  }
-
-  cashVoucherText(exp: Record<string, unknown>, key: string): string {
-    const v = this.getCashVoucherPayload(exp)[key];
-    if (v === null || v === undefined || v === '') return '—';
-    return String(v);
-  }
-
   getExpenseStatusForUi(expense: Record<string, unknown>): string {
     if (expense['observado'] === true) return 'Observado';
     return this.mapExpenseStatusExport(
@@ -1214,11 +1173,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getExpenseTypeKey(
     exp: Record<string, unknown>
-  ): 'factura' | 'planilla_movilidad' | 'otros_gastos' | 'comprobante_caja' {
+  ): 'factura' | 'planilla_movilidad' | 'otros_gastos' {
     const t = exp['expenseType'];
     if (t === 'planilla_movilidad') return 'planilla_movilidad';
     if (t === 'otros_gastos') return 'otros_gastos';
-    if (t === 'comprobante_caja') return 'comprobante_caja';
     return 'factura';
   }
 
@@ -1294,6 +1252,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       'open',
       'rejected',
       'submitted',
+      'pending_l1',
       'pending_accounting',
       'partially_paid',
     ];
@@ -1314,9 +1273,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.collaboratorCanEdit;
   }
 
-  /** Coordinador (con permiso rendiciones) o Contabilidad pueden editar/eliminar cualquier comprobante pendiente. */
+  /** Un aprobador (con permiso rendiciones) o Contabilidad pueden editar/eliminar cualquier comprobante pendiente. */
   get canMutateAsAdmin(): boolean {
-    return (this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones'))
+    return (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones'))
       || this.userStateService.isContabilidad();
   }
 
@@ -1337,12 +1296,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getReportStatusLabel(): string {
     if (!this.report) return '';
+    // Saldo ya resuelto (trasladado o devuelto) => se muestra como Cerrada.
     if (this.isEffectivelyClosed) return 'Cerrada';
     if (this.report.isDirecta) {
       const directaLabels: Partial<Record<IExpenseReport['status'], string>> = {
         solicited: 'Solicitada',
         open: 'Abierta',
         submitted: 'Enviada',
+        pending_l1: 'En solicitud',
         pending_accounting: 'Pendiente de Contabilidad',
         approved: 'Aprobada',
         rejected: 'Rechazada',
@@ -1376,6 +1337,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       returned: 'Saldo devuelto',
     };
     return labels[this.report.status] ?? this.report.status;
+  }
+
+  /** Trazabilidad del flujo de aprobación paso a paso (VD-31). Ver `buildReportFlowSteps`. */
+  flowSteps(): FlowStep[] {
+    return buildReportFlowSteps(this.report);
   }
 
   getCollaboratorDisplayName(): string {
@@ -1440,6 +1406,24 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return '—';
   }
 
+  /** Coordinador que aprobó (para la firma en el PDF de planilla de movilidad, VD-33). */
+  private coordinatorApprover(): { name?: string; signature?: string; dni?: string } | null {
+    const u = (this.report as any)?.coordinatorApprovedBy;
+    return u && typeof u === 'object' ? u : null;
+  }
+
+  getCoordinatorName(): string | undefined {
+    return this.coordinatorApprover()?.name || undefined;
+  }
+
+  getCoordinatorSignature(): string | undefined {
+    return this.coordinatorApprover()?.signature || undefined;
+  }
+
+  getCoordinatorDni(): string | undefined {
+    return this.coordinatorApprover()?.dni || undefined;
+  }
+
   getCreatedByName(): string {
     const u = this.report?.createdBy;
     if (u == null) return '—';
@@ -1493,6 +1477,98 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return labels[s] || status || '—';
   }
 
+  /** Área (departamento) del colaborador, desde su perfil (userId.area). */
+  private getCollaboratorArea(): string | undefined {
+    const u = this.report?.userId;
+    if (u && typeof u === 'object' && 'area' in u) {
+      return (u as { area?: string }).area || undefined;
+    }
+    return undefined;
+  }
+
+  /** Nombre de Contabilidad que dio la aprobación final (recuadro V°B° FINANZAS). */
+  private getContabilidadName(): string | undefined {
+    const u = (this.report as any)?.contabilidadApprovedBy;
+    if (u && typeof u === 'object' && 'name' in u) {
+      return (u as { name?: string }).name || undefined;
+    }
+    return undefined;
+  }
+
+  /** Firma de Contabilidad (recuadro V°B° FINANZAS), si tiene firma registrada. */
+  private getContabilidadSignature(): string | undefined {
+    const u = (this.report as any)?.contabilidadApprovedBy;
+    if (u && typeof u === 'object' && 'signature' in u) {
+      return (u as { signature?: string }).signature || undefined;
+    }
+    return undefined;
+  }
+
+  /** Firma de `approvedBy` (fallback para el Jefe Inmediato si no hubo coordinador). */
+  private getApprovedBySignature(): string | undefined {
+    const u = this.report?.approvedBy;
+    if (u && typeof u === 'object' && 'signature' in u) {
+      return (u as { signature?: string }).signature || undefined;
+    }
+    return undefined;
+  }
+
+  /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
+  private getHeaderCentroCosto(): string | undefined {
+    const ot =
+      (this.report as any)?.viaticoOrdenTrabajoId ||
+      (this.report as any)?.directaOrdenTrabajoId;
+    const cc = ot && typeof ot === 'object' ? (ot as any).costCenterId : null;
+    if (cc && typeof cc === 'object' && 'name' in cc) {
+      return (cc as { name?: string }).name || undefined;
+    }
+    return undefined;
+  }
+
+  /** Periodo (mes) de la rendición, en mayúsculas (ej. "DICIEMBRE"). */
+  private getPeriodoLabel(): string | undefined {
+    const raw =
+      this.report?.startDate ??
+      (this.report as any)?.viaticoStartDate ??
+      this.report?.createdAt;
+    if (!raw) return undefined;
+    const d = new Date(raw as string);
+    if (isNaN(d.getTime())) return undefined;
+    return d.toLocaleString('es-PE', { month: 'long' }).toUpperCase();
+  }
+
+  /** OT (nombre) y centro de costo (nombre) de un gasto, desde su ordenTrabajoId populado. */
+  private getExpenseOtAndCc(exp: Record<string, unknown>): { ot: string; centroCosto: string } {
+    const otObj = exp['ordenTrabajoId'];
+    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '' };
+    const ot = String((otObj as { nombre?: string }).nombre ?? '');
+    const cc = (otObj as { costCenterId?: unknown }).costCenterId;
+    const centroCosto =
+      cc && typeof cc === 'object' && 'name' in cc
+        ? String((cc as { name?: string }).name ?? '')
+        : '';
+    return { ot, centroCosto };
+  }
+
+  /** Moneda del gasto: dólares, tipo de cambio y monto convertido a soles. */
+  private resolveExpenseMoneda(
+    exp: Record<string, unknown>,
+    dataObj: Record<string, unknown>,
+  ): { soles: number; dolares?: number; tipoCambio?: number } {
+    const total = Number(exp['total']) || 0;
+    const monedaRaw = String(dataObj['moneda'] ?? '').toUpperCase();
+    const isUsd = monedaRaw.includes('USD') || monedaRaw.includes('$');
+    // El tipo de cambio puede venir a nivel raíz o dentro de comprobanteDetallado.
+    const tcRoot = dataObj['tipoCambio'];
+    const tcNested = (dataObj['comprobanteDetallado'] as { comprobante?: { tipoCambio?: unknown } })?.comprobante?.tipoCambio;
+    const tcRaw = tcRoot ?? tcNested;
+    const tipoCambio =
+      tcRaw != null && !isNaN(Number(tcRaw)) && Number(tcRaw) > 0 ? Number(tcRaw) : undefined;
+    if (!isUsd) return { soles: total };
+    // Gasto en USD: dólares = total; soles solo si hay TC (si no, queda en blanco).
+    return { soles: tipoCambio ? total * tipoCambio : 0, dolares: total, tipoCambio };
+  }
+
   private getSettlementForExport(): RendicionExportData['settlement'] | undefined {
     const s = this.settlement as {
       advanceTotal?: number;
@@ -1524,14 +1600,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       const dataObj = this.getExpenseDataObject(exp);
       const expType = exp['expenseType'] as string;
       let provider = exp['provider'] as string || dataObj['razonSocial'] as string || '';
-      if (!provider && expType === 'comprobante_caja') {
-        provider = String(this.getCashVoucherPayload(exp)['entregadoA'] || '');
-      }
       if (!provider && this.getExpenseTypeLabel(exp) === 'Planilla movilidad') {
         provider = 'Planilla de Movilidad';
       }
       let numDoc = '';
-      if (expType === 'planilla_movilidad' || expType === 'comprobante_caja') {
+      if (expType === 'planilla_movilidad') {
         numDoc = typeof exp['internalCode'] === 'string' ? exp['internalCode'] : '';
       } else if (expType === 'recibo_caja') {
         const payload = dataObj['payload'];
@@ -1551,6 +1624,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       const concepto = this.getExpenseConcepto(exp);
       // Rendición directa: el proyecto es individual por gasto. En el reporte solo va el código.
       const proyecto = this.resolveRowProjectLabel(exp['proyectId']);
+      // Columnas contables del formato ADF-FOR-004.
+      const ruc = dataObj['rucEmisor'] ? String(dataObj['rucEmisor']) : '';
+      const { ot, centroCosto } = this.getExpenseOtAndCc(exp);
+      const { soles, dolares, tipoCambio } = this.resolveExpenseMoneda(exp, dataObj);
       return {
         tipo: this.getExpenseTypeCode(exp),
         fecha: this.getExpenseDate(exp),
@@ -1558,12 +1635,19 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         comentario: comentario || undefined,
         placaVehiculo: placaVehiculo || undefined,
         proyecto: proyecto || undefined,
-        monto: Number(exp['total']) || 0,
+        monto: soles,
         estadoComprobante: this.mapExpenseStatusExport(
           typeof exp['status'] === 'string' ? exp['status'] : undefined,
         ),
         proveedor: provider,
-        numeroDocumento: numDoc
+        numeroDocumento: numDoc,
+        ruc: ruc || undefined,
+        ot: ot || undefined,
+        centroCosto: centroCosto || undefined,
+        // CTA. DESTINO: pendiente de definir con el cliente. Se deja vacío por ahora.
+        ctaDestino: undefined,
+        dolares,
+        tipoCambio,
       };
     });
     const anticipos = this.advances.flatMap((a) => {
@@ -1585,7 +1669,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         fechaSolicitud,
       });
     }
-    // Viático: lo pagado por contabilidad (viaticoPaidAmount) es un ingreso.
+    // Viático: lo pagado por contabilidad es un ingreso.
     if (this.report.type === 'viatico') {
       const viaticoPaid = Number(
         (this.report as { viaticoPaidAmount?: number }).viaticoPaidAmount ?? 0
@@ -1647,10 +1731,30 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         dias: i.daysCount,
         total: i.total
       })),
+      moneda: this.report.viaticoMoneda,
       signature: this.getCollaboratorSignature(),
       approvedByName: this.getApprovedByName(),
       createdByName: this.getCreatedByName(),
       projectName: this.getProjectName(),
+      // --- Cabecera contable del formato ADF-FOR-004 ---
+      nRendicion: this.report.codigo || undefined,
+      fechaDocumento: this.report.createdAt
+        ? this.formatEmissionDate(this.report.createdAt)
+        : undefined,
+      concepto: this.report.description || this.report.title || undefined,
+      destino: this.report.location || undefined,
+      departamento: this.getCollaboratorArea(),
+      periodo: this.getPeriodoLabel(),
+      centroCostoCabecera: this.getHeaderCentroCosto(),
+      montoInicialEntregado: this.totalAnticipado,
+      // Jefe Inmediato: preferimos el coordinador que aprobó (tiene firma/DNI); si no
+      // hubo coordinador, caemos al aprobador genérico (approvedBy).
+      jefeInmediatoName:
+        this.getCoordinatorName() ||
+        (this.getApprovedByName() !== '—' ? this.getApprovedByName() : undefined),
+      jefeSignature: this.getCoordinatorSignature() || this.getApprovedBySignature(),
+      financeName: this.getContabilidadName(),
+      financeSignature: this.getContabilidadSignature(),
     };
   }
 
@@ -1691,7 +1795,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private buildMobilityPageData(expense: Record<string, unknown>): MobilitySheetExportData {
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -1720,27 +1823,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       rows,
       total,
       signature: this.getCollaboratorSignature(),
-    };
-  }
-
-  private buildCashVoucherPageData(expense: Record<string, unknown>): CashVoucherExportData {
-    const payloadObj = this.getCashVoucherPayload(expense);
-    const companyName = this.userStateService.getUser()?.client?.businessName
-      || this.companyConfigService.getCompanyConfig()?.businessName;
-    return {
-      fileBaseName: `comprobante_caja_${String(expense['_id'] || 'sin_id')}`,
-      collaborator: this.getCollaboratorDisplayName(),
-      collaboratorDni: this.collaboratorDniForPdf(),
-      internalCode: typeof expense['internalCode'] === 'string' ? expense['internalCode'] : undefined,
-      entregadoA: String(payloadObj['entregadoA'] || '—'),
-      direccion: String(payloadObj['direccion'] || ''),
-      concepto: String(payloadObj['concepto'] || this.getExpenseDescription(expense)),
-      monto: this.getExpenseTotal(expense),
-      generatedAt: new Date().toLocaleDateString('es-PE'),
-      signature: this.getCollaboratorSignature(),
-      projectName: this.getProjectName(),
-      clientName: companyName,
-      fechaEmision: typeof expense['fechaEmision'] === 'string' ? expense['fechaEmision'] : undefined,
+      coordinator: this.getCoordinatorName(),
+      coordinatorDni: this.getCoordinatorDni(),
+      coordinatorSignature: this.getCoordinatorSignature(),
     };
   }
 
@@ -1863,7 +1948,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         const dayAmount = Math.min(DAILY_RATE, Math.round(remaining * 100) / 100);
         rows.push({
           fecha: this.dateToYmd(cur),
-          clienteProveedor: '',
           origen: '',
           destino: '',
           gestion: '',
@@ -1876,7 +1960,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     } else {
       rows.push({
         fecha: '',
-        clienteProveedor: '',
         origen: '',
         destino: '',
         gestion: '',
@@ -1926,8 +2009,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
           if (consolidated) pages.push({ type: 'mobility', data: consolidated });
           mobilityPageAdded = true;
         }
-      } else if (typeKey === 'comprobante_caja') {
-        pages.push({ type: 'cash_voucher', data: this.buildCashVoucherPageData(exp) });
       } else if (expType === 'recibo_caja') {
         pages.push({ type: 'receipt', data: this.buildReceiptPageData(exp) });
       } else if (typeKey === 'otros_gastos') {
@@ -2129,9 +2210,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   returnVoucherOperationTime = signal<string | null>(null);
 
   /**
-   * La rendición se considera cerrada (a efectos de visualización) cuando llegó
-   * a un estado final o fue devuelta por el colaborador mediante comprobante de
-   * depósito. En esos casos el label y el badge deben mostrarse como "Cerrada".
+   * La rendición se considera cerrada (a efectos de visualización) cuando su
+   * saldo pendiente ya fue devuelto por el colaborador mediante comprobante
+   * de depósito. En ese caso el label y el badge deben mostrarse como "Cerrada".
    */
   get isEffectivelyClosed(): boolean {
     if (this.report?.status === 'closed') return true;
@@ -2168,19 +2249,22 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Registrar el reembolso al colaborador es una acción de tesorería. El
-   * coordinador NUNCA registra el pago, aunque tenga vista de administración,
-   * el permiso de aprobación L2 o los módulos de tesorería/contabilidad: el
-   * rol es el discriminador (mismo criterio que el backend en
-   * register-reimbursement-payment). Lo registra Contabilidad o SuperAdmin.
+   * Registrar el reembolso al colaborador es una acción de TESORERÍA (VD-37):
+   * lo registra Tesorería o SuperAdmin (o un delegado con L2), nunca Contabilidad
+   * ni el Coordinador. Mismo criterio que el backend en
+   * register-reimbursement-payment (canPay). No se exige `isAdminView` porque
+   * Tesorería no forma parte de esa vista; basta con que no sea su propia
+   * rendición y tenga el rol de pago.
    */
   get canAdminRegisterReembolso(): boolean {
-    if (!this.isAdminView) return false;
+    if (this.isOwnReport) return false;
     if (this.userStateService.isCoordinador()) return false;
+    // Solo Tesorería (o SuperAdmin como override). NO se usa canApproveL2() porque
+    // en el frontend hace short-circuit a true para Contabilidad, que justamente
+    // NO debe registrar el reembolso (VD-37); el backend ya excluye a Contabilidad.
     const canPay =
-      this.userStateService.isContabilidad() ||
-      this.userStateService.isSuperAdmin() ||
-      this.userStateService.canApproveL2();
+      this.userStateService.isTesoreria() ||
+      this.userStateService.isSuperAdmin();
     if (!canPay) return false;
     const status = this.report?.status;
     if (status !== 'approved' && status !== 'reimbursed' && status !== 'closed') return false;
@@ -2289,6 +2373,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   adminReembolsoDate = signal(new Date().toISOString().split('T')[0]);
   adminReembolsoBank = signal('');
   adminReembolsoRef = signal('');
+  adminReembolsoMonto = signal<number | null>(null);
   adminReembolsoMethod = signal<'transferencia_bancaria' | 'efectivo' | 'cheque'>('transferencia_bancaria');
   // Datos detectados por el escaneo del comprobante
   isScanningAdminReembolso = signal(false);
@@ -2303,6 +2388,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.adminReembolsoDate.set(new Date().toISOString().split('T')[0]);
     this.adminReembolsoBank.set('');
     this.adminReembolsoRef.set('');
+    // Precarga el monto con el saldo a favor del colaborador (editable).
+    const expected = Math.abs(Number(this.saldoLibre) || 0);
+    this.adminReembolsoMonto.set(expected > 0.001 ? Number(expected.toFixed(2)) : null);
     this.adminReembolsoMethod.set('transferencia_bancaria');
     this.adminReembolsoScannedAmount.set(null);
     this.adminReembolsoTitular.set(null);
@@ -2362,6 +2450,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       this.notificationService.show('Ingresa la fecha de pago', 'warning');
       return;
     }
+    const monto = this.adminReembolsoMonto();
+    if (monto == null || monto <= 0) {
+      this.notificationService.show('Ingresa el monto del reembolso', 'warning');
+      return;
+    }
     if (method !== 'efectivo' && !fileUrl) {
       this.notificationService.show('Sube el comprobante de pago', 'warning');
       return;
@@ -2374,7 +2467,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       reference: this.adminReembolsoRef() || undefined,
       paymentReceiptUrl: fileUrl || undefined,
       paymentReceiptFileName: this.adminReembolsoFileName() || undefined,
-      scannedAmount: this.adminReembolsoScannedAmount() ?? undefined,
+      scannedAmount: monto,
       operationNumber: this.adminReembolsoRef() || undefined,
       operationDate: this.adminReembolsoOperationDate() || undefined,
       operationTime: this.adminReembolsoOperationTime() || undefined,
@@ -2670,21 +2763,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   // ─── Editar / Cancelar / Eliminar solicitud de viáticos pendiente ────────────
 
-  editingAdvance = signal<IAdvance | null>(null);
-  showEditAdvanceModal = signal(false);
   showCancelAdvanceModal = signal(false);
   cancellingAdvanceId = signal<string | null>(null);
   isCancellingAdvance = signal(false);
 
   openEditAdvanceModal(adv: IAdvance): void {
-    this.editingAdvance.set(adv);
-    this.showEditAdvanceModal.set(true);
-  }
-
-  onEditAdvanceClosed(success: boolean): void {
-    this.editingAdvance.set(null);
-    this.showEditAdvanceModal.set(false);
-    if (success) this.loadAdvances();
+    this.router.navigate(['/mis-rendiciones/solicitud-viaticos', adv._id, 'editar']);
   }
 
   openCancelAdvanceModal(adv: IAdvance): void {
@@ -2755,17 +2839,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.notificationService.show('Planilla de movilidad descargada en PDF', 'success');
   }
 
-  exportCashVoucher(expense: Record<string, unknown>): void {
-    if (this.getExpenseTypeKey(expense) !== 'comprobante_caja') return;
-    this.rendicionExportService.exportCashVoucherToPdf(this.buildCashVoucherPageData(expense));
-    this.notificationService.show('Comprobante de caja descargado en PDF', 'success');
-  }
-
   async exportMobilitySheetExcel(expense: Record<string, unknown>): Promise<void> {
     if (this.getExpenseTypeKey(expense) !== 'planilla_movilidad') return;
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -2803,7 +2880,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (this.getExpenseTypeKey(expense) !== 'planilla_movilidad') return;
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
-      clienteProveedor: String(r['clienteProveedor'] || ''),
       origen: String(r['origen'] || ''),
       destino: String(r['destino'] || ''),
       gestion: String(r['gestion'] || ''),
@@ -2874,30 +2950,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.notificationService.show('Declaración jurada descargada', 'success');
   }
 
-  async exportCashVoucherAffidavit(expense: Record<string, unknown>): Promise<void> {
-    if (this.getExpenseTypeKey(expense) !== 'comprobante_caja') return;
-    const payloadObj = this.getCashVoucherPayload(expense);
-    const client = this.userStateService.getUser()?.client;
-    const receiptFields = [
-      { label: 'Entregado a', value: String(payloadObj['entregadoA'] || '—') },
-      { label: 'Dirección', value: String(payloadObj['direccion'] || '—') },
-      { label: 'Concepto', value: String(payloadObj['concepto'] || this.getExpenseDescription(expense)) },
-    ];
-    const data: SingleExpenseAffidavitData = {
-      fileBaseName: `dj_comprobante_caja_${String(expense['_id'] || 'sin_id')}`,
-      titulo: 'COMPROBANTE DE CAJA',
-      colaborador: this.getCollaboratorDisplayName(),
-      colaboradorDni: this.collaboratorDniForPdf(),
-      empresaNombre: client?.businessName,
-      fechaGeneracion: new Date().toLocaleDateString('es-PE'),
-      total: this.getExpenseTotal(expense),
-      receiptFields,
-      signature: this.getCollaboratorSignature(),
-    };
-    await this.rendicionExportService.exportSingleExpenseAffidavitToPdf(data);
-    this.notificationService.show('Declaración jurada descargada', 'success');
-  }
-
   async exportOtherExpenseAffidavit(expense: Record<string, unknown>): Promise<void> {
     if (this.getExpenseTypeKey(expense) !== 'otros_gastos') return;
     const client = this.userStateService.getUser()?.client;
@@ -2916,15 +2968,36 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.notificationService.show('Declaración jurada descargada', 'success');
   }
 
-  // ─── Aprobación dual de comprobantes ─────────────────────────────────────────
+  // ─── Aprobación por documento (cadena de centro de costo + Contabilidad) ─────
 
-  get canApproveExpenseAsCoord(): boolean {
-    return this.userStateService.isCoordinador() && this.userStateService.hasModulePermission('rendiciones')
-      || this.userStateService.isAdmin() || this.userStateService.isSuperAdmin();
+  private get currentUserId(): string {
+    return (this.userStateService.getUser() as any)?._id ?? '';
+  }
+
+  /** Nivel (0-based) actualmente pendiente de la cadena del comprobante. */
+  private currentChainStep(expense: any): IChainStep | undefined {
+    const chain: IChainStep[] = expense?.approverChain ?? [];
+    const level = expense?.approvalLevel ?? 0;
+    return chain[level];
+  }
+
+  /** ¿El usuario actual está entre los `approverIds` del paso pendiente, o es Superadmin? */
+  canApproveExpenseAsCoord(expense: any): boolean {
+    if (this.userStateService.isSuperAdmin()) return true;
+    const step = this.currentChainStep(expense);
+    if (!step) return false;
+    return step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId);
   }
 
   get canApproveExpenseAsCont(): boolean {
     return this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
+  }
+
+  /** Visibilidad del botón de aprobación en lote: al menos un comprobante listado le corresponde. */
+  get canBatchApproveAsCoord(): boolean {
+    if (this.userStateService.isSuperAdmin()) return true;
+    const expenses = this.expensesPage()?.data ?? [];
+    return expenses.some((e: any) => this.canApproveExpenseAsCoord(e));
   }
 
   get canReopen(): boolean {
@@ -2934,7 +3007,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get batchApproveCount(): number {
     const expenses = this.expensesPage()?.data ?? [];
     return expenses.filter((e: any) => {
-      const contStatus = this.getExpenseApprovalCont(e).status;
+      const contStatus = e.contabilidadStatus ?? 'pending';
       const coordStatus = this.getExpenseApprovalCoord(e).status;
       return contStatus === 'approved' && coordStatus !== 'approved';
     }).length;
@@ -2943,31 +3016,75 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get collaboratorBatchCount(): number {
     const expenses = this.expensesPage()?.data ?? [];
     return expenses.filter((e: any) => {
-      const contStatus = this.getExpenseApprovalCont(e).status;
+      const contStatus = e.contabilidadStatus ?? 'pending';
       return contStatus === 'approved' && e.status !== 'approved';
     }).length;
   }
 
   /**
-   * Estado real de la cadena de centro de costo (N1/N2/[N2 sel]) del comprobante,
-   * derivado de `approverChain`/`approvalLevel`/`requiredLevels` (lo que el backend
-   * realmente devuelve — `expense.approvalCoord` no existe en la API).
+   * Estado de la cadena de centro de costo del comprobante, combinando
+   * `approvalLevel`/`requiredLevels` (avance) con el `status` general
+   * (para distinguir un rechazo en la cadena de un rechazo de Contabilidad).
    */
-  getExpenseApprovalCoord(expense: any): { status: 'pending' | 'approved' | 'rejected' } {
-    const contRejected = !!expense?.contabilidadRejectionReason;
-    if (expense?.status === 'rejected' && !contRejected) {
-      return { status: 'rejected' };
-    }
-    const chain = expense?.approverChain;
-    if (chain === undefined) return { status: 'pending' };
-    const required = expense?.requiredLevels ?? chain.length ?? 0;
-    const level = expense?.approvalLevel ?? 0;
-    return { status: level >= required ? 'approved' : 'pending' };
+  getExpenseApprovalCoord(expense: any): {
+    status: 'pending' | 'approved' | 'rejected';
+    level: number;
+    requiredLevels: number;
+    pendingApproverNames: string;
+    escalated: boolean;
+  } {
+    const chain: IChainStep[] = expense?.approverChain ?? [];
+    const requiredLevels = expense?.requiredLevels ?? chain.length;
+    const approvalLevel = expense?.approvalLevel ?? 0;
+    const contStatus = expense?.contabilidadStatus ?? 'pending';
+    let status: 'pending' | 'approved' | 'rejected' = approvalLevel >= requiredLevels ? 'approved' : 'pending';
+    if (status === 'pending' && expense?.status === 'rejected' && contStatus !== 'rejected') status = 'rejected';
+    const step = chain[approvalLevel];
+    return {
+      status,
+      level: step?.level ?? approvalLevel + 1,
+      requiredLevels,
+      pendingApproverNames: this.chainStepApproverNames(step),
+      escalated: step?.escalatedFrom != null,
+    };
   }
 
-  /** Estado real del gate de Contabilidad (`contabilidadStatus` — no `approvalCont`, que no existe en la API). */
   getExpenseApprovalCont(expense: any): { status: 'pending' | 'approved' | 'rejected' } {
     return { status: expense?.contabilidadStatus ?? 'pending' };
+  }
+
+  private chainStepApproverNames(step: IChainStep | undefined): string {
+    if (!step || !step.approverIds?.length) return '—';
+    return step.approverIds
+      .map((a: any) => (typeof a === 'object' ? (a.name ?? a._id) : a))
+      .join(' / ');
+  }
+
+  /** Cadena completa del comprobante para la visualización de niveles (N1/N2/…). */
+  getExpenseChainSteps(expense: any): Array<{
+    level: number;
+    state: 'completado' | 'pendiente' | 'futuro';
+    approverNames: string;
+    escalatedFrom?: number;
+    approvedBy?: string;
+    date?: string;
+  }> {
+    const chain: IChainStep[] = expense?.approverChain ?? [];
+    const approvalLevel = expense?.approvalLevel ?? 0;
+    const history: Array<{ level: number; approvedBy: string; action: string; date: string }> = expense?.approvalHistory ?? [];
+    return chain.map((step, idx) => {
+      const state: 'completado' | 'pendiente' | 'futuro' =
+        idx < approvalLevel ? 'completado' : idx === approvalLevel ? 'pendiente' : 'futuro';
+      const entry = history.find(h => h.level === step.level);
+      return {
+        level: step.level,
+        state,
+        approverNames: this.chainStepApproverNames(step),
+        escalatedFrom: step.escalatedFrom,
+        approvedBy: entry?.approvedBy,
+        date: entry?.date,
+      };
+    });
   }
 
   approveExpenseByRole(expenseId: string, role: 'coord' | 'cont'): void {

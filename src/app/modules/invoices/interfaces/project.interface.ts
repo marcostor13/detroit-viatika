@@ -10,10 +10,6 @@ export interface IProject {
   lineaNegocioId?: string;
   /** Línea de negocio poblada (nombre/código) cuando el API la devuelve */
   lineaNegocio?: { _id?: string; name?: string; code?: string };
-  /** Perfil de categoría asignado (id) */
-  categoryGroupId?: string;
-  /** Perfil de categoría poblado (nombre) cuando el API lo devuelve */
-  categoryGroup?: { _id?: string; name?: string };
   // --- Mapeo contable (asientos Contanet) ---
   /** Cuenta analítica clase 9 del centro de costo (ej. 91.3.1.410). */
   cuentaAnalitica9x?: string;
@@ -27,10 +23,17 @@ export interface IProject {
   area?: string;
   /** Marca si el centro de costo es administrativo. */
   esAdministrativo?: boolean;
-  /** Aprobador de las solicitudes de viático imputadas a este centro de costo (id) */
+  /** @deprecated usar approverLevels. Se mantiene solo por compatibilidad de lectura, ya no se edita desde el form. */
   approverId?: string;
   /** Aprobador poblado (nombre/email) cuando el API lo devuelve */
   approver?: { _id?: string; name?: string; email?: string };
+  /** Aprobadores por nivel explícito (N1, N2, N3…) de este centro de costo. */
+  approverLevels?: IApproverLevel[];
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface IApproverLevel {
+  level: number;
+  userIds: (string | { _id: string; name?: string; email?: string })[];
 }

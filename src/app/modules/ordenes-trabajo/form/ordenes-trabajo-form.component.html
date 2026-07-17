@@ -7,6 +7,9 @@
       <h1 class="text-2xl font-bold text-secondary">
         {{ isEditMode() ? 'Editar Orden de Trabajo' : 'Nueva Orden de Trabajo' }}
       </h1>
+      <p class="text-tertiary text-sm mt-0.5">
+        Relaciona la OT con un centro de costo y dale un nombre único (ej. Lim-Com-1).
+      </p>
     </div>
   </div>
 
@@ -17,26 +20,39 @@
   } @else {
     <app-card padding="lg">
       <div class="flex flex-col gap-6">
-        <app-input
-          label="Nombre"
-          placeholder="Ej: Lim-Com-1"
-          [value]="nombre()"
-          (valueChange)="onNombreChange($event)"
-          [error]="nombreError()"
-          [required]="true"
-        />
-
         <app-form-field #ccField label="Centro de costo" [required]="true" [error]="costCenterError()">
-          <app-project-select
+          <select
             [id]="ccField.fieldId"
             [attr.aria-describedby]="ccField.describedBy()"
-            [projects]="projects()"
-            placeholder="Seleccione centro de costo…"
-            [invalid]="!!costCenterError()"
             [ngModel]="costCenterId()"
             (ngModelChange)="onCostCenterChange($event)"
-          />
+            class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            [class]="costCenterError() ? 'border-error' : 'border-tertiary/30'"
+          >
+            <option value="" disabled>Selecciona un centro de costo</option>
+            @for (cc of centrosCosto(); track cc._id) {
+              <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
+            }
+          </select>
         </app-form-field>
+
+        <div>
+          <app-form-field #nombreField label="Nombre de la OT" [required]="true" [error]="nombreError()">
+            <input
+              type="text"
+              [id]="nombreField.fieldId"
+              [attr.aria-describedby]="nombreField.describedBy()"
+              [ngModel]="nombre()"
+              (ngModelChange)="onNombreChange($event)"
+              placeholder="Ej: Lim-Com-1"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              [class]="nombreError() ? 'border-error' : 'border-tertiary/30'"
+            />
+          </app-form-field>
+          <p class="text-xs text-tertiary mt-1">
+            El nombre debe ser único dentro de tu empresa.
+          </p>
+        </div>
 
         <label class="flex items-center gap-2 cursor-pointer">
           <input

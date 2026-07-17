@@ -116,17 +116,7 @@
               @if (isExpanded(cat._id)) {
               <tr class="bg-background/60">
                 <td class="px-5 pb-3.5 pt-0" colspan="6">
-                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2 pl-8">
-                    <div>
-                      <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Perfiles de Categoría</span>
-                      @if (perfilesForCategory(cat._id).length) {
-                        <div class="flex flex-wrap gap-1 mt-0.5">
-                          @for (perfil of perfilesForCategory(cat._id); track perfil) {
-                            <span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">{{ perfil }}</span>
-                          }
-                        </div>
-                      } @else { <span class="text-sm text-tertiary/50">—</span> }
-                    </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 pl-8">
                     <div>
                       <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Descripción</span>
                       <span class="text-sm text-tertiary break-words">{{ cat.description || '—' }}</span>
@@ -163,13 +153,6 @@
                   {{ cat.isActive !== false ? 'Activa' : 'Inactiva' }}
                 </app-badge>
               </div>
-              @if (perfilesForCategory(cat._id).length) {
-                <div class="flex flex-wrap gap-1 mb-1">
-                  @for (perfil of perfilesForCategory(cat._id); track perfil) {
-                    <span class="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">{{ perfil }}</span>
-                  }
-                </div>
-              }
               @if (cat.description) { <p class="text-xs text-tertiary">{{ cat.description }}</p> }
               @if (cat.observaciones) { <p class="text-xs text-tertiary/70 italic mt-0.5">{{ cat.observaciones }}</p> }
               <div class="flex gap-2 justify-end mt-2">

@@ -25,6 +25,7 @@ import {
   ADVANCE_STATUS_LABELS,
   ADVANCE_STATUS_COLORS,
 } from '../../interfaces/advance.interface';
+import { monedaSymbol } from '../../constants/moneda';
 
 type UnifiedViaticoItem = {
   _id: string;
@@ -36,6 +37,7 @@ type UnifiedViaticoItem = {
   place: string;
   dateRange: string;
   amount: number;
+  currencySymbol: string;
   expensesCount: number;
   canEdit: boolean;
   canResubmit: boolean;
@@ -259,7 +261,6 @@ export class MisRendicionesComponent implements OnInit {
   getDirectaTipoCode(e: any): string {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = e?.subTipo ?? this.getData(e)['subTipo'];
@@ -302,7 +303,7 @@ export class MisRendicionesComponent implements OnInit {
 
   getDirectaDocNumber(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return (typeof e?.internalCode === 'string' && e.internalCode) ? e.internalCode : '-';
     }
     if (type === 'recibo_caja') {
@@ -321,7 +322,7 @@ export class MisRendicionesComponent implements OnInit {
   getDirectaTipo(e: any): string {
     const m: Record<string, string> = {
       factura: 'Factura', planilla_movilidad: 'Planilla', otros_gastos: 'Otros',
-      recibo_caja: 'Recibo', comprobante_caja: 'Comprobante',
+      recibo_caja: 'Recibo',
     };
     return m[e.expenseType] ?? e.expenseType ?? '—';
   }
@@ -334,21 +335,13 @@ export class MisRendicionesComponent implements OnInit {
       return first?.gestion || `${rows.length} filas`;
     }
     if (type === 'otros_gastos') return e?.description || 'DJ firmada';
-    if (type === 'comprobante_caja') {
-      try {
-        const d = this.getData(e);
-        const raw = d['payload'];
-        const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
-        return String(obj['concepto'] || '');
-      } catch { return ''; }
-    }
     const d = this.getData(e);
     return String(d['concepto'] || e.description || '');
   }
 
   getDirectaProveedor(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja' || type === 'otros_gastos') return '-';
+    if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
     const d = this.getData(e);
     const r = d['razonSocial'];
     if (typeof r === 'string' && r.trim()) return r.trim();
@@ -853,6 +846,7 @@ export class MisRendicionesComponent implements OnInit {
     if (this.isReportEffectivelyClosed(report)) return 'Cerrada';
     const map: Partial<Record<string, string>> = {
       solicited: 'Solicitada', open: 'Abierta', submitted: 'Enviada',
+      pending_l1: 'En solicitud',
       pending_accounting: 'En contabilidad', approved: 'Aprobada',
       rejected: 'Rechazada', reimbursed: 'Reembolsada',
       closed: 'Cerrada', cancelled: 'Cancelada',
@@ -865,7 +859,8 @@ export class MisRendicionesComponent implements OnInit {
     if (this.isReportEffectivelyClosed(report)) return 'bg-gray-100 text-gray-500';
     const map: Partial<Record<string, string>> = {
       solicited: 'bg-purple-100 text-purple-700', open: 'bg-green-100 text-green-700',
-      submitted: 'bg-yellow-100 text-yellow-700', pending_accounting: 'bg-violet-100 text-violet-700',
+      submitted: 'bg-yellow-100 text-yellow-700', pending_l1: 'bg-yellow-100 text-yellow-700',
+      pending_accounting: 'bg-violet-100 text-violet-700',
       approved: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700',
       reimbursed: 'bg-teal-100 text-teal-700', closed: 'bg-gray-100 text-gray-500',
       cancelled: 'bg-gray-100 text-gray-500',
@@ -875,7 +870,7 @@ export class MisRendicionesComponent implements OnInit {
 
   // ─── Unified viático list (merges new viaticos + old advances + old rendiciones) ───
 
-  get unifiedViaticoList(): UnifiedViaticoItem[] {
+  private get allViaticoItems(): UnifiedViaticoItem[] {
     const items: UnifiedViaticoItem[] = [];
 
     // 1. New type='viatico' ExpenseReports
@@ -890,6 +885,7 @@ export class MisRendicionesComponent implements OnInit {
         place: r.viaticoPlace ?? '—',
         dateRange: this.viaticoDates(r),
         amount: r.viaticoAmount ?? 0,
+        currencySymbol: monedaSymbol(r.viaticoMoneda),
         expensesCount: (r.expenseIds || []).length,
         canEdit: this.canEditViatico(r),
         canResubmit: this.canResubmitViatico(r),
@@ -911,6 +907,7 @@ export class MisRendicionesComponent implements OnInit {
         place: adv.place ?? '—',
         dateRange: this.advanceDateRange(adv),
         amount: adv.amount,
+        currencySymbol: monedaSymbol(adv.moneda),
         expensesCount: 0,
         canEdit: adv.status === 'pending_l1',
         canResubmit: adv.status === 'rejected',
@@ -934,6 +931,7 @@ export class MisRendicionesComponent implements OnInit {
         place: r.location ?? '—',
         dateRange: this.reportDateRange(r),
         amount: r.budget,
+        currencySymbol: monedaSymbol(undefined),
         expensesCount: (r.expenseIds || []).length,
         canEdit: false,
         canResubmit: false,
@@ -943,12 +941,29 @@ export class MisRendicionesComponent implements OnInit {
       });
     }
 
-    // Apply filters
+    return items;
+  }
+
+  /**
+   * Opciones del filtro por estado HOMOLOGADAS con la columna Estado de la tabla
+   * (VD-30): las etiquetas realmente presentes en la lista, sin duplicar y ordenadas.
+   * Así el desplegable ofrece exactamente lo que se ve en la tabla (p. ej. "En
+   * solicitud", "Cerrada") en vez de una lista fija que no coincide.
+   */
+  get viaticoStatusOptions(): string[] {
+    const labels = new Set<string>();
+    for (const it of this.allViaticoItems) labels.add(it.statusLabel);
+    return [...labels].sort((a, b) => a.localeCompare(b));
+  }
+
+  get unifiedViaticoList(): UnifiedViaticoItem[] {
+    // Se filtra por la etiqueta visible (no por el status crudo) para que coincida
+    // 1:1 con lo que muestra la columna Estado. VD-30.
     const status = this.viaticosStatusFilter();
     const from = this.viaticosDateFrom();
     const to = this.viaticosDateTo();
-    let filtered = items;
-    if (status) filtered = filtered.filter(i => i.rawStatus === status);
+    let filtered = this.allViaticoItems;
+    if (status) filtered = filtered.filter(i => i.statusLabel === status);
     if (from) filtered = filtered.filter(i => new Date(i.createdAt) >= new Date(from));
     if (to) filtered = filtered.filter(i => new Date(i.createdAt) <= new Date(to + 'T23:59:59'));
 
@@ -993,12 +1008,25 @@ export class MisRendicionesComponent implements OnInit {
     return false;
   }
 
+  /**
+   * Opciones del filtro por estado de rendiciones directas, homologadas con la
+   * columna Estado de la tabla (panelStatusText). VD-30.
+   */
+  get directaStatusOptions(): string[] {
+    const labels = new Set<string>();
+    for (const r of this.expenseReports.filter(r => r.isDirecta)) {
+      labels.add(this.panelStatusText(r));
+    }
+    return [...labels].sort((a, b) => a.localeCompare(b));
+  }
+
   get filteredDirectaReports(): IExpenseReport[] {
     let reports = this.expenseReports.filter(r => r.isDirecta);
     const status = this.directasStatusFilter();
     const from = this.directasDateFrom();
     const to = this.directasDateTo();
-    if (status) reports = reports.filter(r => r.status === status);
+    // Filtrado por la etiqueta visible, homologado con la tabla. VD-30.
+    if (status) reports = reports.filter(r => this.panelStatusText(r) === status);
     if (from) reports = reports.filter(r => new Date(r.createdAt) >= new Date(from));
     if (to) reports = reports.filter(r => new Date(r.createdAt) <= new Date(to + 'T23:59:59'));
     return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -1061,6 +1089,7 @@ export class MisRendicionesComponent implements OnInit {
       solicited: 'SOLICITADA',
       open: 'ABIERTA',
       submitted: 'ENVIADA',
+      pending_l1: 'EN SOLICITUD',
       pending_accounting: 'PENDIENTE CONTABILIDAD',
       approved: 'APROBADA',
       rejected: 'RECHAZADA',

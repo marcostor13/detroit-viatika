@@ -47,9 +47,9 @@
     <app-card [hover]="false" class="mb-6">
       <h2 class="text-base font-semibold text-secondary mb-1">Centros de Costo Asignados</h2>
       <p class="text-sm text-tertiary mb-5">
-        Ordena los centros de costo del colaborador. El <strong>primero de la lista es su centro de costo principal</strong>:
-        cuando solicite un viático hacia un centro de costo que no esté en esta lista, el aprobador del principal
-        actúa como primer nivel, seguido del aprobador del centro de costo elegido.
+        Marca con la estrella el <strong>centro de costo principal</strong> del colaborador: cuando solicite un
+        viático hacia un centro de costo que no esté en esta lista, el aprobador del principal actúa como primer
+        nivel, seguido del aprobador del centro de costo elegido. Si no marcas ninguno, se usa el primero de la lista.
       </p>
 
       @if (assignedProjects.length === 0) {
@@ -60,8 +60,18 @@
         <div class="space-y-2 mb-4">
           @for (p of assignedProjects; track p._id; let i = $index) {
             <div class="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-divider">
+              <app-button
+                [variant]="isPrimary(p._id) ? 'primary' : 'ghost'"
+                size="sm"
+                label=""
+                [ariaLabel]="isPrimary(p._id) ? 'Centro de costo principal' : 'Marcar como principal'"
+                [disabled]="isPrimary(p._id)"
+                (clicked)="setPrimary(p._id!)"
+              >
+                <app-icon name="star" size="sm" />
+              </app-button>
               <span class="text-xs font-semibold text-tertiary w-16 shrink-0">
-                {{ i === 0 ? 'Principal' : 'Nivel ' + (i + 1) }}
+                {{ isPrimary(p._id) ? 'Principal' : 'Nivel ' + (i + 1) }}
               </span>
               <span class="text-sm text-secondary flex-1">{{ projectLabel(p) }}</span>
               <div class="flex items-center gap-1 shrink-0">
@@ -93,21 +103,16 @@
       }
     </app-card>
 
-    <!-- Categorías permitidas (agrupadas por perfil) -->
+    <!-- Categorías permitidas -->
     <app-card [hover]="false" class="mb-6">
       <div class="flex items-start justify-between gap-3 mb-1">
         <h2 class="text-base font-semibold text-secondary">Categorías Permitidas</h2>
         @if (!categoriesLoading()) {
-          <div class="flex items-center gap-3">
-            <span class="text-xs text-tertiary">{{ selectedCount }} seleccionada(s)</span>
-            <app-button variant="ghost" size="sm" label="Restablecer según rol" (clicked)="applyRoleDefault()" />
-          </div>
+          <span class="text-xs text-tertiary">{{ selectedCount }} seleccionada(s)</span>
         }
       </div>
       <p class="text-sm text-tertiary mb-5">
-        Selecciona las categorías del usuario. De cada categoría se deriva su perfil y, con ello, los centros de costo
-        que verá. Por defecto se preseleccionan según el rol
-        ({{ isColaborador() ? 'PROYECTO' : 'ADMINISTRACIÓN + COMERCIAL' }}).
+        Selecciona las categorías que puede usar este usuario al registrar gastos.
       </p>
 
       @if (categoriesLoading()) {
@@ -119,28 +124,53 @@
           No hay categorías. Créalas primero desde Configuración → Categorías.
         </p>
       } @else {
-        <div class="space-y-5">
-          @for (section of perfilSections; track section.name) {
-            <div class="rounded-lg border border-divider">
-              <div class="flex items-center justify-between px-4 py-2.5 bg-background border-b border-divider">
-                <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">
-                  {{ section.name }} <span class="text-tertiary/60 normal-case">({{ section.cats.length }})</span>
-                </span>
-                @if (section.group; as g) {
-                  <app-button variant="ghost" size="sm" [label]="groupIsFullySelected(g) ? 'Quitar todas' : 'Seleccionar todas'" (clicked)="toggleGroup(g)" />
-                }
-              </div>
-              <div class="divide-y divide-divider">
-                @for (cat of section.cats; track cat._id) {
-                  <label class="flex items-center gap-3 px-4 py-2 hover:bg-background cursor-pointer transition-colors">
-                    <input type="checkbox" class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
-                      [checked]="hasCategory(cat._id!)" (change)="toggleCategory(cat._id!, $any($event.target).checked)" />
-                    <span class="text-sm text-secondary flex-1">{{ cat.name }}</span>
-                    @if (cat.cuenta) { <span class="text-xs text-tertiary/60">{{ cat.cuenta }}</span> }
-                  </label>
-                }
-              </div>
-            </div>
+
+        <!-- Búsqueda + acciones masivas -->
+        <div class="flex items-center gap-3 mb-3">
+          <div class="relative flex-1">
+            <app-icon name="search" size="sm" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-tertiary" />
+            <input
+              type="text"
+              [value]="categorySearch()"
+              (input)="categorySearch.set($any($event.target).value)"
+              placeholder="Buscar categoría..."
+              class="w-full h-[34px] pl-8 pr-3 rounded-lg border border-divider bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+          <app-button variant="ghost" size="sm" label="Todas" (clicked)="selectAllCategories()" />
+          <app-button variant="ghost" size="sm" label="Quitar todos" (clicked)="clearAllCategories()" />
+        </div>
+
+        <!-- Perfiles: al elegir uno se marcan todas sus categorías de una vez (VD-38) -->
+        @if (categoryProfiles().length > 0) {
+          <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="text-xs font-semibold text-tertiary uppercase tracking-wider mr-0.5">Perfiles:</span>
+            @for (perfil of categoryProfiles(); track perfil._id) {
+              <button type="button" (click)="toggleProfile(perfil)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+                [ngClass]="isProfileSelected(perfil)
+                  ? 'bg-primary text-white border-primary'
+                  : (isProfilePartial(perfil)
+                      ? 'bg-primary/10 text-primary border-primary/30'
+                      : 'bg-background text-secondary border-divider hover:border-primary/40')">
+                {{ perfil.name }}
+                <span class="opacity-70">· {{ profileCount(perfil) }}</span>
+              </button>
+            }
+          </div>
+        }
+
+        <!-- Lista única de categorías -->
+        <div class="max-h-80 overflow-y-auto rounded-xl border border-divider divide-y divide-divider">
+          @for (cat of filteredCategories; track cat._id) {
+            <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-background cursor-pointer transition-colors">
+              <input type="checkbox" class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
+                [checked]="hasCategory(cat._id!)" (change)="toggleCategory(cat._id!, $any($event.target).checked)" />
+              <span class="text-sm text-secondary flex-1">{{ cat.name }}</span>
+              @if (cat.cuenta) { <span class="text-xs text-tertiary/60">{{ cat.cuenta }}</span> }
+            </label>
+          } @empty {
+            <p class="text-sm text-tertiary text-center py-6">Sin resultados para tu búsqueda.</p>
           }
         </div>
       }

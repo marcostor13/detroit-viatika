@@ -158,7 +158,7 @@
                 <p class="text-[10px] text-tertiary/50 mt-1">Sol. {{ item.createdAt | date:'dd/MM/yyyy' }}</p>
               </td>
               <td class="px-4 py-3.5 text-right">
-                <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
+                <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
               </td>
               <td class="px-4 py-3.5 text-center">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" [class]="item.statusColor">
@@ -219,7 +219,7 @@
             </div>
             <div class="flex items-center justify-between text-xs text-tertiary mb-3 pl-[52px]">
               <span>{{ item.dateRange }}</span>
-              <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
+              <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
             </div>
             <div class="flex items-center gap-1 pl-[52px]">
               <button (click)="openDetail(item)"
@@ -288,7 +288,7 @@
         </div>
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
-          <span class="text-lg font-bold text-secondary tabular-nums">S/ {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
         </div>
       </div>
 
@@ -328,7 +328,7 @@
         <div>
           <h2 class="text-base font-bold text-secondary">Rechazar solicitud</h2>
           <p class="text-xs text-tertiary mt-0.5">
-            {{ selectedItem()?.collaboratorName }} — S/ {{ selectedItem()?.amount | number:'1.2-2' }}
+            {{ selectedItem()?.collaboratorName }} — {{ selectedItem()?.currencySymbol }} {{ selectedItem()?.amount | number:'1.2-2' }}
           </p>
         </div>
       </div>

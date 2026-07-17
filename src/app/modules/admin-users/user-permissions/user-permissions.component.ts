@@ -4,12 +4,12 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { AdminUsersService } from '../services/admin-users.service';
 import { NotificationService } from '../../../services/notification.service';
 import { CategoriaService } from '../../../services/categoria.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
+import { CategoryProfileService } from '../../../services/category-profile.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { IUserResponse, IUserPermissions } from '../../../interfaces/user.interface';
 import { ICategory } from '../../invoices/interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
+import { ICategoryProfile } from '../../../interfaces/category-profile.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
@@ -34,7 +34,7 @@ export class UserPermissionsComponent implements OnInit {
   private adminUsersService = inject(AdminUsersService);
   private notification = inject(NotificationService);
   private categoriaService = inject(CategoriaService);
-  private groupService = inject(CategoryGroupService);
+  private categoryProfileService = inject(CategoryProfileService);
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
 
@@ -43,7 +43,7 @@ export class UserPermissionsComponent implements OnInit {
   saving = false;
 
   allCategories = signal<ICategory[]>([]);
-  groups = signal<ICategoryGroup[]>([]);
+  categoryProfiles = signal<ICategoryProfile[]>([]);
   categorySearch = signal('');
   categoriesLoading = signal(false);
   /** Catálogo de centros de costo de la empresa. */
@@ -68,12 +68,21 @@ export class UserPermissionsComponent implements OnInit {
     canApproveL2: false,
     categoryIds: [],
     projectIds: [],
+    primaryProjectId: undefined,
   };
 
   ngOnInit(): void {
     this.loadUser();
     this.loadCategoryData();
+    this.loadCategoryProfiles();
     this.loadProjects();
+  }
+
+  loadCategoryProfiles() {
+    this.categoryProfileService.getAll().subscribe({
+      next: (list) => this.categoryProfiles.set(list ?? []),
+      error: () => this.categoryProfiles.set([]),
+    });
   }
 
   loadUser() {
@@ -86,8 +95,8 @@ export class UserPermissionsComponent implements OnInit {
           canApproveL2: user.permissions?.canApproveL2 ?? false,
           categoryIds: user.permissions?.categoryIds ?? [],
           projectIds: user.permissions?.projectIds ?? [],
+          primaryProjectId: user.permissions?.primaryProjectId ?? undefined,
         };
-        this.maybeApplyDefault();
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
     });
@@ -137,7 +146,24 @@ export class UserPermissionsComponent implements OnInit {
 
   removeProject(index: number) {
     const current = this.permissions.projectIds ?? [];
+    const removedId = current[index];
     this.permissions.projectIds = current.filter((_, i) => i !== index);
+    if (removedId && this.permissions.primaryProjectId === removedId) {
+      this.permissions.primaryProjectId = undefined;
+    }
+  }
+
+  /** Principal explícito si el usuario lo marcó; si no, cae al primero de la lista. */
+  get effectivePrimaryProjectId(): string | undefined {
+    return this.permissions.primaryProjectId ?? this.permissions.projectIds?.[0];
+  }
+
+  isPrimary(id?: string): boolean {
+    return !!id && this.effectivePrimaryProjectId === id;
+  }
+
+  setPrimary(id: string) {
+    this.permissions.primaryProjectId = id;
   }
 
   moveProjectUp(index: number) {
@@ -161,59 +187,16 @@ export class UserPermissionsComponent implements OnInit {
 
   loadCategoryData() {
     this.categoriesLoading.set(true);
-    Promise.all([
-      this.groupService.getAll().toPromise(),
-      this.categoriaService.getAllFlatAdmin().toPromise(),
-    ]).then(([groups, cats]) => {
-      this.groups.set(groups ?? []);
-      this.allCategories.set(cats ?? []);
-      this.categoriesLoading.set(false);
-      this.maybeApplyDefault();
-    }).catch(() => {
-      this.notification.show('Error al cargar perfiles/categorías', 'error');
-      this.categoriesLoading.set(false);
+    this.categoriaService.getAllFlatAdmin().subscribe({
+      next: (cats) => {
+        this.allCategories.set(cats ?? []);
+        this.categoriesLoading.set(false);
+      },
+      error: () => {
+        this.notification.show('Error al cargar categorías', 'error');
+        this.categoriesLoading.set(false);
+      },
     });
-  }
-
-  // --- Pre-selección por rol ---
-
-  /** Aplica el default por rol solo si el usuario aún no tiene categorías y ya cargaron los datos. */
-  private maybeApplyDefault() {
-    if (!this.user || this.allCategories().length === 0) return;
-    if ((this.permissions.categoryIds ?? []).length === 0) this.applyRoleDefault();
-  }
-
-  isColaborador(): boolean {
-    const r = (this.user?.role?.name || this.user?.roleName || '').toLowerCase();
-    return r === 'colaborador';
-  }
-
-  /** Colaborador => categorías del perfil PROYECTO; otros roles => ADMINISTRACION + COMERCIAL. */
-  applyRoleDefault() {
-    const colaborador = this.isColaborador();
-    const wantedNames = colaborador ? ['PROYECTO'] : ['ADMINISTRACION', 'COMERCIAL'];
-    const ids = new Set<string>();
-    this.groups()
-      .filter((g) => wantedNames.includes(g.name))
-      .forEach((g) => (g.categoryIds ?? []).forEach((id) => ids.add(String(id))));
-    this.permissions.categoryIds = Array.from(ids);
-  }
-
-  /** Categorías agrupadas por perfil (+ "Otras" sin perfil) para la UI. */
-  get perfilSections(): { name: string; group: ICategoryGroup | null; cats: ICategory[] }[] {
-    const all = this.allCategories();
-    const used = new Set<string>();
-    const sections: { name: string; group: ICategoryGroup | null; cats: ICategory[] }[] = this.groups()
-      .map((g) => {
-        const ids = new Set((g.categoryIds ?? []).map(String));
-        const cats = all.filter((c) => ids.has(String(c._id)));
-        cats.forEach((c) => used.add(String(c._id)));
-        return { name: g.name, group: g as ICategoryGroup | null, cats };
-      })
-      .filter((s) => s.cats.length > 0);
-    const otras = all.filter((c) => !used.has(String(c._id)));
-    if (otras.length) sections.push({ name: 'Otras', group: null, cats: otras });
-    return sections;
   }
 
   // --- Módulos ---
@@ -257,39 +240,21 @@ export class UserPermissionsComponent implements OnInit {
     }
   }
 
+  /** Marca todas las categorías VISIBLES según el filtro actual (une con lo ya seleccionado). */
   selectAllCategories() {
-    this.permissions.categoryIds = this.allCategories().map((c) => c._id!).filter(Boolean);
-  }
-
-  clearAllCategories() {
-    this.permissions.categoryIds = [];
-  }
-
-  // --- Grupos rápidos ---
-
-  groupIsFullySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    return (group.categoryIds ?? []).length > 0 && (group.categoryIds ?? []).every((id) => ids.includes(id));
-  }
-
-  groupIsPartiallySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    return !this.groupIsFullySelected(group) && (group.categoryIds ?? []).some((id) => ids.includes(id));
-  }
-
-  toggleGroup(group: ICategoryGroup) {
-    const groupCatIds = group.categoryIds ?? [];
-    if (this.groupIsFullySelected(group)) {
-      // quitar todas del grupo
-      this.permissions.categoryIds = (this.permissions.categoryIds ?? []).filter(
-        (id) => !groupCatIds.includes(id)
-      );
-    } else {
-      // agregar las que faltan
-      const current = new Set(this.permissions.categoryIds ?? []);
-      groupCatIds.forEach((id) => current.add(id));
-      this.permissions.categoryIds = Array.from(current);
+    const current = new Set(this.permissions.categoryIds ?? []);
+    for (const c of this.filteredCategories) {
+      if (c._id) current.add(c._id);
     }
+    this.permissions.categoryIds = [...current];
+  }
+
+  /** Desmarca las categorías VISIBLES según el filtro actual (conserva el resto). */
+  clearAllCategories() {
+    const remove = new Set(this.filteredCategories.map((c) => c._id).filter(Boolean));
+    this.permissions.categoryIds = (this.permissions.categoryIds ?? []).filter(
+      (id) => !remove.has(id)
+    );
   }
 
   get selectedCount(): number {
@@ -298,6 +263,43 @@ export class UserPermissionsComponent implements OnInit {
 
   get totalCount(): number {
     return this.allCategories().length;
+  }
+
+  // --- Perfiles de categoría (VD-38): marcar de una vez todas las categorías del perfil ---
+
+  private profileCategoryIds(p: ICategoryProfile): string[] {
+    return (p.categoryIds ?? []).map(String).filter(Boolean);
+  }
+
+  profileCount(p: ICategoryProfile): number {
+    return this.profileCategoryIds(p).length;
+  }
+
+  /** Todas las categorías del perfil están seleccionadas. */
+  isProfileSelected(p: ICategoryProfile): boolean {
+    const ids = this.profileCategoryIds(p);
+    if (ids.length === 0) return false;
+    const current = this.permissions.categoryIds ?? [];
+    return ids.every((id) => current.includes(id));
+  }
+
+  /** Al menos una (pero no todas) categoría del perfil está seleccionada. */
+  isProfilePartial(p: ICategoryProfile): boolean {
+    const ids = this.profileCategoryIds(p);
+    const current = this.permissions.categoryIds ?? [];
+    const some = ids.some((id) => current.includes(id));
+    return some && !ids.every((id) => current.includes(id));
+  }
+
+  /** Marca/desmarca de golpe todas las categorías del perfil. */
+  toggleProfile(p: ICategoryProfile) {
+    const ids = this.profileCategoryIds(p);
+    const current = this.permissions.categoryIds ?? [];
+    if (this.isProfileSelected(p)) {
+      this.permissions.categoryIds = current.filter((id) => !ids.includes(id));
+    } else {
+      this.permissions.categoryIds = [...new Set([...current, ...ids])];
+    }
   }
 
   // --- Save ---
@@ -312,8 +314,8 @@ export class UserPermissionsComponent implements OnInit {
         );
         this.saving = false;
       },
-      error: () => {
-        this.notification.show('Error al actualizar los permisos', 'error');
+      error: (err: Error) => {
+        this.notification.show(err.message || 'Error al actualizar los permisos', 'error');
         this.saving = false;
       },
     });

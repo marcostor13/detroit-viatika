@@ -8,8 +8,6 @@ import {
   ICreateMobilitySheetPayload,
   ICreateOtherExpensePayload,
   ICreateCashReceiptPayload,
-  ICreateCashVoucherPayload,
-  ICashVoucherScanResult,
 } from '../interfaces/invoices.interface';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -212,15 +210,6 @@ export class InvoicesService {
     return this.http.post<IInvoiceResponse>(`${this.url}/cash-receipt`, payload);
   }
 
-  createCashVoucher(payload: ICreateCashVoucherPayload): Observable<IInvoiceResponse> {
-    return this.http.post<IInvoiceResponse>(`${this.url}/cash-voucher`, payload);
-  }
-
-  /** Escanea un comprobante de caja (imagen/PDF ya subido a S3) y extrae sus datos. */
-  scanCashVoucher(payload: { url: string; mimeType?: string }): Observable<ICashVoucherScanResult> {
-    return this.http.post<ICashVoucherScanResult>(`${this.url}/scan-cash-voucher`, payload);
-  }
-
   // Métodos para validación SUNAT
   getSunatValidation(
     id: string,
@@ -245,7 +234,7 @@ export class InvoicesService {
         logo: client.logo,
         limits: client.limits,
         notificationSettings: client.notificationSettings,
-        tesoreriaEmails: client.tesoreriaEmails ?? [],
+        paymentAccount: client.paymentAccount,
       }))
     );
   }
@@ -260,13 +249,6 @@ export class InvoicesService {
     );
   }
 
-  updateTesoreriaEmails(companyId: string, emails: string[]): Observable<void> {
-    return this.http.patch<void>(
-      `${this.companyConfigUrl}/${companyId}/tesoreria-emails`,
-      { emails }
-    );
-  }
-
   updateCompanyConfig(
     companyId: string,
     config: Partial<ICompanyConfig>
@@ -276,6 +258,8 @@ export class InvoicesService {
     if (config.businessName) payload['businessName'] = config.businessName;
     if (config.logo) payload['logo'] = config.logo;
     if (config.limits !== undefined) payload['limits'] = config.limits;
+    if (config.paymentAccount !== undefined)
+      payload['paymentAccount'] = config.paymentAccount;
 
     return this.http.patch<any>(
       `${this.companyConfigUrl}/${companyId}`,
@@ -288,6 +272,7 @@ export class InvoicesService {
         businessName: client.comercialName || client.businessName,
         logo: client.logo,
         limits: client.limits,
+        paymentAccount: client.paymentAccount,
       }))
     );
   }

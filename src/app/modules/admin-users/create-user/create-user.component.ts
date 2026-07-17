@@ -18,9 +18,7 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { ERoles } from '../interfaces/roles.enum';
 import { CategoriaService } from '../../../services/categoria.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { ICategory } from '../../invoices/interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 
 interface ModuleOption {
   key: string;
@@ -44,13 +42,13 @@ export class CreateUserComponent implements OnInit {
     inject(NotificationService);
   private userStateService: UserStateService = inject(UserStateService);
   private categoriaService = inject(CategoriaService);
-  private groupService = inject(CategoryGroupService);
   id: string = this.route.snapshot.params['id'];
   form: FormGroup = this.formBuilder.group({
     name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     roleId: ['', Validators.required],
     dni: [''],
+    documentType: ['L'],
     employeeCode: [''],
     area: [''],
     cargo: [''],
@@ -68,7 +66,6 @@ export class CreateUserComponent implements OnInit {
   showPasswordModal: boolean = false;
   passwordCopied: boolean = false;
   allCategories = signal<ICategory[]>([]);
-  groups = signal<ICategoryGroup[]>([]);
   categorySearch = signal('');
   categoriesLoading = signal(false);
 
@@ -192,6 +189,7 @@ export class CreateUserComponent implements OnInit {
       email: user.email,
       roleId: user.role._id,
       dni: user.dni || '',
+      documentType: user.documentType || 'L',
       employeeCode: user.employeeCode || '',
       area: user.area || '',
       cargo: user.cargo || '',
@@ -279,15 +277,12 @@ export class CreateUserComponent implements OnInit {
 
   loadCategoryData() {
     this.categoriesLoading.set(true);
-    Promise.all([
-      this.categoriaService.getAllFlatAdmin().toPromise(),
-      this.groupService.getAll().toPromise(),
-    ]).then(([cats, grps]) => {
-      this.allCategories.set(cats ?? []);
-      this.groups.set(grps ?? []);
-      this.categoriesLoading.set(false);
-    }).catch(() => {
-      this.categoriesLoading.set(false);
+    this.categoriaService.getAllFlatAdmin().subscribe({
+      next: (cats) => {
+        this.allCategories.set(cats ?? []);
+        this.categoriesLoading.set(false);
+      },
+      error: () => this.categoriesLoading.set(false),
     });
   }
 
@@ -335,30 +330,5 @@ export class CreateUserComponent implements OnInit {
 
   get totalCategoryCount(): number {
     return this.allCategories().length;
-  }
-
-  groupIsFullySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    return (group.categoryIds ?? []).length > 0 &&
-      (group.categoryIds ?? []).every((id) => ids.includes(id));
-  }
-
-  groupIsPartiallySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    return !this.groupIsFullySelected(group) &&
-      (group.categoryIds ?? []).some((id) => ids.includes(id));
-  }
-
-  toggleGroup(group: ICategoryGroup) {
-    const groupCatIds = group.categoryIds ?? [];
-    if (this.groupIsFullySelected(group)) {
-      this.permissions.categoryIds = (this.permissions.categoryIds ?? []).filter(
-        (id) => !groupCatIds.includes(id),
-      );
-    } else {
-      const current = new Set(this.permissions.categoryIds ?? []);
-      groupCatIds.forEach((id) => current.add(id));
-      this.permissions.categoryIds = Array.from(current);
-    }
   }
 }

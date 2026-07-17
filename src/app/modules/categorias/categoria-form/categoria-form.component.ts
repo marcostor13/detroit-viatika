@@ -3,10 +3,8 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CategoriaService } from '../../../services/categoria.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { NotificationService } from '../../../services/notification.service';
 import { ICategory } from '../../invoices/interfaces/category.interface';
-import { ICategoryGroup } from '../interfaces/category-group.interface';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
@@ -30,7 +28,6 @@ export class CategoriaFormComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private categoriaService = inject(CategoriaService);
-  private groupService = inject(CategoryGroupService);
   private notification = inject(NotificationService);
 
   id = signal<string | null>(null);
@@ -39,47 +36,12 @@ export class CategoriaFormComponent implements OnInit {
 
   form: CategoryForm = { name: '', description: '', cuenta: '', cuentaDestino6x: '', observaciones: '', limit: null };
 
-  perfiles: ICategoryGroup[] = [];
-  selectedPerfiles = new Set<string>();
-
   ngOnInit() {
-    this.loadPerfiles();
     const id = this.route.snapshot.params['id'];
     if (id) {
       this.id.set(id);
       this.loadCategory(id);
     }
-  }
-
-  loadPerfiles() {
-    this.groupService.getAll().subscribe({
-      next: (list) => {
-        this.perfiles = list ?? [];
-        this.syncSelectedFromPerfiles();
-      },
-      error: () => { this.perfiles = []; },
-    });
-  }
-
-  /** Marca como seleccionados los perfiles que ya contienen esta categoría (edición). */
-  private syncSelectedFromPerfiles() {
-    const id = this.id();
-    if (!id) return;
-    this.selectedPerfiles = new Set(
-      this.perfiles
-        .filter((p) => (p.categoryIds ?? []).map(String).includes(id))
-        .map((p) => p._id!)
-        .filter(Boolean)
-    );
-  }
-
-  isPerfilChecked(id: string): boolean {
-    return this.selectedPerfiles.has(id);
-  }
-
-  togglePerfil(id: string, checked: boolean) {
-    if (checked) this.selectedPerfiles.add(id);
-    else this.selectedPerfiles.delete(id);
   }
 
   loadCategory(id: string) {
@@ -116,7 +78,6 @@ export class CategoriaFormComponent implements OnInit {
       cuentaDestino6x: this.form.cuentaDestino6x.trim() || undefined,
       observaciones: this.form.observaciones.trim() || undefined,
       limit: this.form.limit,
-      perfilIds: Array.from(this.selectedPerfiles),
     };
     this.saving.set(true);
     const id = this.id();
