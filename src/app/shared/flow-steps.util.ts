@@ -297,10 +297,26 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     notes: contaState === 'rejected' ? rejectionReason : undefined,
   });
 
+  // Viático cuya SOLICITUD ya fue aprobada (regla 1.3, status `viatico_approved`):
+  // el siguiente hito NO es un estado terminal, sino el PAGO del anticipo por
+  // Tesorería (el viático aparece en Tesorería → "Pagar" hasta que se deposita).
+  // `viatico_approved` está en TERMINAL_STATUSES para que los pasos de aprobación
+  // queden en verde, pero sin este paso propio la línea de tiempo mostraba
+  // "Aprobada" y ocultaba que el viático sigue pendiente de que Tesorería pague.
+  // Tras el pago pasa a `open`/`partially_paid` y entra en la vista de dos fases.
+  const isViaticoAwaitingPayment =
+    isViatico && status === 'viatico_approved' && Number(r.viaticoPaidAmount ?? 0) <= 0;
+
   // finalIdx — Estado final genérico (solo si no fue rechazada, no hay reembolso y
   // no está cerrada). Cuando corresponde reembolso o cierre, esos pasos propios
   // reflejan el desenlace y se omite este "Aprobada/Finalizada" redundante.
-  if (!rejected && !expectsReembolso && !closed) {
+  if (!rejected && isViaticoAwaitingPayment) {
+    steps.push({
+      label: 'Pago de Tesorería',
+      state: 'active',
+      description: 'Pendiente de depósito por Tesorería',
+    });
+  } else if (!rejected && !expectsReembolso && !closed) {
     const finalState = stateFor(finalIdx);
     const label =
       finalState === 'completed' ? (FINAL_LABELS[status] ?? 'Finalizada') :
