@@ -215,7 +215,7 @@
         <span class="font-medium">Colaboradores</span>
       </a>
       }
-      @if (isColaborador() && hasModulePermission('rendiciones')) {
+      @if (isColaborador() && !isApprover() && hasModulePermission('rendiciones')) {
       <a
         [routerLink]="['/rendiciones']"
         routerLinkActive="bg-primary text-white"
@@ -619,7 +619,7 @@
           <span class="font-medium text-lg">Colaboradores</span>
         </a>
         }
-        @if (isColaborador() && hasModulePermission('rendiciones')) {
+        @if (isColaborador() && !isApprover() && hasModulePermission('rendiciones')) {
         <a
           [routerLink]="['/rendiciones']"
           (click)="toggleSidebar()"
