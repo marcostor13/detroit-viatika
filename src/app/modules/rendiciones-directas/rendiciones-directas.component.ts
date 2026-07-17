@@ -183,7 +183,7 @@ export class RendicionesDirectasComponent implements OnInit {
   }
 
   reportOrigenLabel(r: any): string {
-    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Coordinador', colaborador: 'Colaborador' };
+    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Aprobador', colaborador: 'Colaborador' };
     return labels[r?.origin] ?? 'Colaborador';
   }
 
@@ -395,7 +395,7 @@ export class RendicionesDirectasComponent implements OnInit {
   getOrigen(e: any): string { return e._report?._origin || 'colaborador'; }
 
   getOrigenLabel(e: any): string {
-    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Coordinador', colaborador: 'Colaborador' };
+    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Aprobador', colaborador: 'Colaborador' };
     return labels[this.getOrigen(e)] ?? 'Colaborador';
   }
 

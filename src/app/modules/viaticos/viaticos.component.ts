@@ -95,20 +95,29 @@ export class ViaticosComponent implements OnInit {
     return this.userState.isSuperAdmin();
   }
 
-  /** ¿El usuario actual está entre los `approverIds` del paso `level` de la cadena? */
-  private isApproverOfStep(chain: IChainStep[] | undefined, level: number): boolean {
-    const step = chain?.[level];
-    if (!step) return false;
-    return step.approverIds.some(a => (typeof a === 'object' ? a._id : a) === this.currentUserId);
+  /**
+   * ¿El usuario actual es aprobador de algún paso AÚN PENDIENTE de la cadena?
+   * Aprobación en paralelo entre niveles: cualquier paso no aprobado es
+   * accionable, sin importar su posición (N2 puede aprobar antes que N1).
+   */
+  private hasActionableStep(chain: IChainStep[] | undefined): boolean {
+    return (chain ?? []).some(
+      (step: any) => !step.approved && step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    );
   }
 
-  /** Nombres de los aprobadores del paso `level` (cualquiera de ellos puede completarlo). */
-  private stepApproverNames(chain: IChainStep[] | undefined, level: number): string {
-    const step = chain?.[level];
-    if (!step || step.approverIds.length === 0) return '—';
-    return step.approverIds
-      .map(a => (typeof a === 'object' ? (a.name ?? a._id) : a))
-      .join(' / ');
+  /** Nombres de los aprobadores de todos los pasos aún pendientes (cualquiera puede completar el suyo), sin duplicar. */
+  private pendingStepApproverNames(chain: IChainStep[] | undefined): string {
+    const pending = (chain ?? []).filter((step: any) => !step.approved);
+    if (pending.length === 0) return '—';
+    const names = new Set<string>();
+    for (const step of pending) {
+      for (const a of step.approverIds) {
+        const name = typeof a === 'object' ? (a.name ?? a._id) : a;
+        if (name) names.add(name);
+      }
+    }
+    return names.size > 0 ? Array.from(names).join(' / ') : '—';
   }
 
   // ─── Stats ────────────────────────────────────────────────────────────────────
@@ -145,7 +154,7 @@ export class ViaticosComponent implements OnInit {
       const statusColor = this.VIA_COLORS[v.status as keyof typeof VIATICO_REPORT_STATUS_COLORS] ?? 'bg-gray-100 text-gray-600';
       const approvalLevel = v.viaticoApprovalLevel ?? 0;
 
-      const chainCanAct = this.isApproverOfStep(v.viaticoApproverChain, approvalLevel);
+      const chainCanAct = this.hasActionableStep(v.viaticoApproverChain);
       const canActNow = (v.status === 'pending_l1' && (this.isSuperAdmin || chainCanAct)) ||
         (v.status === 'pending_contabilidad' && (this.isSuperAdmin || this.userState.isContabilidad()));
 
@@ -166,7 +175,7 @@ export class ViaticosComponent implements OnInit {
         canApproveNow: canActNow,
         canReject: canActNow,
         isContabilidadGate: v.status === 'pending_contabilidad',
-        pendingApproverName: v.status === 'pending_contabilidad' ? 'Contabilidad' : this.stepApproverNames(v.viaticoApproverChain, approvalLevel),
+        pendingApproverName: v.status === 'pending_contabilidad' ? 'Contabilidad' : this.pendingStepApproverNames(v.viaticoApproverChain),
         approvalLevel,
         requiredLevels: v.viaticoRequiredLevels ?? 1,
         raw: v,

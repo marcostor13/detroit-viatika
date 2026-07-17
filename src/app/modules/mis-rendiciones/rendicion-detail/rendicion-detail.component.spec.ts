@@ -681,6 +681,36 @@ describe('RendicionDetailComponent', () => {
     });
   });
 
+  describe('getExpenseUnifiedStatus', () => {
+    it('a comprobante recien registrado (sin approverChain, rendicion no enviada) no salta a Contabilidad', () => {
+      component.report = makeReport({ status: 'open' });
+      const expense = { _id: 'e1', status: 'pending' }; // approverChain nunca se construyo (no enviada)
+      const result = component.getExpenseUnifiedStatus(expense);
+      expect(result.phase).toBe('not_submitted');
+    });
+
+    it('con approverChain vacio (regla 1.6, omitido) pasa directo a Contabilidad', () => {
+      component.report = makeReport({ status: 'submitted' });
+      const expense = { _id: 'e1', status: 'pending', approverChain: [], requiredLevels: 0, approvalLevel: 0 };
+      const result = component.getExpenseUnifiedStatus(expense);
+      expect(result.phase).toBe('pending_cont');
+    });
+
+    it('con approverChain pendiente muestra pending_coord, no approved', () => {
+      component.report = makeReport({ status: 'submitted' });
+      const expense = {
+        _id: 'e1',
+        status: 'pending',
+        approverChain: [{ level: 1, approverIds: [{ _id: 'a1', name: 'Ana' }] }],
+        requiredLevels: 1,
+        approvalLevel: 0,
+      };
+      const result = component.getExpenseUnifiedStatus(expense);
+      expect(result.phase).toBe('pending_coord');
+      expect(result.pendingApproverNames).toContain('Ana');
+    });
+  });
+
   describe('ngOnDestroy', () => {
     it('clears any pending asientos timer without throwing', () => {
       expect(() => component.ngOnDestroy()).not.toThrow();

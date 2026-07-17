@@ -17,6 +17,16 @@ export interface FlowStep {
   date?: string;
   description?: string;
   notes?: string;
+  /**
+   * A qué fase del flujo pertenece el paso. Un viático tiene dos fases
+   * independientes con cadenas/estados propios: primero la SOLICITUD (regla
+   * 1.3, N2 del centro de costo, antes del pago) y luego, una vez pagado, la
+   * RENDICIÓN de los comprobantes (regla 1.4, Coordinador → Contabilidad,
+   * igual que una rendición normal). Sin diferenciarlas, la línea de tiempo
+   * mezclaba ambas aprobaciones como si fueran una sola. `undefined` para
+   * rendiciones/directas, que solo tienen una fase.
+   */
+  group?: 'solicitud' | 'rendicion';
 }
 
 const FINAL_LABELS: Record<string, string> = {
@@ -31,6 +41,49 @@ const FINAL_LABELS: Record<string, string> = {
 
 const TERMINAL_STATUSES = Object.keys(FINAL_LABELS);
 
+/** Nombre del coordinador snapshot de la rendición (`assignedCoordinatorId`), si viene poblado. */
+function coordinatorDisplayName(r: any): string | undefined {
+  const c = r?.assignedCoordinatorId;
+  return c && typeof c === 'object' && c.name ? c.name : undefined;
+}
+
+/**
+ * Nombre(s) del/los aprobador(es) de un paso de cadena (`ChainStep`). El
+ * nombre vive en `step.approverIds[].name` (populado) — un `ChainStep` no
+ * tiene un campo `.name` propio, así que leerlo directo del step siempre
+ * caía al genérico "Aprobador", incluso con el usuario ya poblado.
+ */
+function chainStepApproverNames(step: any): string {
+  if (!step || !Array.isArray(step.approverIds) || step.approverIds.length === 0) return 'Aprobador';
+  const names = step.approverIds
+    .map((a: any) => (a && typeof a === 'object' && a.name ? a.name : null))
+    .filter((n: string | null): n is string => !!n);
+  return names.length > 0 ? names.join(' / ') : 'Aprobador';
+}
+
+/**
+ * Nombres de quienes están pendientes de aprobar como Coordinador (N1/N2, regla
+ * 1.4) entre los comprobantes de la RENDICIÓN — mismo dato que la columna
+ * "Estado" por comprobante, agregado a nivel de reporte y sin duplicar.
+ */
+function pendingRendicionCoordNames(expenses: any[]): string | undefined {
+  const names = new Set<string>();
+  for (const e of expenses ?? []) {
+    if (e?.status === 'rejected') continue;
+    const chain = e?.approverChain;
+    if (!Array.isArray(chain)) continue; // aún no se construyó
+    // Aprobación en paralelo entre niveles: cualquier paso no aprobado de
+    // este comprobante está pendiente, sin importar su posición.
+    for (const step of chain) {
+      if (step.approved) continue;
+      for (const a of step.approverIds ?? []) {
+        if (a && typeof a === 'object' && a.name) names.add(a.name);
+      }
+    }
+  }
+  return names.size > 0 ? Array.from(names).join(' / ') : undefined;
+}
+
 export function buildReportFlowSteps(r: any): FlowStep[] {
   if (!r) return [];
 
@@ -40,6 +93,21 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   const isViatico = r.type === 'viatico';
   const isDirecta = !!r.isDirecta;
   const status: string = r.status;
+
+  // Un viático que ya recibió pago (parcial o total) dejó atrás la fase de
+  // SOLICITUD y entró en la fase de RENDICIÓN al subir sus comprobantes — dos
+  // flujos de aprobación independientes sobre el mismo documento. A partir de
+  // acá `status`/`rejectedByRole`/`rejectionReason` pertenecen a la RENDICIÓN,
+  // no a la solicitud (que usa sus propios `viatico*`).
+  const viaticoEnteredRendicion =
+    isViatico &&
+    (Number(r.viaticoPaidAmount ?? 0) > 0 ||
+      ['open', 'submitted', 'pending_accounting', 'reimbursed', 'closed', 'settled', 'returned'].includes(status) ||
+      (status === 'rejected' && !!r.rejectedByRole));
+
+  if (viaticoEnteredRendicion) {
+    return buildViaticoTwoPhaseSteps(r, fmt);
+  }
 
   const chain: any[] = (isViatico ? r.viaticoApproverChain : isDirecta ? r.directaApproverChain : []) ?? [];
   const history: any[] = (isViatico ? r.viaticoApprovalHistory : isDirecta ? r.directaApprovalHistory : []) ?? [];
@@ -73,12 +141,11 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   const reembolsoIdx = chainCount + 3;
   const closeIdx = chainCount + 4;
 
-  const approverName = (i: number): string => {
-    const c = chain[i];
-    return c && typeof c === 'object' && c.name ? c.name : 'Aprobador';
-  };
-  const chainLevelApproved = (level: number): boolean =>
-    !!history.find(h => h.level === level && h.action === 'approved') || level <= approvalLevel;
+  const approverName = (i: number): string => chainStepApproverNames(chain[i]);
+  // Aprobación en paralelo entre niveles: cada paso tiene su propio flag
+  // `approved` — no se puede inferir "completado" comparando la posición
+  // contra `approvalLevel` (un contador que ya no refleja el orden).
+  const chainLevelApproved = (level: number): boolean => !!(chain[level - 1] as any)?.approved;
 
   // Contabilidad aprobó si hay hito directo, si el estado ya avanzó, o si el
   // historial tiene la entrada final (nivel por encima de la cadena, caso viático).
@@ -101,14 +168,16 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   if (expectsReembolso && reembolsoDone) progress = reembolsoIdx;
   if (closed) progress = closeIdx;
 
-  // Índice donde se rechazó (si aplica).
+  // Índice donde se rechazó (si aplica). Aprobación en paralelo: no hay "el
+  // paso actual" único — se aproxima al primer paso aún pendiente al momento
+  // del rechazo (varios podían estar pendientes a la vez).
   let rejIdx = -1;
   if (rejected) {
     if (r.rejectedByRole === 'contabilidad' || r.viaticoRejectedByRole === 'contabilidad') {
       rejIdx = contaIdx;
     } else if (chain.length > 0) {
-      const rejEntry = [...history].reverse().find(h => h.action === 'rejected');
-      rejIdx = rejEntry?.level ?? Math.min(approvalLevel + 1, chainCount);
+      const firstPendingPos = chain.findIndex((s: any) => !s.approved) + 1;
+      rejIdx = firstPendingPos > 0 ? firstPendingPos : chainCount;
     } else {
       rejIdx = 1;
     }
@@ -149,6 +218,21 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     return 'upcoming';
   };
 
+  /**
+   * Estado de una posición de la cadena de aprobadores (1..chainCount).
+   * Mientras la cadena sigue activa (aún se puede aprobar), cada paso usa su
+   * PROPIO `approved` — aprobación en paralelo entre niveles, así que más de
+   * un paso puede estar "activo" (pendiente) a la vez, no solo uno. Fuera de
+   * esa ventana (rechazada, o la cadena ya se completó) se usa el cascade
+   * genérico de `stateFor`, que sigue siendo válido.
+   */
+  const stepStateFor = (idx: number): FlowStep['state'] => {
+    if (chain.length > 0 && idx >= 1 && idx <= chainCount && chainActive && !rejected) {
+      return (chain[idx - 1] as any)?.approved ? 'completed' : 'active';
+    }
+    return stateFor(idx);
+  };
+
   const steps: FlowStep[] = [];
 
   // 0 — Solicitud enviada
@@ -158,11 +242,13 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     date: fmt(r.createdAt),
   });
 
-  // 1..chainCount — Cadena de aprobadores (viático/directa) o coordinador (rendición normal)
+  // 1..chainCount — Cadena de aprobadores (viático/directa) o coordinador (rendición normal).
+  // Aprobación en paralelo entre niveles: la fecha/estado de cada paso viene
+  // de su propio `approved`/`approvedAt`, no de un historial posicional.
   if (chain.length > 0) {
     for (let level = 1; level <= chainCount; level++) {
-      const entry = history.find(h => h.level === level && h.action === 'approved');
-      const state = stateFor(level);
+      const step = chain[level - 1] as any;
+      const state = stepStateFor(level);
       const name = approverName(level - 1);
       const label =
         state === 'completed' ? `Aprobado por ${name}` :
@@ -171,29 +257,40 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
       steps.push({
         label,
         state,
-        date: fmt(entry?.date),
+        date: fmt(step?.approvedAt),
         description: state === 'active' ? `Pendiente de aprobación (nivel ${level} de ${chainCount})` : undefined,
-        notes: entry?.notes || (state === 'rejected' ? rejectionReason : undefined),
+        notes: state === 'rejected' ? rejectionReason : undefined,
       });
     }
   } else {
     const state = stateFor(1);
+    const coordApprovedByName = r.coordinatorApprovedBy && typeof r.coordinatorApprovedBy === 'object'
+      ? r.coordinatorApprovedBy.name : undefined;
+    const coordName =
+      state === 'completed' ? (coordApprovedByName ?? coordinatorDisplayName(r)) :
+      state === 'active' || state === 'upcoming' ? (pendingRendicionCoordNames(r.expenseIds) ?? coordinatorDisplayName(r)) :
+      coordinatorDisplayName(r);
     steps.push({
       label:
-        state === 'completed' ? 'Aprobado por el coordinador' :
-        state === 'rejected' ? 'Rechazado por el coordinador' :
-        'Aprobación del coordinador',
+        state === 'completed' ? `Aprobado por ${coordName ?? 'el aprobador'}` :
+        state === 'rejected' ? `Rechazado por ${coordName ?? 'el aprobador'}` :
+        `Aprobación de ${coordName ?? 'aprobadores'}`,
       state,
       date: fmt(r.coordinatorApprovedAt),
-      description: state === 'active' ? 'Pendiente de aprobación del coordinador' : undefined,
+      description: state === 'active' ? 'Pendiente de aprobación de los aprobadores' : undefined,
       notes: state === 'rejected' ? rejectionReason : undefined,
     });
   }
 
-  // contaIdx — Aprobación de Contabilidad
+  // contaIdx — Aprobación de Contabilidad. Para un viático en fase SOLICITUD el
+  // aprobador vive en `viaticoSolicitudContabilidadApprovedBy` (campo propio, ver
+  // §fix de colisión); para rendición/directa, en `contabilidadApprovedBy`.
   const contaState = stateFor(contaIdx);
+  const contaApprovedBySource = isViatico ? r.viaticoSolicitudContabilidadApprovedBy : r.contabilidadApprovedBy;
+  const contaApprovedByName = contaApprovedBySource && typeof contaApprovedBySource === 'object'
+    ? contaApprovedBySource.name : undefined;
   steps.push({
-    label: contaState === 'completed' ? 'Aprobado por Contabilidad' : 'Aprobación de Contabilidad',
+    label: contaState === 'completed' ? `Aprobado por ${contaApprovedByName ?? 'Contabilidad'}` : 'Aprobación de Contabilidad',
     state: contaState,
     date: fmt(r.contabilidadApprovedAt || contaEntry?.date),
     description: contaState === 'active' ? 'Pendiente de aprobación final de Contabilidad' : undefined,
@@ -237,6 +334,201 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
       state: closeState,
       date: closeState === 'completed' ? fmt(closedDate) : undefined,
       description: closeState === 'active' ? 'Pendiente de cierre por Contabilidad' : undefined,
+    });
+  }
+
+  return steps;
+}
+
+/**
+ * Línea de tiempo de un viático que ya entró en fase de RENDICIÓN (recibió
+ * pago y el colaborador subió/envió sus comprobantes). Muestra ambas fases
+ * como bloques independientes (`group: 'solicitud' | 'rendicion'`):
+ *
+ * 1. SOLICITUD (regla 1.3) — ya resuelta (se pagó para llegar hasta acá), se
+ *    muestra siempre completada, usando los campos `viatico*`.
+ * 2. RENDICIÓN (regla 1.4) — Coordinador → Contabilidad, igual que una
+ *    rendición normal (mismo mecanismo que usa `confirmApproveReport()` en el
+ *    componente), derivada de `status`/`rejectedByRole`/`rejectionReason`.
+ *
+ * `contabilidadApprovedAt`/`contabilidadApprovedBy` pertenecen exclusivamente
+ * a la aprobación de la RENDICIÓN (regla 1.4); la de la SOLICITUD (regla 1.3)
+ * usa sus propios `viaticoSolicitudContabilidadApprovedAt/By` — antes ambos
+ * gates compartían el mismo campo y el de la rendición pisaba el de la
+ * solicitud (backend arreglado; ver `approveViaticoContabilidad`).
+ */
+function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | undefined): FlowStep[] {
+  const steps: FlowStep[] = [];
+
+  // ── Fase 1: SOLICITUD — congelada, siempre completada.
+  const chain: any[] = r.viaticoApproverChain ?? [];
+  steps.push({ label: 'Solicitud enviada', state: 'completed', date: fmt(r.createdAt), group: 'solicitud' });
+  chain.forEach((c: any) => {
+    const name = chainStepApproverNames(c);
+    steps.push({ label: `Aprobado por ${name}`, state: 'completed', date: fmt(c.approvedAt), group: 'solicitud' });
+  });
+  const solicitudContaName = r.viaticoSolicitudContabilidadApprovedBy && typeof r.viaticoSolicitudContabilidadApprovedBy === 'object'
+    ? r.viaticoSolicitudContabilidadApprovedBy.name : undefined;
+  steps.push({
+    label: `Solicitud aprobada por ${solicitudContaName ?? 'Contabilidad'}`,
+    state: 'completed',
+    date: fmt(r.viaticoSolicitudContabilidadApprovedAt),
+    group: 'solicitud',
+  });
+  steps.push({ label: 'Pagada', state: 'completed', group: 'solicitud' });
+
+  // ── Fase 2: RENDICIÓN — Coordinador → Contabilidad (regla 1.4).
+  const status: string = r.status;
+  const rejected = status === 'rejected';
+  const rejectedByRole: string | undefined = r.rejectedByRole;
+  const rejectionReason: string | undefined = r.rejectionReason;
+  const terminal = ['approved', 'reimbursed', 'closed', 'settled'].includes(status) || !!r.returnVoucher;
+  const closed = status === 'closed';
+  const reembolsoDone = !!r.reimbursementPaymentInfo || !!r.reimbursedAt || status === 'reimbursed';
+  const expectsReembolso = reembolsoDone || r.settlement?.type === 'reembolso';
+
+  const COORD_IDX = 1;
+  const CONTA_IDX = 2;
+  const FINAL_IDX = 3;
+  const REEMBOLSO_IDX = 4;
+  const CLOSE_IDX = 5;
+
+  let progress = -1;
+  if (status !== 'open') progress = 0;
+  if (status === 'pending_accounting' || terminal) progress = COORD_IDX;
+  if (terminal) progress = CONTA_IDX;
+  if (expectsReembolso && reembolsoDone) progress = REEMBOLSO_IDX;
+  if (closed) progress = CLOSE_IDX;
+
+  let rejIdx = -1;
+  if (rejected) {
+    rejIdx = rejectedByRole === 'contabilidad' ? CONTA_IDX : rejectedByRole === 'coordinador' ? COORD_IDX : 0;
+  }
+
+  let activeIndex = -1;
+  if (!rejected) {
+    if (status === 'open') activeIndex = 0;
+    else if (status === 'submitted') activeIndex = COORD_IDX;
+    else if (status === 'pending_accounting') activeIndex = CONTA_IDX;
+    else if (!terminal && progress >= CONTA_IDX) activeIndex = FINAL_IDX;
+    if (!closed) {
+      if (expectsReembolso && !reembolsoDone) activeIndex = REEMBOLSO_IDX;
+      else if (expectsReembolso && reembolsoDone) activeIndex = CLOSE_IDX;
+    }
+  }
+
+  const stateFor = (idx: number): FlowStep['state'] => {
+    if (rejected) {
+      if (idx < rejIdx) return 'completed';
+      if (idx === rejIdx) return 'rejected';
+      return 'upcoming';
+    }
+    if (idx <= progress) return 'completed';
+    if (idx === activeIndex) return 'active';
+    return 'upcoming';
+  };
+
+  const enviadaState = stateFor(0);
+  steps.push({
+    label:
+      enviadaState === 'completed' ? 'Rendición enviada' :
+      enviadaState === 'rejected' ? 'Rendición rechazada' :
+      'Registrando comprobantes',
+    state: enviadaState,
+    description: enviadaState === 'active'
+      ? 'Aún no se envió — los comprobantes no tienen aprobador asignado hasta enviarla.'
+      : undefined,
+    group: 'rendicion',
+  });
+
+  // Mientras la rendición no se envía (`status === 'open'`), el motor de cadenas
+  // (regla 1.4) todavía no corrió sobre ningún comprobante: no hay un aprobador
+  // determinado que nombrar todavía. Mostrar "Aprobación de Coordinador" genérico
+  // acá se leería como un paso trabado con un nombre roto — mejor un solo aviso
+  // claro de qué falta, sin fingir pasos con estado propio que aún no existen.
+  if (status === 'open') {
+    steps.push({
+      label: 'Aprobación de aprobadores y Contabilidad',
+      state: 'upcoming',
+      description: 'Se determina al subir cada comprobante (aprobadores N1/N2 → Contabilidad).',
+      group: 'rendicion',
+    });
+    return steps;
+  }
+
+  // Nombres reales (no roles genéricos), según el flujo: mientras está pendiente, los
+  // aprobadores N1/N2 esperados por comprobante (regla 1.4); una vez resuelto, quien
+  // efectivamente hizo el clic de aprobación de la rendición (`coordinatorApprovedBy`).
+  const coordState = stateFor(COORD_IDX);
+  const coordApprovedByName = r.coordinatorApprovedBy && typeof r.coordinatorApprovedBy === 'object'
+    ? r.coordinatorApprovedBy.name : undefined;
+  const coordPendingNames = pendingRendicionCoordNames(r.expenseIds);
+  const rendicionCoordName =
+    coordState === 'completed' ? (coordApprovedByName ?? coordinatorDisplayName(r)) :
+    coordState === 'active' || coordState === 'upcoming' ? (coordPendingNames ?? coordinatorDisplayName(r)) :
+    coordinatorDisplayName(r);
+  steps.push({
+    label:
+      coordState === 'completed' ? `Aprobada por ${rendicionCoordName ?? 'aprobadores'}` :
+      coordState === 'rejected' ? `Rechazada por ${rendicionCoordName ?? 'un aprobador'}` :
+      `Aprobación de ${rendicionCoordName ?? 'aprobadores'}`,
+    state: coordState,
+    date: coordState === 'completed' ? fmt(r.coordinatorApprovedAt) : undefined,
+    description: coordState === 'active' ? 'Pendiente de aprobación de los aprobadores' : undefined,
+    notes: coordState === 'rejected' ? rejectionReason : undefined,
+    group: 'rendicion',
+  });
+
+  // Contabilidad es un rol (cualquier usuario con permiso puede actuar) — no hay un
+  // aprobador esperado nombrado mientras está pendiente, pero una vez aprobado sí
+  // se conoce a la persona concreta (`contabilidadApprovedBy`).
+  const contaState = stateFor(CONTA_IDX);
+  const contaApprovedByName = r.contabilidadApprovedBy && typeof r.contabilidadApprovedBy === 'object'
+    ? r.contabilidadApprovedBy.name : undefined;
+  steps.push({
+    label:
+      contaState === 'completed' ? `Aprobada por ${contaApprovedByName ?? 'Contabilidad'}` :
+      contaState === 'rejected' ? 'Rechazada por Contabilidad' :
+      'Aprobación de Contabilidad',
+    state: contaState,
+    date: contaState === 'completed' ? fmt(r.contabilidadApprovedAt) : undefined,
+    description: contaState === 'active' ? 'Pendiente de aprobación final de Contabilidad' : undefined,
+    notes: contaState === 'rejected' ? rejectionReason : undefined,
+    group: 'rendicion',
+  });
+
+  if (!rejected && !expectsReembolso && !closed) {
+    const finalState = stateFor(FINAL_IDX);
+    steps.push({
+      label:
+        finalState === 'completed' ? (FINAL_LABELS[status] ?? 'Finalizada') :
+        finalState === 'active' ? 'Rendición en curso' :
+        'Finalizada',
+      state: finalState,
+      description: finalState === 'active' ? 'Registrando gastos, pendiente de cierre' : undefined,
+      group: 'rendicion',
+    });
+  }
+
+  if (!rejected && expectsReembolso) {
+    const reembolsoState = stateFor(REEMBOLSO_IDX);
+    steps.push({
+      label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
+      state: reembolsoState,
+      date: reembolsoState === 'completed' ? fmt(r.reimbursedAt) : undefined,
+      description: reembolsoState === 'active' ? 'Pendiente de pago de Tesorería' : undefined,
+      group: 'rendicion',
+    });
+  }
+
+  if (!rejected && (closed || expectsReembolso)) {
+    const closeState = stateFor(CLOSE_IDX);
+    steps.push({
+      label: closeState === 'completed' ? 'Cerrado por Contabilidad' : 'Cierre de Contabilidad',
+      state: closeState,
+      date: closeState === 'completed' ? fmt(r.closureRecord?.closedAt ?? r.closedAt) : undefined,
+      description: closeState === 'active' ? 'Pendiente de cierre por Contabilidad' : undefined,
+      group: 'rendicion',
     });
   }
 

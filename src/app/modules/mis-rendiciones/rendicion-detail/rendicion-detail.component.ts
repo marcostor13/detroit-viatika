@@ -20,6 +20,7 @@ import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util'
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
+import { IconComponent } from '../../../design-system/icon/icon.component';
 import {
   MobilitySheetExportData,
   RendicionExportService,
@@ -48,6 +49,7 @@ interface AsientoStep {
     CommonModule,
     FormsModule,
     ButtonComponent,
+    IconComponent,
     RouterModule,
   ],
   templateUrl: './rendicion-detail.component.html',
@@ -650,7 +652,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       successMsg = 'Solicitud aprobada. El colaborador ya puede agregar sus gastos.';
     } else if (currentStatus === 'submitted') {
       newStatus = 'pending_accounting';
-      successMsg = 'Rendicion aprobada por coordinador. Enviada a contabilidad para aprobacion final.';
+      successMsg = 'Rendicion aprobada. Enviada a contabilidad para aprobacion final.';
     } else {
       newStatus = 'approved';
       successMsg = 'Rendicion aprobada definitivamente por contabilidad.';
@@ -1321,7 +1323,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       solicited: 'Solicitada',
       open: 'Abierta',
       submitted: 'Enviada',
-      pending_accounting: 'Aprobada por Coordinador',
+      pending_accounting: 'Aprobada por aprobadores',
       approved: 'Aprobada por Contabilidad',
       rejected: 'Rechazada',
       reimbursed: 'Reembolsada',
@@ -1329,7 +1331,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       cancelled: 'Cancelada',
       // Estados de viáticos
       pending_l1: 'En solicitud',
-      pending_l2: 'Aprobada por coordinador',
+      pending_l2: 'Aprobada por aprobadores',
       viatico_approved: 'Aprobada',
       partially_paid: 'Pago parcial',
       paid: 'Pagada',
@@ -2974,19 +2976,25 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return (this.userStateService.getUser() as any)?._id ?? '';
   }
 
-  /** Nivel (0-based) actualmente pendiente de la cadena del comprobante. */
-  private currentChainStep(expense: any): IChainStep | undefined {
+  /**
+   * Índice del paso PENDIENTE de la cadena donde el usuario actual puede
+   * actuar — cualquiera de los pasos no aprobados, sin importar su posición
+   * (aprobación en paralelo entre niveles: N2 puede aprobar antes que N1).
+   * -1 si no le corresponde ningún paso pendiente. Superadmin: primer pendiente.
+   */
+  private actionableChainStepIndex(expense: any): number {
     const chain: IChainStep[] = expense?.approverChain ?? [];
-    const level = expense?.approvalLevel ?? 0;
-    return chain[level];
+    if (this.userStateService.isSuperAdmin()) {
+      return chain.findIndex((s: any) => !s.approved);
+    }
+    return chain.findIndex((s: any) =>
+      !s.approved && s.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    );
   }
 
-  /** ¿El usuario actual está entre los `approverIds` del paso pendiente, o es Superadmin? */
+  /** ¿El usuario actual es aprobador de algún paso aún pendiente, o es Superadmin? */
   canApproveExpenseAsCoord(expense: any): boolean {
-    if (this.userStateService.isSuperAdmin()) return true;
-    const step = this.currentChainStep(expense);
-    if (!step) return false;
-    return step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId);
+    return this.actionableChainStepIndex(expense) !== -1;
   }
 
   get canApproveExpenseAsCont(): boolean {
@@ -3022,30 +3030,44 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Estado de la cadena de centro de costo del comprobante, combinando
-   * `approvalLevel`/`requiredLevels` (avance) con el `status` general
-   * (para distinguir un rechazo en la cadena de un rechazo de Contabilidad).
+   * Estado de la cadena de centro de costo del comprobante (regla 1.4).
+   * Aprobación en paralelo entre niveles: cada paso tiene su propio flag
+   * `approved`, no una posición secuencial — "completo" significa que TODOS
+   * los pasos están aprobados, sin importar el orden en que se resolvieron.
    */
   getExpenseApprovalCoord(expense: any): {
     status: 'pending' | 'approved' | 'rejected';
-    level: number;
+    approvedCount: number;
     requiredLevels: number;
     pendingApproverNames: string;
     escalated: boolean;
+    /**
+     * `false` si `approverChain` aún no se construyó (regla 1.4). Desde que la cadena se
+     * arma al SUBIR el comprobante (no al enviar la rendición), esto solo debería darse en
+     * comprobantes legados de antes de ese cambio, o si faltó el `userId` del creador.
+     */
+    chainBuilt: boolean;
   } {
+    // `approverChain === undefined` ⇒ todavía no se construyó la cadena de este comprobante
+    // (caso legado/residual — normalmente se construye al subirlo) — NO es lo mismo que una
+    // cadena vacía por regla 1.6 (omisión de niveles sin aprobadores), que sí queda
+    // persistida como `[]`. Tratar ambos casos igual hacía que un comprobante sin cadena aún
+    // apareciera "Aprobado" por Coordinador y saltara directo a Contabilidad.
+    const chainBuilt = expense?.approverChain !== undefined;
     const chain: IChainStep[] = expense?.approverChain ?? [];
     const requiredLevels = expense?.requiredLevels ?? chain.length;
-    const approvalLevel = expense?.approvalLevel ?? 0;
     const contStatus = expense?.contabilidadStatus ?? 'pending';
-    let status: 'pending' | 'approved' | 'rejected' = approvalLevel >= requiredLevels ? 'approved' : 'pending';
+    const approvedCount = chain.filter((s: any) => s.approved).length;
+    let status: 'pending' | 'approved' | 'rejected' = chainBuilt && chain.every((s: any) => s.approved) ? 'approved' : 'pending';
     if (status === 'pending' && expense?.status === 'rejected' && contStatus !== 'rejected') status = 'rejected';
-    const step = chain[approvalLevel];
+    const pendingSteps = chain.filter((s: any) => !s.approved);
     return {
       status,
-      level: step?.level ?? approvalLevel + 1,
+      approvedCount,
       requiredLevels,
-      pendingApproverNames: this.chainStepApproverNames(step),
-      escalated: step?.escalatedFrom != null,
+      pendingApproverNames: this.pendingStepsApproverNames(pendingSteps),
+      escalated: pendingSteps.some((s: any) => s.escalatedFrom != null),
+      chainBuilt,
     };
   }
 
@@ -3053,29 +3075,113 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return { status: expense?.contabilidadStatus ?? 'pending' };
   }
 
-  private chainStepApproverNames(step: IChainStep | undefined): string {
-    if (!step || !step.approverIds?.length) return '—';
-    return step.approverIds
-      .map((a: any) => (typeof a === 'object' ? (a.name ?? a._id) : a))
-      .join(' / ');
+  /**
+   * Estado único del comprobante según el flujo real: Coordinador (N1/N2 del
+   * centro de costo) bloquea primero, luego Contabilidad. Reemplaza a mostrar
+   * "Est. Cont." y "Est. Coord." como dos columnas independientes — aquí se
+   * muestra siempre la etapa que realmente está bloqueando el avance.
+   */
+  getExpenseUnifiedStatus(expense: any): {
+    phase: 'not_submitted' | 'rejected' | 'pending_coord' | 'pending_cont' | 'approved';
+    label: string;
+    rejectedBy?: 'coord' | 'cont';
+    rejectionReason?: string;
+    approvedCount?: number;
+    requiredLevels?: number;
+    pendingApproverNames?: string;
+    escalated?: boolean;
+  } {
+    const coord = this.getExpenseApprovalCoord(expense);
+    const cont = this.getExpenseApprovalCont(expense);
+    const isDirecta = !!this.report?.isDirecta;
+
+    if (!coord.chainBuilt) {
+      return { phase: 'not_submitted', label: 'Aprobación no generada' };
+    }
+    if (coord.status === 'rejected') {
+      return {
+        phase: 'rejected',
+        rejectedBy: 'coord',
+        label: 'Rechazado por aprobador',
+        rejectionReason: expense?.rejectionReason,
+      };
+    }
+    if (cont.status === 'rejected') {
+      return {
+        phase: 'rejected',
+        rejectedBy: 'cont',
+        label: 'Rechazado por Contabilidad',
+        rejectionReason: expense?.contabilidadRejectionReason,
+      };
+    }
+    if (coord.status !== 'approved') {
+      return {
+        phase: 'pending_coord',
+        label: `Pendiente de aprobación ${coord.approvedCount}/${coord.requiredLevels}`,
+        approvedCount: coord.approvedCount,
+        requiredLevels: coord.requiredLevels,
+        pendingApproverNames: coord.pendingApproverNames,
+        escalated: coord.escalated,
+      };
+    }
+    if (cont.status !== 'approved') {
+      return {
+        phase: 'pending_cont',
+        label: isDirecta ? 'Pendiente de revisión' : 'Pendiente Contabilidad',
+      };
+    }
+    return {
+      phase: 'approved',
+      label: isDirecta ? 'Revisado' : 'Aprobado',
+    };
   }
 
-  /** Cadena completa del comprobante para la visualización de niveles (N1/N2/…). */
+  /**
+   * Nombre legible de un aprobador. Prefiere nombre, luego email; nunca
+   * devuelve el ObjectId crudo (no es amigable para el usuario). El backend
+   * puebla `approverChain.approverIds` con name/email; si por algún motivo
+   * llega solo el id (string sin poblar), se omite.
+   */
+  private approverLabel(a: any): string | null {
+    if (a && typeof a === 'object') return a.name ?? a.email ?? null;
+    return null;
+  }
+
+  private chainStepApproverNames(step: IChainStep | undefined): string {
+    if (!step || !step.approverIds?.length) return '—';
+    const names = (step.approverIds as any[])
+      .map(a => this.approverLabel(a))
+      .filter((n): n is string => !!n);
+    return names.length ? names.join(' / ') : '—';
+  }
+
+  /** Nombres de los aprobadores de varios pasos pendientes a la vez (aprobación en paralelo), sin duplicar. */
+  private pendingStepsApproverNames(steps: IChainStep[]): string {
+    if (!steps.length) return '—';
+    const names = new Set<string>();
+    for (const step of steps) {
+      for (const a of step.approverIds ?? []) {
+        const name = this.approverLabel(a);
+        if (name) names.add(name);
+      }
+    }
+    return names.size > 0 ? Array.from(names).join(' / ') : '—';
+  }
+
+  /** Cadena completa del comprobante para la visualización de niveles (N1/N2/…). Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
   getExpenseChainSteps(expense: any): Array<{
     level: number;
-    state: 'completado' | 'pendiente' | 'futuro';
+    state: 'completado' | 'pendiente';
     approverNames: string;
     escalatedFrom?: number;
     approvedBy?: string;
     date?: string;
   }> {
     const chain: IChainStep[] = expense?.approverChain ?? [];
-    const approvalLevel = expense?.approvalLevel ?? 0;
     const history: Array<{ level: number; approvedBy: string; action: string; date: string }> = expense?.approvalHistory ?? [];
-    return chain.map((step, idx) => {
-      const state: 'completado' | 'pendiente' | 'futuro' =
-        idx < approvalLevel ? 'completado' : idx === approvalLevel ? 'pendiente' : 'futuro';
-      const entry = history.find(h => h.level === step.level);
+    return chain.map((step: any) => {
+      const state: 'completado' | 'pendiente' = step.approved ? 'completado' : 'pendiente';
+      const entry = history.find(h => h.level === step.level && h.action === 'approved');
       return {
         level: step.level,
         state,
@@ -3088,7 +3194,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   approveExpenseByRole(expenseId: string, role: 'coord' | 'cont'): void {
-    const label = role === 'coord' ? 'Coordinador' : 'Contabilidad';
+    const label = role === 'coord' ? 'aprobador' : 'Contabilidad';
     this.confirmationService.show(
       `¿Aprobar este comprobante como ${label}? Esta acción no se puede deshacer.`,
       () => this._doApproveExpenseByRole(expenseId, role)
@@ -3152,7 +3258,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   batchApproveByCoord(): void {
     this.confirmationService.show(
-      `¿Aprobar como Coordinador todos los comprobantes ya validados por Contabilidad? Esta acción no se puede deshacer.`,
+      `¿Aprobar como aprobador todos los comprobantes ya validados por Contabilidad? Esta acción no se puede deshacer.`,
       () => this._doBatchApproveByCoord()
     );
   }
@@ -3163,7 +3269,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.isBatchApproving.set(false);
         this.notificationService.show(
-          `${res.approved} comprobante(s) aprobados por Coordinador`,
+          `${res.approved} comprobante(s) aprobados`,
           'success'
         );
         this.loadExpensesPage(this.expensesPage()?.page ?? 1);
