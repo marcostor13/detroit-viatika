@@ -1,7 +1,7 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { tap, map, catchError } from 'rxjs/operators';
+import { tap, map, catchError, retry } from 'rxjs/operators';
 import { IUserResponse } from '../interfaces/user.interface';
 import { USER_LOCALSTORAGE_KEY } from '../constants/user-localstorage.constant';
 import { environment } from '../../environments/environment';
@@ -109,6 +109,9 @@ export class UserStateService {
 
   clearUser() {
     this._user.set(null);
+    // Volver a "aún no consultado" para no arrastrar el estado de aprobador del
+    // usuario anterior a la siguiente sesión de esta misma pestaña.
+    this._isApprover.set(null);
     localStorage.removeItem(USER_LOCALSTORAGE_KEY);
     localStorage.removeItem('token');
     localStorage.removeItem(HUB_TOKEN_KEY);
@@ -151,17 +154,24 @@ export class UserStateService {
   refreshApproverStatus(): Observable<boolean> {
     const token = this.getToken();
     if (!token) {
-      this._isApprover.set(false);
-      return of(false);
+      // Sin token no podemos determinarlo. Solo caemos a false si nunca se
+      // resolvió; si ya sabíamos que era aprobador, no degradamos el menú.
+      if (this._isApprover() === null) this._isApprover.set(false);
+      return of(this._isApprover() === true);
     }
     return this.http.get<{ isApprover: boolean }>(`${environment.api}/project/me/am-i-approver`, {
       headers: { Authorization: `Bearer ${token}` },
     }).pipe(
+      // Reintenta fallos transitorios (backend reiniciándose, cortes de red).
+      // Sin esto, un solo error dejaba el menú sin "Rendiciones" hasta relogin.
+      retry({ count: 2, delay: 600 }),
       map((res) => !!res?.isApprover),
       tap((isApprover) => this._isApprover.set(isApprover)),
       catchError(() => {
-        this._isApprover.set(false);
-        return of(false);
+        // Tras agotar reintentos preservamos el último valor conocido en lugar
+        // de marcar "no aprobador"; solo caemos a false si nunca se resolvió.
+        if (this._isApprover() === null) this._isApprover.set(false);
+        return of(this._isApprover() === true);
       }),
     );
   }

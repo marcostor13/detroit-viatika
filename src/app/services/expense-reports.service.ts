@@ -241,6 +241,16 @@ export class ExpenseReportsService {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/reject`, { rejectionReason });
   }
 
+  /** Aprueba el paso del aprobador actual en la cadena de la RENDICIÓN a nivel de reporte (N1/N2…). Con la cadena completa, la rendición pasa a Contabilidad. */
+  approveRendicion(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/rendicion/approve`, {});
+  }
+
+  /** Rechaza la RENDICIÓN a nivel de reporte (cualquier aprobador de un paso pendiente). */
+  rejectRendicion(id: string, rejectionReason: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/rendicion/reject`, { rejectionReason });
+  }
+
   /** Aprueba el turno actual de la cadena de aprobadores de centro de costo de una rendición directa. */
   registerViaticoPayment(id: string, payload: IRegisterReimbursementPaymentPayload): Observable<IExpenseReport> {
     return this.http.patch<IExpenseReport>(
