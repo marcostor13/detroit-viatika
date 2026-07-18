@@ -84,6 +84,50 @@ function pendingRendicionCoordNames(expenses: any[]): string | undefined {
   return names.size > 0 ? Array.from(names).join(' / ') : undefined;
 }
 
+interface RendicionApprover {
+  name: string;
+  /** Menor nivel de cadena en el que aparece (para ordenar N1 antes que N2). */
+  level: number;
+  /** Aprobó todos sus pasos en todos los comprobantes no rechazados. */
+  approved: boolean;
+  /** Fecha de su última aprobación (para el paso completado). */
+  approvedAt?: string;
+}
+
+/**
+ * Agrega las cadenas de aprobación por comprobante (regla 1.4) en una lista de
+ * pasos POR APROBADOR, para separarlos en la línea de tiempo de la RENDICIÓN en
+ * lugar de un genérico "Aprobación de aprobadores". Un aprobador queda aprobado
+ * si completó todos sus pasos en todos los comprobantes no rechazados; queda
+ * pendiente si le falta alguno. Aprobación en paralelo entre niveles (igual que
+ * `pendingRendicionCoordNames`): un paso no aprobado se considera pendiente sin
+ * importar su posición. Devuelve [] si los comprobantes no traen la cadena
+ * poblada (p. ej. vistas con populate ligero), para caer al paso agregado.
+ */
+function aggregateRendicionApprovers(expenses: any[]): RendicionApprover[] {
+  const byName = new Map<string, RendicionApprover>();
+  for (const e of expenses ?? []) {
+    if (e?.status === 'rejected') continue;
+    const chain = e?.approverChain;
+    if (!Array.isArray(chain)) continue; // aún no se construyó
+    for (const step of chain) {
+      const stepApproved = !!step.approved;
+      const stepLevel = Number(step.level ?? 99);
+      for (const a of step.approverIds ?? []) {
+        if (!a || typeof a !== 'object' || !a.name) continue;
+        const cur = byName.get(a.name) ?? { name: a.name, level: stepLevel, approved: true, approvedAt: undefined };
+        cur.level = Math.min(cur.level, stepLevel);
+        if (!stepApproved) cur.approved = false;
+        if (stepApproved && step.approvedAt && (!cur.approvedAt || new Date(step.approvedAt) > new Date(cur.approvedAt))) {
+          cur.approvedAt = step.approvedAt;
+        }
+        byName.set(a.name, cur);
+      }
+    }
+  }
+  return [...byName.values()].sort((x, y) => x.level - y.level || x.name.localeCompare(y.name));
+}
+
 export function buildReportFlowSteps(r: any): FlowStep[] {
   if (!r) return [];
 
@@ -391,7 +435,20 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
     date: fmt(r.viaticoSolicitudContabilidadApprovedAt),
     group: 'solicitud',
   });
-  steps.push({ label: 'Pagada', state: 'completed', group: 'solicitud' });
+  // Pago del anticipo por Tesorería (cierra la fase de SOLICITUD). Se muestra la
+  // fecha del último pago registrado, igual que los demás pasos. Si el viático se
+  // abrió cubierto 100% con saldo (sin pago de Tesorería), se mantiene la etiqueta
+  // simple, sin atribuir un depósito que no ocurrió.
+  const viaticoPayments: any[] = Array.isArray(r.viaticoPayments) ? r.viaticoPayments : [];
+  const lastPayment = viaticoPayments[viaticoPayments.length - 1];
+  const paidByTesoreria = viaticoPayments.length > 0 || !!r.viaticoPaymentInfo;
+  const paidDate = lastPayment?.transferDate ?? lastPayment?.createdAt ?? r.viaticoPaymentInfo?.transferDate;
+  steps.push({
+    label: paidByTesoreria ? 'Pagado por Tesorería' : 'Anticipo disponible',
+    state: 'completed',
+    date: paidByTesoreria ? fmt(paidDate) : undefined,
+    group: 'solicitud',
+  });
 
   // ── Fase 2: RENDICIÓN — Coordinador → Contabilidad (regla 1.4).
   const status: string = r.status;
@@ -476,24 +533,50 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
   // aprobadores N1/N2 esperados por comprobante (regla 1.4); una vez resuelto, quien
   // efectivamente hizo el clic de aprobación de la rendición (`coordinatorApprovedBy`).
   const coordState = stateFor(COORD_IDX);
-  const coordApprovedByName = r.coordinatorApprovedBy && typeof r.coordinatorApprovedBy === 'object'
-    ? r.coordinatorApprovedBy.name : undefined;
-  const coordPendingNames = pendingRendicionCoordNames(r.expenseIds);
-  const rendicionCoordName =
-    coordState === 'completed' ? (coordApprovedByName ?? coordinatorDisplayName(r)) :
-    coordState === 'active' || coordState === 'upcoming' ? (coordPendingNames ?? coordinatorDisplayName(r)) :
-    coordinatorDisplayName(r);
-  steps.push({
-    label:
-      coordState === 'completed' ? `Aprobada por ${rendicionCoordName ?? 'aprobadores'}` :
-      coordState === 'rejected' ? `Rechazada por ${rendicionCoordName ?? 'un aprobador'}` :
-      `Aprobación de ${rendicionCoordName ?? 'aprobadores'}`,
-    state: coordState,
-    date: coordState === 'completed' ? fmt(r.coordinatorApprovedAt) : undefined,
-    description: coordState === 'active' ? 'Pendiente de aprobación de los aprobadores' : undefined,
-    notes: coordState === 'rejected' ? rejectionReason : undefined,
-    group: 'rendicion',
-  });
+  const rendicionApprovers = aggregateRendicionApprovers(r.expenseIds);
+
+  if (!rejected && rendicionApprovers.length > 0) {
+    // Un solo paso con los aprobadores reales de la cadena por comprobante (N1/N2,
+    // regla 1.4) nombrados juntos, en vez del genérico "aprobadores" (sin abrir un
+    // paso por cada uno, para no alargar la línea de tiempo). Se marca aprobado
+    // cuando todos completaron su aprobación, aunque el reporte siga en `submitted`
+    // hasta la confirmación de la rendición (o ya haya avanzado a Contabilidad).
+    const names = rendicionApprovers.map(a => a.name).join(' / ');
+    const done = coordState === 'completed' || rendicionApprovers.every(a => a.approved);
+    const lastApprovedAt = rendicionApprovers
+      .map(a => a.approvedAt)
+      .filter((d): d is string => !!d)
+      .sort((x, y) => new Date(x).getTime() - new Date(y).getTime())
+      .pop();
+    steps.push({
+      label: done ? `Aprobado por ${names}` : `Aprobación de ${names}`,
+      state: done ? 'completed' : 'active',
+      date: done ? fmt(r.coordinatorApprovedAt ?? lastApprovedAt) : undefined,
+      description: done ? undefined : 'Pendiente de aprobación',
+      group: 'rendicion',
+    });
+  } else {
+    // Fallback: comprobantes sin cadena poblada (populate ligero) o rechazada —
+    // se mantiene el paso agregado con nombres reales cuando los hay.
+    const coordApprovedByName = r.coordinatorApprovedBy && typeof r.coordinatorApprovedBy === 'object'
+      ? r.coordinatorApprovedBy.name : undefined;
+    const coordPendingNames = pendingRendicionCoordNames(r.expenseIds);
+    const rendicionCoordName =
+      coordState === 'completed' ? (coordApprovedByName ?? coordinatorDisplayName(r)) :
+      coordState === 'active' || coordState === 'upcoming' ? (coordPendingNames ?? coordinatorDisplayName(r)) :
+      coordinatorDisplayName(r);
+    steps.push({
+      label:
+        coordState === 'completed' ? `Aprobada por ${rendicionCoordName ?? 'aprobadores'}` :
+        coordState === 'rejected' ? `Rechazada por ${rendicionCoordName ?? 'un aprobador'}` :
+        `Aprobación de ${rendicionCoordName ?? 'aprobadores'}`,
+      state: coordState,
+      date: coordState === 'completed' ? fmt(r.coordinatorApprovedAt) : undefined,
+      description: coordState === 'active' ? 'Pendiente de aprobación de los aprobadores' : undefined,
+      notes: coordState === 'rejected' ? rejectionReason : undefined,
+      group: 'rendicion',
+    });
+  }
 
   // Contabilidad es un rol (cualquier usuario con permiso puede actuar) — no hay un
   // aprobador esperado nombrado mientras está pendiente, pero una vez aprobado sí
