@@ -349,6 +349,15 @@
               <span class="font-semibold block mt-0.5">{{ approvedDocCount() }} / {{ totalDocCount() }} aprobados.</span>
             </p>
           }
+          @if (allDocumentsApproved() && hasReportApprovalChain) {
+            <p class="text-sm text-primary bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg max-w-xs leading-snug">
+              Aprobación del centro de costo:
+              <span class="font-semibold">{{ reportChainProgress.approved }} / {{ reportChainProgress.required }} aprobadores</span>.
+              @if (reportChainProgress.approved < reportChainProgress.required) {
+                <span class="block mt-0.5">Falta: {{ reportChainPendingNames }}.</span>
+              }
+            </p>
+          }
           <div class="flex flex-row flex-wrap gap-2 justify-end">
             <app-button
               [label]="canCoordinadorApprove ? 'Aprobar Rendición' : 'Pendiente de revisión'"

@@ -644,6 +644,34 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   confirmApproveReport(): void {
     const currentStatus = this.report?.status;
+
+    // Rendición con cadena de aprobación a nivel de reporte (viático): la
+    // aprobación del coordinador aprueba el PASO del aprobador actual (N1/N2…).
+    // Solo cuando la cadena queda completa el backend la pasa a contabilidad.
+    if (currentStatus === 'submitted' && this.hasReportApprovalChain) {
+      this.isApprovingReport.set(true);
+      this.expenseReportsService.approveRendicion(this.id).subscribe({
+        next: (res) => {
+          this.report = res;
+          this.calculateTotals();
+          this.showAdminApproveModal.set(false);
+          this.isApprovingReport.set(false);
+          const complete = res.status === 'pending_accounting';
+          this.notificationService.show(
+            complete
+              ? 'Rendición aprobada. Enviada a contabilidad para aprobación final.'
+              : 'Tu aprobación quedó registrada. Falta la aprobación de los demás aprobadores.',
+            'success'
+          );
+        },
+        error: (e) => {
+          this.isApprovingReport.set(false);
+          this.notificationService.show(e?.error?.message ?? 'Error al aprobar', 'error');
+        },
+      });
+      return;
+    }
+
     let newStatus: IExpenseReport['status'];
     let successMsg: string;
 
@@ -702,11 +730,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       this.notificationService.show('Debe ingresar un motivo de rechazo', 'error');
       return;
     }
-    this.expenseReportsService
-      .update(this.id, {
-        status: 'rejected',
-        rejectionReason: this.adminRejectionReason().trim(),
-      })
+    // Rendición con cadena a nivel de reporte (viático enviado): el rechazo lo
+    // encauza el endpoint de cadena (valida que sea un aprobador del turno).
+    const reason = this.adminRejectionReason().trim();
+    const reject$ =
+      this.report?.status === 'submitted' && this.hasReportApprovalChain
+        ? this.expenseReportsService.rejectRendicion(this.id, reason)
+        : this.expenseReportsService.update(this.id, { status: 'rejected', rejectionReason: reason });
+    reject$
       .subscribe({
       next: (res) => {
         this.report = res;
@@ -749,10 +780,53 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.totalDocCount() > 0 && this.approvedDocCount() === this.totalDocCount()
   );
 
-  /** Coordinador/Admin puede aprobar (paso 1): rendicion enviada + todos los docs aprobados. */
+  /**
+   * ¿La rendición tiene una cadena de aprobación a nivel de reporte (N1/N2…)?
+   * Se construye al enviar un viático (ver backend `buildReportRendicionChain`).
+   */
+  get hasReportApprovalChain(): boolean {
+    const chain = (this.report as any)?.rendicionApproverChain;
+    return Array.isArray(chain) && chain.length > 0;
+  }
+
+  /** Índice del paso pendiente de la cadena del reporte donde el usuario actual puede actuar (aprobación en paralelo), o -1. Superadmin: primer pendiente. */
+  private reportChainActionableIndex(): number {
+    const chain: IChainStep[] = (this.report as any)?.rendicionApproverChain ?? [];
+    if (this.userStateService.isSuperAdmin()) return chain.findIndex((s: any) => !s.approved);
+    return chain.findIndex((s: any) =>
+      !s.approved && (s.approverIds ?? []).some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    );
+  }
+
+  /** Progreso de la cadena de aprobación del reporte: {approved, required}. */
+  get reportChainProgress(): { approved: number; required: number } {
+    const chain: IChainStep[] = (this.report as any)?.rendicionApproverChain ?? [];
+    return {
+      approved: chain.filter((s: any) => s.approved).length,
+      required: (this.report as any)?.rendicionRequiredLevels ?? chain.length,
+    };
+  }
+
+  /** Nombres de los aprobadores de los pasos aún pendientes de la cadena del reporte (sin duplicar). */
+  get reportChainPendingNames(): string {
+    const chain: IChainStep[] = (this.report as any)?.rendicionApproverChain ?? [];
+    const names = new Set<string>();
+    for (const s of chain) {
+      if ((s as any).approved) continue;
+      for (const a of ((s as any).approverIds ?? [])) {
+        const n = a && typeof a === 'object' ? (a.name ?? a.email) : null;
+        if (n) names.add(n);
+      }
+    }
+    return names.size ? Array.from(names).join(' / ') : '—';
+  }
+
+  /** Coordinador/Admin puede aprobar (paso 1): rendicion enviada + todos los docs aprobados. Con cadena a nivel de reporte, solo el aprobador de un paso pendiente (o Superadmin). */
   get canCoordinadorApprove(): boolean {
     if (this.userStateService.isContabilidad()) return false;
-    return this.report?.status === 'submitted' && this.allDocumentsApproved();
+    if (this.report?.status !== 'submitted' || !this.allDocumentsApproved()) return false;
+    if (this.hasReportApprovalChain) return this.reportChainActionableIndex() !== -1;
+    return true;
   }
 
   /** Contabilidad/Admin/SuperAdmin puede hacer la aprobacion final (paso 2). */

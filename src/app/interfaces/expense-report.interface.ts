@@ -172,6 +172,11 @@ export interface IExpenseReport {
   /** Cadena por centro de costo (N2 principal/seleccionado) asignada al crear la solicitud. */
   viaticoApproverChain?: IChainStep[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /** Cadena de aprobación de la RENDICIÓN a nivel de reporte (N1/N2… del centro de costo), snapshot al enviar el viático. */
+  rendicionApproverChain?: IChainStep[];
+  rendicionApprovalLevel?: number;
+  rendicionRequiredLevels?: number;
+  rendicionApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
   /**
    * Aprobación final de Contabilidad de la SOLICITUD (regla 1.3). Distinto de
    * `contabilidadApprovedAt`/`contabilidadApprovedBy`, que pertenecen a la
