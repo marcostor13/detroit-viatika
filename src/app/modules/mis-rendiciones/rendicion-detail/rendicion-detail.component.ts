@@ -1589,16 +1589,51 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return undefined;
   }
 
+  /** OT (nombre) del reporte (viático/directa), usada como fallback por gasto. */
+  private getReportOrdenTrabajo(): unknown {
+    return (
+      (this.report as any)?.viaticoOrdenTrabajoId ||
+      (this.report as any)?.directaOrdenTrabajoId
+    );
+  }
+
+  /** Extrae nombre de OT y nombre de su centro de costo desde un ordenTrabajoId populado. */
+  private extractOtAndCc(otObj: unknown): { ot: string; centroCosto: string } {
+    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '' };
+    const ot = String((otObj as { nombre?: string }).nombre ?? '');
+    const cc = (otObj as { costCenterId?: unknown }).costCenterId;
+    const centroCosto =
+      cc && typeof cc === 'object' && 'name' in cc
+        ? String((cc as { name?: string }).name ?? '')
+        : '';
+    return { ot, centroCosto };
+  }
+
   /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
   private getHeaderCentroCosto(): string | undefined {
-    const ot =
-      (this.report as any)?.viaticoOrdenTrabajoId ||
-      (this.report as any)?.directaOrdenTrabajoId;
-    const cc = ot && typeof ot === 'object' ? (ot as any).costCenterId : null;
-    if (cc && typeof cc === 'object' && 'name' in cc) {
-      return (cc as { name?: string }).name || undefined;
-    }
-    return undefined;
+    return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCosto || undefined;
+  }
+
+  /**
+   * N° de rendición para viáticos: iniciales del colaborador + correlativo por
+   * posición del viático entre los del mismo usuario (ej. "IVT-001"). Los viáticos
+   * no tienen `codigo` como las directas; el backend entrega la posición estable
+   * (`viaticoPosition`) y aquí se arman las iniciales del nombre mostrado. VD-63.
+   */
+  private buildViaticoCorrelativo(): string | undefined {
+    const pos = (this.report as { viaticoPosition?: number })?.viaticoPosition;
+    if (!pos || pos < 1) return undefined;
+    const name = this.getCollaboratorDisplayName();
+    if (!name || name === '—') return undefined;
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 4);
+    if (!initials) return undefined;
+    return `${initials}-${String(pos).padStart(3, '0')}`;
   }
 
   /** Periodo (mes) de la rendición, en mayúsculas (ej. "DICIEMBRE"). */
@@ -1613,17 +1648,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return d.toLocaleString('es-PE', { month: 'long' }).toUpperCase();
   }
 
-  /** OT (nombre) y centro de costo (nombre) de un gasto, desde su ordenTrabajoId populado. */
+  /**
+   * OT (nombre) y centro de costo (nombre) de un gasto. Si el gasto no tiene OT
+   * propia —caso típico del viático, donde la OT vive a nivel de reporte y los
+   * gastos la heredan— se usa la OT del reporte (viaticoOrdenTrabajoId /
+   * directaOrdenTrabajoId), igual que la CC de cabecera. Así las columnas OT /
+   * C.COSTO del formato ADF-FOR-004 no quedan vacías en la tabla (VD-63).
+   */
   private getExpenseOtAndCc(exp: Record<string, unknown>): { ot: string; centroCosto: string } {
-    const otObj = exp['ordenTrabajoId'];
-    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '' };
-    const ot = String((otObj as { nombre?: string }).nombre ?? '');
-    const cc = (otObj as { costCenterId?: unknown }).costCenterId;
-    const centroCosto =
-      cc && typeof cc === 'object' && 'name' in cc
-        ? String((cc as { name?: string }).name ?? '')
-        : '';
-    return { ot, centroCosto };
+    const own = this.extractOtAndCc(exp['ordenTrabajoId']);
+    if (own.ot || own.centroCosto) return own;
+    return this.extractOtAndCc(this.getReportOrdenTrabajo());
   }
 
   /** Moneda del gasto: dólares, tipo de cambio y monto convertido a soles. */
@@ -1813,12 +1848,21 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       createdByName: this.getCreatedByName(),
       projectName: this.getProjectName(),
       // --- Cabecera contable del formato ADF-FOR-004 ---
-      nRendicion: this.report.codigo || undefined,
+      nRendicion: this.report.codigo || this.buildViaticoCorrelativo() || undefined,
       fechaDocumento: this.report.createdAt
         ? this.formatEmissionDate(this.report.createdAt)
         : undefined,
-      concepto: this.report.description || this.report.title || undefined,
-      destino: this.report.location || undefined,
+      // Concepto = Observaciones de la solicitud de viático (VD-63). Si no se
+      // ingresaron, cae a la descripción auto-generada para no dejarlo vacío ni
+      // alterar el comportamiento de las rendiciones directas.
+      concepto:
+        this.report.viaticoObservations ||
+        this.report.description ||
+        this.report.title ||
+        undefined,
+      // Destino = "Lugar de destino" de la solicitud (viaticoPlace). En viáticos
+      // `location` viene vacío; se usa como fallback para otros tipos. VD-63.
+      destino: this.report.viaticoPlace || this.report.location || undefined,
       departamento: this.getCollaboratorArea(),
       periodo: this.getPeriodoLabel(),
       centroCostoCabecera: this.getHeaderCentroCosto(),
