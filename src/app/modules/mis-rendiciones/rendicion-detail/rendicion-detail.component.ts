@@ -28,6 +28,7 @@ import {
   RendicionExportData,
   ReceiptExportData,
   SingleExpenseAffidavitData,
+  SolicitudFondosExportData,
   ComprobantePage,
   FacturaPageData,
 } from '../../../services/rendicion-export.service';
@@ -761,6 +762,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   deletingExpenseId = signal<string | null>(null);
   isExportingExcel = signal(false);
   isExportingPdf = signal(false);
+  isExportingSolicitud = signal(false);
   isExportingFullPdf = signal(false);
   showAffidavitModal = signal(false);
   isGeneratingAffidavit = signal(false);
@@ -1589,16 +1591,60 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return undefined;
   }
 
-  /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
-  private getHeaderCentroCosto(): string | undefined {
-    const ot =
+  /** OT (nombre) del reporte (viático/directa), usada como fallback por gasto. */
+  private getReportOrdenTrabajo(): unknown {
+    return (
       (this.report as any)?.viaticoOrdenTrabajoId ||
-      (this.report as any)?.directaOrdenTrabajoId;
-    const cc = ot && typeof ot === 'object' ? (ot as any).costCenterId : null;
-    if (cc && typeof cc === 'object' && 'name' in cc) {
-      return (cc as { name?: string }).name || undefined;
-    }
-    return undefined;
+      (this.report as any)?.directaOrdenTrabajoId
+    );
+  }
+
+  /** Extrae nombre de OT, nombre y código de su centro de costo desde un ordenTrabajoId populado. */
+  private extractOtAndCc(otObj: unknown): { ot: string; centroCosto: string; centroCostoCodigo: string } {
+    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '', centroCostoCodigo: '' };
+    const ot = String((otObj as { nombre?: string }).nombre ?? '');
+    const cc = (otObj as { costCenterId?: unknown }).costCenterId;
+    const centroCosto =
+      cc && typeof cc === 'object' && 'name' in cc
+        ? String((cc as { name?: string }).name ?? '')
+        : '';
+    const centroCostoCodigo =
+      cc && typeof cc === 'object' && 'code' in cc
+        ? String((cc as { code?: string }).code ?? '')
+        : '';
+    return { ot, centroCosto, centroCostoCodigo };
+  }
+
+  /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
+  getHeaderCentroCosto(): string | undefined {
+    return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCosto || undefined;
+  }
+
+  /** Código del centro de costo de cabecera (ej. "9101"), si está disponible. */
+  getHeaderCentroCostoCodigo(): string | undefined {
+    return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCostoCodigo || undefined;
+  }
+
+  /**
+   * N° de rendición para viáticos: iniciales del colaborador + correlativo por
+   * posición del viático entre los del mismo usuario (ej. "IVT-001"). Los viáticos
+   * no tienen `codigo` como las directas; el backend entrega la posición estable
+   * (`viaticoPosition`) y aquí se arman las iniciales del nombre mostrado. VD-63.
+   */
+  private buildViaticoCorrelativo(): string | undefined {
+    const pos = (this.report as { viaticoPosition?: number })?.viaticoPosition;
+    if (!pos || pos < 1) return undefined;
+    const name = this.getCollaboratorDisplayName();
+    if (!name || name === '—') return undefined;
+    const initials = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 4);
+    if (!initials) return undefined;
+    return `${initials}-${String(pos).padStart(3, '0')}`;
   }
 
   /** Periodo (mes) de la rendición, en mayúsculas (ej. "DICIEMBRE"). */
@@ -1613,17 +1659,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return d.toLocaleString('es-PE', { month: 'long' }).toUpperCase();
   }
 
-  /** OT (nombre) y centro de costo (nombre) de un gasto, desde su ordenTrabajoId populado. */
+  /**
+   * OT (nombre) y centro de costo (nombre) de un gasto. Si el gasto no tiene OT
+   * propia —caso típico del viático, donde la OT vive a nivel de reporte y los
+   * gastos la heredan— se usa la OT del reporte (viaticoOrdenTrabajoId /
+   * directaOrdenTrabajoId), igual que la CC de cabecera. Así las columnas OT /
+   * C.COSTO del formato ADF-FOR-004 no quedan vacías en la tabla (VD-63).
+   */
   private getExpenseOtAndCc(exp: Record<string, unknown>): { ot: string; centroCosto: string } {
-    const otObj = exp['ordenTrabajoId'];
-    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '' };
-    const ot = String((otObj as { nombre?: string }).nombre ?? '');
-    const cc = (otObj as { costCenterId?: unknown }).costCenterId;
-    const centroCosto =
-      cc && typeof cc === 'object' && 'name' in cc
-        ? String((cc as { name?: string }).name ?? '')
-        : '';
-    return { ot, centroCosto };
+    const own = this.extractOtAndCc(exp['ordenTrabajoId']);
+    if (own.ot || own.centroCosto) return own;
+    return this.extractOtAndCc(this.getReportOrdenTrabajo());
   }
 
   /** Moneda del gasto: dólares, tipo de cambio y monto convertido a soles. */
@@ -1813,12 +1859,21 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       createdByName: this.getCreatedByName(),
       projectName: this.getProjectName(),
       // --- Cabecera contable del formato ADF-FOR-004 ---
-      nRendicion: this.report.codigo || undefined,
+      nRendicion: this.report.codigo || this.buildViaticoCorrelativo() || undefined,
       fechaDocumento: this.report.createdAt
         ? this.formatEmissionDate(this.report.createdAt)
         : undefined,
-      concepto: this.report.description || this.report.title || undefined,
-      destino: this.report.location || undefined,
+      // Concepto = Observaciones de la solicitud de viático (VD-63). Si no se
+      // ingresaron, cae a la descripción auto-generada para no dejarlo vacío ni
+      // alterar el comportamiento de las rendiciones directas.
+      concepto:
+        this.report.viaticoObservations ||
+        this.report.description ||
+        this.report.title ||
+        undefined,
+      // Destino = "Lugar de destino" de la solicitud (viaticoPlace). En viáticos
+      // `location` viene vacío; se usa como fallback para otros tipos. VD-63.
+      destino: this.report.viaticoPlace || this.report.location || undefined,
       departamento: this.getCollaboratorArea(),
       periodo: this.getPeriodoLabel(),
       centroCostoCabecera: this.getHeaderCentroCosto(),
@@ -1832,6 +1887,76 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       financeName: this.getContabilidadName(),
       financeSignature: this.getContabilidadSignature(),
     };
+  }
+
+  /** Construye los datos del PDF "Solicitud de Fondos" (formato del cliente ADF-FOR-003). */
+  buildSolicitudFondosData(): SolicitudFondosExportData | null {
+    if (!this.report) return null;
+    const safeName = (this.report.title || 'solicitud')
+      .replace(/[^\w\sáéíóúÁÉÍÓÚñÑ-]/g, '')
+      .replace(/\s+/g, '_')
+      .slice(0, 50);
+    const { ot } = this.extractOtAndCc(this.getReportOrdenTrabajo());
+    const centroCosto = [this.getHeaderCentroCostoCodigo(), this.getHeaderCentroCosto()]
+      .filter(Boolean)
+      .join(' - ');
+    const start = (this.report.startDate ?? this.report.viaticoStartDate) as string | undefined;
+    const end = (this.report.endDate ?? this.report.viaticoEndDate) as string | undefined;
+    let duracion = '';
+    if (start && end) {
+      const d1 = new Date(start).getTime();
+      const d2 = new Date(end).getTime();
+      if (!isNaN(d1) && !isNaN(d2) && d2 >= d1) {
+        const days = Math.round((d2 - d1) / 86400000) + 1;
+        duracion = days === 1 ? '1 día' : `${days} días`;
+      }
+    }
+    const aprobador =
+      this.getCoordinatorName() ||
+      (this.getApprovedByName() !== '—' ? this.getApprovedByName() : '');
+    const montoSolicitado =
+      this.report.budget ||
+      Number((this.report as { viaticoAmount?: number }).viaticoAmount ?? 0) ||
+      this.totalAnticipado ||
+      0;
+    return {
+      fileBaseName: `solicitud_fondos_${this.report.codigo || this.id}_${safeName}`.replace(/_+/g, '_'),
+      esARendir: true,
+      fechaSolicitud: this.report.createdAt ? this.formatEmissionDate(this.report.createdAt) : '',
+      nombre: this.getCollaboratorDisplayName(),
+      dni: this.collaboratorDniForPdf(),
+      area: this.getCollaboratorArea(),
+      motivo:
+        this.report.viaticoObservations ||
+        this.report.description ||
+        this.report.title ||
+        '',
+      duracionServicio: duracion,
+      fechaInicio: start ? this.formatEmissionDate(start) : '',
+      montoSolicitado,
+      otNumero: ot || undefined,
+      centroCosto: centroCosto || undefined,
+      autorizacionNombre: aprobador || undefined,
+      solicitanteSignature: this.getCollaboratorSignature(),
+      autorizacionSignature: this.getCoordinatorSignature() || this.getApprovedBySignature(),
+    };
+  }
+
+  async exportSolicitudFondosPdf(): Promise<void> {
+    const data = this.buildSolicitudFondosData();
+    if (!data) {
+      this.notificationService.show('No hay datos para generar la solicitud', 'error');
+      return;
+    }
+    this.isExportingSolicitud.set(true);
+    try {
+      await this.rendicionExportService.exportSolicitudFondosToPdf(data);
+      this.notificationService.show('Solicitud de Fondos descargada correctamente', 'success');
+    } catch {
+      this.notificationService.show('No se pudo generar la Solicitud de Fondos', 'error');
+    } finally {
+      this.isExportingSolicitud.set(false);
+    }
   }
 
   async exportRendicionExcel(): Promise<void> {
@@ -2278,6 +2403,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   returnVoucherDepositDate = signal(new Date().toISOString().split('T')[0]);
   returnVoucherBank = signal('');
   returnVoucherOperation = signal('');
+  /** Monto devuelto ingresado manualmente por el colaborador (prellenado con el saldo). */
+  returnVoucherAmount = signal<number | null>(null);
   // Datos detectados por el escaneo del comprobante
   isScanningReturnVoucher = signal(false);
   returnVoucherScannedAmount = signal<number | null>(null);
@@ -2354,6 +2481,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.returnVoucherDepositDate.set(new Date().toISOString().split('T')[0]);
     this.returnVoucherBank.set(this.getCollaboratorBankName() ?? '');
     this.returnVoucherOperation.set('');
+    this.returnVoucherAmount.set(this.saldoLibre > 0 ? Number(this.saldoLibre.toFixed(2)) : null);
     this.returnVoucherScannedAmount.set(null);
     this.returnVoucherTitular.set(null);
     this.returnVoucherOperationDate.set(null);
@@ -2389,6 +2517,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         this.isUploadingReturnVoucher.set(false);
         this.scanComprobante(res.url, file.type, this.isScanningReturnVoucher, (r) => {
           this.returnVoucherScannedAmount.set(Number(r.amount) > 0 ? Number(r.amount) : null);
+          if (this.returnVoucherAmount() == null && Number(r.amount) > 0) this.returnVoucherAmount.set(Number(r.amount));
           this.returnVoucherTitular.set(r.titular || null);
           this.returnVoucherOperationDate.set(r.fecha || null);
           this.returnVoucherOperationTime.set(r.hora || null);
@@ -2411,11 +2540,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       this.notificationService.show('Sube el comprobante e ingresa la fecha de deposito', 'warning');
       return;
     }
+    const amountReturned = this.returnVoucherAmount();
+    if (amountReturned == null || amountReturned <= 0) {
+      this.notificationService.show('Ingresa el monto devuelto', 'warning');
+      return;
+    }
     this.isSubmittingReturnVoucher.set(true);
     this.expenseReportsService.registerReturnVoucher(this.id, {
       depositDate: this.returnVoucherDepositDate(),
       bankOrigin: this.returnVoucherBank() || undefined,
       operationNumber: this.returnVoucherOperation() || undefined,
+      amountReturned,
       fileUrl,
       fileName: this.returnVoucherFileName() || undefined,
       scannedAmount: this.returnVoucherScannedAmount() ?? undefined,

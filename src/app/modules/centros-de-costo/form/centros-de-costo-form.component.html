@@ -106,15 +106,14 @@
                 }
 
                 @if (candidatesForLevel(level).length > 0) {
-                  <select
-                    class="h-[38px] w-full px-3 rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-                    (change)="addApproverToLevel(level, $any($event.target).value); $any($event.target).value = ''"
-                  >
-                    <option value="">+ Agregar aprobador…</option>
-                    @for (u of candidatesForLevel(level); track u._id) {
-                      <option [value]="u._id">{{ u.name }} ({{ u.email }})</option>
-                    }
-                  </select>
+                  <app-worker-select
+                    [workers]="candidatesForLevel(level)"
+                    [ngModel]="approverPicker[level.level] || ''"
+                    [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="onPickApprover(level, $event)"
+                    placeholder="+ Agregar aprobador…"
+                    triggerClass="!py-2 !rounded-lg"
+                  />
                 }
               </div>
             }
@@ -135,8 +134,22 @@
             </div>
 
             <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Aprobadores</label>
+
+            <!-- Buscador de aprobadores -->
+            <div class="relative mt-1.5">
+              <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-tertiary/60" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
+              </svg>
+              <input
+                type="text"
+                [(ngModel)]="newLevelSearch"
+                placeholder="Buscar aprobador…"
+                class="h-[38px] w-full pl-8 pr-3 rounded-lg border border-tertiary/30 bg-background text-sm text-secondary placeholder:text-tertiary/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+              />
+            </div>
+
             <div class="max-h-48 overflow-y-auto rounded-lg border border-tertiary/20 divide-y divide-tertiary/10 mt-1.5 mb-3">
-              @for (u of approverCandidates; track u._id) {
+              @for (u of filteredNewLevelCandidates; track u._id) {
                 <label class="flex items-center gap-3 px-3 py-2 hover:bg-background cursor-pointer transition-colors">
                   <input
                     type="checkbox"
@@ -147,7 +160,9 @@
                   <span class="text-sm text-secondary">{{ u.name }} ({{ u.email }})</span>
                 </label>
               } @empty {
-                <p class="text-sm text-tertiary text-center py-4">No hay usuarios disponibles.</p>
+                <p class="text-sm text-tertiary text-center py-4">
+                  {{ newLevelSearch.trim() ? 'Sin resultados para “' + newLevelSearch + '”.' : 'No hay usuarios disponibles.' }}
+                </p>
               }
             </div>
 

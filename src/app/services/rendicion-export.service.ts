@@ -192,6 +192,31 @@ export interface ReceiptExportData {
   signature?: string;
 }
 
+/** Datos para el PDF "SOLICITUD DE FONDOS" (formato del cliente ADF-FOR-003). */
+export interface SolicitudFondosExportData {
+  fileBaseName: string;
+  /** true = casilla "A rendir" marcada; false = "Fijos". Viáticos/rendiciones = A rendir. */
+  esARendir: boolean;
+  fechaSolicitud?: string;
+  nombre: string;
+  dni?: string;
+  area?: string;
+  motivo?: string;
+  duracionServicio?: string;
+  fechaInicio?: string;
+  montoSolicitado: number;
+  /** Símbolo de moneda mostrado junto a "Monto solicitado". Default "S/". */
+  monedaSimbolo?: string;
+  otNumero?: string;
+  /** Centro de costo de cabecera, ya combinado como "código - nombre". */
+  centroCosto?: string;
+  /** Nombre del autorizador (recuadro V°B° de Autorización). */
+  autorizacionNombre?: string;
+  observaciones?: string;
+  solicitanteSignature?: string;
+  autorizacionSignature?: string;
+}
+
 export interface SingleExpenseAffidavitData {
   fileBaseName: string;
   titulo: string;
@@ -857,6 +882,198 @@ export class RendicionExportService {
     drawSignature(240, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     if (!inDoc) {
+      if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
+      doc.save(`${data.fileBaseName}.pdf`);
+    }
+  }
+
+  /**
+   * PDF "SOLICITUD DE FONDOS" con el formato oficial del cliente (ADF-FOR-003):
+   * membrete (logo + título + control documentario), casillas Fijos/A rendir,
+   * campos de la solicitud (Fecha, Nombre, DNI, Área, Motivo, Duración, Fecha de
+   * inicio, Monto solicitado, Cargo a OT Nº/C.CTO.), párrafo de compromiso, dos
+   * recuadros de firma (Solicitante / V°B° de Autorización) y la sección "Uso
+   * exclusivo de Contabilidad" con Observaciones y V°B° Recepción dinero.
+   */
+  async exportSolicitudFondosToPdf(data: SolicitudFondosExportData, inDoc?: jsPDF, returnBytes?: boolean): Promise<Uint8Array | void> {
+    data = {
+      ...data,
+      solicitanteSignature: await this.resolveSignature(data.solicitanteSignature),
+      autorizacionSignature: await this.resolveSignature(data.autorizacionSignature),
+    };
+    const isNew = !inDoc;
+    const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    if (!isNew) doc.addPage([210, 297], 'portrait');
+
+    const sanitize = (s?: string): string => this.sanitizeText(s);
+    const clip = (text: string, maxW: number): string => {
+      if (!text) return '';
+      if (doc.getTextWidth(text) <= maxW) return text;
+      let t = text;
+      while (t.length > 1 && doc.getTextWidth(t + '...') > maxW) t = t.slice(0, -1);
+      return t.replace(/\s+$/, '') + '...';
+    };
+    const sym = data.monedaSimbolo || 'S/';
+    const money = (n: number): string =>
+      (Number(n) || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const LM = 15;
+    const RM = 195;
+    const W = RM - LM;
+    let y = 15;
+    doc.setDrawColor(0);
+    doc.setTextColor(0, 0, 0);
+    doc.setLineWidth(0.3);
+
+    // --- Membrete: logo | título | control documentario ---
+    const headerH = 20;
+    const logoW = 46;
+    const ctrlW = 48;
+    const ctrlX = RM - ctrlW;
+    doc.rect(LM, y, W, headerH);
+    doc.line(LM + logoW, y, LM + logoW, y + headerH);
+    doc.line(ctrlX, y, ctrlX, y + headerH);
+    const logoB64 = await this.getLogoBase64();
+    if (logoB64) {
+      try { doc.addImage(logoB64, 'PNG', LM + 3, y + 5, logoW - 6, 10); } catch { /* logo inválido */ }
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('SOLICITUD DE FONDOS', (LM + logoW + ctrlX) / 2, y + headerH / 2 + 1.5, { align: 'center' });
+    doc.line(ctrlX, y + headerH / 3, RM, y + headerH / 3);
+    doc.line(ctrlX, y + (headerH * 2) / 3, RM, y + (headerH * 2) / 3);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Código: ADF-FOR-003', ctrlX + 2, y + 4.6);
+    doc.text('Versión: 01', ctrlX + 2, y + headerH / 3 + 4.6);
+    doc.text('F. Emisión. 18/04/2023', ctrlX + 2, y + (headerH * 2) / 3 + 4.6);
+    y += headerH;
+
+    // --- Casillas: Fijos / A rendir ---
+    const cbH = 9;
+    const box = 4;
+    doc.rect(LM, y, W, cbH);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    const fijX = LM + 34;
+    doc.rect(fijX, y + (cbH - box) / 2, box, box);
+    doc.text('Fijos', fijX + box + 3, y + cbH / 2 + 1.4);
+    const renX = LM + 100;
+    doc.rect(renX, y + (cbH - box) / 2, box, box);
+    doc.text('A rendir', renX + box + 3, y + cbH / 2 + 1.4);
+    doc.setFontSize(9);
+    doc.text('X', (data.esARendir ? renX : fijX) + 0.9, y + cbH / 2 + 1.6);
+    y += cbH;
+
+    // --- Campos de la solicitud ---
+    const rowH = 8.5;
+    const labelX = LM + 3;
+    const colonX = LM + 52;
+    const valueX = LM + 56;
+    doc.setFontSize(9);
+    const drawRow = (label: string, value: string, boldLabel = false): void => {
+      doc.rect(LM, y, W, rowH);
+      doc.setFont('helvetica', boldLabel ? 'bold' : 'normal');
+      doc.text(label, labelX, y + rowH / 2 + 1.3);
+      doc.text(':', colonX, y + rowH / 2 + 1.3);
+      doc.setFont('helvetica', 'normal');
+      if (value) doc.text(clip(sanitize(value), RM - valueX - 3), valueX, y + rowH / 2 + 1.3);
+      y += rowH;
+    };
+    drawRow('Fecha solicitud', data.fechaSolicitud || '');
+    drawRow('Nombre', data.nombre || '', true);
+    drawRow('DNI', data.dni || '');
+    drawRow('Área (departamento)', data.area || '');
+    drawRow('Motivo que lo origina', data.motivo || '');
+    drawRow('Duración del servicio', data.duracionServicio || '');
+    drawRow('Fecha de inicio', data.fechaInicio || '');
+    drawRow(`Monto solicitado ${sym}`, money(data.montoSolicitado), true);
+
+    // --- Cargo a: OT Nº / C.CTO. (fila alta con dos sub-líneas, sin divisor interno) ---
+    const cargoH = rowH * 2;
+    doc.rect(LM, y, W, cargoH);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Cargo a', labelX, y + cargoH / 2 + 1.3);
+    doc.text(':', colonX, y + cargoH / 2 + 1.3);
+    const subLabelX = valueX + 2;
+    const subColonX = valueX + 26;
+    const subValueX = valueX + 30;
+    doc.setFont('helvetica', 'bold');
+    doc.text('OT Nº', subLabelX, y + rowH / 2 + 1.3);
+    doc.text('C.CTO.', subLabelX, y + rowH + rowH / 2 + 1.3);
+    doc.setFont('helvetica', 'normal');
+    doc.text(':', subColonX, y + rowH / 2 + 1.3);
+    doc.text(':', subColonX, y + rowH + rowH / 2 + 1.3);
+    if (data.otNumero) doc.text(clip(sanitize(data.otNumero), RM - subValueX - 3), subValueX, y + rowH / 2 + 1.3);
+    if (data.centroCosto) doc.text(clip(sanitize(data.centroCosto), RM - subValueX - 3), subValueX, y + rowH + rowH / 2 + 1.3);
+    y += cargoH;
+
+    // --- Párrafo de compromiso ---
+    const commitment =
+      'Por la presente me comprometo a presentar la correspondiente la rendición de gastos de los fondos que recibo en este acto, y devolver el saldo no ocupado o justificado, dentro de los cinco días hábiles siguientes a mi regreso de la salida a terreno que origino la presente provisión de fondos. En caso de no cumplir con lo expresado, autorizo desde ya para que la suma que corresponda se descuente de mi remuneración en la más próxima liquidación.';
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    const paraLines = doc.splitTextToSize(sanitize(commitment), W - 8) as string[];
+    const paraH = paraLines.length * 4.3 + 5;
+    doc.rect(LM, y, W, paraH);
+    doc.text(paraLines, LM + 4, y + 5, { lineHeightFactor: 1.4 });
+    y += paraH;
+
+    // --- Firmas: Solicitante / V°B° de Autorización ---
+    y += 5;
+    const sigH = 26;
+    const sigGap = 10;
+    const sigW = (W - sigGap) / 2;
+    const leftX = LM;
+    const rightX = LM + sigW + sigGap;
+    doc.rect(leftX, y, sigW, sigH);
+    doc.rect(rightX, y, sigW, sigH);
+    if (data.solicitanteSignature) {
+      try { doc.addImage(data.solicitanteSignature, 'PNG', leftX + sigW / 2 - 22, y + 3, 44, 14); } catch { /* firma inválida */ }
+    }
+    if (data.autorizacionSignature) {
+      try { doc.addImage(data.autorizacionSignature, 'PNG', rightX + sigW / 2 - 22, y + 3, 44, 12); } catch { /* firma inválida */ }
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('Solicitante', leftX + sigW / 2, y + sigH - 3, { align: 'center' });
+    doc.text('V°B° de Autorización', rightX + sigW / 2, y + sigH - 7, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Nombre: ${clip(sanitize(data.autorizacionNombre || ''), sigW - 18)}`, rightX + 3, y + sigH - 2);
+    y += sigH;
+
+    // --- Uso exclusivo de Contabilidad ---
+    y += 5;
+    doc.setFillColor(190, 190, 190);
+    doc.rect(LM, y, W, 6, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Uso exclusivo de Contabilidad', LM + W / 2, y + 4.2, { align: 'center' });
+    y += 6;
+    const contH = 34;
+    doc.rect(LM, y, W, contH);
+    doc.setFillColor(215, 215, 215);
+    doc.rect(LM, y, 42, 6, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('Observaciones', LM + 2, y + 4.2);
+    if (data.observaciones) {
+      doc.setFont('helvetica', 'normal');
+      doc.text((doc.splitTextToSize(sanitize(data.observaciones), W - 80) as string[]).slice(0, 3), LM + 2, y + 11);
+    }
+    const recW = 72;
+    const recH = 22;
+    const recX = RM - recW - 2;
+    const recY = y + contH - recH - 2;
+    doc.rect(recX, recY, recW, recH);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('V°B° Recepción dinero', recX + recW / 2, recY + recH - 2.5, { align: 'center' });
+    y += contH;
+
+    if (isNew) {
       if (returnBytes) return new Uint8Array(doc.output('arraybuffer'));
       doc.save(`${data.fileBaseName}.pdf`);
     }

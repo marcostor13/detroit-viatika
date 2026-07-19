@@ -229,6 +229,8 @@ export interface IExpenseReport {
     depositDate: string;
     bankOrigin?: string;
     operationNumber?: string;
+    /** Monto devuelto ingresado manualmente por el colaborador. */
+    amountReturned?: number;
     /** Datos extraídos del comprobante por OCR/visión (informativos). */
     scannedAmount?: number;
     operationDate?: string;
