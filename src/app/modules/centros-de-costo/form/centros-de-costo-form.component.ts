@@ -10,6 +10,7 @@ import { UserStateService } from '../../../services/user-state.service';
 import { AdminUsersService } from '../../admin-users/services/admin-users.service';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
+import { WorkerSelectComponent } from '../../../design-system/worker-select/worker-select.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ILineaNegocio } from '../../../interfaces/linea-negocio.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
@@ -22,7 +23,7 @@ interface IApproverLevelForm {
 @Component({
   selector: 'app-centros-de-costo-form',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent],
+  imports: [CommonModule, FormsModule, ButtonComponent, IconComponent, WorkerSelectComponent],
   templateUrl: './centros-de-costo-form.component.html',
 })
 export class CentrosDeCostoFormComponent implements OnInit {
@@ -59,6 +60,8 @@ export class CentrosDeCostoFormComponent implements OnInit {
   addingLevel = false;
   newLevelNumber: number | null = null;
   newLevelUserIds: string[] = [];
+  /** Término de búsqueda para filtrar aprobadores al crear un nivel. */
+  newLevelSearch = '';
 
   private getErrorMessage(error: HttpErrorResponse, fallback: string) {
     const apiMessage = Array.isArray(error.error?.message)
@@ -188,6 +191,15 @@ export class CentrosDeCostoFormComponent implements OnInit {
     return this.approverCandidates.filter((u) => !level.userIds.includes(u._id!));
   }
 
+  /** Candidatos filtrados por el buscador del formulario de nuevo nivel. */
+  get filteredNewLevelCandidates(): IUserResponse[] {
+    const term = this.newLevelSearch.trim().toLowerCase();
+    if (!term) return this.approverCandidates;
+    return this.approverCandidates.filter((u) =>
+      `${u.name} ${u.email}`.toLowerCase().includes(term)
+    );
+  }
+
   userLabel(id: string): string {
     const u = this.approverCandidates.find((c) => c._id === id);
     return u ? `${u.name} (${u.email})` : id;
@@ -196,6 +208,22 @@ export class CentrosDeCostoFormComponent implements OnInit {
   addApproverToLevel(level: IApproverLevelForm, userId: string) {
     if (!userId || level.userIds.includes(userId)) return;
     level.userIds = [...level.userIds, userId];
+  }
+
+  /**
+   * Valor transitorio del selector "Agregar aprobador" de cada nivel existente.
+   * Se limpia tras elegir para volver a mostrar el placeholder.
+   */
+  approverPicker: Record<number, string> = {};
+
+  onPickApprover(level: IApproverLevelForm, userId: string) {
+    if (userId) this.addApproverToLevel(level, userId);
+    // Se difiere al siguiente tick para forzar el writeValue('') del selector
+    // y resetear su selección interna, permitiendo encadenar otro aprobador.
+    this.approverPicker[level.level] = userId;
+    setTimeout(() => {
+      this.approverPicker[level.level] = '';
+    });
   }
 
   removeApproverFromLevel(level: IApproverLevelForm, userId: string) {
@@ -220,12 +248,14 @@ export class CentrosDeCostoFormComponent implements OnInit {
     this.addingLevel = true;
     this.newLevelNumber = this.nextSuggestedLevel();
     this.newLevelUserIds = [];
+    this.newLevelSearch = '';
   }
 
   cancelAddLevel() {
     this.addingLevel = false;
     this.newLevelNumber = null;
     this.newLevelUserIds = [];
+    this.newLevelSearch = '';
   }
 
   toggleNewLevelUser(userId: string, checked: boolean) {
