@@ -180,6 +180,7 @@ export class ExpenseReportsService {
       depositDate: string;
       bankOrigin?: string;
       operationNumber?: string;
+      amountReturned?: number;
       fileUrl: string;
       fileName?: string;
       scannedAmount?: number;

@@ -2331,6 +2331,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   returnVoucherDepositDate = signal(new Date().toISOString().split('T')[0]);
   returnVoucherBank = signal('');
   returnVoucherOperation = signal('');
+  /** Monto devuelto ingresado manualmente por el colaborador (prellenado con el saldo). */
+  returnVoucherAmount = signal<number | null>(null);
   // Datos detectados por el escaneo del comprobante
   isScanningReturnVoucher = signal(false);
   returnVoucherScannedAmount = signal<number | null>(null);
@@ -2407,6 +2409,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.returnVoucherDepositDate.set(new Date().toISOString().split('T')[0]);
     this.returnVoucherBank.set(this.getCollaboratorBankName() ?? '');
     this.returnVoucherOperation.set('');
+    this.returnVoucherAmount.set(this.saldoLibre > 0 ? Number(this.saldoLibre.toFixed(2)) : null);
     this.returnVoucherScannedAmount.set(null);
     this.returnVoucherTitular.set(null);
     this.returnVoucherOperationDate.set(null);
@@ -2442,6 +2445,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         this.isUploadingReturnVoucher.set(false);
         this.scanComprobante(res.url, file.type, this.isScanningReturnVoucher, (r) => {
           this.returnVoucherScannedAmount.set(Number(r.amount) > 0 ? Number(r.amount) : null);
+          if (this.returnVoucherAmount() == null && Number(r.amount) > 0) this.returnVoucherAmount.set(Number(r.amount));
           this.returnVoucherTitular.set(r.titular || null);
           this.returnVoucherOperationDate.set(r.fecha || null);
           this.returnVoucherOperationTime.set(r.hora || null);
@@ -2464,11 +2468,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       this.notificationService.show('Sube el comprobante e ingresa la fecha de deposito', 'warning');
       return;
     }
+    const amountReturned = this.returnVoucherAmount();
+    if (amountReturned == null || amountReturned <= 0) {
+      this.notificationService.show('Ingresa el monto devuelto', 'warning');
+      return;
+    }
     this.isSubmittingReturnVoucher.set(true);
     this.expenseReportsService.registerReturnVoucher(this.id, {
       depositDate: this.returnVoucherDepositDate(),
       bankOrigin: this.returnVoucherBank() || undefined,
       operationNumber: this.returnVoucherOperation() || undefined,
+      amountReturned,
       fileUrl,
       fileName: this.returnVoucherFileName() || undefined,
       scannedAmount: this.returnVoucherScannedAmount() ?? undefined,
