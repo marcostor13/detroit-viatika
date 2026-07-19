@@ -28,6 +28,7 @@ import {
   RendicionExportData,
   ReceiptExportData,
   SingleExpenseAffidavitData,
+  SolicitudFondosExportData,
   ComprobantePage,
   FacturaPageData,
 } from '../../../services/rendicion-export.service';
@@ -761,6 +762,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   deletingExpenseId = signal<string | null>(null);
   isExportingExcel = signal(false);
   isExportingPdf = signal(false);
+  isExportingSolicitud = signal(false);
   isExportingFullPdf = signal(false);
   showAffidavitModal = signal(false);
   isGeneratingAffidavit = signal(false);
@@ -1885,6 +1887,76 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       financeName: this.getContabilidadName(),
       financeSignature: this.getContabilidadSignature(),
     };
+  }
+
+  /** Construye los datos del PDF "Solicitud de Fondos" (formato del cliente ADF-FOR-003). */
+  buildSolicitudFondosData(): SolicitudFondosExportData | null {
+    if (!this.report) return null;
+    const safeName = (this.report.title || 'solicitud')
+      .replace(/[^\w\sáéíóúÁÉÍÓÚñÑ-]/g, '')
+      .replace(/\s+/g, '_')
+      .slice(0, 50);
+    const { ot } = this.extractOtAndCc(this.getReportOrdenTrabajo());
+    const centroCosto = [this.getHeaderCentroCostoCodigo(), this.getHeaderCentroCosto()]
+      .filter(Boolean)
+      .join(' - ');
+    const start = (this.report.startDate ?? this.report.viaticoStartDate) as string | undefined;
+    const end = (this.report.endDate ?? this.report.viaticoEndDate) as string | undefined;
+    let duracion = '';
+    if (start && end) {
+      const d1 = new Date(start).getTime();
+      const d2 = new Date(end).getTime();
+      if (!isNaN(d1) && !isNaN(d2) && d2 >= d1) {
+        const days = Math.round((d2 - d1) / 86400000) + 1;
+        duracion = days === 1 ? '1 día' : `${days} días`;
+      }
+    }
+    const aprobador =
+      this.getCoordinatorName() ||
+      (this.getApprovedByName() !== '—' ? this.getApprovedByName() : '');
+    const montoSolicitado =
+      this.report.budget ||
+      Number((this.report as { viaticoAmount?: number }).viaticoAmount ?? 0) ||
+      this.totalAnticipado ||
+      0;
+    return {
+      fileBaseName: `solicitud_fondos_${this.report.codigo || this.id}_${safeName}`.replace(/_+/g, '_'),
+      esARendir: true,
+      fechaSolicitud: this.report.createdAt ? this.formatEmissionDate(this.report.createdAt) : '',
+      nombre: this.getCollaboratorDisplayName(),
+      dni: this.collaboratorDniForPdf(),
+      area: this.getCollaboratorArea(),
+      motivo:
+        this.report.viaticoObservations ||
+        this.report.description ||
+        this.report.title ||
+        '',
+      duracionServicio: duracion,
+      fechaInicio: start ? this.formatEmissionDate(start) : '',
+      montoSolicitado,
+      otNumero: ot || undefined,
+      centroCosto: centroCosto || undefined,
+      autorizacionNombre: aprobador || undefined,
+      solicitanteSignature: this.getCollaboratorSignature(),
+      autorizacionSignature: this.getCoordinatorSignature() || this.getApprovedBySignature(),
+    };
+  }
+
+  async exportSolicitudFondosPdf(): Promise<void> {
+    const data = this.buildSolicitudFondosData();
+    if (!data) {
+      this.notificationService.show('No hay datos para generar la solicitud', 'error');
+      return;
+    }
+    this.isExportingSolicitud.set(true);
+    try {
+      await this.rendicionExportService.exportSolicitudFondosToPdf(data);
+      this.notificationService.show('Solicitud de Fondos descargada correctamente', 'success');
+    } catch {
+      this.notificationService.show('No se pudo generar la Solicitud de Fondos', 'error');
+    } finally {
+      this.isExportingSolicitud.set(false);
+    }
   }
 
   async exportRendicionExcel(): Promise<void> {
