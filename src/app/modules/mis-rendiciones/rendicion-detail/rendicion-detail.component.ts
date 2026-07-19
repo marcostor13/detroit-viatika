@@ -1597,21 +1597,30 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     );
   }
 
-  /** Extrae nombre de OT y nombre de su centro de costo desde un ordenTrabajoId populado. */
-  private extractOtAndCc(otObj: unknown): { ot: string; centroCosto: string } {
-    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '' };
+  /** Extrae nombre de OT, nombre y código de su centro de costo desde un ordenTrabajoId populado. */
+  private extractOtAndCc(otObj: unknown): { ot: string; centroCosto: string; centroCostoCodigo: string } {
+    if (!otObj || typeof otObj !== 'object') return { ot: '', centroCosto: '', centroCostoCodigo: '' };
     const ot = String((otObj as { nombre?: string }).nombre ?? '');
     const cc = (otObj as { costCenterId?: unknown }).costCenterId;
     const centroCosto =
       cc && typeof cc === 'object' && 'name' in cc
         ? String((cc as { name?: string }).name ?? '')
         : '';
-    return { ot, centroCosto };
+    const centroCostoCodigo =
+      cc && typeof cc === 'object' && 'code' in cc
+        ? String((cc as { code?: string }).code ?? '')
+        : '';
+    return { ot, centroCosto, centroCostoCodigo };
   }
 
   /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
-  private getHeaderCentroCosto(): string | undefined {
+  getHeaderCentroCosto(): string | undefined {
     return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCosto || undefined;
+  }
+
+  /** Código del centro de costo de cabecera (ej. "9101"), si está disponible. */
+  getHeaderCentroCostoCodigo(): string | undefined {
+    return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCostoCodigo || undefined;
   }
 
   /**
