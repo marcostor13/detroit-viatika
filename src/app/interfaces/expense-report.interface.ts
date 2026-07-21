@@ -81,7 +81,8 @@ export const VIATICO_REPORT_STATUS_LABELS: Partial<Record<IExpenseReportStatus, 
 
 export const VIATICO_REPORT_STATUS_COLORS: Partial<Record<IExpenseReportStatus, string>> = {
   pending_l1: 'bg-yellow-100 text-yellow-700',
-  pending_l2: 'bg-orange-100 text-orange-700',
+  // Verde: la cadena de aprobadores ya aprobó (solo resta Contabilidad).
+  pending_l2: 'bg-green-100 text-green-700',
   pending_contabilidad: 'bg-orange-100 text-orange-700',
   viatico_approved: 'bg-blue-100 text-blue-700',
   partially_paid: 'bg-cyan-100 text-cyan-700',
