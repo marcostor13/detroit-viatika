@@ -1916,7 +1916,8 @@ export default class AddInvoiceComponent implements OnInit {
     if (this.id) {
       if (this.isSunatValidating()) return 'Validando con SUNAT...';
       if (this.isLoading()) return 'Actualizando...';
-      return 'Actualizar factura';
+      // El formulario edita cualquier tipo de gasto, no solo facturas.
+      return 'Actualizar';
     }
     if (this.isLoading()) return 'Guardando...';
     switch (this.expenseType()) {

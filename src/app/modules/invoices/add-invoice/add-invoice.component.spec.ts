@@ -923,7 +923,7 @@ describe('AddInvoiceComponent', () => {
       invoicesService.getInvoiceById.and.returnValue(of({ _id: 'inv1', data: '{}' } as any));
       const component = createComponent({ id: 'inv1' });
       component.ngOnInit();
-      expect(component.getButtonLabel()).toBe('Actualizar factura');
+      expect(component.getButtonLabel()).toBe('Actualizar');
     });
 
     it('returns the create label per expense type', () => {
