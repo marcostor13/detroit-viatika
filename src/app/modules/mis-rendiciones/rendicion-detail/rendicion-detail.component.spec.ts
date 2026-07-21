@@ -137,6 +137,25 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('getExpenseConceptoColumn (VD-64)', () => {
+    it('muestra el comentario del gasto cuando existe', () => {
+      const expense = {
+        expenseType: 'factura',
+        comentario: 'Almuerzo con cliente',
+        data: JSON.stringify({ razonSocial: 'ACME SAC' }),
+      };
+      expect(component.getExpenseConceptoColumn(expense)).toBe('Almuerzo con cliente');
+    });
+
+    it('cae al concepto original (razón social) cuando no hay comentario', () => {
+      const expense = {
+        expenseType: 'factura',
+        data: JSON.stringify({ razonSocial: 'ACME SAC' }),
+      };
+      expect(component.getExpenseConceptoColumn(expense)).toBe('ACME SAC');
+    });
+  });
+
   describe('sortMobilityExportRows (VD-71)', () => {
     it('ordena las filas por fecha ascendente para la exportación', () => {
       const rows = [

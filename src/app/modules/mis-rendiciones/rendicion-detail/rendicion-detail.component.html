@@ -1121,8 +1121,8 @@
                   <span class="truncate">{{ getExpenseProveedor(expense) }}</span>
                 }
               </div>
-              <!-- Row 3: concepto -->
-              <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConcepto(expense) }}</p>
+              <!-- Row 3: concepto (comentario del gasto, VD-64) -->
+              <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConceptoColumn(expense) }}</p>
               <!-- Row 4: estado único (etapa que bloquea el flujo) -->
               @if (!report.isCajaChica) {
               @let mobileUnifiedStatus = getExpenseUnifiedStatus(expense);
@@ -1339,9 +1339,9 @@
                   <td class="px-3 py-3 text-secondary max-w-[160px]">
                     <span class="block truncate" [title]="getExpenseProveedor(expense)">{{ getExpenseProveedor(expense) }}</span>
                   </td>
-                  <!-- Concepto -->
+                  <!-- Concepto (comentario del gasto, VD-64) -->
                   <td class="px-3 py-3 text-secondary max-w-[200px]">
-                    <span class="block truncate" [title]="getExpenseConcepto(expense)">{{ getExpenseConcepto(expense) }}</span>
+                    <span class="block truncate" [title]="getExpenseConceptoColumn(expense)">{{ getExpenseConceptoColumn(expense) }}</span>
                   </td>
                   <!-- Proyecto -->
                   <td class="px-3 py-3 text-secondary max-w-[140px]">

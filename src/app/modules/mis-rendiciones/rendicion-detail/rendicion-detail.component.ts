@@ -1122,6 +1122,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     } catch { return 'N/A'; }
   }
 
+  /**
+   * Valor de la columna "Concepto" de la tabla de comprobantes (VD-64): el
+   * comentario del gasto, con fallback al concepto original. Es el mismo patrón
+   * (`comentario || descripcion`) que ya usa el reporte PDF/Excel, para que la
+   * pantalla y el documento muestren lo mismo. Antes mostraba la razón social,
+   * duplicando la columna "Proveedor".
+   */
+  getExpenseConceptoColumn(expense: Record<string, unknown>): string {
+    return this.getExpenseComentario(expense) || this.getExpenseConcepto(expense);
+  }
+
   /** Lista de conceptos para la tabla Comprobantes Asociados (1 entrada por fila de planilla). */
   getExpenseDescriptionLines(expense: any): string[] {
     const type = expense?.expenseType;
