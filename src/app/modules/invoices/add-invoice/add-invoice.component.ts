@@ -840,7 +840,9 @@ export default class AddInvoiceComponent implements OnInit {
       distanciaKm: [null],
       gestion: ['', Validators.required],
     });
-    this.mobilityRowsArray.push(group);
+    // VD-71: la fila nueva va al inicio. La numeración visible ("Fila N") es
+    // posicional (sale del $index), por lo que la nueva queda como "Fila 1".
+    this.mobilityRowsArray.insert(0, group);
   }
 
   onOrigenSelected(result: PlaceResult, index: number) {
@@ -1312,12 +1314,15 @@ export default class AddInvoiceComponent implements OnInit {
         ...(r.distanciaKm != null ? { distanciaKm: r.distanciaKm } : {}),
         gestion: r.gestion,
       }));
-      // En modo directa el proyecto y la categoría viven en cada fila; los del gasto se toman de la primera.
+      // En modo directa el proyecto y la categoría viven en cada fila (todas
+      // comparten el mismo, heredado del centro de costo de la rendición). Se
+      // toma el primero con valor, sin depender de la posición del array: desde
+      // VD-71 las filas nuevas se insertan al inicio.
       const expenseProjectId = this.isDirectaContext()
-        ? (rows[0]?.proyectId || '')
+        ? (rows.find((r: any) => r.proyectId)?.proyectId || '')
         : this.form.get('proyectId')?.value;
       const expenseCategoryId = this.isDirectaContext()
-        ? (rows[0]?.categoryId || '')
+        ? (rows.find((r: any) => r.categoryId)?.categoryId || '')
         : this.form.get('categoryId')?.value;
       const payload = {
         proyectId: expenseProjectId,
@@ -1591,12 +1596,20 @@ export default class AddInvoiceComponent implements OnInit {
         gestion: r.gestion,
       }));
       payload.mobilityRows = rows;
-      // En modo directa el proyecto y la categoría del gasto se toman de la primera fila.
-      if (this.isDirectaContext() && rows[0]?.proyectId) {
-        payload.proyectId = rows[0].proyectId;
+      // En modo directa el proyecto y la categoría del gasto se toman de la fila
+      // que los tenga (todas comparten el mismo), sin depender de la posición:
+      // desde VD-71 las filas nuevas se insertan al inicio.
+      const directaProject = this.isDirectaContext()
+        ? rows.find((r: any) => r.proyectId)?.proyectId
+        : undefined;
+      const directaCategory = this.isDirectaContext()
+        ? rows.find((r: any) => r.categoryId)?.categoryId
+        : undefined;
+      if (directaProject) {
+        payload.proyectId = directaProject;
       }
-      if (this.isDirectaContext() && rows[0]?.categoryId) {
-        payload.categoryId = rows[0].categoryId;
+      if (directaCategory) {
+        payload.categoryId = directaCategory;
       }
     }
 

@@ -368,6 +368,22 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  describe('addMobilityRow - orden de inserción (VD-71)', () => {
+    it('inserta la fila nueva al inicio del FormArray', () => {
+      const component = createComponent();
+      component.setExpenseType('planilla_movilidad');
+
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({ gestion: 'primera' });
+
+      component.addMobilityRow();
+      // La segunda fila agregada debe quedar en el índice 0 (arriba).
+      expect(component.mobilityRowsArray.length).toBe(2);
+      expect(component.mobilityRowsArray.at(0).get('gestion')?.value).toBe('');
+      expect(component.mobilityRowsArray.at(1).get('gestion')?.value).toBe('primera');
+    });
+  });
+
   describe('movilidad category selection', () => {
     it('auto-assigns the categoryId when exactly one movilidad category matches (case-insensitive)', () => {
       const component = createComponent();

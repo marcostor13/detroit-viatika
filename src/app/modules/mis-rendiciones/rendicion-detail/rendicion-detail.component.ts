@@ -1993,6 +1993,21 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Ordena las filas de una planilla por fecha ascendente para los documentos
+   * exportados (PDF/Excel/declaración). El documento contable se emite en orden
+   * cronológico, independiente del orden de captura: desde VD-71 las filas
+   * nuevas se insertan al inicio en la pantalla. Las filas sin fecha quedan al
+   * final, en su orden original (ordenamiento estable).
+   */
+  private sortMobilityExportRows<T extends { fecha: string }>(rows: T[]): T[] {
+    return rows.sort((a, b) => {
+      if (!a.fecha) return 1;
+      if (!b.fecha) return -1;
+      return a.fecha.localeCompare(b.fecha);
+    });
+  }
+
   private buildMobilityPageData(expense: Record<string, unknown>): MobilitySheetExportData {
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
@@ -2003,6 +2018,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       proyecto: this.resolveRowProjectLabel(r['proyectId']),
       colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
     }));
+    this.sortMobilityExportRows(rows);
     const total = rows.reduce((sum, r) => sum + (r.total || 0), 0);
     const firstFecha = rows.find(r => r.fecha)?.fecha;
     let periodo = '';
@@ -3061,6 +3077,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       proyecto: this.resolveRowProjectLabel(r['proyectId']),
       colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
     }));
+    this.sortMobilityExportRows(rows);
     const total = rows.reduce((sum, r) => sum + (r.total || 0), 0);
     const firstFecha = rows.find(r => r.fecha)?.fecha;
     let periodo = '';
@@ -3097,6 +3114,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       total: this.mobilityRowTotal(r),
       colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
     }));
+    this.sortMobilityExportRows(rows);
     const total = rows.reduce((sum, r) => sum + (r.total || 0), 0);
     const client = this.userStateService.getUser()?.client;
     const data: SingleExpenseAffidavitData = {

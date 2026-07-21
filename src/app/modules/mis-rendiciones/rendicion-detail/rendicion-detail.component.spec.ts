@@ -137,6 +137,32 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('sortMobilityExportRows (VD-71)', () => {
+    it('ordena las filas por fecha ascendente para la exportación', () => {
+      const rows = [
+        { fecha: '2026-02-10', total: 3 },
+        { fecha: '2026-02-01', total: 1 },
+        { fecha: '2026-02-05', total: 2 },
+      ];
+      const sorted = (component as any).sortMobilityExportRows(rows);
+      expect(sorted.map((r: any) => r.fecha)).toEqual([
+        '2026-02-01',
+        '2026-02-05',
+        '2026-02-10',
+      ]);
+    });
+
+    it('deja las filas sin fecha al final conservando su orden', () => {
+      const rows = [
+        { fecha: '', total: 9 },
+        { fecha: '2026-02-03', total: 1 },
+        { fecha: '', total: 8 },
+      ];
+      const sorted = (component as any).sortMobilityExportRows(rows);
+      expect(sorted.map((r: any) => r.total)).toEqual([1, 9, 8]);
+    });
+  });
+
   describe('ngOnInit', () => {
     it('refreshes config and loads report + advances', () => {
       component.ngOnInit();
