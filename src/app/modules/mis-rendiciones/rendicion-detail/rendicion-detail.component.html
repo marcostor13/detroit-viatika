@@ -34,9 +34,9 @@
             <span class="px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [ngClass]="{
               'bg-ink-100 text-ink-700': report.status === 'solicited' && !isEffectivelyClosed,
               'bg-primary/10 text-primary': report.status === 'open' && !isEffectivelyClosed,
-              'bg-warning/10 text-warning-ink': (report.status === 'submitted' || report.status === 'pending_l1' || report.status === 'pending_l2' || report.status === 'cancelled') && !isEffectivelyClosed,
+              'bg-warning/10 text-warning-ink': (report.status === 'submitted' || report.status === 'pending_l1' || report.status === 'cancelled') && !isEffectivelyClosed,
               'bg-primary/20 text-primary': report.status === 'pending_accounting' && !isEffectivelyClosed,
-              'bg-success/10 text-success-ink': (report.status === 'approved' || report.status === 'viatico_approved' || report.status === 'partially_paid') && !isEffectivelyClosed,
+              'bg-success/10 text-success-ink': (report.status === 'pending_l2' || report.status === 'approved' || report.status === 'viatico_approved' || report.status === 'partially_paid') && !isEffectivelyClosed,
               'bg-success/20 text-success-ink': (report.status === 'reimbursed' || report.status === 'settled' || report.status === 'paid') && !isEffectivelyClosed,
               'bg-error/10 text-error': report.status === 'rejected' && !isEffectivelyClosed,
               'bg-background text-secondary': report.status === 'closed' || report.status === 'returned' || isEffectivelyClosed
