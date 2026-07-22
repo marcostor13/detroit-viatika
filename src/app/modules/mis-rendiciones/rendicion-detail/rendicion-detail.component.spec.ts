@@ -571,6 +571,14 @@ describe('RendicionDetailComponent', () => {
       userState.isContabilidad.and.returnValue(true);
       expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeTrue();
     });
+
+    it('canMutateExpense bloquea al aprobador N1/N2 sobre comprobantes ajenos (VD-69)', () => {
+      component.report = makeReport({ status: 'submitted', userId: { _id: 'other', name: 'x' } as any });
+      userState.isContabilidad.and.returnValue(false);
+      userState.isApprover.and.returnValue(true);
+      userState.hasModulePermission.and.returnValue(true);
+      expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeFalse();
+    });
   });
 
   describe('goBack', () => {

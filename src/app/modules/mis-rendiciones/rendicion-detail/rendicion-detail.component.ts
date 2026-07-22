@@ -1362,10 +1362,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.collaboratorCanEdit;
   }
 
-  /** Un aprobador (con permiso rendiciones) o Contabilidad pueden editar/eliminar cualquier comprobante pendiente. */
+  /**
+   * Solo Contabilidad puede editar/eliminar comprobantes ajenos pendientes.
+   * Los aprobadores N1/N2 quedaron fuera (VD-69): su rol en la rendición es
+   * aprobar o rechazar, no corregir el comprobante de otro. Sobre su propia
+   * rendición siguen pudiendo editar vía `canMutateOwnExpense`.
+   */
   get canMutateAsAdmin(): boolean {
-    return (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones'))
-      || this.userStateService.isContabilidad();
+    return this.userStateService.isContabilidad();
   }
 
   canMutateExpense(expense: { createdBy?: string; status?: string }): boolean {
