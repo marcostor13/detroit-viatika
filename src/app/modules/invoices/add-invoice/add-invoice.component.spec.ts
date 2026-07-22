@@ -369,6 +369,49 @@ describe('AddInvoiceComponent', () => {
   });
 
   describe('addMobilityRow - orden de inserción (VD-71)', () => {
+    it('la fila nueva se renderiza vacía y no hereda el departamento de la anterior', () => {
+      const activatedRouteStub: any = {
+        snapshot: { params: {}, queryParamMap: convertToParamMap({}) },
+        queryParamMap: of(convertToParamMap({})),
+      };
+      TestBed.configureTestingModule({
+        imports: [AddInvoiceComponent],
+        providers: [
+          { provide: InvoicesService, useValue: invoicesService },
+          { provide: Router, useValue: router },
+          { provide: NotificationService, useValue: notificationService },
+          { provide: ExpenseReportsService, useValue: expenseReportsService },
+          { provide: AdvanceService, useValue: advanceService },
+          { provide: UserStateService, useValue: userStateService },
+          { provide: ActivatedRoute, useValue: activatedRouteStub },
+          { provide: UploadService, useValue: uploadService },
+          { provide: CompanyConfigService, useValue: companyConfigService },
+          { provide: ExpenseService, useValue: expenseService },
+          { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
+        ],
+      });
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      const component = fixture.componentInstance;
+      component.setExpenseType('planilla_movilidad');
+
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({ origenDepartamento: 'Ayacucho' });
+      fixture.detectChanges();
+
+      component.addMobilityRow();
+      fixture.detectChanges();
+
+      const selects: HTMLSelectElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('select[formControlName="origenDepartamento"]')
+      );
+      expect(selects.length).toBe(2);
+      // La fila nueva está arriba y debe salir sin departamento; la anterior
+      // conserva el suyo. Con `track $index` el DOM se reutilizaba por posición
+      // y la fila nueva heredaba "Ayacucho".
+      expect(selects[0].value).toBe('');
+      expect(selects[1].value).toBe('Ayacucho');
+    });
+
     it('inserta la fila nueva al inicio del FormArray', () => {
       const component = createComponent();
       component.setExpenseType('planilla_movilidad');
