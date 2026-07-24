@@ -161,7 +161,10 @@
           >
             <option value="">Seleccione una categoría</option>
             @for(category of movilidadCategories; track category._id){
-            <option value="{{ category._id }}">{{ category.name }}</option>
+            <!-- Se muestra la cuenta junto al nombre: un colaborador puede tener
+                 dos "Planilla de movilidad" (Servicios 91x y Comercial 92x) con
+                 el mismo nombre, indistinguibles sin la cuenta. -->
+            <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
             }
           </select>
           <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">

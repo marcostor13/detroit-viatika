@@ -412,6 +412,50 @@ describe('AddInvoiceComponent', () => {
       expect(selects[1].value).toBe('Ayacucho');
     });
 
+    it('el selector de categoría de movilidad muestra la cuenta junto al nombre', () => {
+      const activatedRouteStub: any = {
+        snapshot: { params: {}, queryParamMap: convertToParamMap({}) },
+        queryParamMap: of(convertToParamMap({})),
+      };
+      TestBed.configureTestingModule({
+        imports: [AddInvoiceComponent],
+        providers: [
+          { provide: InvoicesService, useValue: invoicesService },
+          { provide: Router, useValue: router },
+          { provide: NotificationService, useValue: notificationService },
+          { provide: ExpenseReportsService, useValue: expenseReportsService },
+          { provide: AdvanceService, useValue: advanceService },
+          { provide: UserStateService, useValue: userStateService },
+          { provide: ActivatedRoute, useValue: activatedRouteStub },
+          { provide: UploadService, useValue: uploadService },
+          { provide: CompanyConfigService, useValue: companyConfigService },
+          { provide: ExpenseService, useValue: expenseService },
+          { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
+        ],
+      });
+      // Dos categorías de movilidad con el mismo nombre y distinta cuenta:
+      // sin la cuenta serían indistinguibles en el desplegable. Se cargan vía el
+      // servicio porque ngOnInit (en el primer detectChanges) recarga categories.
+      invoicesService.getCategories.and.returnValue(
+        of([
+          { _id: 'mov91', name: 'Planilla de movilidad', cuenta: '91.3.1.420' },
+          { _id: 'mov92', name: 'Planilla de movilidad', cuenta: '92.3.140' },
+        ] as any)
+      );
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+      component.setExpenseType('planilla_movilidad');
+      fixture.detectChanges();
+
+      const options: HTMLOptionElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('select#categoryId option')
+      );
+      const labels = options.map(o => o.textContent?.trim());
+      expect(labels).toContain('Planilla de movilidad — 91.3.1.420');
+      expect(labels).toContain('Planilla de movilidad — 92.3.140');
+    });
+
     it('inserta la fila nueva al inicio del FormArray', () => {
       const component = createComponent();
       component.setExpenseType('planilla_movilidad');
