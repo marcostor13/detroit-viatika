@@ -146,15 +146,23 @@ export default class AddInvoiceComponent implements OnInit {
     this.notificationService.show(msg, status === 'VALIDO_ACEPTADO' ? 'success' : 'error');
   }
 
-  private getTipoComprobanteFromPostOcr(): string {
-    try {
-      const d = typeof this.postOcrBaseInvoice?.data === 'string'
-        ? JSON.parse(this.postOcrBaseInvoice.data)
-        : this.postOcrBaseInvoice?.data;
-      return d?.tipoComprobante || 'Factura';
-    } catch {
-      return 'Factura';
-    }
+  /** Tipos de comprobante que SUNAT valida en el registro de gasto (VD-70). */
+  readonly TIPOS_COMPROBANTE = ['Factura', 'Boleta'];
+
+  /**
+   * Normaliza el tipo de comprobante que devuelve el OCR (texto libre, p. ej.
+   * "Boleta Electrónica") a uno de los valores canónicos del selector, para que
+   * SUNAT reciba el codComp correcto.
+   */
+  private normalizeTipoComprobante(raw?: string): string {
+    const t = (raw ?? '').trim().toLowerCase();
+    if (t.includes('boleta')) return 'Boleta';
+    return 'Factura';
+  }
+
+  /** Tipo de comprobante elegido en el formulario, para la validación SUNAT. */
+  private getSelectedTipoComprobante(): string {
+    return this.form.get('tipoComprobante')?.value || 'Factura';
   }
 
   /**
@@ -183,7 +191,7 @@ export default class AddInvoiceComponent implements OnInit {
       clientId: this.postOcrBaseInvoice?.clientId?._id
         || this.postOcrBaseInvoice?.clientId
         || this.postOcrBaseInvoice?.companyId,
-      tipoComprobante: this.getTipoComprobanteFromPostOcr(),
+      tipoComprobante: this.getSelectedTipoComprobante(),
     };
     this.invoiceService.validateWithSunatData(invoiceId, validationData).subscribe({
       next: (response: any) => {
@@ -789,6 +797,9 @@ export default class AddInvoiceComponent implements OnInit {
       rucEmisor: [''],
       serie: [''],
       correlativo: [''],
+      // Tipo de comprobante para la validación SUNAT (VD-70). El OCR puede
+      // detectarlo mal; se muestra editable en el panel post-OCR.
+      tipoComprobante: ['Factura'],
       comentario: [''],
       placaVehiculo: [''],
       // Otros gastos
@@ -1789,6 +1800,7 @@ export default class AddInvoiceComponent implements OnInit {
               fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
               serie: dataObj.serie || '',
               correlativo: dataObj.correlativo || '',
+              tipoComprobante: this.normalizeTipoComprobante(dataObj.tipoComprobante),
               comentario: dataObj.comentario || '',
               placaVehiculo: dataObj.placaVehiculo || '',
             });
@@ -1852,6 +1864,7 @@ export default class AddInvoiceComponent implements OnInit {
                 fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
                 serie: dataObj.serie || '',
                 correlativo: dataObj.correlativo || '',
+                tipoComprobante: this.normalizeTipoComprobante(dataObj.tipoComprobante),
                 comentario: dataObj.comentario || '',
                 placaVehiculo: dataObj.placaVehiculo || '',
               });
@@ -1935,6 +1948,8 @@ export default class AddInvoiceComponent implements OnInit {
       fechaEmision: this.formatDateForBackend(formValue.fechaEmision || ''),
       serie: formValue.serie || '',
       correlativo: formValue.correlativo || '',
+      // Tipo de comprobante corregido por el usuario (VD-70), no el del OCR.
+      tipoComprobante: formValue.tipoComprobante || 'Factura',
       comentario,
       placaVehiculo: (formValue.placaVehiculo || '').trim() || undefined,
       ...(razonSocialOcr !== undefined ? { razonSocial: razonSocialOcr } : {}),

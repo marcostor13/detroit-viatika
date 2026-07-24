@@ -1025,6 +1025,22 @@ describe('AddInvoiceComponent', () => {
       expect(component.sunatIsValid()).toBeTrue();
     });
 
+    it('revalidateSunat envía el tipo de comprobante seleccionado (VD-70)', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, clientId: 'c1' };
+      component.postOcrInvoiceId.set('inv1');
+      component.form.patchValue({
+        rucEmisor: '20123456789', serie: 'B001', correlativo: '123',
+        fechaEmision: '2026-01-01', tipoComprobante: 'Boleta',
+      });
+      invoicesService.validateWithSunatData.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+
+      component.revalidateSunat();
+
+      const payload = invoicesService.validateWithSunatData.calls.mostRecent().args[1] as any;
+      expect(payload.tipoComprobante).toBe('Boleta');
+    });
+
     it('isMobilityRowDateOverLimit / hasAnyMobilityLimitExceeded reflect the configured daily limit', () => {
       const component = createComponent();
       component.mobilityDailyLimit = 20;
