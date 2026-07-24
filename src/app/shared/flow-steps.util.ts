@@ -385,15 +385,15 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     });
   }
 
-  // closeIdx — Cierre por Contabilidad (paso final del flujo). Se muestra cuando la
+  // closeIdx — Cierre por Tesorería (paso final del flujo). Se muestra cuando la
   // rendición ya está cerrada o cuando el flujo avanza hacia el cierre (reembolso).
   if (!rejected && (closed || expectsReembolso)) {
     const closeState = stateFor(closeIdx);
     steps.push({
-      label: closeState === 'completed' ? 'Cerrado por Contabilidad' : 'Cierre de Contabilidad',
+      label: closeState === 'completed' ? 'Cerrado por Tesorería' : 'Cierre de Tesorería',
       state: closeState,
       date: closeState === 'completed' ? fmt(closedDate) : undefined,
-      description: closeState === 'active' ? 'Pendiente de cierre por Contabilidad' : undefined,
+      description: closeState === 'active' ? 'Pendiente de cierre por Tesorería' : undefined,
     });
   }
 
@@ -623,10 +623,10 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
   if (!rejected && (closed || expectsReembolso)) {
     const closeState = stateFor(CLOSE_IDX);
     steps.push({
-      label: closeState === 'completed' ? 'Cerrado por Contabilidad' : 'Cierre de Contabilidad',
+      label: closeState === 'completed' ? 'Cerrado por Tesorería' : 'Cierre de Tesorería',
       state: closeState,
       date: closeState === 'completed' ? fmt(r.closureRecord?.closedAt ?? r.closedAt) : undefined,
-      description: closeState === 'active' ? 'Pendiente de cierre por Contabilidad' : undefined,
+      description: closeState === 'active' ? 'Pendiente de cierre por Tesorería' : undefined,
       group: 'rendicion',
     });
   }
