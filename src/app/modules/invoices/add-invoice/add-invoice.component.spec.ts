@@ -1041,6 +1041,27 @@ describe('AddInvoiceComponent', () => {
       expect(payload.tipoComprobante).toBe('Boleta');
     });
 
+    it('onSerieChange deriva el tipo del prefijo de la serie (F/B) (VD-70)', () => {
+      const component = createComponent();
+
+      component.form.get('serie')?.setValue('FS10');
+      component.onSerieChange();
+      expect(component.form.get('tipoComprobante')?.value).toBe('Factura');
+
+      component.form.get('serie')?.setValue('B001');
+      component.onSerieChange();
+      expect(component.form.get('tipoComprobante')?.value).toBe('Boleta');
+    });
+
+    it('onSerieChange no cambia el tipo si la serie no empieza con F ni B', () => {
+      const component = createComponent();
+      component.form.get('tipoComprobante')?.setValue('Boleta');
+      component.form.get('serie')?.setValue('001');
+      component.onSerieChange();
+      // Serie numérica (físico): se conserva el tipo actual.
+      expect(component.form.get('tipoComprobante')?.value).toBe('Boleta');
+    });
+
     it('isMobilityRowDateOverLimit / hasAnyMobilityLimitExceeded reflect the configured daily limit', () => {
       const component = createComponent();
       component.mobilityDailyLimit = 20;

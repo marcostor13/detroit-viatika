@@ -160,6 +160,25 @@ export default class AddInvoiceComponent implements OnInit {
     return 'Factura';
   }
 
+  /**
+   * Deriva el tipo del prefijo de la serie (VD-70): en los comprobantes
+   * electrónicos la serie empieza con F (Factura) o B (Boleta) — es más
+   * confiable que el texto del OCR. Series numéricas (físicos) u otras letras
+   * devuelven null (se conserva el tipo actual / OCR / elección manual).
+   */
+  private deriveTipoFromSerie(serie?: string): string | null {
+    const s = (serie ?? '').trim().toUpperCase();
+    if (s.startsWith('F')) return 'Factura';
+    if (s.startsWith('B')) return 'Boleta';
+    return null;
+  }
+
+  /** Reajusta el tipo cuando el usuario edita la serie en el panel post-OCR. */
+  onSerieChange(): void {
+    const derived = this.deriveTipoFromSerie(this.form.get('serie')?.value);
+    if (derived) this.form.get('tipoComprobante')?.setValue(derived);
+  }
+
   /** Tipo de comprobante elegido en el formulario, para la validación SUNAT. */
   private getSelectedTipoComprobante(): string {
     return this.form.get('tipoComprobante')?.value || 'Factura';
@@ -1800,7 +1819,9 @@ export default class AddInvoiceComponent implements OnInit {
               fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
               serie: dataObj.serie || '',
               correlativo: dataObj.correlativo || '',
-              tipoComprobante: this.normalizeTipoComprobante(dataObj.tipoComprobante),
+              // El prefijo de la serie manda sobre el texto del OCR (más fiable).
+              tipoComprobante: this.deriveTipoFromSerie(dataObj.serie)
+                ?? this.normalizeTipoComprobante(dataObj.tipoComprobante),
               comentario: dataObj.comentario || '',
               placaVehiculo: dataObj.placaVehiculo || '',
             });
@@ -1864,7 +1885,9 @@ export default class AddInvoiceComponent implements OnInit {
                 fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
                 serie: dataObj.serie || '',
                 correlativo: dataObj.correlativo || '',
-                tipoComprobante: this.normalizeTipoComprobante(dataObj.tipoComprobante),
+                // El prefijo de la serie manda sobre el texto del OCR (más fiable).
+                tipoComprobante: this.deriveTipoFromSerie(dataObj.serie)
+                  ?? this.normalizeTipoComprobante(dataObj.tipoComprobante),
                 comentario: dataObj.comentario || '',
                 placaVehiculo: dataObj.placaVehiculo || '',
               });
