@@ -2896,7 +2896,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get canClose(): boolean {
-    const hasClosePermission = this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
+    // VD-66/VD-49: el cierre pasa a ser de Tesorería (antes Contabilidad).
+    // SuperAdmin se mantiene como override global.
+    const hasClosePermission = this.userStateService.isTesoreria() || this.userStateService.isSuperAdmin();
     if (!hasClosePermission) return false;
     if (this.report?.status !== 'approved' && this.report?.status !== 'reimbursed') return false;
     if (this.isDevolucionExpected && !(this.report as any)?.returnVoucher) return false;

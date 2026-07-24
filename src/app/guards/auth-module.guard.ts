@@ -16,6 +16,11 @@ export function authModuleGuard(module: string, bypassForAdmin = false): CanActi
       return true;
     }
 
+    // VD-66/VD-49: Tesorería gestiona el listado de rendiciones para cerrarlas.
+    if (module === 'rendiciones' && userState.isTesoreria()) {
+      return true;
+    }
+
     // El guard corre en la navegación, potencialmente antes de que la consulta
     // disparada en el login/rehidratación resuelva: se vuelve a pedir aquí
     // (idempotente) y se espera la respuesta real en vez de leer el signal

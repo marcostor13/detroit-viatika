@@ -11,8 +11,9 @@ describe('authModuleGuard', () => {
   beforeEach(() => {
     userState = jasmine.createSpyObj('UserStateService', [
       'isAuthenticated', 'hasModulePermission',
-      'isColaborador', 'isAdmin', 'isContabilidad', 'refreshApproverStatus',
+      'isColaborador', 'isAdmin', 'isContabilidad', 'isTesoreria', 'refreshApproverStatus',
     ]);
+    userState.isTesoreria.and.returnValue(false);
     userState.refreshApproverStatus.and.returnValue(of(false));
     router = jasmine.createSpyObj('Router', ['createUrlTree']);
     router.createUrlTree.and.callFake((commands: string[]) => ({ commands } as any));
@@ -68,6 +69,25 @@ describe('authModuleGuard', () => {
     userState.isContabilidad.and.returnValue(true);
     run('tesoreria').subscribe(() => {
       expect(router.createUrlTree).toHaveBeenCalledWith(['/tesoreria']);
+    });
+  });
+
+  it('allows tesoreria into /rendiciones without the module permission (VD-66)', () => {
+    userState.isAuthenticated.and.returnValue(true);
+    userState.hasModulePermission.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(true);
+    expect(run('rendiciones')).toBeTrue();
+  });
+
+  it('does NOT let tesoreria into other modules via the rendiciones shortcut', () => {
+    userState.isAuthenticated.and.returnValue(true);
+    userState.hasModulePermission.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(true);
+    userState.isColaborador.and.returnValue(false);
+    userState.isAdmin.and.returnValue(false);
+    userState.isContabilidad.and.returnValue(false);
+    run('tesoreria').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/clients-admin']);
     });
   });
 

@@ -76,7 +76,7 @@ describe('RendicionDetailComponent', () => {
     notification = jasmine.createSpyObj('NotificationService', ['show']);
     userState = jasmine.createSpyObj('UserStateService', [
       'getUser', 'isAdmin', 'isSuperAdmin', 'isContabilidad', 'isApprover',
-      'hasModulePermission', 'canApproveL1', 'canApproveL2',
+      'isTesoreria', 'hasModulePermission', 'canApproveL1', 'canApproveL2',
     ]);
     companyConfigService = jasmine.createSpyObj('CompanyConfigService', ['refreshConfig', 'getCompanyConfig']);
     confirmationService = jasmine.createSpyObj('ConfirmationService', ['show']);
@@ -95,6 +95,7 @@ describe('RendicionDetailComponent', () => {
     userState.isAdmin.and.returnValue(false);
     userState.isSuperAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(false);
     userState.isApprover.and.returnValue(false);
     userState.hasModulePermission.and.returnValue(false);
     userState.canApproveL1.and.returnValue(false);
@@ -627,10 +628,13 @@ describe('RendicionDetailComponent', () => {
       expect(component.isEffectivelyClosed).toBeTrue();
     });
 
-    it('canClose requires contabilidad/superadmin role and an approved/reimbursed status', () => {
+    it('canClose requires tesoreria/superadmin role and an approved/reimbursed status (VD-66)', () => {
       component.report = makeReport({ status: 'approved' });
       expect(component.canClose).toBeFalse();
+      // Contabilidad ya no puede cerrar (VD-66): el cierre es de Tesorería.
       userState.isContabilidad.and.returnValue(true);
+      expect(component.canClose).toBeFalse();
+      userState.isTesoreria.and.returnValue(true);
       expect(component.canClose).toBeTrue();
     });
   });
