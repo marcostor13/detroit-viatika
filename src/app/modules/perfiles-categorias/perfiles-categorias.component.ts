@@ -59,8 +59,15 @@ export class PerfilesCategoriasComponent implements OnInit {
   readonly PROFILE_CHIP_LIMIT = 12;
   expandedProfiles = signal<Set<string>>(new Set<string>());
 
+  /**
+   * Nombres de las categorías del perfil, en orden alfabético. `categoryIds` llega
+   * en orden de inserción, y como la lista se corta en PROFILE_CHIP_LIMIT, sin
+   * ordenar el recorte mostraría un subconjunto arbitrario.
+   */
   profileCategoryList(p: ICategoryProfile): string[] {
-    return (p.categoryIds ?? []).map((id) => this.categoryName(id));
+    return (p.categoryIds ?? [])
+      .map((id) => this.categoryName(id))
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
   }
 
   isProfileExpanded(id?: string): boolean {

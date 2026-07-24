@@ -212,7 +212,8 @@ export default class AdminAddInvoiceComponent implements OnInit {
         status: 'pending' as InvoiceStatus,
       };
 
-      this.invoiceService.analyzeInvoice(payload).subscribe({
+      // Componente de respaldo sin uso; analyzeInvoice pasó a multipart (VD-70 B).
+      this.invoiceService.analyzeInvoice(payload as any).subscribe({
         next: (res) => {
           if (res && res._id) {
             let dataObj: any = {};

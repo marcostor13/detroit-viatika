@@ -49,6 +49,8 @@ describe('AddInvoiceComponent', () => {
       'analyzePdf',
       'getSunatValidation',
       'validateWithSunatData',
+      'validateSunatStateless',
+      'createInvoice',
     ]);
     invoicesService.getCategories.and.returnValue(of([]));
     invoicesService.getProjects.and.returnValue(of([]));
@@ -62,6 +64,8 @@ describe('AddInvoiceComponent', () => {
     invoicesService.getRucInfo.and.returnValue(of({ razonSocial: null, fuente: '' }));
     invoicesService.analyzeInvoice.and.returnValue(of({} as any));
     invoicesService.analyzePdf.and.returnValue(of({} as any));
+    invoicesService.validateSunatStateless.and.returnValue(of({ status: 'ERROR_SUNAT' } as any));
+    invoicesService.createInvoice.and.returnValue(of({ _id: 'inv1' } as any));
 
     router = jasmine.createSpyObj('Router', ['navigate']);
 
@@ -365,6 +369,109 @@ describe('AddInvoiceComponent', () => {
         gestion: 'g1',
       });
       expect(component.isFormValid()).toBeFalse();
+    });
+  });
+
+  describe('addMobilityRow - orden de inserción (VD-71)', () => {
+    it('la fila nueva se renderiza vacía y no hereda el departamento de la anterior', () => {
+      const activatedRouteStub: any = {
+        snapshot: { params: {}, queryParamMap: convertToParamMap({}) },
+        queryParamMap: of(convertToParamMap({})),
+      };
+      TestBed.configureTestingModule({
+        imports: [AddInvoiceComponent],
+        providers: [
+          { provide: InvoicesService, useValue: invoicesService },
+          { provide: Router, useValue: router },
+          { provide: NotificationService, useValue: notificationService },
+          { provide: ExpenseReportsService, useValue: expenseReportsService },
+          { provide: AdvanceService, useValue: advanceService },
+          { provide: UserStateService, useValue: userStateService },
+          { provide: ActivatedRoute, useValue: activatedRouteStub },
+          { provide: UploadService, useValue: uploadService },
+          { provide: CompanyConfigService, useValue: companyConfigService },
+          { provide: ExpenseService, useValue: expenseService },
+          { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
+        ],
+      });
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      const component = fixture.componentInstance;
+      component.setExpenseType('planilla_movilidad');
+
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({ origenDepartamento: 'Ayacucho' });
+      fixture.detectChanges();
+
+      component.addMobilityRow();
+      fixture.detectChanges();
+
+      const selects: HTMLSelectElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('select[formControlName="origenDepartamento"]')
+      );
+      expect(selects.length).toBe(2);
+      // La fila nueva está arriba y debe salir sin departamento; la anterior
+      // conserva el suyo. Con `track $index` el DOM se reutilizaba por posición
+      // y la fila nueva heredaba "Ayacucho".
+      expect(selects[0].value).toBe('');
+      expect(selects[1].value).toBe('Ayacucho');
+    });
+
+    it('el selector de categoría de movilidad muestra la cuenta junto al nombre', () => {
+      const activatedRouteStub: any = {
+        snapshot: { params: {}, queryParamMap: convertToParamMap({}) },
+        queryParamMap: of(convertToParamMap({})),
+      };
+      TestBed.configureTestingModule({
+        imports: [AddInvoiceComponent],
+        providers: [
+          { provide: InvoicesService, useValue: invoicesService },
+          { provide: Router, useValue: router },
+          { provide: NotificationService, useValue: notificationService },
+          { provide: ExpenseReportsService, useValue: expenseReportsService },
+          { provide: AdvanceService, useValue: advanceService },
+          { provide: UserStateService, useValue: userStateService },
+          { provide: ActivatedRoute, useValue: activatedRouteStub },
+          { provide: UploadService, useValue: uploadService },
+          { provide: CompanyConfigService, useValue: companyConfigService },
+          { provide: ExpenseService, useValue: expenseService },
+          { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
+        ],
+      });
+      // Dos categorías de movilidad con el mismo nombre y distinta cuenta:
+      // sin la cuenta serían indistinguibles en el desplegable. Se cargan vía el
+      // servicio porque ngOnInit (en el primer detectChanges) recarga categories.
+      invoicesService.getCategories.and.returnValue(
+        of([
+          { _id: 'mov91', name: 'Planilla de movilidad', cuenta: '91.3.1.420' },
+          { _id: 'mov92', name: 'Planilla de movilidad', cuenta: '92.3.140' },
+        ] as any)
+      );
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+      component.setExpenseType('planilla_movilidad');
+      fixture.detectChanges();
+
+      const options: HTMLOptionElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('select#categoryId option')
+      );
+      const labels = options.map(o => o.textContent?.trim());
+      expect(labels).toContain('Planilla de movilidad — 91.3.1.420');
+      expect(labels).toContain('Planilla de movilidad — 92.3.140');
+    });
+
+    it('inserta la fila nueva al inicio del FormArray', () => {
+      const component = createComponent();
+      component.setExpenseType('planilla_movilidad');
+
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({ gestion: 'primera' });
+
+      component.addMobilityRow();
+      // La segunda fila agregada debe quedar en el índice 0 (arriba).
+      expect(component.mobilityRowsArray.length).toBe(2);
+      expect(component.mobilityRowsArray.at(0).get('gestion')?.value).toBe('');
+      expect(component.mobilityRowsArray.at(1).get('gestion')?.value).toBe('primera');
     });
   });
 
@@ -866,6 +973,123 @@ describe('AddInvoiceComponent', () => {
       component.mobilityRowsArray.at(1).patchValue({ fecha: '2026-02-02', total: 25 });
       expect(component.getMobilityDateTotal('2026-02-01')).toBe(10);
     });
+  });
+
+  describe('validación SUNAT en el registro de factura (VD-70)', () => {
+    it('sunatIsValid solo es true con VALIDO_ACEPTADO', () => {
+      const component = createComponent();
+      component.sunatStatus.set('ERROR_SUNAT');
+      expect(component.sunatIsValid()).toBeFalse();
+      component.sunatStatus.set('NO_ENCONTRADO');
+      expect(component.sunatIsValid()).toBeFalse();
+      component.sunatStatus.set('VALIDO_ACEPTADO');
+      expect(component.sunatIsValid()).toBeTrue();
+    });
+
+    it('confirmPostOcrReview NO crea la factura si SUNAT no validó', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
+      (component as any).selectedFile = new File(['x'], 'f.jpg', { type: 'image/jpeg' });
+      component.form.patchValue({ comentario: 'gasto de prueba' });
+      component.sunatStatus.set('ERROR_SUNAT');
+
+      component.confirmPostOcrReview();
+
+      expect(invoicesService.createInvoice).not.toHaveBeenCalled();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/SUNAT/i),
+        'error'
+      );
+    });
+
+    it('confirmPostOcrReview sube el archivo y crea la factura cuando SUNAT validó (VD-70 B)', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
+      (component as any).selectedFile = new File(['x'], 'f.jpg', { type: 'image/jpeg' });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'c1', comentario: 'gasto de prueba' });
+      component.sunatStatus.set('VALIDO_ACEPTADO');
+
+      component.confirmPostOcrReview();
+
+      // El archivo se sube recién ahora (no en el escaneo) y luego se crea el gasto.
+      expect(uploadService.uploadFile).toHaveBeenCalled();
+      expect(invoicesService.createInvoice).toHaveBeenCalled();
+      const payload = invoicesService.createInvoice.calls.mostRecent().args[0] as any;
+      expect(payload.imageUrl).toBe('http://file-url');
+    });
+
+    it('revalidateSunat actualiza el estado con el endpoint stateless (VD-70 B)', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
+      component.form.patchValue({
+        rucEmisor: '20123456789', serie: 'F001', correlativo: '123', fechaEmision: '2026-01-01',
+      });
+      invoicesService.validateSunatStateless.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+
+      component.revalidateSunat();
+
+      expect(invoicesService.validateSunatStateless).toHaveBeenCalled();
+      expect(component.sunatStatus()).toBe('VALIDO_ACEPTADO');
+      expect(component.sunatIsValid()).toBeTrue();
+    });
+
+    it('revalidateSunat envía el tipo de comprobante seleccionado (VD-70)', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
+      component.form.patchValue({
+        rucEmisor: '20123456789', serie: 'B001', correlativo: '123',
+        fechaEmision: '2026-01-01', tipoComprobante: 'Boleta',
+      });
+      invoicesService.validateSunatStateless.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+
+      component.revalidateSunat();
+
+      const payload = invoicesService.validateSunatStateless.calls.mostRecent().args[0] as any;
+      expect(payload.tipoComprobante).toBe('Boleta');
+    });
+
+    it('onSerieChange deriva el tipo del prefijo de la serie (F/B) (VD-70)', () => {
+      const component = createComponent();
+
+      component.form.get('serie')?.setValue('FS10');
+      component.onSerieChange();
+      expect(component.form.get('tipoComprobante')?.value).toBe('Factura');
+
+      component.form.get('serie')?.setValue('B001');
+      component.onSerieChange();
+      expect(component.form.get('tipoComprobante')?.value).toBe('Boleta');
+    });
+
+    it('onSerieChange no cambia el tipo si la serie no empieza con F ni B', () => {
+      const component = createComponent();
+      component.form.get('tipoComprobante')?.setValue('Boleta');
+      component.form.get('serie')?.setValue('001');
+      component.onSerieChange();
+      // Serie numérica (físico): se conserva el tipo actual.
+      expect(component.form.get('tipoComprobante')?.value).toBe('Boleta');
+    });
+  });
+
+  describe('openInvoice — Ver en pantalla completa', () => {
+    it('abre la URL cruda del blob, no el SafeUrl (evita el redirect a login)', () => {
+      const component = createComponent();
+      const openSpy = spyOn(window, 'open').and.stub();
+      component.previewObjectUrl = 'blob:http://localhost/abc-123';
+
+      component.openInvoice();
+
+      expect(openSpy).toHaveBeenCalledWith('blob:http://localhost/abc-123', '_blank', 'noopener,noreferrer');
+    });
+
+    it('no abre nada si no hay vista previa', () => {
+      const component = createComponent();
+      const openSpy = spyOn(window, 'open').and.stub();
+      component.previewObjectUrl = null;
+
+      component.openInvoice();
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
 
     it('isMobilityRowDateOverLimit / hasAnyMobilityLimitExceeded reflect the configured daily limit', () => {
       const component = createComponent();
@@ -923,7 +1147,7 @@ describe('AddInvoiceComponent', () => {
       invoicesService.getInvoiceById.and.returnValue(of({ _id: 'inv1', data: '{}' } as any));
       const component = createComponent({ id: 'inv1' });
       component.ngOnInit();
-      expect(component.getButtonLabel()).toBe('Actualizar factura');
+      expect(component.getButtonLabel()).toBe('Actualizar');
     });
 
     it('returns the create label per expense type', () => {

@@ -76,7 +76,7 @@ describe('RendicionDetailComponent', () => {
     notification = jasmine.createSpyObj('NotificationService', ['show']);
     userState = jasmine.createSpyObj('UserStateService', [
       'getUser', 'isAdmin', 'isSuperAdmin', 'isContabilidad', 'isApprover',
-      'hasModulePermission', 'canApproveL1', 'canApproveL2',
+      'isTesoreria', 'hasModulePermission', 'canApproveL1', 'canApproveL2',
     ]);
     companyConfigService = jasmine.createSpyObj('CompanyConfigService', ['refreshConfig', 'getCompanyConfig']);
     confirmationService = jasmine.createSpyObj('ConfirmationService', ['show']);
@@ -95,6 +95,7 @@ describe('RendicionDetailComponent', () => {
     userState.isAdmin.and.returnValue(false);
     userState.isSuperAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(false);
     userState.isApprover.and.returnValue(false);
     userState.hasModulePermission.and.returnValue(false);
     userState.canApproveL1.and.returnValue(false);
@@ -135,6 +136,51 @@ describe('RendicionDetailComponent', () => {
   it('should create and read the id from the route', () => {
     expect(component).toBeTruthy();
     expect(component.id).toBe('r1');
+  });
+
+  describe('getExpenseConceptoColumn (VD-64)', () => {
+    it('muestra el comentario del gasto cuando existe', () => {
+      const expense = {
+        expenseType: 'factura',
+        comentario: 'Almuerzo con cliente',
+        data: JSON.stringify({ razonSocial: 'ACME SAC' }),
+      };
+      expect(component.getExpenseConceptoColumn(expense)).toBe('Almuerzo con cliente');
+    });
+
+    it('cae al concepto original (razón social) cuando no hay comentario', () => {
+      const expense = {
+        expenseType: 'factura',
+        data: JSON.stringify({ razonSocial: 'ACME SAC' }),
+      };
+      expect(component.getExpenseConceptoColumn(expense)).toBe('ACME SAC');
+    });
+  });
+
+  describe('sortMobilityExportRows (VD-71)', () => {
+    it('ordena las filas por fecha ascendente para la exportación', () => {
+      const rows = [
+        { fecha: '2026-02-10', total: 3 },
+        { fecha: '2026-02-01', total: 1 },
+        { fecha: '2026-02-05', total: 2 },
+      ];
+      const sorted = (component as any).sortMobilityExportRows(rows);
+      expect(sorted.map((r: any) => r.fecha)).toEqual([
+        '2026-02-01',
+        '2026-02-05',
+        '2026-02-10',
+      ]);
+    });
+
+    it('deja las filas sin fecha al final conservando su orden', () => {
+      const rows = [
+        { fecha: '', total: 9 },
+        { fecha: '2026-02-03', total: 1 },
+        { fecha: '', total: 8 },
+      ];
+      const sorted = (component as any).sortMobilityExportRows(rows);
+      expect(sorted.map((r: any) => r.total)).toEqual([1, 9, 8]);
+    });
   });
 
   describe('ngOnInit', () => {
@@ -526,6 +572,14 @@ describe('RendicionDetailComponent', () => {
       userState.isContabilidad.and.returnValue(true);
       expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeTrue();
     });
+
+    it('canMutateExpense bloquea al aprobador N1/N2 sobre comprobantes ajenos (VD-69)', () => {
+      component.report = makeReport({ status: 'submitted', userId: { _id: 'other', name: 'x' } as any });
+      userState.isContabilidad.and.returnValue(false);
+      userState.isApprover.and.returnValue(true);
+      userState.hasModulePermission.and.returnValue(true);
+      expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeFalse();
+    });
   });
 
   describe('goBack', () => {
@@ -574,10 +628,13 @@ describe('RendicionDetailComponent', () => {
       expect(component.isEffectivelyClosed).toBeTrue();
     });
 
-    it('canClose requires contabilidad/superadmin role and an approved/reimbursed status', () => {
+    it('canClose requires tesoreria/superadmin role and an approved/reimbursed status (VD-66)', () => {
       component.report = makeReport({ status: 'approved' });
       expect(component.canClose).toBeFalse();
+      // Contabilidad ya no puede cerrar (VD-66): el cierre es de Tesorería.
       userState.isContabilidad.and.returnValue(true);
+      expect(component.canClose).toBeFalse();
+      userState.isTesoreria.and.returnValue(true);
       expect(component.canClose).toBeTrue();
     });
   });

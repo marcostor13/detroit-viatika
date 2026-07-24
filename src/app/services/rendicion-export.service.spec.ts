@@ -8,8 +8,13 @@ import {
   SingleExpenseAffidavitData,
 } from './rendicion-export.service';
 import { CompanyConfigService } from './company-config.service';
+import { jsPDF } from 'jspdf';
 
 const mockCompanyConfigService = jasmine.createSpyObj('CompanyConfigService', ['getCompanyConfig']);
+
+/** PNG 1x1 válido: permite que jsPDF.addImage procese la firma en los tests. */
+const ONE_PX_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const makeRendicionData = (): RendicionExportData => ({
   fileBaseName: 'test-rendicion',
@@ -196,6 +201,49 @@ describe('RendicionExportService', () => {
         total: 30,
       };
       await expectAsync(service.exportMobilitySheetToPdf(data)).toBeResolved();
+    });
+
+    /** Cuenta cuántas veces se dibujó la firma, usando un doc externo espiable. */
+    const countSignatureDraws = async (data: MobilitySheetExportData): Promise<number> => {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const addImage = spyOn(doc, 'addImage').and.stub();
+      await service.exportMobilitySheetToPdf(data, doc);
+      return addImage.calls
+        .allArgs()
+        .filter(args => (args[0] as unknown as string) === ONE_PX_PNG).length;
+    };
+
+    it('dibuja la firma del colaborador en cada línea con contenido (VD-67)', async () => {
+      const draws = await countSignatureDraws({
+        fileBaseName: 'mobility-firmas',
+        collaborator: 'María',
+        generatedAt: '01/01/2026',
+        signature: ONE_PX_PNG,
+        rows: [
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'G1', total: 30 },
+          { fecha: '02/01', origen: 'Lima', destino: 'Surco', gestion: 'G2', total: 20 },
+          { fecha: '03/01', origen: 'Lima', destino: 'Barranco', gestion: 'G3', total: 10 },
+        ],
+        total: 60,
+      });
+
+      // 3 filas con contenido + la firma del pie. Las filas de relleno (la
+      // planilla se completa hasta 10) no llevan firma.
+      expect(draws).toBe(4);
+    });
+
+    it('no dibuja firmas por línea cuando el colaborador no tiene firma (VD-67)', async () => {
+      const draws = await countSignatureDraws({
+        fileBaseName: 'mobility-sin-firma',
+        collaborator: 'María',
+        generatedAt: '01/01/2026',
+        rows: [
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'G1', total: 30 },
+        ],
+        total: 30,
+      });
+
+      expect(draws).toBe(0);
     });
   });
 

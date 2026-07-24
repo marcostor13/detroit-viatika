@@ -87,6 +87,10 @@ export class InicioComponent implements OnInit {
   get canSeeRendiciones(): boolean {
     return this.userState.canCreateRendicion();
   }
+  /** Tesorería cierra las rendiciones (VD-66/VD-49): ve su propia sección en Inicio. */
+  get isTesoreria(): boolean {
+    return this.userState.isTesoreria();
+  }
 
   readonly STATUS_LABELS = ADVANCE_STATUS_LABELS;
   readonly STATUS_COLORS = ADVANCE_STATUS_COLORS;
@@ -275,6 +279,27 @@ export class InicioComponent implements OnInit {
 
   kpiRendicionesPorAprobar = computed(() => this.rendicionesRows().length);
 
+  // ════════════════════════════════════════════════════════════════
+  //  TESORERÍA — Rendiciones pendientes por cerrar (VD-66/VD-49)
+  // ════════════════════════════════════════════════════════════════
+
+  /** Estados en los que una rendición está lista para que Tesorería la cierre. */
+  private readonly CERRABLE_STATUSES = ['approved', 'reimbursed'];
+
+  showAllPorCerrar = signal(false);
+
+  rendicionesPorCerrarRows = computed<DashRow[]>(() =>
+    this.teamReports()
+      .filter((r) => this.CERRABLE_STATUSES.includes(r.status))
+      .sort((a, b) => this.ts(b.createdAt) - this.ts(a.createdAt))
+      .map((r) => this.reportRow(r))
+  );
+
+  kpiRendicionesPorCerrar = computed(() => this.rendicionesPorCerrarRows().length);
+  visibleRendicionesPorCerrar = computed(() =>
+    this.slice(this.rendicionesPorCerrarRows(), this.showAllPorCerrar())
+  );
+
   // ─── Slices visibles (preview 5 + expandir) ───────────────────────
   // Mi actividad (propias) — Viáticos
   visibleSolViaticos = computed(() => this.slice(this.misSolicitudesViaticosRows(), this.showAllViaticos()));
@@ -306,6 +331,13 @@ export class InicioComponent implements OnInit {
 
     // refreshApproverStatus() es una llamada HTTP async: se espera su valor emitido
     // (no se lee el signal cacheado) para no perder la carrera contra el arranque.
+    // Tesorería tiene su propia vista (pendientes por cerrar) y no es aprobador,
+    // así que se decide antes de la rama coordinador/colaborador.
+    if (this.isTesoreria) {
+      this.loadTesoreria(clientId);
+      return;
+    }
+
     this.userState.refreshApproverStatus().subscribe((isApprover) => {
       this.isApprover.set(isApprover);
       if (isApprover) {
@@ -314,6 +346,20 @@ export class InicioComponent implements OnInit {
         this.loadColaborador(userId, clientId);
       }
     });
+  }
+
+  /** Tesorería: carga las rendiciones de la empresa para listar las pendientes por cerrar. */
+  private loadTesoreria(clientId: string) {
+    this.expenseReportsService
+      .findAllByClient(clientId)
+      .pipe(catchError(() => of([])))
+      .subscribe({
+        next: (team) => {
+          this.teamReports.set(team);
+          this.isLoading.set(false);
+        },
+        error: () => this.isLoading.set(false),
+      });
   }
 
   private loadColaborador(userId: string, clientId: string) {

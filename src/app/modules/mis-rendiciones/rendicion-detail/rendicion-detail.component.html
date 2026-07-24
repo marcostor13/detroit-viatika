@@ -34,9 +34,9 @@
             <span class="px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [ngClass]="{
               'bg-ink-100 text-ink-700': report.status === 'solicited' && !isEffectivelyClosed,
               'bg-primary/10 text-primary': report.status === 'open' && !isEffectivelyClosed,
-              'bg-warning/10 text-warning-ink': (report.status === 'submitted' || report.status === 'pending_l1' || report.status === 'pending_l2' || report.status === 'cancelled') && !isEffectivelyClosed,
+              'bg-warning/10 text-warning-ink': (report.status === 'submitted' || report.status === 'pending_l1' || report.status === 'cancelled') && !isEffectivelyClosed,
               'bg-primary/20 text-primary': report.status === 'pending_accounting' && !isEffectivelyClosed,
-              'bg-success/10 text-success-ink': (report.status === 'approved' || report.status === 'viatico_approved' || report.status === 'partially_paid') && !isEffectivelyClosed,
+              'bg-success/10 text-success-ink': (report.status === 'pending_l2' || report.status === 'approved' || report.status === 'viatico_approved' || report.status === 'partially_paid') && !isEffectivelyClosed,
               'bg-success/20 text-success-ink': (report.status === 'reimbursed' || report.status === 'settled' || report.status === 'paid') && !isEffectivelyClosed,
               'bg-error/10 text-error': report.status === 'rejected' && !isEffectivelyClosed,
               'bg-background text-secondary': report.status === 'closed' || report.status === 'returned' || isEffectivelyClosed
@@ -1014,7 +1014,7 @@
               [value]="expFilterSearch()"
               (input)="expFilterSearch.set($any($event.target).value)"
               (keyup.enter)="applyExpenseFilters()"
-              placeholder="Buscar concepto..."
+              placeholder="Buscar por RUC..."
               class="h-8 rounded-lg border border-divider bg-quaternary px-3 text-xs text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[140px]"
             />
             <button
@@ -1121,8 +1121,8 @@
                   <span class="truncate">{{ getExpenseProveedor(expense) }}</span>
                 }
               </div>
-              <!-- Row 3: concepto -->
-              <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConcepto(expense) }}</p>
+              <!-- Row 3: concepto (comentario del gasto, VD-64) -->
+              <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConceptoColumn(expense) }}</p>
               <!-- Row 4: estado único (etapa que bloquea el flujo) -->
               @if (!report.isCajaChica) {
               @let mobileUnifiedStatus = getExpenseUnifiedStatus(expense);
@@ -1339,9 +1339,9 @@
                   <td class="px-3 py-3 text-secondary max-w-[160px]">
                     <span class="block truncate" [title]="getExpenseProveedor(expense)">{{ getExpenseProveedor(expense) }}</span>
                   </td>
-                  <!-- Concepto -->
+                  <!-- Concepto (comentario del gasto, VD-64) -->
                   <td class="px-3 py-3 text-secondary max-w-[200px]">
-                    <span class="block truncate" [title]="getExpenseConcepto(expense)">{{ getExpenseConcepto(expense) }}</span>
+                    <span class="block truncate" [title]="getExpenseConceptoColumn(expense)">{{ getExpenseConceptoColumn(expense) }}</span>
                   </td>
                   <!-- Proyecto -->
                   <td class="px-3 py-3 text-secondary max-w-[140px]">

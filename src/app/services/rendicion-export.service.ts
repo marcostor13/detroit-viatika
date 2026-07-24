@@ -1138,8 +1138,10 @@ export class RendicionExportService {
 
     const logoB64 = await this.getLogoBase64();
 
-    // Col X positions: Fecha | Colaborador | Proyecto | Origen | Destino | Gestión | TOTALES | end
-    const cols = [14, 32, 62, 82, 112, 142, 170, 196];
+    // Col X positions: Fecha | Colaborador | Proyecto | Origen | Destino | Gestión | TOTALES | FIRMA | end
+    // La columna FIRMA (VD-67) lleva la firma del colaborador en cada línea; se
+    // reparte el mismo ancho total (lm..rm) entre las 8 columnas.
+    const cols = [14, 30, 54, 72, 98, 124, 148, 170, 196];
 
     // Title
     doc.setFont('helvetica', 'bold');
@@ -1210,8 +1212,8 @@ export class RendicionExportService {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
 
-    const headers = ['Fecha', 'Colaborador', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.'];
-    for (let i = 0; i < 7; i++) {
+    const headers = ['Fecha', 'Colaborador', 'Proyecto', 'Origen', 'Destino', 'Gestión', 'TOTALES S/.', 'FIRMA'];
+    for (let i = 0; i < headers.length; i++) {
       doc.rect(cols[i], y, cols[i + 1] - cols[i], hdr, 'S');
       doc.text(headers[i], (cols[i] + cols[i + 1]) / 2, y + 5, { align: 'center' });
     }
@@ -1228,11 +1230,21 @@ export class RendicionExportService {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
 
+    // Firma por línea (VD-67): se escala la firma del colaborador al alto de fila
+    // conservando la proporción de la firma del pie (50x16), y se centra en la celda.
+    const sigCellW = cols[8] - cols[7];
+    const rowSigH = 5.6;
+    const rowSigW = rowSigH * (50 / 16);
+    const rowSigX = cols[7] + (sigCellW - rowSigW) / 2;
+
     for (const row of dataRows) {
-      for (let c = 0; c < 7; c++) {
+      for (let c = 0; c < 8; c++) {
         doc.rect(cols[c], y, cols[c + 1] - cols[c], rowH, 'S');
       }
       const hasContent = !!(row.fecha || row.origen || row.destino || row.gestion);
+      if (hasContent && data.signature) {
+        doc.addImage(data.signature, 'PNG', rowSigX, y + (rowH - rowSigH) / 2, rowSigW, rowSigH);
+      }
       if (row.fecha) {
         doc.text(this.formatDateDdMmYyyy(row.fecha), cols[0] + 1, y + 4.5);
       }

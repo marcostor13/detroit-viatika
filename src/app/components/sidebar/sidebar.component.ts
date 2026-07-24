@@ -154,6 +154,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.userStateService.isApprover();
   }
 
+  isTesoreria(): boolean {
+    return this.userStateService.isTesoreria();
+  }
+
   canAccessTesoreria(): boolean {
     return this.userStateService.canAccessTesoreria();
   }

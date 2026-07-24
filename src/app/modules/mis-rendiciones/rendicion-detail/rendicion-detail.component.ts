@@ -1122,6 +1122,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     } catch { return 'N/A'; }
   }
 
+  /**
+   * Valor de la columna "Concepto" de la tabla de comprobantes (VD-64): el
+   * comentario del gasto, con fallback al concepto original. Es el mismo patrón
+   * (`comentario || descripcion`) que ya usa el reporte PDF/Excel, para que la
+   * pantalla y el documento muestren lo mismo. Antes mostraba la razón social,
+   * duplicando la columna "Proveedor".
+   */
+  getExpenseConceptoColumn(expense: Record<string, unknown>): string {
+    return this.getExpenseComentario(expense) || this.getExpenseConcepto(expense);
+  }
+
   /** Lista de conceptos para la tabla Comprobantes Asociados (1 entrada por fila de planilla). */
   getExpenseDescriptionLines(expense: any): string[] {
     const type = expense?.expenseType;
@@ -1351,10 +1362,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.collaboratorCanEdit;
   }
 
-  /** Un aprobador (con permiso rendiciones) o Contabilidad pueden editar/eliminar cualquier comprobante pendiente. */
+  /**
+   * Solo Contabilidad puede editar/eliminar comprobantes ajenos pendientes.
+   * Los aprobadores N1/N2 quedaron fuera (VD-69): su rol en la rendición es
+   * aprobar o rechazar, no corregir el comprobante de otro. Sobre su propia
+   * rendición siguen pudiendo editar vía `canMutateOwnExpense`.
+   */
   get canMutateAsAdmin(): boolean {
-    return (this.userStateService.isApprover() && this.userStateService.hasModulePermission('rendiciones'))
-      || this.userStateService.isContabilidad();
+    return this.userStateService.isContabilidad();
   }
 
   canMutateExpense(expense: { createdBy?: string; status?: string }): boolean {
@@ -1993,6 +2008,21 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Ordena las filas de una planilla por fecha ascendente para los documentos
+   * exportados (PDF/Excel/declaración). El documento contable se emite en orden
+   * cronológico, independiente del orden de captura: desde VD-71 las filas
+   * nuevas se insertan al inicio en la pantalla. Las filas sin fecha quedan al
+   * final, en su orden original (ordenamiento estable).
+   */
+  private sortMobilityExportRows<T extends { fecha: string }>(rows: T[]): T[] {
+    return rows.sort((a, b) => {
+      if (!a.fecha) return 1;
+      if (!b.fecha) return -1;
+      return a.fecha.localeCompare(b.fecha);
+    });
+  }
+
   private buildMobilityPageData(expense: Record<string, unknown>): MobilitySheetExportData {
     const rows = this.mobilityRows(expense).map(r => ({
       fecha: String(r['fecha'] || ''),
@@ -2003,6 +2033,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       proyecto: this.resolveRowProjectLabel(r['proyectId']),
       colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
     }));
+    this.sortMobilityExportRows(rows);
     const total = rows.reduce((sum, r) => sum + (r.total || 0), 0);
     const firstFecha = rows.find(r => r.fecha)?.fecha;
     let periodo = '';
@@ -2865,7 +2896,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get canClose(): boolean {
-    const hasClosePermission = this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
+    // VD-66/VD-49: el cierre pasa a ser de Tesorería (antes Contabilidad).
+    // SuperAdmin se mantiene como override global.
+    const hasClosePermission = this.userStateService.isTesoreria() || this.userStateService.isSuperAdmin();
     if (!hasClosePermission) return false;
     if (this.report?.status !== 'approved' && this.report?.status !== 'reimbursed') return false;
     if (this.isDevolucionExpected && !(this.report as any)?.returnVoucher) return false;
@@ -3061,6 +3094,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       proyecto: this.resolveRowProjectLabel(r['proyectId']),
       colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
     }));
+    this.sortMobilityExportRows(rows);
     const total = rows.reduce((sum, r) => sum + (r.total || 0), 0);
     const firstFecha = rows.find(r => r.fecha)?.fecha;
     let periodo = '';
@@ -3097,6 +3131,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       total: this.mobilityRowTotal(r),
       colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
     }));
+    this.sortMobilityExportRows(rows);
     const total = rows.reduce((sum, r) => sum + (r.total || 0), 0);
     const client = this.userStateService.getUser()?.client;
     const data: SingleExpenseAffidavitData = {

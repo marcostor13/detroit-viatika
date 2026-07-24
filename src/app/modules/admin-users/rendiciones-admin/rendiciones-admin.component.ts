@@ -49,7 +49,8 @@ const REPORT_STATUS_COLORS: Record<string, string> = {
   closed: 'bg-gray-100 text-gray-800',
   cancelled: 'bg-gray-100 text-gray-500',
   pending_l1: 'bg-yellow-100 text-yellow-800',
-  pending_l2: 'bg-orange-100 text-orange-700',
+  // Verde: la cadena de aprobadores ya aprobó (solo resta Contabilidad).
+  pending_l2: 'bg-green-100 text-green-800',
   pending_contabilidad: 'bg-orange-100 text-orange-700',
   viatico_approved: 'bg-blue-100 text-blue-800',
   partially_paid: 'bg-amber-100 text-amber-700',

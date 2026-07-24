@@ -248,6 +248,27 @@
         <span class="font-medium">Actividad</span>
       </a>
       }
+      <!-- Tesorería: Inicio (pendientes por cerrar) + Rendiciones (VD-66/VD-49) -->
+      @if (isTesoreria()) {
+      <a
+        [routerLink]="['/inicio']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/inicio')"
+        [class.text-quaternary]="isSelected('/inicio')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Inicio</span>
+      </a>
+      <a
+        [routerLink]="['/rendiciones']"
+        routerLinkActive="bg-primary text-white"
+        [class.bg-primary]="isSelected('/rendiciones')"
+        [class.text-quaternary]="isSelected('/rendiciones')"
+        class="flex items-center px-4 py-3 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+      >
+        <span class="font-medium">Rendiciones</span>
+      </a>
+      }
       @if (!isContabilidad() && canAccessTesoreria()) {
       <a
         [routerLink]="['/tesoreria']"
@@ -650,6 +671,27 @@
           class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
         >
           <span class="font-medium text-lg">Actividad</span>
+        </a>
+        }
+        <!-- Tesorería: Inicio (pendientes por cerrar) + Rendiciones (VD-66/VD-49) -->
+        @if (isTesoreria()) {
+        <a
+          [routerLink]="['/inicio']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/inicio')"
+          [class.text-quaternary]="isSelected('/inicio')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Inicio</span>
+        </a>
+        <a
+          [routerLink]="['/rendiciones']"
+          (click)="toggleSidebar()"
+          [class.bg-primary]="isSelected('/rendiciones')"
+          [class.text-quaternary]="isSelected('/rendiciones')"
+          class="flex items-center px-4 py-4 text-secondary rounded-xl hover:bg-background hover:text-primary transition-all duration-200 group"
+        >
+          <span class="font-medium text-lg">Rendiciones</span>
         </a>
         }
         @if (!isContabilidad() && canAccessTesoreria()) {
