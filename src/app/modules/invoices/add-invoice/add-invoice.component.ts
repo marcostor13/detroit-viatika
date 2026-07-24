@@ -73,6 +73,13 @@ export default class AddInvoiceComponent implements OnInit {
   /** Trabajadores del cliente, para el selector de colaborador por fila de la planilla. */
   workers: WorkerOption[] = [];
   previewImage: SafeUrl | null = null;
+  /**
+   * URL cruda (blob:) de la vista previa. `previewImage` es un SafeUrl (objeto),
+   * que al abrirse con window.open se convierte en "[object Object]" y termina
+   * redirigiendo al login; aquí se guarda la URL real para "Ver en pantalla
+   * completa".
+   */
+  previewObjectUrl: string | null = null;
   selectedFile!: File;
   originalInvoice: any = null;
   sunatValidation: SunatValidationInfo | null = null;
@@ -847,6 +854,7 @@ export default class AddInvoiceComponent implements OnInit {
     // Limpiar archivo al cambiar de tipo para evitar adjuntos cruzados
     this.selectedFile = undefined as any;
     this.previewImage = null;
+    this.previewObjectUrl = null;
     if (type === 'factura') {
       this.form.get('file')?.setValidators([Validators.required]);
     } else {
@@ -1755,10 +1763,10 @@ export default class AddInvoiceComponent implements OnInit {
       this.selectedFile = input.files[0];
       const isImage = this.selectedFile.type.startsWith('image/');
       if (isImage) {
-        this.previewImage = this.sanitizer.bypassSecurityTrustUrl(
-          URL.createObjectURL(this.selectedFile)
-        );
+        this.previewObjectUrl = URL.createObjectURL(this.selectedFile);
+        this.previewImage = this.sanitizer.bypassSecurityTrustUrl(this.previewObjectUrl);
       } else {
+        this.previewObjectUrl = null;
         this.previewImage = null;
       }
       this.form.patchValue({ file: this.selectedFile });
@@ -2010,8 +2018,8 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   openInvoice() {
-    if (this.previewImage) {
-      window.open(this.previewImage as string, '_blank');
+    if (this.previewObjectUrl) {
+      window.open(this.previewObjectUrl, '_blank', 'noopener,noreferrer');
     }
   }
 

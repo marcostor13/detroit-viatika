@@ -1061,6 +1061,28 @@ describe('AddInvoiceComponent', () => {
       // Serie numérica (físico): se conserva el tipo actual.
       expect(component.form.get('tipoComprobante')?.value).toBe('Boleta');
     });
+  });
+
+  describe('openInvoice — Ver en pantalla completa', () => {
+    it('abre la URL cruda del blob, no el SafeUrl (evita el redirect a login)', () => {
+      const component = createComponent();
+      const openSpy = spyOn(window, 'open').and.stub();
+      component.previewObjectUrl = 'blob:http://localhost/abc-123';
+
+      component.openInvoice();
+
+      expect(openSpy).toHaveBeenCalledWith('blob:http://localhost/abc-123', '_blank', 'noopener,noreferrer');
+    });
+
+    it('no abre nada si no hay vista previa', () => {
+      const component = createComponent();
+      const openSpy = spyOn(window, 'open').and.stub();
+      component.previewObjectUrl = null;
+
+      component.openInvoice();
+
+      expect(openSpy).not.toHaveBeenCalled();
+    });
 
     it('isMobilityRowDateOverLimit / hasAnyMobilityLimitExceeded reflect the configured daily limit', () => {
       const component = createComponent();
