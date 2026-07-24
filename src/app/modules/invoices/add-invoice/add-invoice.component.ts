@@ -117,6 +117,91 @@ export default class AddInvoiceComponent implements OnInit {
   isEditingOcrAmount = signal(false);
   editedOcrTotal = signal<number | null>(null);
 
+  // ─── Estado SUNAT del comprobante escaneado (VD-70) ───────────────
+  /** Resultado SUNAT del último escaneo/revalidación. Solo VALIDO_ACEPTADO habilita guardar. */
+  sunatStatus = signal<string | null>(null);
+  /** Una factura solo puede guardarse si SUNAT la validó como aceptada. */
+  sunatIsValid = computed(() => this.sunatStatus() === 'VALIDO_ACEPTADO');
+
+  private readonly SUNAT_STATUS_MESSAGES: Record<string, string> = {
+    VALIDO_ACEPTADO: 'Factura válida y emitida a la empresa.',
+    VALIDO_NO_PERTENECE: 'El comprobante no fue emitido a esta empresa. Verifica el RUC emisor.',
+    NO_ENCONTRADO: 'Comprobante no encontrado en SUNAT.',
+    ERROR_SUNAT: 'Error en el servicio de SUNAT. Revisa los datos e intenta de nuevo.',
+    SUNAT_CONFIG_NOT_FOUND: 'No se encontró configuración SUNAT para esta empresa.',
+    PENDING: 'Pendiente de validación con SUNAT.',
+  };
+
+  /** Mensaje legible del estado SUNAT actual, para el panel post-OCR. */
+  sunatStatusMessage = computed(() => {
+    const s = this.sunatStatus();
+    if (!s) return 'Pendiente de validación con SUNAT.';
+    return this.SUNAT_STATUS_MESSAGES[s] ?? `Estado SUNAT: ${s}`;
+  });
+
+  private notifySunatStatus(status: string | null): void {
+    const msg = status
+      ? (this.SUNAT_STATUS_MESSAGES[status] ?? `Estado SUNAT: ${status}`)
+      : 'Pendiente de validación con SUNAT.';
+    this.notificationService.show(msg, status === 'VALIDO_ACEPTADO' ? 'success' : 'error');
+  }
+
+  private getTipoComprobanteFromPostOcr(): string {
+    try {
+      const d = typeof this.postOcrBaseInvoice?.data === 'string'
+        ? JSON.parse(this.postOcrBaseInvoice.data)
+        : this.postOcrBaseInvoice?.data;
+      return d?.tipoComprobante || 'Factura';
+    } catch {
+      return 'Factura';
+    }
+  }
+
+  /**
+   * VD-70: revalida la factura con SUNAT usando los datos (posiblemente editados)
+   * del panel post-OCR, sin salir del formulario. Actualiza `sunatStatus` para
+   * habilitar/bloquear el guardado.
+   */
+  revalidateSunat(): void {
+    const invoiceId = this.postOcrInvoiceId();
+    if (!invoiceId) return;
+    const formValue = this.form.value;
+    if (!this.shouldValidateWithSunat(formValue)) {
+      this.notificationService.show(
+        'Completa RUC, serie, correlativo y fecha para validar con SUNAT.',
+        'error'
+      );
+      return;
+    }
+    this.isSunatValidating.set(true);
+    const validationData = {
+      rucEmisor: formValue.rucEmisor,
+      serie: formValue.serie,
+      correlativo: formValue.correlativo,
+      fechaEmision: this.formatDateForBackend(formValue.fechaEmision),
+      montoTotal: this.postOcrBaseInvoice?.total || this.ocrTotalAmount() || 0,
+      clientId: this.postOcrBaseInvoice?.clientId?._id
+        || this.postOcrBaseInvoice?.clientId
+        || this.postOcrBaseInvoice?.companyId,
+      tipoComprobante: this.getTipoComprobanteFromPostOcr(),
+    };
+    this.invoiceService.validateWithSunatData(invoiceId, validationData).subscribe({
+      next: (response: any) => {
+        this.isSunatValidating.set(false);
+        this.sunatStatus.set(response?.status ?? null);
+        this.notifySunatStatus(response?.status ?? null);
+      },
+      error: () => {
+        this.isSunatValidating.set(false);
+        this.sunatStatus.set('ERROR_SUNAT');
+        this.notificationService.show(
+          'Error al validar con SUNAT. Revisa los datos e intenta nuevamente.',
+          'error'
+        );
+      },
+    });
+  }
+
   get ocrAmountWasEdited(): boolean {
     const edited = this.editedOcrTotal();
     return edited !== null && edited !== this.ocrTotalAmount();
@@ -1712,11 +1797,11 @@ export default class AddInvoiceComponent implements OnInit {
             this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
             this.isEditingOcrAmount.set(false);
             this.editedOcrTotal.set(null);
+            // VD-70: capturar el resultado SUNAT del escaneo para bloquear el
+            // guardado si no es válido.
+            this.sunatStatus.set(dataObj?.sunatValidation?.status ?? null);
             this.showPostOcrReview.set(true);
-            this.notificationService.show(
-              'Revisa y confirma los datos extraidos por OCR antes de guardar.',
-              'warning'
-            );
+            this.notifySunatStatus(this.sunatStatus());
           } else {
             this.notificationService.show('Factura PDF analizada correctamente', 'success');
             this.navigateAfterExpenseSave();
@@ -1775,12 +1860,12 @@ export default class AddInvoiceComponent implements OnInit {
               this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
               this.isEditingOcrAmount.set(false);
               this.editedOcrTotal.set(null);
+              // VD-70: capturar el resultado SUNAT del escaneo para bloquear el
+              // guardado si no es válido.
+              this.sunatStatus.set(dataObj?.sunatValidation?.status ?? null);
               this.showPostOcrReview.set(true);
               this.isLoading.set(false);
-              this.notificationService.show(
-                'Revisa y confirma los datos extraidos por OCR antes de guardar.',
-                'warning'
-              );
+              this.notifySunatStatus(this.sunatStatus());
             } else {
               this.isLoading.set(false);
               this.notificationService.show(
@@ -1819,6 +1904,14 @@ export default class AddInvoiceComponent implements OnInit {
     const comentario = (this.form.get('comentario')?.value || '').trim();
     if (!comentario) {
       this.notificationService.show('El campo Comentario es obligatorio.', 'error');
+      return;
+    }
+    // VD-70: no se puede guardar una factura que SUNAT no validó como aceptada.
+    if (!this.sunatIsValid()) {
+      this.notificationService.show(
+        'La factura no fue validada por SUNAT. Corrige los datos y vuelve a validar antes de guardar.',
+        'error'
+      );
       return;
     }
     const formValue = this.form.value;
@@ -1861,16 +1954,12 @@ export default class AddInvoiceComponent implements OnInit {
     this.isLoading.set(true);
     this.invoiceService.updateInvoice(invoiceId, updatePayload).subscribe({
       next: () => {
-        if (this.shouldValidateWithSunat(formValue)) {
-          this.id = invoiceId;
-          this.originalInvoice = this.postOcrBaseInvoice;
-          this.validateWithSunatData(formValue);
-        } else {
-          this.isLoading.set(false);
-          this.notificationService.show('Factura guardada correctamente', 'success');
-          this.notifyCategoryLimitWarning(this.postOcrBaseInvoice);
-          this.navigateAfterExpenseSave();
-        }
+        // SUNAT ya se validó en el panel (VD-70: guarda bloqueada hasta
+        // VALIDO_ACEPTADO), así que aquí solo se persiste y navega.
+        this.isLoading.set(false);
+        this.notificationService.show('Factura guardada correctamente', 'success');
+        this.notifyCategoryLimitWarning(this.postOcrBaseInvoice);
+        this.navigateAfterExpenseSave();
       },
       error: (error) => {
         this.isLoading.set(false);

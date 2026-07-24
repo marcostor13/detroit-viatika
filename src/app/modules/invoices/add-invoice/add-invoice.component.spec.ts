@@ -969,6 +969,61 @@ describe('AddInvoiceComponent', () => {
       component.mobilityRowsArray.at(1).patchValue({ fecha: '2026-02-02', total: 25 });
       expect(component.getMobilityDateTotal('2026-02-01')).toBe(10);
     });
+  });
+
+  describe('validación SUNAT en el registro de factura (VD-70)', () => {
+    it('sunatIsValid solo es true con VALIDO_ACEPTADO', () => {
+      const component = createComponent();
+      component.sunatStatus.set('ERROR_SUNAT');
+      expect(component.sunatIsValid()).toBeFalse();
+      component.sunatStatus.set('NO_ENCONTRADO');
+      expect(component.sunatIsValid()).toBeFalse();
+      component.sunatStatus.set('VALIDO_ACEPTADO');
+      expect(component.sunatIsValid()).toBeTrue();
+    });
+
+    it('confirmPostOcrReview NO guarda si SUNAT no validó la factura', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, status: 'pending' };
+      component.postOcrInvoiceId.set('inv1');
+      component.form.patchValue({ comentario: 'gasto de prueba' });
+      component.sunatStatus.set('ERROR_SUNAT');
+
+      component.confirmPostOcrReview();
+
+      expect(invoicesService.updateInvoice).not.toHaveBeenCalled();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/SUNAT/i),
+        'error'
+      );
+    });
+
+    it('confirmPostOcrReview guarda cuando SUNAT validó la factura', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, status: 'pending' };
+      component.postOcrInvoiceId.set('inv1');
+      component.form.patchValue({ comentario: 'gasto de prueba' });
+      component.sunatStatus.set('VALIDO_ACEPTADO');
+
+      component.confirmPostOcrReview();
+
+      expect(invoicesService.updateInvoice).toHaveBeenCalled();
+    });
+
+    it('revalidateSunat actualiza el estado desde la respuesta del servicio', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, clientId: 'c1' };
+      component.postOcrInvoiceId.set('inv1');
+      component.form.patchValue({
+        rucEmisor: '20123456789', serie: 'F001', correlativo: '123', fechaEmision: '2026-01-01',
+      });
+      invoicesService.validateWithSunatData.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+
+      component.revalidateSunat();
+
+      expect(component.sunatStatus()).toBe('VALIDO_ACEPTADO');
+      expect(component.sunatIsValid()).toBeTrue();
+    });
 
     it('isMobilityRowDateOverLimit / hasAnyMobilityLimitExceeded reflect the configured daily limit', () => {
       const component = createComponent();

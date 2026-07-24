@@ -394,11 +394,35 @@
       <span class="text-xs text-error">El comentario es obligatorio</span>
       }
     </div>
-    <div class="flex justify-end">
+    <!-- Estado SUNAT (VD-70): solo una factura VALIDO_ACEPTADO puede guardarse. -->
+    <div class="rounded-lg border px-3 py-2 text-sm flex items-start gap-2"
+      [class.border-green-200]="sunatIsValid()"
+      [class.bg-green-50]="sunatIsValid()"
+      [class.text-green-800]="sunatIsValid()"
+      [class.border-red-200]="!sunatIsValid()"
+      [class.bg-red-50]="!sunatIsValid()"
+      [class.text-red-800]="!sunatIsValid()">
+      <app-icon [name]="sunatIsValid() ? 'circle-check' : 'triangle-alert'" size="sm" class="shrink-0 mt-0.5" />
+      <div class="flex-1">
+        <span class="font-semibold">Validación SUNAT:</span> {{ sunatStatusMessage() }}
+        @if (!sunatIsValid()) {
+        <p class="text-xs mt-0.5">Corrige el RUC, serie, correlativo o fecha y vuelve a validar. La factura no se puede guardar hasta que SUNAT la acepte.</p>
+        }
+      </div>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        (click)="revalidateSunat()"
+        [disabled]="isLoading() || isSunatValidating()"
+        class="px-4 py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/5 disabled:opacity-50"
+      >
+        {{ isSunatValidating() ? 'Validando con SUNAT...' : 'Revalidar SUNAT' }}
+      </button>
       <button
         type="button"
         (click)="confirmPostOcrReview()"
-        [disabled]="isLoading() || isSunatValidating() || !form.get('comentario')?.value?.trim()"
+        [disabled]="isLoading() || isSunatValidating() || !form.get('comentario')?.value?.trim() || !sunatIsValid()"
         class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
       >
         Confirmar y guardar factura
