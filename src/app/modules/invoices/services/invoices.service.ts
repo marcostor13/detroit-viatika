@@ -34,10 +34,14 @@ export class InvoicesService {
 
   private http = inject(HttpClient);
 
-  analyzeInvoice(invoice: InvoicePayload): Observable<IInvoiceResponse> {
+  /**
+   * VD-70 Parte B: el escaneo de imagen envía el archivo (multipart) para OCR,
+   * SIN subirlo a storage ni crear el gasto. Devuelve solo { data, total, status }.
+   */
+  analyzeInvoice(formData: FormData): Observable<IInvoiceResponse> {
     return this.http.post<IInvoiceResponse>(
       `${this.url}/analyze-image`,
-      invoice
+      formData
     );
   }
 
@@ -45,6 +49,19 @@ export class InvoicesService {
     return this.http.post<IInvoiceResponse>(
       `${this.url}/analize-pdf`,
       formData
+    );
+  }
+
+  /** VD-70 Parte B: crea la factura al confirmar (tras el escaneo). */
+  createInvoice(payload: any): Observable<IInvoiceResponse> {
+    return this.http.post<IInvoiceResponse>(`${this.url}/invoice`, payload);
+  }
+
+  /** VD-70 Parte B: revalida con SUNAT sin gasto persistido (panel post-OCR). */
+  validateSunatStateless(payload: any): Observable<{ status?: string; details?: any; message?: string }> {
+    return this.http.post<{ status?: string; details?: any; message?: string }>(
+      `${this.url}/scan/validate-sunat`,
+      payload
     );
   }
 

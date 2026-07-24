@@ -127,6 +127,8 @@ export default class AddInvoiceComponent implements OnInit {
   // ─── Estado SUNAT del comprobante escaneado (VD-70) ───────────────
   /** Resultado SUNAT del último escaneo/revalidación. Solo VALIDO_ACEPTADO habilita guardar. */
   sunatStatus = signal<string | null>(null);
+  /** Objeto de validación SUNAT completo, para incrustarlo en el data al crear (VD-70 B). */
+  private sunatValidationResult: any = null;
   /** Una factura solo puede guardarse si SUNAT la validó como aceptada. */
   sunatIsValid = computed(() => this.sunatStatus() === 'VALIDO_ACEPTADO');
 
@@ -197,8 +199,6 @@ export default class AddInvoiceComponent implements OnInit {
    * habilitar/bloquear el guardado.
    */
   revalidateSunat(): void {
-    const invoiceId = this.postOcrInvoiceId();
-    if (!invoiceId) return;
     const formValue = this.form.value;
     if (!this.shouldValidateWithSunat(formValue)) {
       this.notificationService.show(
@@ -208,20 +208,20 @@ export default class AddInvoiceComponent implements OnInit {
       return;
     }
     this.isSunatValidating.set(true);
+    // VD-70 Parte B: el gasto aún no existe (se crea al confirmar), así que se
+    // valida stateless con los datos del formulario.
     const validationData = {
       rucEmisor: formValue.rucEmisor,
       serie: formValue.serie,
       correlativo: formValue.correlativo,
       fechaEmision: this.formatDateForBackend(formValue.fechaEmision),
       montoTotal: this.postOcrBaseInvoice?.total || this.ocrTotalAmount() || 0,
-      clientId: this.postOcrBaseInvoice?.clientId?._id
-        || this.postOcrBaseInvoice?.clientId
-        || this.postOcrBaseInvoice?.companyId,
       tipoComprobante: this.getSelectedTipoComprobante(),
     };
-    this.invoiceService.validateWithSunatData(invoiceId, validationData).subscribe({
+    this.invoiceService.validateSunatStateless(validationData).subscribe({
       next: (response: any) => {
         this.isSunatValidating.set(false);
+        this.sunatValidationResult = response ?? null;
         this.sunatStatus.set(response?.status ?? null);
         this.notifySunatStatus(response?.status ?? null);
       },
@@ -1608,12 +1608,9 @@ export default class AddInvoiceComponent implements OnInit {
           return;
         }
         this.isLoading.set(true);
-        const isPdf = this.isPdfFile(this.selectedFile);
-        if (isPdf) {
-          this.uploadPdfDirectly();
-        } else {
-          this.uploadFile();
-        }
+        // VD-70 Parte B: el botón "Subir factura" ahora solo escanea (OCR+SUNAT);
+        // el archivo se sube y el gasto se crea recién al confirmar.
+        this.scanInvoice();
     }
   }
 
@@ -1773,34 +1770,11 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
-  uploadFile() {
-    this.percentage.set(10);
-    const { uploadProgress$, downloadUrl$ } = this.uploadService.uploadFile(
-      this.selectedFile,
-      environment.storagePath
-    );
-    uploadProgress$.subscribe((progress) => {
-      if (progress === 0) {
-        progress = 10;
-      }
-      this.percentage.set(Math.round(progress));
-    });
-    downloadUrl$.subscribe({
-      next: (url) => {
-        this.form.patchValue({ file: url });
-        this.save();
-      },
-      error: (error) => {
-        this.isLoading.set(false);
-        this.notificationService.show(
-          'Error al subir el archivo: ' + error.message,
-          'error'
-        );
-      },
-    });
-  }
-
-  private uploadPdfDirectly() {
+  /**
+   * VD-70 Parte B: escanea el archivo (OCR + SUNAT) SIN subirlo a storage ni
+   * crear el gasto. Imagen y PDF van como multipart a sus endpoints de análisis.
+   */
+  private scanInvoice() {
     const formData = new FormData();
     formData.append('file', this.selectedFile);
     formData.append('proyectId', this.form.get('proyectId')?.value);
@@ -1809,142 +1783,71 @@ export default class AddInvoiceComponent implements OnInit {
     if (this.rendicionId) {
       formData.append('expenseReportId', this.rendicionId);
     }
-
     this.percentage.set(10);
-    this.invoiceService.analyzePdf(formData).subscribe({
-      next: (res) => {
-        this.isLoading.set(false);
-        if (res && res._id) {
-          let dataObj: any = {};
-          if (res.data) {
-            try {
-              dataObj = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-            } catch {}
-          }
-          if (dataObj?.rucEmisor || dataObj?.fechaEmision || dataObj?.serie || dataObj?.correlativo || dataObj?.comentario) {
-            this.form.patchValue({
-              rucEmisor: dataObj.rucEmisor || '',
-              fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
-              serie: dataObj.serie || '',
-              correlativo: dataObj.correlativo || '',
-              // El prefijo de la serie manda sobre el texto del OCR (más fiable).
-              tipoComprobante: this.deriveTipoFromSerie(dataObj.serie)
-                ?? this.normalizeTipoComprobante(dataObj.tipoComprobante),
-              comentario: dataObj.comentario || '',
-              placaVehiculo: dataObj.placaVehiculo || '',
-            });
-            this.postOcrInvoiceId.set(res._id);
-            this.postOcrBaseInvoice = res;
-            this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
-            this.isEditingOcrAmount.set(false);
-            this.editedOcrTotal.set(null);
-            // VD-70: capturar el resultado SUNAT del escaneo para bloquear el
-            // guardado si no es válido.
-            this.sunatStatus.set(dataObj?.sunatValidation?.status ?? null);
-            this.showPostOcrReview.set(true);
-            this.notifySunatStatus(this.sunatStatus());
-          } else {
-            this.notificationService.show('Factura PDF analizada correctamente', 'success');
-            this.navigateAfterExpenseSave();
-          }
-        } else {
-          this.notificationService.show('Factura PDF analizada correctamente', 'success');
-          this.navigateAfterExpenseSave();
-        }
-      },
+    const scan$ = this.isPdfFile(this.selectedFile)
+      ? this.invoiceService.analyzePdf(formData)
+      : this.invoiceService.analyzeInvoice(formData);
+    scan$.subscribe({
+      next: (res) => this.handleScanResult(res),
       error: (error) => {
         this.isLoading.set(false);
+        this.notificationService.show(
+          'Error al analizar la factura: ' +
+            (error?.error?.message || error?.message || ''),
+          'error'
+        );
       },
     });
   }
 
-  save() {
-    if (this.form.valid) {
-      const payload = {
-        categoryId: this.form.get('categoryId')?.value,
-        proyectId: this.form.get('proyectId')?.value,
-        imageUrl: this.form.get('file')?.value,
-        status: 'pending' as InvoiceStatus,
-        expenseReportId: this.rendicionId
-      };
-
-      this.invoiceService.analyzeInvoice(payload).subscribe({
-        next: (res) => {
-          if (res && res._id) {
-            let dataObj: any = {};
-            if (res.data) {
-              try {
-                dataObj =
-                  typeof res.data === 'string'
-                    ? JSON.parse(res.data)
-                    : res.data;
-              } catch {}
-            }
-
-            if (
-              dataObj?.rucEmisor ||
-              dataObj?.fechaEmision ||
-              dataObj?.serie ||
-              dataObj?.correlativo ||
-              dataObj?.comentario
-            ) {
-              this.form.patchValue({
-                rucEmisor: dataObj.rucEmisor || '',
-                fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
-                serie: dataObj.serie || '',
-                correlativo: dataObj.correlativo || '',
-                // El prefijo de la serie manda sobre el texto del OCR (más fiable).
-                tipoComprobante: this.deriveTipoFromSerie(dataObj.serie)
-                  ?? this.normalizeTipoComprobante(dataObj.tipoComprobante),
-                comentario: dataObj.comentario || '',
-                placaVehiculo: dataObj.placaVehiculo || '',
-              });
-              this.postOcrInvoiceId.set(res._id);
-              this.postOcrBaseInvoice = res;
-              this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
-              this.isEditingOcrAmount.set(false);
-              this.editedOcrTotal.set(null);
-              // VD-70: capturar el resultado SUNAT del escaneo para bloquear el
-              // guardado si no es válido.
-              this.sunatStatus.set(dataObj?.sunatValidation?.status ?? null);
-              this.showPostOcrReview.set(true);
-              this.isLoading.set(false);
-              this.notifySunatStatus(this.sunatStatus());
-            } else {
-              this.isLoading.set(false);
-              this.notificationService.show(
-                'Factura subida correctamente',
-                'success'
-              );
-              this.notifyCategoryLimitWarning(res);
-              this.navigateAfterExpenseSave();
-            }
-          } else {
-            this.isLoading.set(false);
-            this.notificationService.show(
-              'Factura subida correctamente',
-              'success'
-            );
-            this.notifyCategoryLimitWarning(res);
-            this.navigateAfterExpenseSave();
-          }
-        },
-        error: (error) => {
-          this.isLoading.set(false);
-        },
+  /**
+   * Procesa la respuesta del escaneo (VD-70 Parte B): datos OCR + resultado
+   * SUNAT, sin gasto persistido. Puebla el panel post-OCR para revisar/editar y
+   * confirmar.
+   */
+  private handleScanResult(res: any) {
+    this.isLoading.set(false);
+    let dataObj: any = {};
+    if (res?.data) {
+      try {
+        dataObj = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+      } catch {}
+    }
+    if (
+      dataObj?.rucEmisor || dataObj?.fechaEmision || dataObj?.serie ||
+      dataObj?.correlativo || dataObj?.comentario
+    ) {
+      this.form.patchValue({
+        rucEmisor: dataObj.rucEmisor || '',
+        fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
+        serie: dataObj.serie || '',
+        correlativo: dataObj.correlativo || '',
+        // El prefijo de la serie manda sobre el texto del OCR (más fiable).
+        tipoComprobante: this.deriveTipoFromSerie(dataObj.serie)
+          ?? this.normalizeTipoComprobante(dataObj.tipoComprobante),
+        comentario: dataObj.comentario || '',
+        placaVehiculo: dataObj.placaVehiculo || '',
       });
+      // El gasto aún no existe; se guardan los datos OCR para crearlo al confirmar.
+      this.postOcrBaseInvoice = { data: res.data, total: res.total, status: res.status };
+      this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
+      this.isEditingOcrAmount.set(false);
+      this.editedOcrTotal.set(null);
+      this.sunatValidationResult = dataObj?.sunatValidation ?? null;
+      this.sunatStatus.set(dataObj?.sunatValidation?.status ?? null);
+      this.showPostOcrReview.set(true);
+      this.notifySunatStatus(this.sunatStatus());
     } else {
-      this.isLoading.set(false);
       this.notificationService.show(
-        'Por favor complete todos los campos requeridos',
+        'No se pudieron extraer datos de la factura. Revisa el archivo e intenta de nuevo.',
         'error'
       );
     }
   }
 
+
   confirmPostOcrReview() {
-    const invoiceId = this.postOcrInvoiceId();
-    if (!invoiceId || !this.postOcrBaseInvoice) return;
+    if (!this.postOcrBaseInvoice || !this.selectedFile) return;
     const comentario = (this.form.get('comentario')?.value || '').trim();
     if (!comentario) {
       this.notificationService.show('El campo Comentario es obligatorio.', 'error');
@@ -1958,7 +1861,9 @@ export default class AddInvoiceComponent implements OnInit {
       );
       return;
     }
-    const formValue = this.form.value;
+    // getRawValue para incluir controles deshabilitados (p. ej. proyectId fijado
+    // por la rendición).
+    const formValue = this.form.getRawValue();
     let baseData: any = {};
     try {
       baseData =
@@ -1983,34 +1888,53 @@ export default class AddInvoiceComponent implements OnInit {
       tipoComprobante: formValue.tipoComprobante || 'Factura',
       comentario,
       placaVehiculo: (formValue.placaVehiculo || '').trim() || undefined,
+      // Validación SUNAT vigente (del escaneo o la última revalidación).
+      ...(this.sunatValidationResult ? { sunatValidation: this.sunatValidationResult } : {}),
       ...(razonSocialOcr !== undefined ? { razonSocial: razonSocialOcr } : {}),
       ...(this.ocrAmountWasEdited ? { amountEdited: true, originalOcrTotal: this.ocrTotalAmount() } : {}),
     };
-    const updatePayload = {
-      proyectId: this.postOcrBaseInvoice.proyectId,
-      categoryId: this.postOcrBaseInvoice.categoryId,
-      total: finalTotal,
-      data: JSON.stringify(dataObj),
-      fechaEmision: dataObj.fechaEmision,
-      status: this.postOcrBaseInvoice.status,
-      comentario,
-      placaVehiculo: dataObj.placaVehiculo,
-    };
 
+    // VD-70 Parte B: recién ahora (al confirmar) se sube el archivo y se crea el
+    // gasto. Si el usuario cancela antes, no queda nada.
     this.isLoading.set(true);
-    this.invoiceService.updateInvoice(invoiceId, updatePayload).subscribe({
-      next: () => {
-        // SUNAT ya se validó en el panel (VD-70: guarda bloqueada hasta
-        // VALIDO_ACEPTADO), así que aquí solo se persiste y navega.
-        this.isLoading.set(false);
-        this.notificationService.show('Factura guardada correctamente', 'success');
-        this.notifyCategoryLimitWarning(this.postOcrBaseInvoice);
-        this.navigateAfterExpenseSave();
+    const { downloadUrl$ } = this.uploadService.uploadFile(
+      this.selectedFile,
+      environment.storagePath
+    );
+    downloadUrl$.subscribe({
+      next: (url) => {
+        const payload = {
+          proyectId: formValue.proyectId,
+          categoryId: formValue.categoryId,
+          ordenTrabajoId: formValue.ordenTrabajoId || undefined,
+          total: finalTotal,
+          data: JSON.stringify(dataObj),
+          fechaEmision: dataObj.fechaEmision,
+          comentario,
+          placaVehiculo: dataObj.placaVehiculo,
+          imageUrl: url,
+          expenseReportId: this.rendicionId || undefined,
+        };
+        this.invoiceService.createInvoice(payload).subscribe({
+          next: (res) => {
+            this.isLoading.set(false);
+            this.notificationService.show('Factura guardada correctamente', 'success');
+            this.notifyCategoryLimitWarning(res);
+            this.navigateAfterExpenseSave();
+          },
+          error: (error) => {
+            this.isLoading.set(false);
+            this.notificationService.show(
+              'Error al guardar la factura: ' + (error.error?.message || error.message),
+              'error'
+            );
+          },
+        });
       },
       error: (error) => {
         this.isLoading.set(false);
         this.notificationService.show(
-          'Error al guardar datos OCR: ' + (error.error?.message || error.message),
+          'Error al subir el archivo: ' + (error?.message || ''),
           'error'
         );
       },

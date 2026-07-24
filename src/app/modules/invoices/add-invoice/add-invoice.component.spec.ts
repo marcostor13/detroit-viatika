@@ -49,6 +49,8 @@ describe('AddInvoiceComponent', () => {
       'analyzePdf',
       'getSunatValidation',
       'validateWithSunatData',
+      'validateSunatStateless',
+      'createInvoice',
     ]);
     invoicesService.getCategories.and.returnValue(of([]));
     invoicesService.getProjects.and.returnValue(of([]));
@@ -62,6 +64,8 @@ describe('AddInvoiceComponent', () => {
     invoicesService.getRucInfo.and.returnValue(of({ razonSocial: null, fuente: '' }));
     invoicesService.analyzeInvoice.and.returnValue(of({} as any));
     invoicesService.analyzePdf.and.returnValue(of({} as any));
+    invoicesService.validateSunatStateless.and.returnValue(of({ status: 'ERROR_SUNAT' } as any));
+    invoicesService.createInvoice.and.returnValue(of({ _id: 'inv1' } as any));
 
     router = jasmine.createSpyObj('Router', ['navigate']);
 
@@ -982,62 +986,65 @@ describe('AddInvoiceComponent', () => {
       expect(component.sunatIsValid()).toBeTrue();
     });
 
-    it('confirmPostOcrReview NO guarda si SUNAT no validó la factura', () => {
+    it('confirmPostOcrReview NO crea la factura si SUNAT no validó', () => {
       const component = createComponent();
-      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, status: 'pending' };
-      component.postOcrInvoiceId.set('inv1');
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
+      (component as any).selectedFile = new File(['x'], 'f.jpg', { type: 'image/jpeg' });
       component.form.patchValue({ comentario: 'gasto de prueba' });
       component.sunatStatus.set('ERROR_SUNAT');
 
       component.confirmPostOcrReview();
 
-      expect(invoicesService.updateInvoice).not.toHaveBeenCalled();
+      expect(invoicesService.createInvoice).not.toHaveBeenCalled();
       expect(notificationService.show).toHaveBeenCalledWith(
         jasmine.stringMatching(/SUNAT/i),
         'error'
       );
     });
 
-    it('confirmPostOcrReview guarda cuando SUNAT validó la factura', () => {
+    it('confirmPostOcrReview sube el archivo y crea la factura cuando SUNAT validó (VD-70 B)', () => {
       const component = createComponent();
-      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, status: 'pending' };
-      component.postOcrInvoiceId.set('inv1');
-      component.form.patchValue({ comentario: 'gasto de prueba' });
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
+      (component as any).selectedFile = new File(['x'], 'f.jpg', { type: 'image/jpeg' });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'c1', comentario: 'gasto de prueba' });
       component.sunatStatus.set('VALIDO_ACEPTADO');
 
       component.confirmPostOcrReview();
 
-      expect(invoicesService.updateInvoice).toHaveBeenCalled();
+      // El archivo se sube recién ahora (no en el escaneo) y luego se crea el gasto.
+      expect(uploadService.uploadFile).toHaveBeenCalled();
+      expect(invoicesService.createInvoice).toHaveBeenCalled();
+      const payload = invoicesService.createInvoice.calls.mostRecent().args[0] as any;
+      expect(payload.imageUrl).toBe('http://file-url');
     });
 
-    it('revalidateSunat actualiza el estado desde la respuesta del servicio', () => {
+    it('revalidateSunat actualiza el estado con el endpoint stateless (VD-70 B)', () => {
       const component = createComponent();
-      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, clientId: 'c1' };
-      component.postOcrInvoiceId.set('inv1');
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
       component.form.patchValue({
         rucEmisor: '20123456789', serie: 'F001', correlativo: '123', fechaEmision: '2026-01-01',
       });
-      invoicesService.validateWithSunatData.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+      invoicesService.validateSunatStateless.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
 
       component.revalidateSunat();
 
+      expect(invoicesService.validateSunatStateless).toHaveBeenCalled();
       expect(component.sunatStatus()).toBe('VALIDO_ACEPTADO');
       expect(component.sunatIsValid()).toBeTrue();
     });
 
     it('revalidateSunat envía el tipo de comprobante seleccionado (VD-70)', () => {
       const component = createComponent();
-      (component as any).postOcrBaseInvoice = { _id: 'inv1', total: 100, clientId: 'c1' };
-      component.postOcrInvoiceId.set('inv1');
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 100 };
       component.form.patchValue({
         rucEmisor: '20123456789', serie: 'B001', correlativo: '123',
         fechaEmision: '2026-01-01', tipoComprobante: 'Boleta',
       });
-      invoicesService.validateWithSunatData.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+      invoicesService.validateSunatStateless.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
 
       component.revalidateSunat();
 
-      const payload = invoicesService.validateWithSunatData.calls.mostRecent().args[1] as any;
+      const payload = invoicesService.validateSunatStateless.calls.mostRecent().args[0] as any;
       expect(payload.tipoComprobante).toBe('Boleta');
     });
 
