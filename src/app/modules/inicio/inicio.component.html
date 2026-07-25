@@ -92,9 +92,10 @@
   <!-- ════════════════════════════════════════════════════════════ -->
   @else if (isTesoreria) {
 
-  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Rendiciones por cerrar</h2>
+  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Pendientes de Tesorería</h2>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+    <!-- Rendiciones por cerrar -->
     <a routerLink="/rendiciones"
       class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
       <div class="flex items-center justify-between">
@@ -110,6 +111,23 @@
         @else { sin rendiciones por cerrar }
       </p>
     </a>
+
+    <!-- Pagos pendientes (VD-76): reembolsos + viáticos por pagar -->
+    <a routerLink="/tesoreria"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Pagos pendientes</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiPagosPendientes() > 0 ? 'bg-error/10' : 'bg-ink-100'">
+          <app-icon name="dollar-sign" size="sm" [class]="kpiPagosPendientes() > 0 ? 'text-error' : 'text-tertiary'" />
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">{{ kpiPagosPendientes() }}</p>
+      <p class="text-xs text-tertiary">
+        @if (kpiPagosPendientes() > 0) { pago{{ kpiPagosPendientes() !== 1 ? 's' : '' }} por registrar }
+        @else { sin pagos pendientes }
+      </p>
+    </a>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -120,6 +138,16 @@
       showAllSig: showAllPorCerrar,
       empty: 'No hay rendiciones pendientes por cerrar.',
       showUser: true
+    }"></ng-container>
+
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Pagos pendientes',
+      rows: visiblePagosPendientes(),
+      total: pagosPendientesRows().length,
+      showAllSig: showAllPagos,
+      empty: 'No hay pagos pendientes.',
+      showUser: true,
+      navTo: '/tesoreria'
     }"></ng-container>
   </div>
 
@@ -139,7 +167,7 @@
 
 <!-- ── Plantilla reutilizable de listado (5 + expandir) ──────────── -->
 <ng-template #listCard let-title="title" let-rows="rows" let-total="total" let-showAllSig="showAllSig"
-  let-empty="empty" let-showUser="showUser" let-approveKind="approveKind">
+  let-empty="empty" let-showUser="showUser" let-approveKind="approveKind" let-navTo="navTo">
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 overflow-hidden">
     <div class="px-5 py-4 border-b border-tertiary/10 flex items-center justify-between">
       <h2 class="text-sm font-semibold text-secondary">{{ title }}</h2>
@@ -151,7 +179,7 @@
     } @else {
     <ul class="divide-y divide-tertiary/10">
       @for (row of rows; track row._id) {
-      <li (click)="goToRow(row)"
+      <li (click)="rowClick(row, navTo)"
         class="px-5 py-3 flex items-center gap-3 hover:bg-primary/5 cursor-pointer transition-colors">
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-secondary truncate">{{ row.title }}</p>

@@ -300,6 +300,70 @@ export class InicioComponent implements OnInit {
     this.slice(this.rendicionesPorCerrarRows(), this.showAllPorCerrar())
   );
 
+  // ════════════════════════════════════════════════════════════════
+  //  TESORERÍA — Pagos pendientes (VD-76)
+  // ════════════════════════════════════════════════════════════════
+  // Las dos colas de PAGO SALIENTE que Tesorería ejecuta en /tesoreria:
+  //   1. Reembolsos al colaborador aprobados sin comprobante de pago
+  //      (endpoint dedicado `findPendingReimbursements`, mismo criterio que la
+  //      pestaña "Reembolsos" del módulo de Pagos).
+  //   2. Viáticos aprobados esperando el pago del anticipo (viatico_approved /
+  //      partially_paid, igual que `pendingViaticoPayments` en el módulo de Pagos).
+  // Estados mutuamente excluyentes → no hay doble conteo. Las devoluciones (dinero
+  // que entra) NO son pagos, por eso no cuentan aquí.
+
+  /** Reembolsos al colaborador pendientes de comprobante (endpoint dedicado). */
+  pendingReimbursements = signal<IExpenseReport[]>([]);
+
+  /** Viáticos aprobados que aún esperan el pago del anticipo. */
+  private readonly VIATICO_PAYABLE_STATUSES = ['viatico_approved', 'partially_paid'];
+
+  showAllPagos = signal(false);
+
+  private viaticoRemaining(r: IExpenseReport): number {
+    return Math.max(Number(r.viaticoAmount ?? 0) - Number(r.viaticoPaidAmount ?? 0), 0);
+  }
+
+  /** Fila de reembolso: monto = |settlement.difference|; badge fijo "Reembolso". */
+  private reembolsoRow(r: IExpenseReport): DashRow {
+    return {
+      ...this.reportRow(r),
+      amount: Math.abs(Number(r.settlement?.difference ?? 0)),
+      statusLabel: 'Reembolso',
+      statusColor: 'bg-teal-100 text-teal-700',
+    };
+  }
+
+  /** Fila de viático por pagar: monto = saldo pendiente; badge fijo "Viático por pagar". */
+  private viaticoPagoRow(r: IExpenseReport): DashRow {
+    return {
+      ...this.reportRow(r),
+      amount: this.viaticoRemaining(r),
+      statusLabel: 'Viático por pagar',
+      statusColor: 'bg-amber-100 text-amber-700',
+    };
+  }
+
+  reembolsosPendientesRows = computed<DashRow[]>(() =>
+    this.pendingReimbursements().map((r) => this.reembolsoRow(r))
+  );
+
+  viaticosPorPagarRows = computed<DashRow[]>(() =>
+    this.teamReports()
+      .filter((r) => r.type === 'viatico' && this.VIATICO_PAYABLE_STATUSES.includes(r.status))
+      .map((r) => this.viaticoPagoRow(r))
+  );
+
+  pagosPendientesRows = computed<DashRow[]>(() =>
+    [...this.reembolsosPendientesRows(), ...this.viaticosPorPagarRows()]
+      .sort((a, b) => this.ts(b.createdAt) - this.ts(a.createdAt))
+  );
+
+  kpiPagosPendientes = computed(() => this.pagosPendientesRows().length);
+  visiblePagosPendientes = computed(() =>
+    this.slice(this.pagosPendientesRows(), this.showAllPagos())
+  );
+
   // ─── Slices visibles (preview 5 + expandir) ───────────────────────
   // Mi actividad (propias) — Viáticos
   visibleSolViaticos = computed(() => this.slice(this.misSolicitudesViaticosRows(), this.showAllViaticos()));
@@ -348,18 +412,22 @@ export class InicioComponent implements OnInit {
     });
   }
 
-  /** Tesorería: carga las rendiciones de la empresa para listar las pendientes por cerrar. */
+  /**
+   * Tesorería: carga las rendiciones de la empresa (pendientes por cerrar + viáticos
+   * por pagar) y los reembolsos pendientes de comprobante (pagos pendientes, VD-76).
+   */
   private loadTesoreria(clientId: string) {
-    this.expenseReportsService
-      .findAllByClient(clientId)
-      .pipe(catchError(() => of([])))
-      .subscribe({
-        next: (team) => {
-          this.teamReports.set(team);
-          this.isLoading.set(false);
-        },
-        error: () => this.isLoading.set(false),
-      });
+    forkJoin({
+      team: this.expenseReportsService.findAllByClient(clientId).pipe(catchError(() => of([]))),
+      reimbursements: this.expenseReportsService.findPendingReimbursements(clientId).pipe(catchError(() => of([]))),
+    }).subscribe({
+      next: ({ team, reimbursements }) => {
+        this.teamReports.set(team);
+        this.pendingReimbursements.set(reimbursements);
+        this.isLoading.set(false);
+      },
+      error: () => this.isLoading.set(false),
+    });
   }
 
   private loadColaborador(userId: string, clientId: string) {
@@ -556,6 +624,20 @@ export class InicioComponent implements OnInit {
   }
 
   // ─── Navegación ───────────────────────────────────────────────────
+  /**
+   * Click de una fila del listado. Si el listado fija un destino (`navTo`, p. ej.
+   * "/tesoreria" para los pagos pendientes), navega ahí; si no, al detalle de la
+   * rendición. Mantiene intacto el comportamiento de los listados existentes que
+   * no pasan `navTo`.
+   */
+  rowClick(row: DashRow, navTo?: string) {
+    if (navTo) {
+      this.router.navigate([navTo]);
+      return;
+    }
+    this.goToRow(row);
+  }
+
   goToRow(row: DashRow) {
     if (row.source === 'advance') {
       this.router.navigate(['/viaticos', row._id]);
