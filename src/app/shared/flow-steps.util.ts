@@ -174,6 +174,14 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     r.settlement?.type === 'reembolso' ||
     (collaboratorDirecta && terminal);
 
+  // Devolución: el colaborador debe devolver el saldo a favor de la empresa
+  // (settlement 'devolucion'). Se completa al cargarse/validarse el comprobante
+  // de devolución. Mutuamente excluyente con el reembolso.
+  const devolucionDone =
+    !!r.returnVoucher || r.returnRecord?.status === 'validated' || status === 'returned' || status === 'closed';
+  const expectsDevolucion =
+    !expectsReembolso && (r.settlement?.type === 'devolucion' || !!r.returnVoucher || status === 'returned');
+
   // Cierre formal por Contabilidad: último paso del flujo (status 'closed').
   const closed = status === 'closed';
   const closedDate: string | Date | undefined =
@@ -210,6 +218,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   if (contaDone) progress = Math.max(progress, contaIdx);
   if (terminal) progress = finalIdx;
   if (expectsReembolso && reembolsoDone) progress = reembolsoIdx;
+  if (expectsDevolucion && devolucionDone) progress = reembolsoIdx;
   if (closed) progress = closeIdx;
 
   // Índice donde se rechazó (si aplica). Aprobación en paralelo: no hay "el
@@ -247,6 +256,10 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     if (expectsReembolso && !reembolsoDone) {
       activeIndex = reembolsoIdx;
     } else if (expectsReembolso && reembolsoDone) {
+      activeIndex = closeIdx;
+    } else if (expectsDevolucion && !devolucionDone) {
+      activeIndex = reembolsoIdx;
+    } else if (expectsDevolucion && devolucionDone) {
       activeIndex = closeIdx;
     }
   }
@@ -360,7 +373,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
       state: 'active',
       description: 'Pendiente de depósito por Tesorería',
     });
-  } else if (!rejected && !expectsReembolso && !closed) {
+  } else if (!rejected && !expectsReembolso && !expectsDevolucion && !closed) {
     const finalState = stateFor(finalIdx);
     const label =
       finalState === 'completed' ? (FINAL_LABELS[status] ?? 'Finalizada') :
@@ -385,9 +398,22 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     });
   }
 
+  // reembolsoIdx (mismo slot) — Devolución del colaborador (saldo a favor de la empresa)
+  if (!rejected && expectsDevolucion) {
+    const devolucionState = stateFor(reembolsoIdx);
+    steps.push({
+      label: devolucionState === 'completed' ? 'Devolución recibida' : 'Devolución del colaborador',
+      state: devolucionState,
+      date: devolucionState === 'completed'
+        ? fmt(r.returnVoucher?.uploadedAt ?? r.returnRecord?.validatedAt ?? r.returnedAt)
+        : undefined,
+      description: devolucionState === 'active' ? 'Esperando comprobante de devolución del colaborador' : undefined,
+    });
+  }
+
   // closeIdx — Cierre por Tesorería (paso final del flujo). Se muestra cuando la
-  // rendición ya está cerrada o cuando el flujo avanza hacia el cierre (reembolso).
-  if (!rejected && (closed || expectsReembolso)) {
+  // rendición ya está cerrada o cuando el flujo avanza hacia el cierre (reembolso/devolución).
+  if (!rejected && (closed || expectsReembolso || expectsDevolucion)) {
     const closeState = stateFor(closeIdx);
     steps.push({
       label: closeState === 'completed' ? 'Cerrado por Tesorería' : 'Cierre de Tesorería',
@@ -455,22 +481,30 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
   const rejected = status === 'rejected';
   const rejectedByRole: string | undefined = r.rejectedByRole;
   const rejectionReason: string | undefined = r.rejectionReason;
-  const terminal = ['approved', 'reimbursed', 'closed', 'settled'].includes(status) || !!r.returnVoucher;
+  const terminal = ['approved', 'reimbursed', 'closed', 'settled', 'returned'].includes(status) || !!r.returnVoucher;
   const closed = status === 'closed';
   const reembolsoDone = !!r.reimbursementPaymentInfo || !!r.reimbursedAt || status === 'reimbursed';
   const expectsReembolso = reembolsoDone || r.settlement?.type === 'reembolso';
+  // Devolución: el colaborador debe devolver el saldo a favor de la empresa
+  // (settlement 'devolucion'). Se completa al cargarse/validarse el comprobante
+  // de devolución. Mutuamente excluyente con el reembolso.
+  const devolucionDone =
+    !!r.returnVoucher || r.returnRecord?.status === 'validated' || status === 'returned' || status === 'closed';
+  const expectsDevolucion =
+    !expectsReembolso && (r.settlement?.type === 'devolucion' || !!r.returnVoucher || status === 'returned');
 
   const COORD_IDX = 1;
   const CONTA_IDX = 2;
   const FINAL_IDX = 3;
-  const REEMBOLSO_IDX = 4;
+  const SETTLE_IDX = 4; // reembolso (Tesorería) o devolución (colaborador)
   const CLOSE_IDX = 5;
 
   let progress = -1;
   if (status !== 'open') progress = 0;
   if (status === 'pending_accounting' || terminal) progress = COORD_IDX;
   if (terminal) progress = CONTA_IDX;
-  if (expectsReembolso && reembolsoDone) progress = REEMBOLSO_IDX;
+  if (expectsReembolso && reembolsoDone) progress = SETTLE_IDX;
+  if (expectsDevolucion && devolucionDone) progress = SETTLE_IDX;
   if (closed) progress = CLOSE_IDX;
 
   let rejIdx = -1;
@@ -485,8 +519,10 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
     else if (status === 'pending_accounting') activeIndex = CONTA_IDX;
     else if (!terminal && progress >= CONTA_IDX) activeIndex = FINAL_IDX;
     if (!closed) {
-      if (expectsReembolso && !reembolsoDone) activeIndex = REEMBOLSO_IDX;
+      if (expectsReembolso && !reembolsoDone) activeIndex = SETTLE_IDX;
       else if (expectsReembolso && reembolsoDone) activeIndex = CLOSE_IDX;
+      else if (expectsDevolucion && !devolucionDone) activeIndex = SETTLE_IDX;
+      else if (expectsDevolucion && devolucionDone) activeIndex = CLOSE_IDX;
     }
   }
 
@@ -596,7 +632,7 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
     group: 'rendicion',
   });
 
-  if (!rejected && !expectsReembolso && !closed) {
+  if (!rejected && !expectsReembolso && !expectsDevolucion && !closed) {
     const finalState = stateFor(FINAL_IDX);
     steps.push({
       label:
@@ -610,7 +646,7 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
   }
 
   if (!rejected && expectsReembolso) {
-    const reembolsoState = stateFor(REEMBOLSO_IDX);
+    const reembolsoState = stateFor(SETTLE_IDX);
     steps.push({
       label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
       state: reembolsoState,
@@ -620,7 +656,20 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
     });
   }
 
-  if (!rejected && (closed || expectsReembolso)) {
+  if (!rejected && expectsDevolucion) {
+    const devolucionState = stateFor(SETTLE_IDX);
+    steps.push({
+      label: devolucionState === 'completed' ? 'Devolución recibida' : 'Devolución del colaborador',
+      state: devolucionState,
+      date: devolucionState === 'completed'
+        ? fmt(r.returnVoucher?.uploadedAt ?? r.returnRecord?.validatedAt ?? r.returnedAt)
+        : undefined,
+      description: devolucionState === 'active' ? 'Esperando comprobante de devolución del colaborador' : undefined,
+      group: 'rendicion',
+    });
+  }
+
+  if (!rejected && (closed || expectsReembolso || expectsDevolucion)) {
     const closeState = stateFor(CLOSE_IDX);
     steps.push({
       label: closeState === 'completed' ? 'Cerrado por Tesorería' : 'Cierre de Tesorería',
