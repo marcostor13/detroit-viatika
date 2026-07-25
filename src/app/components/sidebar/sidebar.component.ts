@@ -174,6 +174,11 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.userStateService.hasModulePermission(module);
   }
 
+  /** VD-77: chequeo estricto (sin bypass de rol) para que el menú de Contabilidad respete sus permisos. */
+  hasModuleStrict(module: string): boolean {
+    return this.userStateService.hasModuleStrict(module);
+  }
+
   logout() {
     this.toggleSidebar();
     this.authService.logout();

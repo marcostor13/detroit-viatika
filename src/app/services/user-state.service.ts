@@ -217,6 +217,18 @@ export class UserStateService {
     return perms.modules?.includes(module) ?? false;
   }
 
+  /**
+   * Igual que `hasModulePermission` pero SIN el bypass de rol para
+   * Contabilidad/Admin: comprueba de verdad los módulos asignados al usuario.
+   * Solo el Superadministrador ve todo. Se usa para que el menú de Contabilidad
+   * respete los permisos por-usuario (VD-77) sin alterar los guards de ruta ni
+   * otras vistas que dependen del bypass de `hasModulePermission`.
+   */
+  hasModuleStrict(module: string): boolean {
+    if (this.isSuperAdmin()) return true;
+    return this.getPermissions().modules?.includes(module) ?? false;
+  }
+
   canApproveL1(): boolean {
     if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
     return this.getPermissions().canApproveL1 === true;

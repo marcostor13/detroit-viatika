@@ -67,7 +67,7 @@
         <span class="font-medium text-sm">Volver al Hub</span>
       </button>
       <div class="border-t border-tertiary/20 my-1"></div>
-      @if (isContabilidadInCompany()) {
+      @if (isContabilidadInCompany() && hasModuleStrict('consolidated-invoices')) {
       <a
         [routerLink]="['/dashboard']"
         routerLinkActive="bg-primary text-white"
@@ -169,7 +169,7 @@
       }
 
       <!-- Contabilidad: nav fijo -->
-      @if (isContabilidad()) {
+      @if (isContabilidad() && hasModuleStrict('tesoreria')) {
       <a
         [routerLink]="['/tesoreria']"
         routerLinkActive="bg-primary text-white"
@@ -180,7 +180,7 @@
         <span class="font-medium">Pagos</span>
       </a>
       }
-      @if (isContabilidadInCompany()) {
+      @if (isContabilidadInCompany() && hasModuleStrict('rendiciones')) {
       <a
         [routerLink]="['/rendiciones']"
         routerLinkActive="bg-primary text-white"
@@ -280,7 +280,7 @@
         <span class="font-medium">Pagos</span>
       </a>
       }
-      @if ((isAdminInCompany() && hasModulePermission('configuracion')) || isContabilidadInCompany() || isSuper()) {
+      @if ((isAdminInCompany() && hasModulePermission('configuracion')) || (isContabilidadInCompany() && hasModuleStrict('configuracion')) || isSuper()) {
       <!-- Configuración (grupo colapsable) -->
       <div>
         <button
@@ -492,7 +492,7 @@
           <span class="font-medium text-lg">Volver al Hub</span>
         </button>
         <div class="border-t border-tertiary/20 my-1"></div>
-        @if (isContabilidadInCompany()) {
+        @if (isContabilidadInCompany() && hasModuleStrict('consolidated-invoices')) {
         <a
           [routerLink]="['/dashboard']"
           (click)="toggleSidebar()"
@@ -594,7 +594,7 @@
         }
 
         <!-- Contabilidad: nav fijo -->
-        @if (isContabilidad()) {
+        @if (isContabilidad() && hasModuleStrict('tesoreria')) {
         <a
           [routerLink]="['/tesoreria']"
           (click)="toggleSidebar()"
@@ -605,7 +605,7 @@
           <span class="font-medium text-lg">Pagos</span>
         </a>
         }
-        @if (isContabilidadInCompany()) {
+        @if (isContabilidadInCompany() && hasModuleStrict('rendiciones')) {
         <a
           [routerLink]="['/rendiciones']"
           (click)="toggleSidebar()"
@@ -705,7 +705,7 @@
           <span class="font-medium text-lg">Pagos</span>
         </a>
         }
-        @if ((isAdminInCompany() && hasModulePermission('configuracion')) || isContabilidadInCompany() || isSuper()) {
+        @if ((isAdminInCompany() && hasModulePermission('configuracion')) || (isContabilidadInCompany() && hasModuleStrict('configuracion')) || isSuper()) {
         <!-- Configuración (grupo colapsable) -->
         <div>
           <button
