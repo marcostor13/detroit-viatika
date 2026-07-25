@@ -368,50 +368,16 @@
         <!-- Admin/Coordinador: rendición enviada — revisar comprobantes y aprobar (paso 1) -->
         @if (report.status === 'submitted' && isAdminView && !isPendingCoordinador) {
         <div class="flex flex-col gap-2 items-end">
-          @if (!allDocumentsApproved()) {
-            <p class="text-sm text-warning-ink bg-warning/10 border border-amber-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
-              @if (hasReportApprovalChain) {
-                Aprueba todos los comprobantes antes de poder aprobar la rendición.
-              } @else {
-                Aprueba todos los comprobantes individuales. Al aprobar el último, la rendición pasa automáticamente a Contabilidad.
-              }
-              <span class="font-semibold block mt-0.5">{{ approvedDocCount() }} / {{ totalDocCount() }} aprobados.</span>
-            </p>
-          }
-          @if (allDocumentsApproved() && hasReportApprovalChain) {
-            <p class="text-sm text-primary bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg max-w-xs leading-snug">
-              Aprobación del centro de costo:
-              <span class="font-semibold">{{ reportChainProgress.approved }} / {{ reportChainProgress.required }} aprobadores</span>.
-              @if (reportChainProgress.approved < reportChainProgress.required) {
-                <span class="block mt-0.5">Falta: {{ reportChainPendingNames }}.</span>
-              }
-            </p>
-          }
-          <div class="flex flex-row flex-wrap gap-2 justify-end">
-            <!-- VD-87: en la rendición estándar los aprobadores solo aprueban los
-                 gastos individuales; al completarlos, el backend pasa la rendición
-                 a Contabilidad automáticamente. El botón "Aprobar Rendición" a nivel
-                 de reporte solo aplica a la cadena de viáticos (rendicionApproverChain). -->
-            @if (hasReportApprovalChain) {
-            <app-button
-              [label]="canCoordinadorApprove ? 'Aprobar Rendición' : 'Pendiente de revisión'"
-              variant="primary"
-              size="sm"
-              [fullWidth]="false"
-              [disabled]="!canCoordinadorApprove"
-              (clicked)="openAdminApproveModal()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </app-button>
-            }
-            <app-button label="Rechazar rendición" variant="danger" size="sm" [fullWidth]="false" (clicked)="openAdminRejectModal()">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
-              </svg>
-            </app-button>
-          </div>
+          <!-- VD-87: los aprobadores YA NO aprueban ni rechazan a nivel de
+               reporte. Solo aprueban/rechazan los comprobantes individuales
+               (acciones ✓/✗ en cada fila de la tabla de abajo). Al aprobar
+               TODOS, el backend pasa la rendición a Contabilidad automáticamente
+               (advanceToAccountingIfAllExpensesApproved). Aplica igual a
+               rendiciones estándar y a viáticos con cadena de centro de costo. -->
+          <p class="text-sm text-warning-ink bg-warning/10 border border-amber-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
+            Revisa y aprueba cada comprobante en la tabla de abajo. Al aprobar todos, la rendición pasa automáticamente a Contabilidad.
+            <span class="font-semibold block mt-0.5">{{ approvedDocCount() }} / {{ totalDocCount() }} comprobantes aprobados.</span>
+          </p>
         </div>
         }
 
