@@ -3241,7 +3241,19 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.actionableChainStepIndex(expense) !== -1;
   }
 
+  /**
+   * La rendición ya fue aprobada por Contabilidad a nivel de reporte (o más
+   * allá: reembolsada, devuelta, cerrada…). Contabilidad aprueba la rendición
+   * COMPLETA, no gasto por gasto; en estos estados los comprobantes no deben
+   * mostrarse "Pendiente Contabilidad" ni ofrecer los botones ✓/✗.
+   */
+  get isRendicionApprovedByContabilidad(): boolean {
+    const s = this.report?.status ?? '';
+    return ['approved', 'reimbursed', 'settled', 'returned', 'closed'].includes(s);
+  }
+
   get canApproveExpenseAsCont(): boolean {
+    if (this.isRendicionApprovedByContabilidad) return false;
     return this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
   }
 
@@ -3369,6 +3381,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       };
     }
     if (cont.status !== 'approved') {
+      // Si la rendición ya fue aprobada por Contabilidad a nivel de reporte,
+      // el comprobante (con su cadena de aprobadores completa) se considera
+      // aprobado — no tiene sentido mostrarlo "Pendiente Contabilidad".
+      if (this.isRendicionApprovedByContabilidad) {
+        return { phase: 'approved', label: isDirecta ? 'Revisado' : 'Aprobado' };
+      }
       return {
         phase: 'pending_cont',
         label: isDirecta ? 'Pendiente de revisión' : 'Pendiente Contabilidad',
