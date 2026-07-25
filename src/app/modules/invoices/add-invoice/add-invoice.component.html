@@ -823,12 +823,13 @@
     <!-- Selector de sub-tipo (solo para otros_gastos) -->
     <div>
       <label class="block text-sm font-medium text-secondary mb-3">Tipo de documento <span class="text-error">*</span></label>
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
         @for (opt of [
           {code:'TK', label:'Ticket'},
           {code:'BV', label:'Boleta'},
           {code:'RC', label:'Recibos diversos'},
           {code:'DJ', label:'Declaración Jurada'},
+          {code:'DJE', label:'Declaración jurada al extranjero'},
           {code:'OT', label:'Otros'}
         ]; track opt.code) {
         <button type="button"
@@ -911,12 +912,12 @@
     }
   </div>
 
-  <!-- Declaración Jurada: solo para sub-tipo DJ -->
-  @if(!id && otrosSubTipo() === 'DJ') {
+  <!-- Declaración Jurada: sub-tipo DJ (nacional) y DJE (al extranjero) -->
+  @if(!id && (otrosSubTipo() === 'DJ' || otrosSubTipo() === 'DJE')) {
   <div class="bg-amber-50 rounded-xl border border-amber-200 p-6 space-y-4">
     <div class="flex items-center gap-2 mb-1">
       <app-icon name="shield-check" size="sm" class="text-amber-600 flex-shrink-0" />
-      <h3 class="text-sm font-semibold text-amber-800">Declaración Jurada</h3>
+      <h3 class="text-sm font-semibold text-amber-800">{{ otrosSubTipo() === 'DJE' ? 'Declaración Jurada al extranjero' : 'Declaración Jurada' }}</h3>
     </div>
     <p class="text-sm text-amber-700 leading-relaxed">
       "Declaro bajo juramento que los gastos detallados son verídicos, fueron realizados en cumplimiento de mis funciones y no cuentan con comprobante de pago emitido por proveedor."

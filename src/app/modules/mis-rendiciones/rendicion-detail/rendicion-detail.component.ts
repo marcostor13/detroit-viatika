@@ -986,6 +986,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       if (sub === 'BV') return 'BV';
       if (sub === 'RC') return 'RC';
       if (sub === 'DJ') return 'DJ';
+      if (sub === 'DJE') return 'DJE';
       if (sub === 'OT') return 'OT';
       return 'SC';
     }
@@ -1004,7 +1005,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'H')  return 'bg-green-100 text-green-800';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
-    if (code === 'DJ') return 'bg-amber-100 text-amber-800';
+    if (code === 'DJ' || code === 'DJE') return 'bg-amber-100 text-amber-800';
     if (code === 'TK') return 'bg-teal-100 text-teal-700';
     if (code === 'RC') return 'bg-indigo-100 text-indigo-700';
     return 'bg-blue-100 text-blue-700';

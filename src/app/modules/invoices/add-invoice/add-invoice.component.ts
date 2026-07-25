@@ -1277,7 +1277,8 @@ export default class AddInvoiceComponent implements OnInit {
       }
       case 'otros_gastos': {
         const sub = this.otrosSubTipo();
-        const isDJ = sub === 'DJ';
+        // VD-83: DJE (declaración jurada al extranjero) valida igual que DJ.
+        const isDJ = sub === 'DJ' || sub === 'DJE';
         const isBV = sub === 'BV';
         const rucEmisorOk = !!(this.form.get('rucEmisor')?.value || '').toString().trim();
         const bvDocOk = !isBV || (
@@ -1491,7 +1492,7 @@ export default class AddInvoiceComponent implements OnInit {
     const total = this.form.get('totalOtros')?.value;
     const description = this.form.get('description')?.value;
     const subTipo = this.otrosSubTipo();
-    const isDJ = subTipo === 'DJ';
+    const isDJ = subTipo === 'DJ' || subTipo === 'DJE';
 
     const proyectCtrl = this.form.get('proyectId');
     const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
