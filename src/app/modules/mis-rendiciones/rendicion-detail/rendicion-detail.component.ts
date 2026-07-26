@@ -1590,6 +1590,21 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return undefined;
   }
 
+  /**
+   * Contabilidad que aprobó la SOLICITUD del viático — para el recuadro "V°B°
+   * Recepción dinero" del PDF Solicitud de Fondos (VD-90). Prefiere el aprobador
+   * de la solicitud (`viaticoSolicitudContabilidadApprovedBy`); si no está, cae al
+   * de la rendición (`contabilidadApprovedBy`, mismo equipo de Contabilidad) para
+   * que el sello no quede vacío.
+   */
+  private solicitudContabilidadApprover(): { name?: string; signature?: string } | undefined {
+    const s = (this.report as any)?.viaticoSolicitudContabilidadApprovedBy;
+    if (s && typeof s === 'object') return s as { name?: string; signature?: string };
+    const r = (this.report as any)?.contabilidadApprovedBy;
+    if (r && typeof r === 'object') return r as { name?: string; signature?: string };
+    return undefined;
+  }
+
   /** Firma de `approvedBy` (fallback para el Jefe Inmediato si no hubo coordinador). */
   private getApprovedBySignature(): string | undefined {
     const u = this.report?.approvedBy;
@@ -1947,6 +1962,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       autorizacionNombre: aprobador || undefined,
       solicitanteSignature: this.getCollaboratorSignature(),
       autorizacionSignature: this.getCoordinatorSignature() || this.getApprovedBySignature(),
+      contabilidadNombre: this.solicitudContabilidadApprover()?.name || undefined,
+      contabilidadSignature: this.solicitudContabilidadApprover()?.signature || undefined,
     };
   }
 

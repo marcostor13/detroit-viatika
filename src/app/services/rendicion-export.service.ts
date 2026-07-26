@@ -215,6 +215,10 @@ export interface SolicitudFondosExportData {
   observaciones?: string;
   solicitanteSignature?: string;
   autorizacionSignature?: string;
+  /** Nombre de Contabilidad que aprobó la solicitud (recuadro "V°B° Recepción dinero"). */
+  contabilidadNombre?: string;
+  /** Firma de Contabilidad que aprobó la solicitud, si existe. */
+  contabilidadSignature?: string;
 }
 
 export interface SingleExpenseAffidavitData {
@@ -900,6 +904,7 @@ export class RendicionExportService {
       ...data,
       solicitanteSignature: await this.resolveSignature(data.solicitanteSignature),
       autorizacionSignature: await this.resolveSignature(data.autorizacionSignature),
+      contabilidadSignature: await this.resolveSignature(data.contabilidadSignature),
     };
     const isNew = !inDoc;
     const doc = inDoc ?? new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -1068,9 +1073,18 @@ export class RendicionExportService {
     const recX = RM - recW - 2;
     const recY = y + contH - recH - 2;
     doc.rect(recX, recY, recW, recH);
+    // Firma de Contabilidad que aprobó la solicitud (VD-90): sello + nombre sobre el título.
+    if (data.contabilidadSignature) {
+      try { doc.addImage(data.contabilidadSignature, 'PNG', recX + recW / 2 - 22, recY + 2, 44, 11); } catch { /* firma inválida */ }
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
-    doc.text('V°B° Recepción dinero', recX + recW / 2, recY + recH - 2.5, { align: 'center' });
+    doc.text('V°B° Recepción dinero', recX + recW / 2, recY + recH - 7, { align: 'center' });
+    if (data.contabilidadNombre) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(clip(sanitize(data.contabilidadNombre), recW - 6), recX + recW / 2, recY + recH - 2, { align: 'center' });
+    }
     y += contH;
 
     if (isNew) {
