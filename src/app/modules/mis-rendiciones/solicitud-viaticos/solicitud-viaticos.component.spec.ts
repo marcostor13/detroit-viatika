@@ -126,18 +126,10 @@ describe('SolicitudViaticosComponent', () => {
     });
   });
 
-  describe('goBack / toggleCustomBank', () => {
+  describe('goBack', () => {
     it('navigates back to mis-rendiciones', () => {
       component.goBack();
       expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones']);
-    });
-
-    it('clears bank fields when custom bank is toggled off', () => {
-      component.form.patchValue({ bankName: 'BCP', accountNumber: '123', cci: '456' });
-      component.useCustomBank.set(true);
-      component.toggleCustomBank();
-      expect(component.useCustomBank()).toBeFalse();
-      expect(component.form.value.bankName).toBe('');
     });
   });
 

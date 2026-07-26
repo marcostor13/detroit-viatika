@@ -63,7 +63,6 @@ export class SolicitudViaticosComponent implements OnInit {
   monedasDisponibles = signal<MonedaInfo[]>([MONEDA_CATALOG[DEFAULT_MONEDA]]);
 
   submitting = signal(false);
-  useCustomBank = signal(false);
 
   loading = signal(false);
   projects = signal<IProject[]>([]);
@@ -93,9 +92,6 @@ export class SolicitudViaticosComponent implements OnInit {
     projectId: ['', Validators.required],
     ordenTrabajoId: [''],
     observations: [''],
-    bankName: [''],
-    accountNumber: [''],
-    cci: [''],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     moneda: [DEFAULT_MONEDA, Validators.required],
   });
@@ -233,10 +229,6 @@ export class SolicitudViaticosComponent implements OnInit {
       endDate: this.ymdFromDate(adv.endDate),
       observations: adv.observations ?? '',
     });
-    if (adv.requestAccountNumber) {
-      this.useCustomBank.set(true);
-      this.form.patchValue({ bankName: adv.requestBankName ?? '', accountNumber: adv.requestAccountNumber, cci: adv.requestCci ?? '' });
-    }
     this.form.get('projectId')?.setValue(pid, { emitEvent: false });
     this.selectedProjectId.set(pid);
 
@@ -264,10 +256,6 @@ export class SolicitudViaticosComponent implements OnInit {
       ordenTrabajoId: otId,
       observations: report.viaticoObservations ?? '',
     });
-    if (report.viaticoAccountNumber) {
-      this.useCustomBank.set(true);
-      this.form.patchValue({ bankName: report.viaticoBankName ?? '', accountNumber: report.viaticoAccountNumber, cci: report.viaticoCci ?? '' });
-    }
     this.form.get('projectId')?.setValue(pid, { emitEvent: false });
     this.selectedProjectId.set(pid);
 
@@ -300,13 +288,6 @@ export class SolicitudViaticosComponent implements OnInit {
     this.form.patchValue({ place: ev.address });
     this.selectedLat = ev.lat;
     this.selectedLng = ev.lng;
-  }
-
-  toggleCustomBank(): void {
-    this.useCustomBank.update(v => !v);
-    if (!this.useCustomBank()) {
-      this.form.patchValue({ bankName: '', accountNumber: '', cci: '' });
-    }
   }
 
   goBack(): void {
@@ -346,12 +327,6 @@ export class SolicitudViaticosComponent implements OnInit {
     const montoRequerido = this.totalGeneral();
     const moneda = (this.form.value.moneda as string) || DEFAULT_MONEDA;
 
-    const customBank = this.useCustomBank() ? {
-      bankName: (this.form.value.bankName || '').trim() || undefined,
-      accountNumber: (this.form.value.accountNumber || '').trim() || undefined,
-      cci: (this.form.value.cci || '').trim() || undefined,
-    } : {};
-
     this.submitting.set(true);
 
     // Reenvío/edición de un viático unificado (ExpenseReport).
@@ -368,7 +343,6 @@ export class SolicitudViaticosComponent implements OnInit {
         projectId,
         ordenTrabajoId,
         observations: (this.form.value.observations || '').trim() || undefined,
-        ...customBank,
       };
       this.expenseReportsService.resubmitViatico(viatico._id, resubmitPayload).subscribe({
         next: () => this.onSubmitSuccess(true),
@@ -392,7 +366,6 @@ export class SolicitudViaticosComponent implements OnInit {
         endDate: `${endStr}T12:00:00.000Z`,
         projectId,
         observations: (this.form.value.observations || '').trim() || undefined,
-        ...customBank,
       };
       this.advanceService.resubmit(adv._id, legacyPayload).subscribe({
         next: () => this.onSubmitSuccess(true),
@@ -413,7 +386,6 @@ export class SolicitudViaticosComponent implements OnInit {
       projectId,
       ordenTrabajoId,
       observations: (this.form.value.observations || '').trim() || undefined,
-      ...customBank,
     };
     this.expenseReportsService.createViatico(viaticoPayload).subscribe({
       next: () => this.onSubmitSuccess(false),
