@@ -16,6 +16,8 @@ import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../..
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { monedaSymbol } from '../../../constants/moneda';
+import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
+import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   // Rendición normal
@@ -92,7 +94,7 @@ export type UnifiedRendicionItem = {
 @Component({
   selector: 'app-rendiciones-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent],
   templateUrl: './rendiciones-admin.component.html',
 })
 export class RendicionesAdminComponent implements OnInit {
@@ -420,6 +422,11 @@ export class RendicionesAdminComponent implements OnInit {
     this.filteredItems = result.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+  }
+
+  /** VD-84: usuarios mapeados a WorkerOption para el selector buscable de colaborador. */
+  get workerOptions(): WorkerOption[] {
+    return this.users.map(u => ({ _id: u._id ?? '', name: u.name, email: u.email, dni: (u as any).dni }));
   }
 
   clearFilters(): void {

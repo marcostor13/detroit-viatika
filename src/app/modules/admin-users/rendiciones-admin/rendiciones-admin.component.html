@@ -25,31 +25,29 @@
       <!-- Usuario -->
       <div>
         <label class="block text-xs font-medium text-tertiary mb-1">Colaborador</label>
-        <select
+        <app-worker-select
+          [workers]="workerOptions"
           [(ngModel)]="filterUserId"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">Todos</option>
-          @for (user of users; track user._id) {
-          <option [value]="user._id">{{ user.name }}</option>
-          }
-        </select>
+          [allowEmpty]="true"
+          emptyLabel="Todos"
+          placeholder="Todos"
+          triggerClass="!bg-white !border-tertiary/30 !px-3 !py-2"
+        />
       </div>
 
       <!-- Proyecto / Centro de costo -->
       <div>
         <label class="block text-xs font-medium text-tertiary mb-1">Centro de Costo</label>
-        <select
+        <app-project-select
+          [projects]="projects"
           [(ngModel)]="filterProjectId"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
-        >
-          <option value="">Todos</option>
-          @for (project of projects; track project._id) {
-          <option [value]="project._id">{{ project.name }}</option>
-          }
-        </select>
+          [allowEmpty]="true"
+          emptyLabel="Todos"
+          placeholder="Todos"
+          triggerClass="!bg-white !border-tertiary/30 !px-3 !py-2"
+        />
       </div>
 
       <!-- Tipo -->
@@ -58,11 +56,13 @@
         <select
           [(ngModel)]="filterKind"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterKind"
+          [class.text-secondary]="filterKind"
         >
-          <option value="">Todos</option>
+          <option value="" class="text-secondary">Todos</option>
           @for (k of kindOptions; track k.value) {
-          <option [value]="k.value">{{ k.label }}</option>
+          <option [value]="k.value" class="text-secondary">{{ k.label }}</option>
           }
         </select>
       </div>
@@ -73,11 +73,13 @@
         <select
           [(ngModel)]="filterStatus"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterStatus"
+          [class.text-secondary]="filterStatus"
         >
-          <option value="">Todos</option>
+          <option value="" class="text-secondary">Todos</option>
           @for (st of statusOptions; track st.value) {
-          <option [value]="st.value">{{ st.label }}</option>
+          <option [value]="st.value" class="text-secondary">{{ st.label }}</option>
           }
         </select>
       </div>
@@ -89,7 +91,9 @@
           type="date"
           [(ngModel)]="filterDateFrom"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterDateFrom"
+          [class.text-secondary]="filterDateFrom"
         />
       </div>
 
@@ -100,7 +104,9 @@
           type="date"
           [(ngModel)]="filterDateTo"
           (ngModelChange)="applyFilters()"
-          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterDateTo"
+          [class.text-secondary]="filterDateTo"
         />
       </div>
 

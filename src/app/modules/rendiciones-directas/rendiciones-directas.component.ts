@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -10,6 +10,7 @@ import { AdminUsersService } from '../admin-users/services/admin-users.service';
 import { IUserResponse } from '../../interfaces/user.interface';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ICategory } from '../invoices/interfaces/category.interface';
+import { WorkerSelectComponent, WorkerOption } from '../../design-system/worker-select/worker-select.component';
 import {
   RendicionExportService,
   RendicionExportData,
@@ -24,7 +25,7 @@ import {
 @Component({
   selector: 'app-rendiciones-directas',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, WorkerSelectComponent],
   templateUrl: './rendiciones-directas.component.html',
 })
 export class RendicionesDirectasComponent implements OnInit {
@@ -65,6 +66,10 @@ export class RendicionesDirectasComponent implements OnInit {
   projects = signal<IProject[]>([]);
   categories = signal<ICategory[]>([]);
   users = signal<IUserResponse[]>([]);
+  /** VD-84: usuarios mapeados a WorkerOption para el selector buscable de colaborador. */
+  workerOptions = computed<WorkerOption[]>(() =>
+    this.users().map(u => ({ _id: u._id ?? '', name: u.name, email: u.email, dni: (u as any).dni }))
+  );
 
   // Acciones
   approvingId = signal<string | null>(null);
