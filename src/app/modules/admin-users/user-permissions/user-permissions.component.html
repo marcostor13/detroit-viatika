@@ -176,6 +176,41 @@
       }
     </app-card>
 
+    <!-- Otros Gastos: sub-tipos opcionales (VD-91) -->
+    <app-card [hover]="false" class="mb-6">
+      <h2 class="text-base font-semibold text-secondary mb-1">Opciones de "Otros Gastos"</h2>
+      <p class="text-sm text-tertiary mb-5">
+        Habilita o deshabilita para este usuario los tipos de documento opcionales que verá al
+        registrar un gasto de tipo "Otros Gastos". Si los desmarcas, no aparecerán en su selector.
+      </p>
+      <div class="space-y-3">
+        <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-tertiary/40 text-primary accent-primary cursor-pointer"
+            [checked]="isOtrosGastoOpcionalHabilitado('recibosDiversos')"
+            (change)="toggleOtrosGastoOpcional('recibosDiversos', $any($event.target).checked)"
+          />
+          <div>
+            <p class="text-sm font-medium text-secondary">Recibos diversos</p>
+            <p class="text-xs text-tertiary mt-0.5">Trámites legales (p. ej. vigencia de poder).</p>
+          </div>
+        </label>
+        <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-tertiary/40 text-primary accent-primary cursor-pointer"
+            [checked]="isOtrosGastoOpcionalHabilitado('djExtranjero')"
+            (change)="toggleOtrosGastoOpcional('djExtranjero', $any($event.target).checked)"
+          />
+          <div>
+            <p class="text-sm font-medium text-secondary">DJ. Declaración jurada (viajes al extranjero)</p>
+            <p class="text-xs text-tertiary mt-0.5">Declaración jurada para gastos de viajes al extranjero.</p>
+          </div>
+        </label>
+      </div>
+    </app-card>
+
     <!-- Nota informativa -->
     <div class="rounded-lg bg-primary/5 border border-primary/20 p-4 mb-6 text-sm text-primary">
       <strong>Nota:</strong> Los cambios requieren que el usuario vuelva a iniciar sesión para que tengan efecto.

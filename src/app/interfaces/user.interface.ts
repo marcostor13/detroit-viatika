@@ -78,6 +78,14 @@ export interface IUserPermissions {
    * Si no se envía, el backend usa projectIds[0] como fallback.
    */
   primaryProjectId?: string;
+  /**
+   * Sub-tipos opcionales de "Otros Gastos" habilitados para el colaborador
+   * (VD-91). Ausente/undefined = ambos habilitados.
+   */
+  otrosGastosOpcionales?: {
+    recibosDiversos: boolean;
+    djExtranjero: boolean;
+  };
 }
 
 export interface IUserResponse {

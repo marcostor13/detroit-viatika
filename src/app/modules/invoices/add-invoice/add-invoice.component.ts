@@ -96,11 +96,41 @@ export default class AddInvoiceComponent implements OnInit {
 
   expenseType = signal<ExpenseType>('factura');
   /** Sub-tipo para otros_gastos: TK | BV | RC | DJ | OT */
-  otrosSubTipo = signal<string>('DJ');
+  otrosSubTipo = signal<string>('AL');
   /** Sub-tipos que llevan documento físico con RUC/serie/correlativo. */
   otrosSubTipoMuestraDocumento = computed(() =>
     ['TK', 'BV', 'RC'].includes(this.otrosSubTipo())
   );
+  /**
+   * Sub-tipos de Otros Gastos que exigen declaración jurada + firma digital
+   * (VD-91): AL (Alimentación sin documentación) y DJE (DJ al extranjero). DJ
+   * nacional se conserva por retrocompatibilidad de gastos ya creados.
+   */
+  otrosSubTipoRequiereDeclaracion = computed(() =>
+    ['AL', 'DJ', 'DJE'].includes(this.otrosSubTipo())
+  );
+
+  /**
+   * Opciones del selector "Tipo de documento" de Otros Gastos (VD-91). Las dos
+   * opcionales — RC (Recibos diversos) y DJE (DJ al extranjero) — se ocultan
+   * según la configuración por usuario (`permissions.otrosGastosOpcionales`);
+   * por defecto ambas están habilitadas.
+   */
+  get otrosSubTipoOpciones(): { code: string; label: string; hint?: string }[] {
+    const cfg = this.userStateService.getUser()?.permissions?.otrosGastosOpcionales;
+    const opciones: { code: string; label: string; hint?: string }[] = [
+      { code: 'AL', label: 'Alimentación sin documentación' },
+      { code: 'BV', label: 'Gastos con Boleta de venta', hint: 'RUC inscrito en RUS' },
+    ];
+    if (cfg?.recibosDiversos !== false) {
+      opciones.push({ code: 'RC', label: 'Recibos diversos', hint: 'trámites legales' });
+    }
+    if (cfg?.djExtranjero !== false) {
+      opciones.push({ code: 'DJE', label: 'DJ. Declaración jurada', hint: 'viajes al extranjero' });
+    }
+    opciones.push({ code: 'OT', label: 'Otros' });
+    return opciones;
+  }
   rendicionBudget = signal<number>(0);
   rendicionSpent = signal<number>(0);
   rendicionSettlementDiff = signal<number | null>(null);
@@ -1277,8 +1307,9 @@ export default class AddInvoiceComponent implements OnInit {
       }
       case 'otros_gastos': {
         const sub = this.otrosSubTipo();
-        // VD-83: DJE (declaración jurada al extranjero) valida igual que DJ.
-        const isDJ = sub === 'DJ' || sub === 'DJE';
+        // VD-83/VD-91: DJE y AL (Alimentación sin documentación) validan igual
+        // que una DJ (checkbox de declaración jurada obligatorio al crear).
+        const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(sub);
         const isBV = sub === 'BV';
         const rucEmisorOk = !!(this.form.get('rucEmisor')?.value || '').toString().trim();
         const bvDocOk = !isBV || (
@@ -1291,11 +1322,11 @@ export default class AddInvoiceComponent implements OnInit {
         return (
           proyectOk &&
           this.form.get('categoryId')?.valid === true &&
-          // DJ requiere checkbox; otros sub-tipos no
-          (!!this.id || !isDJ || !!this.form.get('declaracionJurada')?.value) &&
+          // DJ/AL requieren checkbox de declaración jurada; otros sub-tipos no
+          (!!this.id || !requiereDeclaracion || !!this.form.get('declaracionJurada')?.value) &&
           (this.form.get('totalOtros')?.value > 0) &&
-          // El adjunto es obligatorio al crear (todos los sub-tipos)
-          (!!this.id || !!this.selectedFile) &&
+          // Adjunto obligatorio al crear, salvo AL (Alimentación sin documentación)
+          (!!this.id || sub === 'AL' || !!this.selectedFile) &&
           bvDocOk &&
           rucOk
         );
@@ -1492,7 +1523,8 @@ export default class AddInvoiceComponent implements OnInit {
     const total = this.form.get('totalOtros')?.value;
     const description = this.form.get('description')?.value;
     const subTipo = this.otrosSubTipo();
-    const isDJ = subTipo === 'DJ' || subTipo === 'DJE';
+    // AL (Alimentación sin documentación) y DJE requieren declaración jurada + firma (VD-91).
+    const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(subTipo);
 
     const proyectCtrl = this.form.get('proyectId');
     const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
@@ -1502,8 +1534,8 @@ export default class AddInvoiceComponent implements OnInit {
     }
     const currentUser = this.userStateService.getUser();
 
-    // Solo DJ requiere firma y DJ checkbox
-    if (isDJ) {
+    // DJ/DJE y AL requieren firma digital + aceptación del checkbox
+    if (requiereDeclaracion) {
       if (!currentUser?.signature) {
         this.notificationService.show(
           'Debes registrar tu firma digital antes de enviar una Declaracion Jurada. Ve a Mi Firma en el menu.',
@@ -1517,14 +1549,14 @@ export default class AddInvoiceComponent implements OnInit {
       }
     }
 
-    const firmante = isDJ ? (currentUser?.name || '').trim() : '';
+    const firmante = requiereDeclaracion ? (currentUser?.name || '').trim() : '';
     if (!total || total <= 0) {
       this.notificationService.show('Ingresa un monto válido', 'error');
       return;
     }
 
-    // El adjunto es obligatorio para todos los sub-tipos de otros gastos
-    if (!this.selectedFile) {
+    // El adjunto es obligatorio salvo AL (Alimentación sin documentación)
+    if (subTipo !== 'AL' && !this.selectedFile) {
       this.notificationService.show('Debes adjuntar el comprobante', 'error');
       return;
     }
@@ -1550,8 +1582,8 @@ export default class AddInvoiceComponent implements OnInit {
         total,
         data: description,
         subTipo,
-        declaracionJurada: isDJ ? true : false,
-        declaracionJuradaFirmante: isDJ ? firmante : undefined,
+        declaracionJurada: requiereDeclaracion,
+        declaracionJuradaFirmante: requiereDeclaracion ? firmante : undefined,
         imageUrl,
         ...(serie ? { serie } : {}),
         ...(correlativo ? { correlativo } : {}),

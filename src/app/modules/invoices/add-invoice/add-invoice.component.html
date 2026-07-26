@@ -824,14 +824,7 @@
     <div>
       <label class="block text-sm font-medium text-secondary mb-3">Tipo de documento <span class="text-error">*</span></label>
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        @for (opt of [
-          {code:'TK', label:'Ticket'},
-          {code:'BV', label:'Boleta'},
-          {code:'RC', label:'Recibos diversos'},
-          {code:'DJ', label:'Declaración Jurada'},
-          {code:'DJE', label:'Declaración jurada al extranjero'},
-          {code:'OT', label:'Otros'}
-        ]; track opt.code) {
+        @for (opt of otrosSubTipoOpciones; track opt.code) {
         <button type="button"
           (click)="otrosSubTipo.set(opt.code)"
           class="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 transition-all text-center"
@@ -844,6 +837,9 @@
         >
           <span class="text-xs font-bold tabular-nums">{{ opt.code }}</span>
           <span class="text-xs leading-tight">{{ opt.label }}</span>
+          @if (opt.hint) {
+          <span class="text-[10px] leading-tight opacity-70">{{ opt.hint }}</span>
+          }
         </button>
         }
       </div>
@@ -912,12 +908,12 @@
     }
   </div>
 
-  <!-- Declaración Jurada: sub-tipo DJ (nacional) y DJE (al extranjero) -->
-  @if(!id && (otrosSubTipo() === 'DJ' || otrosSubTipo() === 'DJE')) {
+  <!-- Declaración Jurada: AL (alimentación sin documentación) y DJE (al extranjero) -->
+  @if(!id && otrosSubTipoRequiereDeclaracion()) {
   <div class="bg-amber-50 rounded-xl border border-amber-200 p-6 space-y-4">
     <div class="flex items-center gap-2 mb-1">
       <app-icon name="shield-check" size="sm" class="text-amber-600 flex-shrink-0" />
-      <h3 class="text-sm font-semibold text-amber-800">{{ otrosSubTipo() === 'DJE' ? 'Declaración Jurada al extranjero' : 'Declaración Jurada' }}</h3>
+      <h3 class="text-sm font-semibold text-amber-800">{{ otrosSubTipo() === 'DJE' ? 'Declaración Jurada al extranjero' : (otrosSubTipo() === 'AL' ? 'Declaración Jurada (alimentación sin documentación)' : 'Declaración Jurada') }}</h3>
     </div>
     <p class="text-sm text-amber-700 leading-relaxed">
       "Declaro bajo juramento que los gastos detallados son verídicos, fueron realizados en cumplimiento de mis funciones y no cuentan con comprobante de pago emitido por proveedor."

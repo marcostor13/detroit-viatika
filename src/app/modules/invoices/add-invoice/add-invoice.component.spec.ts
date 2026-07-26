@@ -543,6 +543,15 @@ describe('AddInvoiceComponent', () => {
       component.otrosSubTipo.set('DJ');
       expect(component.isFormValid()).toBeFalse();
     });
+
+    it('AL (Alimentación sin documentación) is valid without an attached file (VD-91)', () => {
+      const component = createComponent();
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true });
+      component.setExpenseType('otros_gastos');
+      component.otrosSubTipo.set('AL');
+      // AL no requiere comprobante adjunto, pero sí el checkbox de declaración jurada.
+      expect(component.isFormValid()).toBeTrue();
+    });
   });
 
   describe('isFormValid - recibo_caja', () => {
@@ -700,6 +709,28 @@ describe('AddInvoiceComponent', () => {
       const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0];
       expect(payload.declaracionJurada).toBeFalse();
       expect(payload.declaracionJuradaFirmante).toBeUndefined();
+    });
+
+    it('AL (Alimentación sin documentación) creates the expense without a file, as a declaración jurada (VD-91)', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1',
+        categoryId: 'cat1',
+        declaracionJurada: true,
+        totalOtros: 40,
+        description: 'Almuerzo de trabajo',
+      });
+      component.otrosSubTipo.set('AL');
+      // Sin selectedFile: AL va sin adjunto.
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.subTipo).toBe('AL');
+      expect(payload.declaracionJurada).toBeTrue();
+      expect(payload.declaracionJuradaFirmante).toBe('John Doe');
+      expect(payload.imageUrl).toBeUndefined();
+      expect(notificationService.show).toHaveBeenCalledWith('Gasto guardado correctamente', 'success');
     });
   });
 

@@ -69,6 +69,7 @@ export class UserPermissionsComponent implements OnInit {
     categoryIds: [],
     projectIds: [],
     primaryProjectId: undefined,
+    otrosGastosOpcionales: { recibosDiversos: true, djExtranjero: true },
   };
 
   ngOnInit(): void {
@@ -96,6 +97,10 @@ export class UserPermissionsComponent implements OnInit {
           categoryIds: user.permissions?.categoryIds ?? [],
           projectIds: user.permissions?.projectIds ?? [],
           primaryProjectId: user.permissions?.primaryProjectId ?? undefined,
+          otrosGastosOpcionales: {
+            recibosDiversos: user.permissions?.otrosGastosOpcionales?.recibosDiversos !== false,
+            djExtranjero: user.permissions?.otrosGastosOpcionales?.djExtranjero !== false,
+          },
         };
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
@@ -213,6 +218,20 @@ export class UserPermissionsComponent implements OnInit {
     } else {
       this.permissions.modules = this.permissions.modules.filter((m) => m !== key);
     }
+  }
+
+  // --- Otros Gastos: sub-tipos opcionales (VD-91) ---
+
+  isOtrosGastoOpcionalHabilitado(key: 'recibosDiversos' | 'djExtranjero'): boolean {
+    return this.permissions.otrosGastosOpcionales?.[key] !== false;
+  }
+
+  toggleOtrosGastoOpcional(key: 'recibosDiversos' | 'djExtranjero', checked: boolean) {
+    const current = this.permissions.otrosGastosOpcionales ?? {
+      recibosDiversos: true,
+      djExtranjero: true,
+    };
+    this.permissions.otrosGastosOpcionales = { ...current, [key]: checked };
   }
 
   // --- Categorías ---
