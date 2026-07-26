@@ -419,6 +419,10 @@
           <span class="text-tertiary">Solicitud</span>
           <span class="font-medium text-secondary">{{ pendingApproveItem()?.title }}</span>
         </div>
+        <div class="flex justify-between items-center text-sm">
+          <span class="text-tertiary">Fecha de solicitud</span>
+          <span class="font-medium text-secondary">{{ pendingApproveItem()?.createdAt | date:'dd/MM/yyyy' }}</span>
+        </div>
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
           <span class="text-lg font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
