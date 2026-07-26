@@ -76,6 +76,11 @@ export class TesoreriaComponent implements OnInit {
   pendingViaticoPayments: IExpenseReport[] = [];
   /** Viáticos con al menos un pago de contabilidad registrado (pestaña "En pago"). */
   paidViaticoPayments: IExpenseReport[] = [];
+  // VD-82: agregados de dinero YA desembolsado, para las tarjetas "Pagados" y
+  // "Total desembolsado" (el stats legacy solo cubría la colección `advances`).
+  viaticoDesembolsado = 0;     // Σ viaticoPaidAmount de los viáticos
+  reembolsoPagadoCount = 0;    // # rendiciones con reembolso ya pagado
+  reembolsoDesembolsado = 0;   // Σ monto de reembolsos ya pagados
 
   selectedAdvance: IAdvance | null = null;
   selectedReportReimbursement: IExpenseReport | null = null;
@@ -151,6 +156,34 @@ export class TesoreriaComponent implements OnInit {
   get canPayAndSettle() { return this.userStateService.canApproveL2(); }
   /** Solo Contabilidad (y super) puede iniciar rendiciones directas con saldo. */
   get canManageDirectaDeposit() { return this.isContabilidad || this.isSuperAdmin; }
+
+  /**
+   * VD-82: contador "Pend. Pago". Debe reflejar TODOS los pagos que Tesorería tiene
+   * por ejecutar, no solo la colección `advances` (en desuso). Antes usaba
+   * `stats.pending_l2 + stats.approved` (solo anticipos legacy) y salía 0 aunque en
+   * la lista hubiera viáticos por pagar — p. ej. un colaborador SIN CCI (el CCI no
+   * influye: `pendingViaticoPayments` no filtra por datos bancarios). Ahora suma las
+   * tres colas de pago saliente del módulo: viáticos por pagar + reembolsos +
+   * anticipos legacy pendientes. Los estados son mutuamente excluyentes entre las
+   * tres fuentes → no hay doble conteo.
+   */
+  get pendPagoCount(): number {
+    return (
+      this.pendingViaticoPayments.length +
+      this.pendingReimbursements.length +
+      this.pendingAdvances.length
+    );
+  }
+
+  /** VD-82: "Pagados" = viáticos con pago + reembolsos pagados + anticipos legacy pagados. */
+  get pagadosCount(): number {
+    return this.paidViaticoPayments.length + this.reembolsoPagadoCount + (this.stats?.paid ?? 0);
+  }
+
+  /** VD-82: "Total desembolsado" = dinero real pagado (viáticos + reembolsos + anticipos legacy). */
+  get totalDesembolsado(): number {
+    return this.viaticoDesembolsado + this.reembolsoDesembolsado + (this.stats?.totalApprovedAmount ?? 0);
+  }
 
   // ─── Rendiciones Directas iniciadas por Contabilidad (con saldo) ─────────────
   directaReports = signal<any[]>([]);
@@ -246,13 +279,13 @@ export class TesoreriaComponent implements OnInit {
   private loadPendingViaticoPayments(): void {
     const cid = this.clientId;
     if (!cid || !this.canPayAndSettle) {
-      this.pendingViaticoPayments = [];
-      this.paidViaticoPayments = [];
+      this.resetPaymentAggregates();
       return;
     }
     this.expenseReportsService.findAllByClient(cid).subscribe({
       next: reports => {
-        const viaticos = (reports ?? []).filter(r => r.type === 'viatico');
+        const all = reports ?? [];
+        const viaticos = all.filter(r => r.type === 'viatico');
         // "Por pagar": aprobados o con pago parcial pendiente de completar.
         this.pendingViaticoPayments = viaticos.filter(
           r => ['viatico_approved', 'partially_paid'].includes(r.status)
@@ -263,12 +296,28 @@ export class TesoreriaComponent implements OnInit {
         this.paidViaticoPayments = viaticos.filter(
           r => Array.isArray(r.viaticoPayments) && r.viaticoPayments.length > 0
         );
+        // VD-82: agregados de lo ya desembolsado desde la MISMA lista (sin llamada
+        // extra). Viáticos por su acumulado pagado; reembolsos ya pagados por el
+        // |settlement.difference| de las rendiciones con comprobante registrado.
+        this.viaticoDesembolsado = viaticos.reduce(
+          (s, r) => s + Number(r.viaticoPaidAmount ?? 0), 0
+        );
+        const reembolsados = all.filter(r => !!r.reimbursementPaymentInfo);
+        this.reembolsoPagadoCount = reembolsados.length;
+        this.reembolsoDesembolsado = reembolsados.reduce(
+          (s, r) => s + Math.abs(Number(r.settlement?.difference ?? 0)), 0
+        );
       },
-      error: () => {
-        this.pendingViaticoPayments = [];
-        this.paidViaticoPayments = [];
-      },
+      error: () => this.resetPaymentAggregates(),
     });
+  }
+
+  private resetPaymentAggregates(): void {
+    this.pendingViaticoPayments = [];
+    this.paidViaticoPayments = [];
+    this.viaticoDesembolsado = 0;
+    this.reembolsoPagadoCount = 0;
+    this.reembolsoDesembolsado = 0;
   }
 
   viaticoUserName(report: IExpenseReport): string {
