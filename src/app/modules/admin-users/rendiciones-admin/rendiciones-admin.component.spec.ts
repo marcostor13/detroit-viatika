@@ -278,7 +278,12 @@ describe('RendicionesAdminComponent', () => {
   });
 
   describe('delete flow', () => {
-    beforeEach(() => component.ngOnInit());
+    // `rep1` está en solicitud (pending_l1): solo su dueño puede eliminarla,
+    // así que el actor de estas pruebas es u1 (createdBy del mock).
+    beforeEach(() => {
+      userStateService.getUser.and.returnValue({ _id: 'u1', companyId: 'c1' } as any);
+      component.ngOnInit();
+    });
 
     it('loads the deletion preview for a deletable report', () => {
       const item = component.filteredItems.find((i) => i._id === 'rep1')!;
@@ -318,6 +323,58 @@ describe('RendicionesAdminComponent', () => {
       component.cancelDelete();
       expect(component.reportToDelete).toBeNull();
       expect(component.deletionPreview()).toBeNull();
+    });
+  });
+
+  // Eliminar es del dueño: ni aprobadores ni Contabilidad ven el botón sobre
+  // rendiciones ajenas, en ningún estado.
+  describe('canDeleteItem', () => {
+    const deletableOf = (id: string) =>
+      component.filteredItems.find((i) => i._id === id)!.canDeleteItem;
+
+    const loadAs = (userId: string, status?: IExpenseReport['status']) => {
+      if (status) {
+        expenseReportsService.findAllByClient.and.returnValue(
+          of([{ ...mockReport, status } as IExpenseReport]),
+        );
+      }
+      userStateService.getUser.and.returnValue({ _id: userId, companyId: 'c1' } as any);
+      component.ngOnInit();
+    };
+
+    it('shows delete to the owner while the report is a solicitud', () => {
+      for (const status of ['pending_l1', 'solicited'] as IExpenseReport['status'][]) {
+        loadAs('u1', status);
+        expect(deletableOf('rep1')).withContext(`status ${status}`).toBeTrue();
+      }
+    });
+
+    it('hides delete from the owner once the report left the solicitud', () => {
+      const statuses: IExpenseReport['status'][] = [
+        'open', 'submitted', 'pending_contabilidad', 'viatico_approved',
+        'approved', 'closed',
+      ];
+      for (const status of statuses) {
+        loadAs('u1', status);
+        expect(deletableOf('rep1')).withContext(`status ${status}`).toBeFalse();
+      }
+    });
+
+    it('hides delete from an approver who is not the owner', () => {
+      loadAs('u2');
+      expect(deletableOf('rep1')).toBeFalse();
+    });
+
+    it('hides delete from Contabilidad in every status', () => {
+      const statuses: IExpenseReport['status'][] = [
+        'pending_l1', 'solicited', 'open', 'pending_contabilidad',
+        'viatico_approved', 'approved', 'closed',
+      ];
+      userStateService.isContabilidad.and.returnValue(true);
+      for (const status of statuses) {
+        loadAs('u9', status);
+        expect(deletableOf('rep1')).withContext(`status ${status}`).toBeFalse();
+      }
     });
   });
 

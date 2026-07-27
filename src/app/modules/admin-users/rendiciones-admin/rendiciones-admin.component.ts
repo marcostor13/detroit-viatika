@@ -682,15 +682,28 @@ export class RendicionesAdminComponent implements OnInit {
     });
   }
 
+  /** Estados en los que la rendición sigue siendo una solicitud del colaborador. */
+  private static readonly SOLICITUD_STATUSES = ['pending_l1', 'solicited'];
+
   /**
-   * Contabilidad puede eliminar cualquier rendición (el backend valida caso a
-   * caso: aprobaciones, anticipos pagados, caja chica ya consolidada, etc., y
-   * devuelve un mensaje claro si no procede). Los demás roles solo ven el botón
-   * cuando la rendición todavía no tiene comprobantes cargados.
+   * Eliminar solo se ofrece mientras la rendición está en solicitud ("En
+   * solicitud" / "Solicitada") y únicamente a su dueño: es su pedido y todavía
+   * no avanzó. Una vez que sale de solicitud, ya no se elimina desde esta
+   * bandeja.
+   *
+   * Los aprobadores y Contabilidad no ven el botón en ningún estado —rechazan,
+   * no borran—; antes Contabilidad tenía vía libre por rol.
    */
   private canDeleteReport(report: IExpenseReport): boolean {
-    if (this.userStateService.isContabilidad()) return true;
-    return report.expenseIds.length === 0;
+    if (!RendicionesAdminComponent.SOLICITUD_STATUSES.includes(report.status)) return false;
+    return this.isReportOwner(report);
+  }
+
+  /** Mismo criterio de propietario que usa el backend al autorizar el borrado. */
+  private isReportOwner(report: IExpenseReport): boolean {
+    const raw = report.createdBy ?? report.userId;
+    const ownerId = raw && typeof raw === 'object' ? raw._id : raw;
+    return !!ownerId && String(ownerId) === this.currentUserId;
   }
 
   /**
