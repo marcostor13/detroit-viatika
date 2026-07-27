@@ -21,6 +21,7 @@ describe('RendicionesAdminComponent', () => {
   let notifications: jasmine.SpyObj<NotificationService>;
   let advanceService: jasmine.SpyObj<AdvanceService>;
   let categoriaService: jasmine.SpyObj<CategoriaService>;
+  let router: jasmine.SpyObj<Router>;
 
   const mockReport: IExpenseReport = {
     _id: 'rep1',
@@ -60,7 +61,7 @@ describe('RendicionesAdminComponent', () => {
 
   beforeEach(() => {
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
-      'findAllByClient', 'getDeletionPreview', 'delete',
+      'findAllByClient', 'getDeletionPreview', 'delete', 'findOne',
       'approveViatico', 'approveViaticoContabilidad',
       'rejectViatico',
     ]);
@@ -83,6 +84,7 @@ describe('RendicionesAdminComponent', () => {
     userStateService.canAccessPagos.and.returnValue(false);
 
     expenseReportsService.findAllByClient.and.returnValue(of([mockReport]));
+    expenseReportsService.findOne.and.returnValue(of(mockReport));
     advanceService.findOrphaned.and.returnValue(of([mockAdvance]));
     adminUsersService.getUsers.and.returnValue(of([]));
     invoicesService.getProjects.and.returnValue(of([]));
@@ -104,6 +106,7 @@ describe('RendicionesAdminComponent', () => {
     });
 
     component = TestBed.createComponent(RendicionesAdminComponent).componentInstance;
+    router = TestBed.inject(Router) as jasmine.SpyObj<Router>;
   });
 
   it('creates the component', () => {
@@ -386,6 +389,47 @@ describe('RendicionesAdminComponent', () => {
       component.goToDetail(item);
       expect(component.showDetailModal()).toBeTrue();
       expect(component.detailItem()).toEqual(item);
+    });
+
+    // Mientras el documento es una solicitud, el ojo abre el modal para
+    // cualquiera —aunque no sea su turno—: la vista completa está vacía.
+    describe('while the report is still a solicitud', () => {
+      const openFirstItem = (report: Partial<IExpenseReport>) => {
+        expenseReportsService.findAllByClient.and.returnValue(
+          of([{ ...mockReport, ...report } as IExpenseReport]),
+        );
+        component.ngOnInit();
+        component.goToDetail(component.filteredItems.find((i) => i._id === 'rep1')!);
+      };
+
+      it('opens the modal for a viewer who cannot approve nor reject', () => {
+        // u9 no está en la cadena y no es Contabilidad: sin canApproveNow/canReject.
+        userStateService.getUser.and.returnValue({ _id: 'u9', companyId: 'c1' } as any);
+        openFirstItem({ status: 'pending_l1' });
+        expect(component.showDetailModal()).toBeTrue();
+        expect(router.navigate).not.toHaveBeenCalled();
+      });
+
+      it('opens the modal for an approved viatico still awaiting the Tesoreria payment', () => {
+        userStateService.getUser.and.returnValue({ _id: 'u9', companyId: 'c1' } as any);
+        openFirstItem({ status: 'viatico_approved', viaticoPaidAmount: 0 });
+        expect(component.showDetailModal()).toBeTrue();
+        expect(router.navigate).not.toHaveBeenCalled();
+      });
+
+      it('navigates to the rendicion once the collaborator is registering gastos', () => {
+        userStateService.getUser.and.returnValue({ _id: 'u9', companyId: 'c1' } as any);
+        openFirstItem({ status: 'open' });
+        expect(component.showDetailModal()).toBeFalse();
+        expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'rep1', 'detalle']);
+      });
+
+      it('navigates for a paid viatico even before it leaves viatico_approved', () => {
+        userStateService.getUser.and.returnValue({ _id: 'u9', companyId: 'c1' } as any);
+        openFirstItem({ status: 'viatico_approved', viaticoPaidAmount: 30 });
+        expect(component.showDetailModal()).toBeFalse();
+        expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'rep1', 'detalle']);
+      });
     });
   });
 

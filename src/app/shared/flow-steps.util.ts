@@ -128,6 +128,41 @@ function aggregateRendicionApprovers(expenses: any[]): RendicionApprover[] {
   return [...byName.values()].sort((x, y) => x.level - y.level || x.name.localeCompare(y.name));
 }
 
+/**
+ * Un viático que ya recibió pago (parcial o total) dejó atrás la fase de
+ * SOLICITUD y entró en la fase de RENDICIÓN al subir sus comprobantes — dos
+ * flujos de aprobación independientes sobre el mismo documento. A partir de
+ * acá `status`/`rejectedByRole`/`rejectionReason` pertenecen a la RENDICIÓN,
+ * no a la solicitud (que usa sus propios `viatico*`).
+ */
+function viaticoEnteredRendicion(r: any): boolean {
+  if (r?.type !== 'viatico') return false;
+  return (
+    Number(r.viaticoPaidAmount ?? 0) > 0 ||
+    ['open', 'submitted', 'pending_accounting', 'reimbursed', 'closed', 'settled', 'returned'].includes(r.status) ||
+    (r.status === 'rejected' && !!r.rejectedByRole)
+  );
+}
+
+/**
+ * ¿El reporte sigue siendo una SOLICITUD, sin gastos que rendir todavía?
+ *
+ * - Viático: hasta que Tesorería paga el anticipo (mismo corte que usa la línea
+ *   de tiempo para pasar a la vista de dos fases).
+ * - Rendición normal del colaborador: mientras está `solicited`.
+ * - Directa: nunca — nace en fase de rendición (`open`).
+ *
+ * Se usa para decidir si el ojo de /rendiciones abre el detalle en un modal o
+ * navega a la rendición completa: antes de que el colaborador empiece a rendir,
+ * esa vista está vacía (S/ 0.00, sin comprobantes) y no aporta nada a nadie.
+ */
+export function isSolicitudPhase(r: any): boolean {
+  if (!r) return false;
+  if (r.type === 'viatico') return !viaticoEnteredRendicion(r);
+  if (r.isDirecta) return false;
+  return r.status === 'solicited';
+}
+
 export function buildReportFlowSteps(r: any): FlowStep[] {
   if (!r) return [];
 
@@ -138,18 +173,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   const isDirecta = !!r.isDirecta;
   const status: string = r.status;
 
-  // Un viático que ya recibió pago (parcial o total) dejó atrás la fase de
-  // SOLICITUD y entró en la fase de RENDICIÓN al subir sus comprobantes — dos
-  // flujos de aprobación independientes sobre el mismo documento. A partir de
-  // acá `status`/`rejectedByRole`/`rejectionReason` pertenecen a la RENDICIÓN,
-  // no a la solicitud (que usa sus propios `viatico*`).
-  const viaticoEnteredRendicion =
-    isViatico &&
-    (Number(r.viaticoPaidAmount ?? 0) > 0 ||
-      ['open', 'submitted', 'pending_accounting', 'reimbursed', 'closed', 'settled', 'returned'].includes(status) ||
-      (status === 'rejected' && !!r.rejectedByRole));
-
-  if (viaticoEnteredRendicion) {
+  if (viaticoEnteredRendicion(r)) {
     return buildViaticoTwoPhaseSteps(r, fmt);
   }
 

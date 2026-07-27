@@ -4,7 +4,7 @@ import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } 
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
 import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
-import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
+import { buildReportFlowSteps, isSolicitudPhase, FlowStep } from '../../../shared/flow-steps.util';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -449,13 +449,23 @@ export class RendicionesAdminComponent implements OnInit {
   }
 
   goToDetail(item: UnifiedRendicionItem): void {
-    // Cuando la solicitud está pendiente de la acción del usuario (aprobar/rechazar),
-    // mostramos el detalle en un modal en lugar de redirigir a la vista completa.
-    if (item.canApproveNow || item.canReject) {
+    // Mientras el documento sigue siendo una SOLICITUD, el ojo abre el detalle
+    // en un modal para cualquiera que lo mire —aprobador, colaborador,
+    // Tesorería o Contabilidad—, sin importar si es su turno de actuar: la
+    // vista completa de la rendición todavía está vacía (S/ 0.00, sin
+    // comprobantes) y redirigir ahí no le sirve a nadie. Se navega a la
+    // rendición recién cuando el colaborador empieza a rendir gastos, que es
+    // cuando esa vista tiene algo que mostrar.
+    if (this.isSolicitud(item) || item.canApproveNow || item.canReject) {
       this.openDetailModal(item);
       return;
     }
     this.navigateToDetail(item);
+  }
+
+  /** Reusa el mismo corte solicitud/rendición que la línea de tiempo (VD-31). */
+  private isSolicitud(item: UnifiedRendicionItem): boolean {
+    return item.source === 'report' && isSolicitudPhase(item.raw);
   }
 
   private navigateToDetail(item: UnifiedRendicionItem): void {
