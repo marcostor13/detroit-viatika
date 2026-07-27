@@ -308,7 +308,7 @@
               </td>
               <td class="px-5 py-3.5 text-center">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
-                  [class]="rep.status === 'partially_paid' ? 'bg-warning/15 text-warning-ink' : 'bg-primary/10 text-primary'">
+                  [class]="rep.status === 'partially_paid' ? 'bg-warning/15 text-warning-ink' : 'bg-success/15 text-success-ink'">
                   {{ rep.status === 'partially_paid' ? 'Pago parcial' : 'Aprobada' }}
                 </span>
               </td>
@@ -419,7 +419,7 @@
               <p class="text-xs text-tertiary">Pagado: {{ viaticoCurrencySymbol(rep) }} {{ (rep.viaticoPaidAmount ?? 0) | number:'1.2-2' }}</p>
               }
               <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1"
-                [class]="rep.status === 'partially_paid' ? 'bg-warning/15 text-warning-ink' : 'bg-primary/10 text-primary'">
+                [class]="rep.status === 'partially_paid' ? 'bg-warning/15 text-warning-ink' : 'bg-success/15 text-success-ink'">
                 {{ rep.status === 'partially_paid' ? 'Pago parcial' : 'Aprobada' }}
               </span>
             </div>

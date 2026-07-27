@@ -4,9 +4,12 @@ import { CommonModule } from '@angular/common';
 export type BadgeVariant = 'neutral' | 'info' | 'success' | 'warning' | 'error';
 export type BadgeSize = 'sm' | 'md';
 
+// `info` usa su propio token y no `primary`: el primary de Detroit es rojo, así
+// que la variante informativa salía igual que `error` — en el historial de
+// aprobaciones "Reenviada" era indistinguible de "Rechazada".
 const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   neutral: 'bg-ink-100 text-ink-700',
-  info: 'bg-primary/10 text-primary',
+  info: 'bg-info/15 text-info-ink',
   success: 'bg-success/15 text-success-ink',
   warning: 'bg-warning/15 text-warning-ink',
   error: 'bg-error/15 text-error-ink',
@@ -14,7 +17,7 @@ const VARIANT_CLASSES: Record<BadgeVariant, string> = {
 
 const DOT_CLASSES: Record<BadgeVariant, string> = {
   neutral: 'bg-ink-500',
-  info: 'bg-primary',
+  info: 'bg-info',
   success: 'bg-success',
   warning: 'bg-warning',
   error: 'bg-error',

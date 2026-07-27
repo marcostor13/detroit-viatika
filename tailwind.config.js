@@ -34,12 +34,17 @@ module.exports = {
           300: '#C7CBCF',
           100: '#EEF0F2',
         },
-        // Darker readable counterparts of success/warning/error for text on
+        // Estado "en curso" (trabajo en marcha, sin problema ni cierre). Antes
+        // se usaba `primary` para esto, pero el primary de Detroit es rojo y
+        // "Registrando gastos" se leía como un error. Additive only.
+        info: '#3B82F6',
+        // Darker readable counterparts of success/warning/error/info for text on
         // tinted backgrounds — the base tokens fail WCAG AA as small text
         // (e.g. warning on white is ~1.8:1). Additive only.
         'success-ink': '#047857',
         'warning-ink': '#92400E',
         'error-ink': '#B42318',
+        'info-ink': '#1D4ED8',
       },
       borderRadius: {
         'xl': '20px',

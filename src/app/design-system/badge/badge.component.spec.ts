@@ -43,6 +43,18 @@ describe('BadgeComponent', () => {
 
       fixture.componentRef.setInput('variant', 'error');
       expect(component.badgeClasses()).toContain('text-error-ink');
+
+      fixture.componentRef.setInput('variant', 'info');
+      expect(component.badgeClasses()).toContain('text-info-ink');
+    });
+
+    // `primary` es el rojo de marca: si `info` vuelve a usarlo, queda igual que
+    // `error` y "Reenviada" se confunde con "Rechazada".
+    it('should not paint the info variant with the brand primary', () => {
+      fixture.componentRef.setInput('variant', 'info');
+      expect(component.badgeClasses()).not.toContain('primary');
+      expect(component.dotClasses()).not.toContain('primary');
+      expect(component.dotClasses()).toContain('bg-info');
     });
 
     it('should apply sm size classes when set', () => {
