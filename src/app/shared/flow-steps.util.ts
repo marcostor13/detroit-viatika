@@ -178,7 +178,6 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   }
 
   const chain: any[] = (isViatico ? r.viaticoApproverChain : isDirecta ? r.directaApproverChain : []) ?? [];
-  const history: any[] = (isViatico ? r.viaticoApprovalHistory : isDirecta ? r.directaApprovalHistory : []) ?? [];
   const approvalLevel: number = (isViatico ? r.viaticoApprovalLevel : r.directaApprovalLevel) ?? 0;
   const requiredLevels: number = (isViatico ? r.viaticoRequiredLevels : r.directaRequiredLevels) ?? chain.length;
 
@@ -223,12 +222,25 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   // contra `approvalLevel` (un contador que ya no refleja el orden).
   const chainLevelApproved = (level: number): boolean => !!(chain[level - 1] as any)?.approved;
 
-  // Contabilidad aprobó si hay hito directo, si el estado ya avanzó, o si el
-  // historial tiene la entrada final (nivel por encima de la cadena, caso viático).
+  // Contabilidad aprobó si dejó su hito propio o si el estado ya avanzó más
+  // allá de su gate. Cada fase tiene su campo: la SOLICITUD del viático usa
+  // `viaticoSolicitudContabilidad*` y la rendición/directa `contabilidad*`
+  // (ver §fix de colisión en la entidad).
+  //
+  // NO se infiere del historial buscando una entrada con `level > chainCount`:
+  // el historial guarda el `level` del PASO DE CADENA (N1 = 1, N2 = 2), no su
+  // posición, así que un centro de costo con un solo aprobador que es el N2
+  // deja una entrada de nivel 2 contra un `chainCount` de 1 y se leía como si
+  // Contabilidad ya hubiera aprobado — el viático mostraba "Aprobado por
+  // Contabilidad" estando en `pending_contabilidad`, esperándola.
   const contaActive = status === 'pending_accounting' || status === 'pending_contabilidad';
-  const contaEntry = history.find(h => h.action === 'approved' && h.level > chainCount);
-  const contaDone =
-    !!r.contabilidadApprovedBy || !!r.contabilidadApprovedAt || terminal || !!contaEntry;
+  const contaApprovedAtSource = isViatico
+    ? r.viaticoSolicitudContabilidadApprovedAt
+    : r.contabilidadApprovedAt;
+  const contaApprovedBySource = isViatico
+    ? r.viaticoSolicitudContabilidadApprovedBy
+    : r.contabilidadApprovedBy;
+  const contaDone = !!contaApprovedAtSource || !!contaApprovedBySource || terminal;
 
   // progress = índice del último paso COMPLETADO (con cascada).
   let progress = 0; // Solicitud enviada
@@ -363,17 +375,15 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     });
   }
 
-  // contaIdx — Aprobación de Contabilidad. Para un viático en fase SOLICITUD el
-  // aprobador vive en `viaticoSolicitudContabilidadApprovedBy` (campo propio, ver
-  // §fix de colisión); para rendición/directa, en `contabilidadApprovedBy`.
+  // contaIdx — Aprobación de Contabilidad, con el hito de la fase que
+  // corresponde (`contaApprovedAt/BySource`, resueltos más arriba).
   const contaState = stateFor(contaIdx);
-  const contaApprovedBySource = isViatico ? r.viaticoSolicitudContabilidadApprovedBy : r.contabilidadApprovedBy;
   const contaApprovedByName = contaApprovedBySource && typeof contaApprovedBySource === 'object'
     ? contaApprovedBySource.name : undefined;
   steps.push({
     label: contaState === 'completed' ? `Aprobado por ${contaApprovedByName ?? 'Contabilidad'}` : 'Aprobación de Contabilidad',
     state: contaState,
-    date: fmt(r.contabilidadApprovedAt || contaEntry?.date),
+    date: fmt(contaApprovedAtSource),
     description: contaState === 'active' ? 'Pendiente de aprobación final de Contabilidad' : undefined,
     notes: contaState === 'rejected' ? rejectionReason : undefined,
   });
