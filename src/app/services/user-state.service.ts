@@ -239,8 +239,15 @@ export class UserStateService {
     return this.getPermissions().canApproveL2 === true;
   }
 
+  /**
+   * Acceso al módulo de Pagos (Tesorería). Contabilidad y Administrador NO
+   * tienen bypass: si se les quita el módulo "Pagos" en sus permisos, dejan de
+   * ver el botón de pago en Rendiciones y el guard les cierra /tesoreria.
+   * Mismo criterio que `hasModuleStrict` (VD-77) — solo Superadministrador y el
+   * rol Tesorería (cuya función es exclusivamente pagar) pasan siempre.
+   */
   canAccessTesoreria(): boolean {
-    if (this.isSuperAdmin() || this.isTesoreria() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin() || this.isTesoreria()) return true;
     const perms = this.getPermissions();
     return perms.modules?.includes('tesoreria') ?? false;
   }

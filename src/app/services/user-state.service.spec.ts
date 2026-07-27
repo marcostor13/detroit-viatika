@@ -332,6 +332,33 @@ describe('UserStateService — empty localStorage', () => {
       service.setUser(makeUser({ permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
       expect(service.canAccessTesoreria()).toBeFalse();
     });
+
+    // El módulo "Pagos" manda sobre el rol: quitarlo debe ocultar el botón de
+    // pago en Rendiciones y cerrar /tesoreria también a Contabilidad/Admin.
+    it('canAccessTesoreria() returns false for Contabilidad without the tesoreria module', () => {
+      const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['rendiciones'], canApproveL1: true, canApproveL2: true } }));
+      expect(service.canAccessTesoreria()).toBeFalse();
+      expect(service.canAccessPagos()).toBeFalse();
+    });
+
+    it('canAccessTesoreria() returns true for Contabilidad with the tesoreria module', () => {
+      const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['tesoreria'], canApproveL1: true, canApproveL2: true } }));
+      expect(service.canAccessTesoreria()).toBeTrue();
+    });
+
+    it('canAccessTesoreria() returns false for Administrador without the tesoreria module', () => {
+      const role = { _id: 'r2', name: 'Administrador', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['rendiciones'], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canAccessTesoreria()).toBeFalse();
+    });
+
+    it('canAccessTesoreria() returns true for Tesoreria role regardless of modules', () => {
+      const role = { _id: 'r4', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canAccessTesoreria()).toBeTrue();
+    });
   });
 });
 

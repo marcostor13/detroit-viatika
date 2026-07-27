@@ -68,6 +68,7 @@ describe('RendicionesAdminComponent', () => {
     invoicesService = jasmine.createSpyObj('InvoicesService', ['getProjects']);
     userStateService = jasmine.createSpyObj('UserStateService', [
       'getUser', 'isSuperAdmin', 'isCoordinador', 'isApprover', 'isContabilidad', 'canApproveL2',
+      'canAccessPagos',
     ]);
     notifications = jasmine.createSpyObj('NotificationService', ['show']);
     advanceService = jasmine.createSpyObj('AdvanceService', ['findOrphaned', 'approve', 'reject']);
@@ -79,6 +80,7 @@ describe('RendicionesAdminComponent', () => {
     userStateService.isApprover.and.returnValue(false);
     userStateService.isContabilidad.and.returnValue(false);
     userStateService.canApproveL2.and.returnValue(false);
+    userStateService.canAccessPagos.and.returnValue(false);
 
     expenseReportsService.findAllByClient.and.returnValue(of([mockReport]));
     advanceService.findOrphaned.and.returnValue(of([mockAdvance]));

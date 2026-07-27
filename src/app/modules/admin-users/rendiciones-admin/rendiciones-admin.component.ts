@@ -168,8 +168,13 @@ export class RendicionesAdminComponent implements OnInit {
     return this.userStateService.isSuperAdmin();
   }
 
-  /** Usado para el acceso a registro de pagos (Tesorería), no para la cadena de aprobadores. */
-  get userCanApproveL2() { return this.userStateService.canApproveL2(); }
+  /**
+   * Acceso al registro de pagos (Tesorería), no la cadena de aprobadores.
+   * Depende del módulo "Pagos" y no de `canApproveL2()`, que tiene bypass de rol
+   * para Contabilidad/Admin y hacía que el botón de pago siguiera apareciendo
+   * aunque se les quitara el permiso.
+   */
+  get userCanAccessPagos() { return this.userStateService.canAccessPagos(); }
 
   private approverIdAt(chain: ({ _id: string } | string)[] | undefined, level: number): string {
     const entry = chain?.[level];

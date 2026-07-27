@@ -265,7 +265,7 @@
                 }
               </span>
               <span class="inline-flex items-center justify-center h-9 w-9">
-                @if (item.source === 'report' && item.status === 'viatico_approved' && userCanApproveL2) {
+                @if (item.source === 'report' && item.status === 'viatico_approved' && userCanAccessPagos) {
                   <a [routerLink]="['/tesoreria']" title="Pago pendiente en Tesorería"
                     class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-orange-600 hover:bg-orange-50 transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -375,7 +375,7 @@
               Eliminar
             </button>
           }
-          @if (item.source === 'report' && item.status === 'viatico_approved' && userCanApproveL2) {
+          @if (item.source === 'report' && item.status === 'viatico_approved' && userCanAccessPagos) {
             <a [routerLink]="['/tesoreria']"
               class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors">
               Pago pendiente
