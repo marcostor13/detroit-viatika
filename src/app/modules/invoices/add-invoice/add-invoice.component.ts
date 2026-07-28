@@ -794,12 +794,31 @@ export default class AddInvoiceComponent implements OnInit {
     return this.categories.filter((c) => (c.name || '').toLowerCase().includes('planilla de movilidad'));
   }
 
-  /** Se muestra el selector solo cuando hay más de una categoría de planilla de movilidad asignada. */
+  /**
+   * Se muestra el selector solo cuando hay más de una categoría de planilla de
+   * movilidad asignada. Aplica también a la rendición directa: aunque ahí el
+   * centro de costo y la OT se heredan de la rendición, la categoría no se
+   * puede deducir cuando el colaborador tiene dos (Servicios 91x y Comercial
+   * 92x llevan cuentas contables distintas), y antes el guardado moría con un
+   * "no tienes ninguna asignada" que decía justo lo contrario de lo que pasaba.
+   */
   get showMovilidadCategorySelect(): boolean {
     return (
       this.expenseType() === 'planilla_movilidad' &&
-      !this.isDirectaPlanilla() &&
       this.movilidadCategories.length > 1
+    );
+  }
+
+  /**
+   * En planilla directa el bloque superior (centro de costo / OT / categoría)
+   * está oculto porque todo se hereda de la rendición. La categoría es la
+   * excepción: si hay que elegirla, o si no hay ninguna asignada, el bloque
+   * tiene que aparecer igual para mostrar el selector o el aviso.
+   */
+  get showMovilidadCategoryBlock(): boolean {
+    return (
+      this.showMovilidadCategorySelect ||
+      (this.categoriesLoaded() && this.movilidadCategories.length === 0)
     );
   }
 
@@ -809,7 +828,7 @@ export default class AddInvoiceComponent implements OnInit {
    * elección (selector requerido). Si no tiene ninguna, no se completa (bloquea el guardado).
    */
   private applyMovilidadCategoryDefault(): void {
-    if (this.expenseType() !== 'planilla_movilidad' || this.isDirectaPlanilla()) return;
+    if (this.expenseType() !== 'planilla_movilidad') return;
     const catCtrl = this.form.get('categoryId');
     if (!catCtrl || catCtrl.disabled) return;
     const matches = this.movilidadCategories;
@@ -929,17 +948,15 @@ export default class AddInvoiceComponent implements OnInit {
       projCtrl.setValidators(this.isDirectaPlanilla() ? [] : [Validators.required]);
       projCtrl.updateValueAndValidity({ emitEvent: false });
     }
-    // Categoría: en planilla de movilidad (no directa) se resuelve entre las
-    // categorías "Planilla de movilidad" asignadas al colaborador (ver
-    // applyMovilidadCategoryDefault). En planilla directa vive en cada fila.
-    // Requerida en el resto de tipos de gasto.
+    // Categoría: en planilla de movilidad —directa incluida— se resuelve entre
+    // las categorías "Planilla de movilidad" asignadas al colaborador (ver
+    // applyMovilidadCategoryDefault). Requerida en el resto de tipos de gasto.
     const catCtrl = this.form.get('categoryId');
     if (catCtrl && !catCtrl.disabled) {
-      const isPlanilla = this.expenseType() === 'planilla_movilidad';
-      if (isPlanilla && !this.isDirectaPlanilla()) {
+      if (this.expenseType() === 'planilla_movilidad') {
         this.applyMovilidadCategoryDefault();
       } else {
-        catCtrl.setValidators(isPlanilla ? [] : [Validators.required]);
+        catCtrl.setValidators([Validators.required]);
         catCtrl.updateValueAndValidity({ emitEvent: false });
       }
     }
@@ -1292,10 +1309,12 @@ export default class AddInvoiceComponent implements OnInit {
     })();
     switch (this.expenseType()) {
       case 'planilla_movilidad': {
-        // En planilla directa la categoría vive en cada fila (cubierta por mobilityRowsArray.valid).
-        const categoryOk = this.isDirectaPlanilla() || this.form.get('categoryId')?.valid === true;
+        // La categoría se resuelve igual en viático y en directa: automática si
+        // el colaborador tiene una sola, elegida en el selector si tiene varias.
+        const catCtrl = this.form.get('categoryId');
+        const categoryOk = catCtrl?.disabled === true || catCtrl?.valid === true;
         // El colaborador debe tener al menos una categoría de Planilla de movilidad asignada.
-        const movilidadCategoryOk = this.isDirectaPlanilla() || this.movilidadCategories.length > 0;
+        const movilidadCategoryOk = this.movilidadCategories.length > 0;
         return (
           proyectOk &&
           categoryOk &&
@@ -1404,17 +1423,25 @@ export default class AddInvoiceComponent implements OnInit {
       this.notificationService.show('Debes agregar al menos una fila', 'error');
       return;
     }
-    if (!this.isDirectaPlanilla() && this.movilidadCategories.length === 0) {
+    if (this.movilidadCategories.length === 0) {
       this.notificationService.show(
         'No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.',
         'error'
       );
       return;
     }
+    if (this.showMovilidadCategorySelect && !this.form.get('categoryId')?.value) {
+      this.notificationService.show(
+        'Tienes más de una categoría de Planilla de movilidad asignada. Elige cuál corresponde.',
+        'error'
+      );
+      return;
+    }
     const proyectCtrl = this.form.get('proyectId');
     const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
-    // En planilla directa proyecto y categoría viven en cada fila; el selector superior se omite.
-    const categoryOk = this.isDirectaPlanilla() || !!this.form.get('categoryId')?.valid;
+    // En planilla directa el proyecto vive en cada fila; el selector superior se omite.
+    const categoryCtrl = this.form.get('categoryId');
+    const categoryOk = !!(categoryCtrl?.disabled || categoryCtrl?.valid);
     // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de Costo.
     const otOk = !!this.form.get('ordenTrabajoId')?.value;
     if (!proyectOk || !categoryOk || !otOk) {
@@ -1476,9 +1503,13 @@ export default class AddInvoiceComponent implements OnInit {
       const expenseProjectId = this.isDirectaContext()
         ? (rows.find((r: any) => r.proyectId)?.proyectId || '')
         : this.form.get('proyectId')?.value;
-      const expenseCategoryId = this.isDirectaContext()
-        ? (rows.find((r: any) => r.categoryId)?.categoryId || '')
-        : this.form.get('categoryId')?.value;
+      // La categoría sale del selector superior —resuelta sola o elegida—, tanto
+      // en viático como en directa. En directa se conserva la lectura por fila
+      // como respaldo para planillas viejas que aún la traigan (VD-28 dejó de
+      // pedirla por fila).
+      const expenseCategoryId =
+        this.form.get('categoryId')?.value ||
+        (this.isDirectaContext() ? rows.find((r: any) => r.categoryId)?.categoryId || '' : '');
       const payload = {
         proyectId: expenseProjectId,
         ordenTrabajoId: this.form.get('ordenTrabajoId')?.value,

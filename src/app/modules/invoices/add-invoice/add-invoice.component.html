@@ -73,8 +73,10 @@
   </div>
   }
 
-  <!-- Proyecto + Categoría del gasto. En planilla directa ambos viven en cada fila, por eso se ocultan aquí. -->
-  @if (!isDirectaPlanilla()) {
+  <!-- Proyecto + OT + Categoría. En planilla directa el centro de costo y la OT
+       se heredan de la rendición y no se muestran; el bloque solo reaparece
+       cuando queda la categoría por resolver (ver showMovilidadCategoryBlock). -->
+  @if (!isDirectaPlanilla() || showMovilidadCategoryBlock) {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-6">
     <!-- En rendición directa el centro de costo es el de la rendición: no se elige por comprobante. -->
     @if (!isDirectaContext()) {
@@ -94,7 +96,8 @@
     </div>
     }
 
-    @if (expenseType() === 'planilla_movilidad') {
+    <!-- En directa la OT se hereda de la rendición; si no la tiene, se pide en el bloque de fallback de más abajo. -->
+    @if (expenseType() === 'planilla_movilidad' && !isDirectaPlanilla()) {
     <div class="flex flex-col gap-2">
       <label for="ordenTrabajoId" class="text-sm font-medium text-secondary">
         Orden de Trabajo <span class="text-error">*</span>
@@ -146,8 +149,7 @@
       <span class="text-sm text-error">La categoría es requerida</span>
       }
     </div>
-    } @else if (!isDirectaPlanilla()) {
-      @if (showMovilidadCategorySelect) {
+    } @else if (showMovilidadCategorySelect) {
       <div class="flex flex-col gap-2">
         <label for="categoryId" class="text-sm font-medium text-secondary">
           Categoría de Planilla de movilidad <span class="text-error">*</span>
@@ -175,13 +177,12 @@
         <span class="text-sm text-error">La categoría es requerida</span>
         }
       </div>
-      } @else if (categoriesLoaded() && movilidadCategories.length === 0) {
+    } @else if (categoriesLoaded() && movilidadCategories.length === 0) {
       <div class="flex flex-col gap-2">
         <span class="text-sm text-error">
           No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.
         </span>
       </div>
-      }
     }
   </div>
   }

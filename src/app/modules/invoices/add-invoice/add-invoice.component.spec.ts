@@ -511,6 +511,59 @@ describe('AddInvoiceComponent', () => {
       component.setExpenseType('otros_gastos');
       expect(component.form.get('categoryId')?.value).toBeFalsy();
     });
+
+    // En rendición directa el centro de costo y la OT se heredan, pero la
+    // categoría no se puede deducir con dos asignadas (91x Servicios y 92x
+    // Comercial van a cuentas contables distintas). Antes se ocultaba el
+    // selector y el guardado moría con "no tienes ninguna asignada".
+    describe('in a rendicion directa', () => {
+      const asDirecta = (component: any) => {
+        spyOn(component, 'isDirectaPlanilla').and.returnValue(true);
+        spyOn(component, 'isDirectaContext').and.returnValue(true);
+      };
+
+      it('shows the selector when the collaborator has more than one', () => {
+        const component = createComponent();
+        asDirecta(component);
+        component.categories = [
+          { _id: 'mov91', name: 'Planilla de movilidad', cuenta: '913111' } as any,
+          { _id: 'mov92', name: 'Planilla de movilidad COM', cuenta: '923111' } as any,
+        ];
+        component.setExpenseType('planilla_movilidad');
+        expect(component.showMovilidadCategorySelect).toBeTrue();
+        expect(component.form.get('categoryId')?.value).toBeFalsy();
+      });
+
+      it('still auto-assigns when the collaborator has exactly one', () => {
+        const component = createComponent();
+        asDirecta(component);
+        component.categories = [{ _id: 'mov91', name: 'Planilla de movilidad' } as any];
+        component.setExpenseType('planilla_movilidad');
+        expect(component.showMovilidadCategorySelect).toBeFalse();
+        expect(component.form.get('categoryId')?.value).toBe('mov91');
+      });
+
+      // El bloque superior está oculto en directa (centro de costo y OT se
+      // heredan); tiene que reaparecer solo cuando falta resolver la categoría.
+      it('reveals the top block only when the category needs resolving', () => {
+        const component = createComponent();
+        asDirecta(component);
+        component.categoriesLoaded.set(true);
+
+        component.categories = [{ _id: 'mov91', name: 'Planilla de movilidad' } as any];
+        component.setExpenseType('planilla_movilidad');
+        expect(component.showMovilidadCategoryBlock).toBeFalse();
+
+        component.categories = [
+          { _id: 'mov91', name: 'Planilla de movilidad' } as any,
+          { _id: 'mov92', name: 'Planilla de movilidad COM' } as any,
+        ];
+        expect(component.showMovilidadCategoryBlock).toBeTrue();
+
+        component.categories = [{ _id: 'c1', name: 'Viajes' } as any];
+        expect(component.showMovilidadCategoryBlock).toBeTrue();
+      });
+    });
   });
 
   describe('isFormValid - otros_gastos', () => {
