@@ -264,18 +264,60 @@ export class InicioComponent implements OnInit {
   kpiSolicitudesPendientes = computed(() => this.solicitudesRows().length);
 
   /**
-   * Rendiciones por aprobar (equipo): 2ª etapa de la solicitud de viáticos. El viático
-   * ya fue aprobado y pagado; el colaborador rindió sus gastos y el reporte espera la
-   * aprobación del coordinador. SOLO estado 'submitted' (Enviada): cuando pasa a
-   * 'pending_accounting' (En contabilidad) ya salió del coordinador → no se lista ni
-   * cuenta aquí. Son viáticos en su fase de rendición — las directas NO van aquí.
+   * Rendiciones por aprobar (equipo). Con el modelo por comprobante (regla 1.4,
+   * VD-87) la rendición se aprueba aprobando TODOS sus gastos, así que acá entra
+   * cualquier rendición —viático en fase de rendición, directa o normal— con al
+   * menos un comprobante esperando la firma de ESTE aprobador. Antes se filtraba
+   * por `type === 'viatico' && status === 'submitted'`, que era el modelo viejo
+   * de aprobar el reporte completo de una vez: dejaba fuera a las directas y a
+   * todo lo que no estuviera en 'submitted', y por eso al aprobador no le
+   * aparecía nada en el Inicio aunque tuviera comprobantes por firmar.
+   *
+   * Se conserva el criterio de reporte para los viáticos ya enviados bajo el
+   * modelo anterior (sin cadena por comprobante), que siguen aprobándose con el
+   * botón "Aprobar Rendición" de respaldo.
    */
   rendicionesRows = computed<DashRow[]>(() =>
     this.teamReports()
-      .filter((r) => r.type === 'viatico' && r.status === 'submitted')
+      .filter(
+        (r) =>
+          this.hasExpensePendingMyApproval(r) ||
+          (r.type === 'viatico' && r.status === 'submitted')
+      )
       .sort((a, b) => this.ts(b.createdAt) - this.ts(a.createdAt))
       .map((r) => this.reportRow(r))
   );
+
+  /** Suma de los comprobantes cargados; 0 si `expenseIds` no viene poblado. */
+  private reportExpensesTotal(report: IExpenseReport): number {
+    return (report.expenseIds ?? []).reduce(
+      (sum: number, exp: any) =>
+        sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
+      0
+    );
+  }
+
+  /**
+   * ¿Queda algún comprobante de esta rendición esperando la firma del usuario
+   * actual? Mismo criterio que `hasActionableStep` en /rendiciones: un paso
+   * cuenta si aún no está aprobado y lo incluye entre sus aprobadores
+   * (aprobación en paralelo: no importa su posición en la cadena).
+   */
+  private hasExpensePendingMyApproval(report: IExpenseReport): boolean {
+    const me = String((this.userState.getUser() as any)?._id ?? '');
+    if (!me) return false;
+    return (report.expenseIds ?? [])
+      .filter((e: any) => e && typeof e === 'object' && e.status !== 'rejected')
+      .some((e: any) =>
+        (e.approverChain ?? []).some(
+          (step: any) =>
+            !step.approved &&
+            (step.approverIds ?? []).some(
+              (a: any) => String(typeof a === 'object' ? a?._id : a) === me
+            )
+        )
+      );
+  }
 
   kpiRendicionesPorAprobar = computed(() => this.rendicionesRows().length);
 
@@ -554,7 +596,11 @@ export class InicioComponent implements OnInit {
       title: r.title || (r as any).viaticoPlace || '—',
       userName: this.resolveUserName(r.userId),
       project: this.resolveProject((r as any).projectId),
-      amount: (r as any).viaticoAmount ?? r.budget ?? 0,
+      // La directa no tiene presupuesto propio (`budget` es 0): su monto es la
+      // suma de los comprobantes cargados, igual que en /rendiciones (VD-25).
+      amount: (r as any).isDirecta
+        ? this.reportExpensesTotal(r)
+        : ((r as any).viaticoAmount ?? r.budget ?? 0),
       currencySymbol: monedaSymbol((r as any).viaticoMoneda),
       status: r.status,
       statusLabel: this.REPORT_STATUS_LABELS[r.status] ?? r.status,
