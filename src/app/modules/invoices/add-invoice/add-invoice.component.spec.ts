@@ -44,6 +44,7 @@ describe('AddInvoiceComponent', () => {
       'createCashReceipt',
       'createMobilitySheet',
       'createOtherExpense',
+      'createDeclaracionJurada',
       'updateInvoice',
       'analyzeInvoice',
       'analyzePdf',
@@ -784,6 +785,123 @@ describe('AddInvoiceComponent', () => {
       expect(payload.declaracionJuradaFirmante).toBe('John Doe');
       expect(payload.imageUrl).toBeUndefined();
       expect(notificationService.show).toHaveBeenCalledWith('Gasto guardado correctamente', 'success');
+    });
+  });
+
+  describe('DJE — Declaración Jurada al extranjero', () => {
+    const catAlimentacion = { _id: 'cat-ali', name: 'Alimentacion', cuenta: '91.3.1.410' } as any;
+    const catMovilidad = { _id: 'cat-mov', name: 'Planilla de movilidad', cuenta: '91.3.1.411' } as any;
+
+    function djComponent(categories: any[] = [catAlimentacion, catMovilidad]) {
+      invoicesService.getCategories.and.returnValue(of(categories));
+      const component = createComponent();
+      component.ngOnInit();
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('DJE');
+      component.form.patchValue({ proyectId: 'p1', declaracionJurada: true });
+      return component;
+    }
+
+    it('autoselecciona la categoría de cada rubro cuando hay una sola coincidencia', () => {
+      const component = djComponent();
+      expect(component.djAlimentacionAuto()?._id).toBe('cat-ali');
+      expect(component.djMovilidadAuto()?._id).toBe('cat-mov');
+      expect(component.form.get('djAlimentacionCategoryId')?.value).toBe('cat-ali');
+      expect(component.form.get('djMovilidadCategoryId')?.value).toBe('cat-mov');
+    });
+
+    it('reconoce las variantes COM (Comercial) como categoría del rubro', () => {
+      const component = djComponent([
+        { _id: 'cat-ali-com', name: 'Alimentacion COM', cuenta: '92.3.1.410' } as any,
+        { _id: 'cat-mov-com', name: 'Planilla de movilidad COM', cuenta: '92.3.1.411' } as any,
+      ]);
+      // Única del rubro aunque sea la variante COM: se autoasigna igual.
+      expect(component.djAlimentacionAuto()?._id).toBe('cat-ali-com');
+      expect(component.djMovilidadAuto()?._id).toBe('cat-mov-com');
+      expect(component.form.get('djAlimentacionCategoryId')?.value).toBe('cat-ali-com');
+      expect(component.form.get('djMovilidadCategoryId')?.value).toBe('cat-mov-com');
+    });
+
+    it('deja elegir a mano cuando el rubro tiene varias categorías', () => {
+      const component = djComponent([
+        catAlimentacion,
+        { _id: 'cat-ali-com', name: 'Alimentacion COM' },
+        catMovilidad,
+      ]);
+      expect(component.djAlimentacionAuto()).toBeNull();
+      expect(component.form.get('djAlimentacionCategoryId')?.value).toBe('');
+      expect(component.djCategoriesFor('alimentacion').length).toBe(2);
+    });
+
+    it('no es válido sin filas, y sí con una fila completa', () => {
+      const component = djComponent();
+      expect(component.isFormValid()).toBeFalse();
+      component.addDjRow('alimentacion');
+      component.djAlimentacionRowsArray.at(0).patchValue({ fecha: '2026-07-10', monto: 40 });
+      expect(component.isFormValid()).toBeTrue();
+    });
+
+    it('no es válido si el rubro con filas no tiene categoría resuelta', () => {
+      const component = djComponent([catMovilidad]);
+      component.addDjRow('alimentacion');
+      component.djAlimentacionRowsArray.at(0).patchValue({ fecha: '2026-07-10', monto: 40 });
+      expect(component.isFormValid()).toBeFalse();
+    });
+
+    it('envía un payload con una sección por rubro y no navega (queda el PDF por descargar)', () => {
+      invoicesService.createDeclaracionJurada.and.returnValue(
+        of({ groupId: 'g1', expenses: [] } as any)
+      );
+      const component = djComponent();
+      component.form.patchValue({ djDestino: 'Quito', djPais: 'Ecuador', djLugarFirma: 'Lima' });
+      component.addDjRow('alimentacion');
+      component.djAlimentacionRowsArray.at(0).patchValue({ fecha: '2026-07-10', monto: 40 });
+      component.addDjRow('movilidad');
+      component.djMovilidadRowsArray.at(0).patchValue({ fecha: '2026-07-11', monto: 20 });
+
+      component.saveOrUpdate();
+
+      const payload = invoicesService.createDeclaracionJurada.calls.mostRecent().args[0];
+      expect(payload.moneda).toBe('US$');
+      expect(payload.destino).toBe('Quito');
+      expect(payload.alimentacion).toEqual({
+        categoryId: 'cat-ali',
+        rows: [{ fecha: '2026-07-10', monto: 40 }],
+      });
+      expect(payload.movilidad).toEqual({
+        categoryId: 'cat-mov',
+        rows: [{ fecha: '2026-07-11', monto: 20 }],
+      });
+      expect(component.savedDeclaracionJurada()?.groupId).toBe('g1');
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it('omite el rubro sin filas', () => {
+      invoicesService.createDeclaracionJurada.and.returnValue(
+        of({ groupId: 'g1', expenses: [] } as any)
+      );
+      const component = djComponent();
+      component.addDjRow('movilidad');
+      component.djMovilidadRowsArray.at(0).patchValue({ fecha: '2026-07-11', monto: 20 });
+      component.saveOrUpdate();
+
+      const payload = invoicesService.createDeclaracionJurada.calls.mostRecent().args[0];
+      expect(payload.alimentacion).toBeUndefined();
+      expect(payload.movilidad?.rows.length).toBe(1);
+    });
+
+    it('exige firma digital registrada antes de guardar', () => {
+      userStateService.getUser.and.returnValue({ ...currentUser, signature: '' } as any);
+      const component = djComponent();
+      component.addDjRow('alimentacion');
+      component.djAlimentacionRowsArray.at(0).patchValue({ fecha: '2026-07-10', monto: 40 });
+      component.saveOrUpdate();
+
+      expect(invoicesService.createDeclaracionJurada).not.toHaveBeenCalled();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/firma digital/i),
+        'error'
+      );
     });
   });
 

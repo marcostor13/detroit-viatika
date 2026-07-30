@@ -1944,6 +1944,45 @@
               <p class="font-medium text-secondary">{{ exp['declaracionJuradaFirmante'] || '—' }}</p>
             </div>
           </div>
+          <!-- DJ al extranjero: detalle diario declarado + PDF oficial -->
+          @if (isDeclaracionJuradaExteriorExpense(exp)) {
+          <div class="rounded-lg border border-divider overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-xs sm:text-sm">
+                <thead class="bg-background text-left text-tertiary">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">Fecha</th>
+                    <th class="px-3 py-2 font-medium text-right">Monto ({{ exp['declaracionJuradaMoneda'] || 'US$' }})</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-divider">
+                  @for (row of declaracionJuradaRows(exp); track $index) {
+                  <tr class="hover:bg-background/80">
+                    <td class="px-3 py-2 whitespace-nowrap">{{ formatEmissionDate($any(row['fecha'])) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums font-medium">{{ $any(row['monto']) | number:'1.2-2' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <p class="text-xs text-tertiary/70">Destino</p>
+              <p class="font-medium text-secondary">
+                {{ exp['declaracionJuradaDestino'] || '—' }}{{ exp['declaracionJuradaPais'] ? ', ' + exp['declaracionJuradaPais'] : '' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-tertiary/70">Ciudad de firma</p>
+              <p class="font-medium text-secondary">{{ exp['declaracionJuradaLugarFirma'] || '—' }}</p>
+            </div>
+          </div>
+          <button type="button" (click)="exportDeclaracionJuradaExterior(exp)"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-semibold text-sm hover:opacity-90">
+            Descargar declaración jurada (PDF)
+          </button>
+          }
         </section>
         }
         @default {

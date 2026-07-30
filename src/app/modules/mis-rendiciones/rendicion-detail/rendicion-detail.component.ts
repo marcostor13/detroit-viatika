@@ -1081,6 +1081,13 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       return this.formatEmissionDate([...dates].sort()[0]);
     }
     if (type === 'otros_gastos') {
+      // La DJ al extranjero declara días concretos: vale el primero declarado,
+      // no la fecha de registro (el resto de otros gastos mantiene createdAt).
+      const djRows = this.declaracionJuradaRows(expense);
+      if (djRows.length > 0) {
+        const fechas = djRows.map(r => String(r['fecha'] ?? '')).filter(Boolean);
+        if (fechas.length > 0) return this.formatEmissionDate([...fechas].sort()[0]);
+      }
       return this.formatEmissionDate(expense?.createdAt);
     }
     return this.emissionDateText(expense);
@@ -1274,6 +1281,71 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   mobilityRows(exp: Record<string, unknown>): Record<string, unknown>[] {
     const rows = exp['mobilityRows'];
     return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+
+  /** Detalle diario declarado en un gasto de DJ al extranjero. */
+  declaracionJuradaRows(exp: Record<string, unknown>): Record<string, unknown>[] {
+    const rows = exp['declaracionJuradaRows'];
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+
+  /** Gasto proveniente de una DJ al extranjero (lleva su detalle diario). */
+  isDeclaracionJuradaExteriorExpense(exp: Record<string, unknown>): boolean {
+    return (
+      this.getExpenseTypeKey(exp) === 'otros_gastos' &&
+      exp['subTipo'] === 'DJE' &&
+      this.declaracionJuradaRows(exp).length > 0
+    );
+  }
+
+  /** Gastos (Alimentación + Movilidad) de la misma Declaración Jurada firmada. */
+  private declaracionJuradaGroupExpenses(
+    exp: Record<string, unknown>
+  ): Record<string, unknown>[] {
+    const groupId = exp['declaracionJuradaGroupId'];
+    if (!groupId) return [exp];
+    const all = ((this.report as any)?.expenseIds as Record<string, unknown>[]) || [];
+    const group = all.filter(e => e && e['declaracionJuradaGroupId'] === groupId);
+    return group.length ? group : [exp];
+  }
+
+  /** Regenera el PDF oficial de la DJ al extranjero desde los datos guardados. */
+  async exportDeclaracionJuradaExterior(exp: Record<string, unknown>): Promise<void> {
+    if (!this.isDeclaracionJuradaExteriorExpense(exp)) return;
+    const group = this.declaracionJuradaGroupExpenses(exp);
+    const alimentacionExp = group.find(
+      e => this.getExpenseDataObject(e)['rubro'] === 'alimentacion'
+    );
+    const movilidadExp = group.find(
+      e => this.getExpenseDataObject(e)['rubro'] === 'movilidad'
+    );
+    const primary = alimentacionExp || movilidadExp || exp;
+    const toRows = (e?: Record<string, unknown>) =>
+      this.declaracionJuradaRows(e ?? {}).map(r => ({
+        fecha: String(r['fecha'] ?? ''),
+        monto: Number(r['monto']) || 0,
+      }));
+
+    // Empresa: la del cliente (como en el resto de declaraciones juradas); la
+    // configuración global puede traer otra razón social y sin RUC.
+    const client = this.userStateService.getUser()?.client;
+    const cfg = this.companyConfigService.getCompanyConfig();
+    await this.rendicionExportService.exportDeclaracionJuradaExteriorToPdf({
+      fileBaseName: `declaracion_jurada_exterior_${String(primary['declaracionJuradaGroupId'] || primary['_id'])}`,
+      colaborador: String(primary['declaracionJuradaFirmante'] || this.getCollaboratorDisplayName()),
+      colaboradorDni: this.collaboratorDniForPdf(),
+      empresaNombre: client?.businessName || client?.comercialName || cfg?.businessName,
+      empresaRuc: client?.businessId || cfg?.businessId,
+      ciudadDestino: primary['declaracionJuradaDestino'] as string | undefined,
+      pais: primary['declaracionJuradaPais'] as string | undefined,
+      moneda: (primary['declaracionJuradaMoneda'] as string) || 'US$',
+      alimentacionRows: toRows(alimentacionExp),
+      movilidadRows: toRows(movilidadExp),
+      ciudadFirma: primary['declaracionJuradaLugarFirma'] as string | undefined,
+      fechaFirma: String(primary['createdAt'] || new Date().toISOString()),
+      signature: this.getCollaboratorSignature(),
+    });
+    this.notificationService.show('Declaración jurada descargada', 'success');
   }
 
   sunatBlock(exp: Record<string, unknown>): Record<string, unknown> | null {

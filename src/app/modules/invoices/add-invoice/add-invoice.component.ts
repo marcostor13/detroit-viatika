@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, Injector } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
 import {
   FormBuilder,
@@ -24,6 +24,8 @@ import {
   InvoiceStatus,
   SunatValidationInfo,
   ExpenseType,
+  ICreateDeclaracionJuradaPayload,
+  IDeclaracionJuradaResponse,
 } from '../interfaces/invoices.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
@@ -62,6 +64,8 @@ export default class AddInvoiceComponent implements OnInit {
   private companyConfigService = inject(CompanyConfigService);
   private expenseService = inject(ExpenseService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
+  /** Para resolver el servicio de exportación en diferido (jsPDF/ExcelJS fuera del bundle inicial). */
+  private injector = inject(Injector);
 
   form!: FormGroup;
   id: string = this.route.snapshot.params['id'];
@@ -695,6 +699,7 @@ export default class AddInvoiceComponent implements OnInit {
         this.categories = categories;
         this.categoriesLoaded.set(true);
         this.applyMovilidadCategoryDefault();
+        this.autoSelectDjCategories();
       },
       error: (error) => {},
     });
@@ -882,6 +887,15 @@ export default class AddInvoiceComponent implements OnInit {
       description: [''],
       declaracionJurada: [false],
       declaracionJuradaFirmante: [''],
+      // Declaración Jurada al extranjero (DJE): datos del viaje + filas por rubro
+      djDestino: [''],
+      djPais: [''],
+      djLugarFirma: [''],
+      djMoneda: ['US$'],
+      djAlimentacionCategoryId: [''],
+      djMovilidadCategoryId: [''],
+      djAlimentacionRows: this.fb.array([]),
+      djMovilidadRows: this.fb.array([]),
       // Recibo de caja
       receiptRazonSocial: [''],
       receiptRuc: [''],
@@ -896,6 +910,124 @@ export default class AddInvoiceComponent implements OnInit {
 
   get mobilityRowsArray(): FormArray {
     return this.form.get('mobilityRows') as FormArray;
+  }
+
+  // ─── Declaración Jurada al extranjero (DJE) ───────────────────────
+  /** Gastos creados por la última DJ guardada; habilita la descarga del PDF. */
+  savedDeclaracionJurada = signal<IDeclaracionJuradaResponse | null>(null);
+
+  /**
+   * Categoría detectada para cada rubro entre las asignadas al colaborador. Si
+   * hay exactamente una coincidencia se usa esa y el selector no se muestra;
+   * con 0 o 2+ (p. ej. Servicios 91x y Comercial 92x) se deja elegir a mano.
+   */
+  djAlimentacionAuto = signal<ICategory | null>(null);
+  djMovilidadAuto = signal<ICategory | null>(null);
+
+  /**
+   * Categorías del colaborador cuyo nombre corresponde al rubro. Se compara sin
+   * tildes: en Detroit la categoría está registrada como "Alimentacion".
+   */
+  djCategoriesFor(rubro: 'alimentacion' | 'movilidad'): ICategory[] {
+    const needle = rubro === 'alimentacion' ? 'alimentacion' : 'movilidad';
+    return this.categories.filter((c) => this.normalizeStr(c.name || '').includes(needle));
+  }
+
+  /**
+   * Autoselecciona las categorías de Alimentación y Movilidad por nombre. Es
+   * idempotente: se puede invocar tras cargar categorías o al cambiar de
+   * sub-tipo. Si el rubro no tiene una única coincidencia, limpia el control
+   * para que aparezca el selector manual de respaldo.
+   */
+  private autoSelectDjCategories(): void {
+    if (!this.isDj()) return;
+    const uniquePick = (rubro: 'alimentacion' | 'movilidad'): ICategory | null => {
+      const matches = this.djCategoriesFor(rubro);
+      return matches.length === 1 ? matches[0] : null;
+    };
+    const alimentacion = uniquePick('alimentacion');
+    const movilidad = uniquePick('movilidad');
+
+    this.djAlimentacionAuto.set(alimentacion);
+    this.djMovilidadAuto.set(movilidad);
+
+    const aliCtrl = this.form.get('djAlimentacionCategoryId');
+    const aliValue = alimentacion?._id ?? '';
+    if (aliCtrl && alimentacion) aliCtrl.setValue(aliValue);
+
+    const movCtrl = this.form.get('djMovilidadCategoryId');
+    const movValue = movilidad?._id ?? '';
+    if (movCtrl && movilidad) movCtrl.setValue(movValue);
+  }
+
+  /** Cambia el sub-tipo de "Otros gastos" y reevalúa lo que depende de él. */
+  selectOtrosSubTipo(code: string): void {
+    this.otrosSubTipo.set(code);
+    this.autoSelectDjCategories();
+    this.syncTopValidators();
+  }
+
+  /**
+   * DJE: la categoría no se elige en el selector superior (cada rubro tiene la
+   * suya), por lo que ese selector se oculta y deja de ser obligatorio.
+   * Solo aplica al crear: al editar, cada gasto ya es de un rubro concreto y se
+   * muestra como cualquier otro gasto (categoría + monto).
+   */
+  isDj(): boolean {
+    return (
+      !this.id &&
+      this.expenseType() === 'otros_gastos' &&
+      this.otrosSubTipo() === 'DJE'
+    );
+  }
+
+  get djAlimentacionRowsArray(): FormArray {
+    return this.form.get('djAlimentacionRows') as FormArray;
+  }
+
+  get djMovilidadRowsArray(): FormArray {
+    return this.form.get('djMovilidadRows') as FormArray;
+  }
+
+  private djRowsArray(rubro: 'alimentacion' | 'movilidad'): FormArray {
+    return rubro === 'alimentacion' ? this.djAlimentacionRowsArray : this.djMovilidadRowsArray;
+  }
+
+  addDjRow(rubro: 'alimentacion' | 'movilidad'): void {
+    this.djRowsArray(rubro).push(
+      this.fb.group({
+        fecha: ['', Validators.required],
+        monto: [null, [Validators.required, Validators.min(0.01)]],
+      })
+    );
+  }
+
+  removeDjRow(rubro: 'alimentacion' | 'movilidad', index: number): void {
+    this.djRowsArray(rubro).removeAt(index);
+  }
+
+  getDjRowsTotal(rubro: 'alimentacion' | 'movilidad'): number {
+    return this.djRowsArray(rubro).controls.reduce(
+      (sum, ctrl) => sum + (Number(ctrl.get('monto')?.value) || 0),
+      0
+    );
+  }
+
+  get djTotal(): number {
+    return this.getDjRowsTotal('alimentacion') + this.getDjRowsTotal('movilidad');
+  }
+
+  /** Categoría a usar en un rubro: la detectada o la elegida a mano. */
+  private djCategoryIdFor(rubro: 'alimentacion' | 'movilidad'): string {
+    const ctrl = rubro === 'alimentacion' ? 'djAlimentacionCategoryId' : 'djMovilidadCategoryId';
+    return String(this.form.get(ctrl)?.value || '').trim();
+  }
+
+  /** Un rubro está completo si no tiene filas, o si las tiene con categoría y filas válidas. */
+  private isDjSeccionValid(rubro: 'alimentacion' | 'movilidad'): boolean {
+    const rows = this.djRowsArray(rubro);
+    if (rows.length === 0) return true;
+    return rows.valid && !!this.djCategoryIdFor(rubro);
   }
 
   setExpenseType(type: ExpenseType) {
@@ -950,11 +1082,15 @@ export default class AddInvoiceComponent implements OnInit {
     }
     // Categoría: en planilla de movilidad —directa incluida— se resuelve entre
     // las categorías "Planilla de movilidad" asignadas al colaborador (ver
-    // applyMovilidadCategoryDefault). Requerida en el resto de tipos de gasto.
+    // applyMovilidadCategoryDefault). En la DJ al extranjero cada rubro lleva la
+    // suya. Requerida en el resto de tipos de gasto.
     const catCtrl = this.form.get('categoryId');
     if (catCtrl && !catCtrl.disabled) {
       if (this.expenseType() === 'planilla_movilidad') {
         this.applyMovilidadCategoryDefault();
+      } else if (this.isDj()) {
+        catCtrl.setValidators([]);
+        catCtrl.updateValueAndValidity({ emitEvent: false });
       } else {
         catCtrl.setValidators([Validators.required]);
         catCtrl.updateValueAndValidity({ emitEvent: false });
@@ -1326,6 +1462,17 @@ export default class AddInvoiceComponent implements OnInit {
       }
       case 'otros_gastos': {
         const sub = this.otrosSubTipo();
+        // DJE: el monto sale de las filas por rubro y el adjunto es opcional, así
+        // que valida contra sus propias secciones (al menos una con filas).
+        if (this.isDj()) {
+          return (
+            proyectOk &&
+            !!this.form.get('declaracionJurada')?.value &&
+            this.djTotal > 0 &&
+            this.isDjSeccionValid('alimentacion') &&
+            this.isDjSeccionValid('movilidad')
+          );
+        }
         // VD-83/VD-91: DJE y AL (Alimentación sin documentación) validan igual
         // que una DJ (checkbox de declaración jurada obligatorio al crear).
         const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(sub);
@@ -1549,7 +1696,133 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
+  /**
+   * Declaración Jurada al extranjero (DJE): adjunto opcional y un gasto por
+   * rubro (Alimentación / Movilidad) con su detalle diario. Tras guardar no se
+   * navega: queda disponible la descarga del PDF firmado.
+   */
+  saveDeclaracionJurada(): void {
+    const proyectCtrl = this.form.get('proyectId');
+    const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
+    if (!proyectOk) {
+      this.notificationService.show('Completa los campos requeridos', 'error');
+      return;
+    }
+
+    const currentUser = this.userStateService.getUser();
+    if (!currentUser?.signature) {
+      this.notificationService.show(
+        'Debes registrar tu firma digital antes de enviar una Declaracion Jurada. Ve a Mi Firma en el menu.',
+        'error'
+      );
+      return;
+    }
+    if (!this.form.get('declaracionJurada')?.value) {
+      this.notificationService.show('Debes aceptar y firmar la declaración jurada', 'error');
+      return;
+    }
+
+    const alimentacionRows = this.djAlimentacionRowsArray.getRawValue() as { fecha: string; monto: number }[];
+    const movilidadRows = this.djMovilidadRowsArray.getRawValue() as { fecha: string; monto: number }[];
+    if (alimentacionRows.length === 0 && movilidadRows.length === 0) {
+      this.notificationService.show('Agrega al menos un gasto de Alimentación o Movilidad', 'error');
+      return;
+    }
+    if (!this.isDjSeccionValid('alimentacion') || !this.isDjSeccionValid('movilidad')) {
+      this.notificationService.show(
+        'Completa la categoría, la fecha y el monto de cada fila declarada',
+        'error'
+      );
+      return;
+    }
+
+    this.isLoading.set(true);
+
+    const proceed = (imageUrl?: string) => {
+      const payload: ICreateDeclaracionJuradaPayload = {
+        proyectId: this.form.get('proyectId')?.value,
+        expenseReportId: this.rendicionId || undefined,
+        moneda: (this.form.get('djMoneda')?.value || 'US$').toString().trim(),
+        destino: (this.form.get('djDestino')?.value || '').toString().trim() || undefined,
+        pais: (this.form.get('djPais')?.value || '').toString().trim() || undefined,
+        lugarFirma: (this.form.get('djLugarFirma')?.value || '').toString().trim() || undefined,
+        imageUrl,
+        ...(alimentacionRows.length
+          ? { alimentacion: { categoryId: this.djCategoryIdFor('alimentacion'), rows: alimentacionRows } }
+          : {}),
+        ...(movilidadRows.length
+          ? { movilidad: { categoryId: this.djCategoryIdFor('movilidad'), rows: movilidadRows } }
+          : {}),
+      };
+      this.invoiceService.createDeclaracionJurada(payload).subscribe({
+        next: (res) => {
+          this.isLoading.set(false);
+          this.savedDeclaracionJurada.set(res);
+          this.notificationService.show(
+            'Declaración jurada guardada correctamente. Ya puedes descargar el PDF.',
+            'success'
+          );
+        },
+        error: (error) => {
+          this.isLoading.set(false);
+          this.notificationService.show(
+            'Error al guardar la declaración jurada: ' + (error.error?.message || error.message),
+            'error'
+          );
+        },
+      });
+    };
+
+    if (this.selectedFile) {
+      const { downloadUrl$ } = this.uploadService.uploadFile(this.selectedFile, environment.storagePath);
+      downloadUrl$.subscribe({
+        next: (url) => proceed(url),
+        error: (err) => {
+          this.isLoading.set(false);
+          this.notificationService.show('Error al subir el adjunto: ' + err.message, 'error');
+        },
+      });
+    } else {
+      proceed();
+    }
+  }
+
+  /** Genera el PDF oficial de la DJ al extranjero con los datos del formulario. */
+  async downloadDeclaracionJuradaPdf(): Promise<void> {
+    try {
+      const currentUser = this.userStateService.getUser();
+      const { RendicionExportService } = await import('../../../services/rendicion-export.service');
+      const exportService = this.injector.get(RendicionExportService);
+      // Empresa: la del cliente del colaborador. La configuración global puede
+      // traer otra razón social (y sin RUC), y el documento es de la empresa que
+      // emplea a quien declara.
+      const client = currentUser?.client;
+      await exportService.exportDeclaracionJuradaExteriorToPdf({
+        fileBaseName: `declaracion-jurada-${new Date().toISOString().slice(0, 10)}`,
+        colaborador: currentUser?.name || '',
+        colaboradorDni: (currentUser as any)?.dni,
+        empresaNombre: client?.businessName || client?.comercialName,
+        empresaRuc: client?.businessId,
+        ciudadDestino: this.form.get('djDestino')?.value || undefined,
+        pais: this.form.get('djPais')?.value || undefined,
+        moneda: this.form.get('djMoneda')?.value || 'US$',
+        alimentacionRows: this.djAlimentacionRowsArray.getRawValue(),
+        movilidadRows: this.djMovilidadRowsArray.getRawValue(),
+        ciudadFirma: this.form.get('djLugarFirma')?.value || undefined,
+        fechaFirma: new Date().toISOString(),
+        signature: currentUser?.signature,
+      });
+    } catch (err: any) {
+      this.notificationService.show('Error al generar el PDF: ' + err.message, 'error');
+    }
+  }
+
   saveOtherExpense() {
+    // La DJ al extranjero tiene su propio flujo (un gasto por rubro).
+    if (this.isDj()) {
+      this.saveDeclaracionJurada();
+      return;
+    }
     const declaracionJurada = this.form.get('declaracionJurada')?.value;
     const total = this.form.get('totalOtros')?.value;
     const description = this.form.get('description')?.value;
