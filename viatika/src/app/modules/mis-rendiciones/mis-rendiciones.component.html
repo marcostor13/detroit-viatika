@@ -1,0 +1,653 @@
+<div class="px-4 sm:px-6 py-6">
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Mis Rendiciones</h1>
+      <p class="text-sm text-gray-500 mt-1">Gestiona tus viáticos y documentos de gastos.</p>
+    </div>
+    <app-button variant="secondary" label="Guía" (clicked)="toggleGuidelines()">
+      <app-icon name="file-text" size="sm" />
+    </app-button>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 border-b border-gray-200 mb-6">
+    @if (canViewViaticos) {
+    <button
+      type="button"
+      (click)="setTab('viaticos')"
+      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      [class.border-primary]="activeTab() === 'viaticos'"
+      [class.text-primary]="activeTab() === 'viaticos'"
+      [class.border-transparent]="activeTab() !== 'viaticos'"
+      [class.text-gray-500]="activeTab() !== 'viaticos'"
+    >
+      Mis viáticos
+      @if (viaticoTabBadgeCount > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ viaticoTabBadgeCount }}</span>
+      }
+    </button>
+    }
+    @if (canCreateRendicion) {
+    <button
+      type="button"
+      (click)="setTab('directas')"
+      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      [class.border-primary]="activeTab() === 'directas'"
+      [class.text-primary]="activeTab() === 'directas'"
+      [class.border-transparent]="activeTab() !== 'directas'"
+      [class.text-gray-500]="activeTab() !== 'directas'"
+    >
+      Rendiciones Directas
+      @if (directaReports.length > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ directaReports.length }}</span>
+      }
+    </button>
+    }
+    @if (canAccessCajaChica) {
+    <button
+      type="button"
+      (click)="setTab('caja-chica')"
+      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      [class.border-primary]="activeTab() === 'caja-chica'"
+      [class.text-primary]="activeTab() === 'caja-chica'"
+      [class.border-transparent]="activeTab() !== 'caja-chica'"
+      [class.text-gray-500]="activeTab() !== 'caja-chica'"
+    >
+      Caja Chica
+      @if (cajaChicaReports().length > 0) {
+        <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ cajaChicaReports().length }}</span>
+      }
+    </button>
+    }
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB 1: MIS VIÁTICOS (UNIFIED)                               -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'viaticos') {
+
+  <!-- Action bar -->
+  <div class="flex justify-end mb-4">
+    <app-button label="Solicitar viáticos" (clicked)="openViaticosModal()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
+    <div class="flex flex-wrap gap-3 items-end">
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</label>
+        <select
+          [value]="viaticosStatusFilter()"
+          (change)="viaticosStatusFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <option value="">Todos</option>
+          @for (label of viaticoStatusOptions; track label) {
+          <option [value]="label">{{ label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="date"
+          [value]="viaticosDateFrom()"
+          (change)="viaticosDateFrom.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="date"
+          [value]="viaticosDateTo()"
+          (change)="viaticosDateTo.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearViaticosFilters()">
+        <app-icon name="close" size="sm" />
+      </app-button>
+
+    </div>
+  </div>
+
+  @if (viaticoReportsLoading() || isLoading) {
+    <div class="flex justify-center py-16">
+      <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
+    </div>
+  } @else {
+
+    @if (unifiedViaticoList.length === 0) {
+      @if (viaticosStatusFilter() || viaticosDateFrom() || viaticosDateTo()) {
+        <app-empty-state icon="search" title="Sin resultados" description="No hay registros que coincidan con los filtros aplicados.">
+          <app-button variant="secondary" label="Limpiar filtros" (clicked)="clearViaticosFilters()" />
+        </app-empty-state>
+      } @else {
+        <app-empty-state icon="receipt" title="Sin viáticos aún" description="Crea tu primera solicitud de viáticos para comenzar el proceso.">
+          <app-button label="Solicitar viáticos" (clicked)="openViaticosModal()">
+            <app-icon name="plus" size="sm" />
+          </app-button>
+        </app-empty-state>
+      }
+    } @else {
+      <app-data-table
+        [items]="unifiedViaticoList"
+        [rowClickable]="true"
+        (rowClick)="navigateToUnifiedItem($event.row, $event.event)"
+      >
+        <!-- Fecha -->
+        <ng-container *appColumn="'fecha'; header: 'Fecha'; let item">
+          <p class="text-xs text-gray-500">{{ item.createdAt | date:'dd/MM/yyyy' }}</p>
+        </ng-container>
+
+        <!-- Estado -->
+        <ng-container *appColumn="'estado'; header: 'Estado'; let item">
+          <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold uppercase" [class]="item.statusColor">
+            {{ item.statusLabel }}
+          </span>
+        </ng-container>
+
+        <!-- Centro de costo -->
+        <ng-container *appColumn="'cc'; header: 'Centro de costo'; cellClass: 'max-w-[220px]'; let item">
+          <p class="font-medium text-gray-900 break-words">{{ item.projectLabel }}</p>
+        </ng-container>
+
+        <!-- Destino -->
+        <ng-container *appColumn="'destino'; header: 'Destino'; detail: true; cellClass: 'text-gray-600'; let item">
+          <span class="break-words">{{ item.place }}</span>
+        </ng-container>
+
+        <!-- Período -->
+        <ng-container *appColumn="'periodo'; header: 'Período'; detail: true; cellClass: 'text-gray-500'; let item">
+          {{ item.dateRange || '—' }}
+        </ng-container>
+
+        <!-- Monto -->
+        <ng-container *appColumn="'monto'; header: 'Monto'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let item">
+          {{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}
+        </ng-container>
+
+        <!-- Comprobantes -->
+        <ng-container *appColumn="'comprobantes'; header: 'Comprobantes'; detail: true; align: 'center'; cellClass: 'text-gray-600'; let item">
+          <span class="text-xs">{{ item.expensesCount }}</span>
+        </ng-container>
+
+        <!-- Acciones -->
+        <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let item">
+          <div class="flex items-center justify-end gap-1" (click)="$event.stopPropagation()">
+
+            @if (item.isInExpensePhase) {
+              <button type="button"
+                (click)="navigateToUnifiedItem(item, $event)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Registrar gastos
+              </button>
+            } @else if (item.canResubmit) {
+              <button type="button"
+                (click)="editUnifiedItem(item, $event)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-3.5 h-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                Corregir
+              </button>
+            } @else if (item.canEdit) {
+              <button type="button"
+                (click)="editUnifiedItem(item, $event)"
+                title="Editar solicitud"
+                class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                </svg>
+              </button>
+            } @else if (item.source !== 'advance') {
+              <button type="button"
+                (click)="navigateToUnifiedItem(item, $event)"
+                title="Ver detalle"
+                class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+                </svg>
+              </button>
+            } @else {
+              <span class="inline-flex items-center justify-center h-9 w-9 text-gray-300">—</span>
+            }
+
+            <!-- Slot fijo de eliminar: mantiene los iconos alineados en columna entre filas (VD-35) -->
+            <span class="inline-flex items-center justify-center h-9 w-9">
+              @if (canDeleteUnifiedItem(item)) {
+                <button type="button"
+                  (click)="deleteUnifiedItem(item, $event)"
+                  title="Eliminar"
+                  class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                  </svg>
+                </button>
+              }
+            </span>
+
+          </div>
+        </ng-container>
+      </app-data-table>
+    }
+
+  } <!-- end @else loading -->
+
+  } <!-- fin @if activeTab === 'viaticos' -->
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB 2: RENDICIONES DIRECTAS                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'directas') {
+
+  <!-- Action bar -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <p class="text-sm text-gray-500">Crea primero la rendición y luego agrega los gastos desde su detalle.</p>
+    <app-button label="Nueva Rendición Directa" (clicked)="openNuevaRendicionDirecta()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
+    <div class="flex flex-wrap gap-3 items-end">
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</label>
+        <select
+          [value]="directasStatusFilter()"
+          (change)="directasStatusFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <option value="">Todos</option>
+          @for (label of directaStatusOptions; track label) {
+          <option [value]="label">{{ label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="date"
+          [value]="directasDateFrom()"
+          (change)="directasDateFrom.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="date"
+          [value]="directasDateTo()"
+          (change)="directasDateTo.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearDirectasFilters()">
+        <app-icon name="close" size="sm" />
+      </app-button>
+
+    </div>
+  </div>
+
+  @if (isLoading) {
+    <div class="flex justify-center py-16">
+      <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
+    </div>
+  } @else if (filteredDirectaReports.length === 0) {
+    <app-empty-state icon="clipboard-list" title="No hay rendiciones directas" description="Crea una rendición directa y luego agrega los gastos desde su detalle.">
+      <app-button label="Crear primera rendición directa" (clicked)="openNuevaRendicionDirecta()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </app-empty-state>
+  } @else {
+    <app-data-table
+      [items]="filteredDirectaReports"
+      [rowClickable]="true"
+      (rowClick)="goToReportDetail($event.row, $event.event)"
+    >
+      <!-- Fecha -->
+      <ng-container *appColumn="'fecha'; header: 'Fecha'; detail: true; cellClass: 'text-gray-500'; let r">
+        {{ r.createdAt | date:'dd/MM/yyyy' }}
+      </ng-container>
+
+      <!-- Código -->
+      <ng-container *appColumn="'codigo'; header: 'Código'; let r">
+        @if (r.codigo) {
+          <span class="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">{{ r.codigo }}</span>
+        } @else {
+          <span class="text-gray-400">—</span>
+        }
+      </ng-container>
+
+      <!-- Estado -->
+      <ng-container *appColumn="'estado'; header: 'Estado'; let r">
+        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold uppercase"
+          [ngClass]="{
+            'bg-gray-100 text-gray-600': isReportEffectivelyClosed(r) || r.status === 'cancelled' || r.status === 'closed',
+            'bg-green-100 text-green-700': !isReportEffectivelyClosed(r) && r.status === 'open',
+            'bg-yellow-100 text-yellow-700': !isReportEffectivelyClosed(r) && (r.status === 'submitted' || r.status === 'pending_l1'),
+            'bg-violet-100 text-violet-700': !isReportEffectivelyClosed(r) && r.status === 'pending_accounting',
+            'bg-blue-100 text-blue-700': !isReportEffectivelyClosed(r) && r.status === 'approved',
+            'bg-red-100 text-red-700': !isReportEffectivelyClosed(r) && r.status === 'rejected'
+          }"
+        >
+          {{ panelStatusText(r) }}
+        </span>
+      </ng-container>
+
+      <!-- Descripción -->
+      <ng-container *appColumn="'descripcion'; header: 'Descripción'; cellClass: 'max-w-[260px]'; let r">
+        <p class="font-medium text-gray-900 break-words">{{ reportDisplayTitle(r) }}</p>
+        @if (reportDateRange(r)) {
+          <p class="text-xs text-gray-400 mt-0.5">{{ reportDateRange(r) }}</p>
+        }
+      </ng-container>
+
+      <!-- Gastos -->
+      <ng-container *appColumn="'gastos'; header: 'Gastos'; detail: true; align: 'center'; cellClass: 'text-gray-600 text-xs'; let r">
+        {{ r.expenseIds.length || 0 }}
+      </ng-container>
+
+      <!-- Total -->
+      <ng-container *appColumn="'total'; header: 'Total'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let r">
+        S/ {{ getTotalGastado(r) | number:'1.2-2' }}
+      </ng-container>
+
+      <!-- Saldo -->
+      <ng-container *appColumn="'saldo'; header: 'Saldo'; align: 'right'; cellClass: 'whitespace-nowrap tabular-nums'; let r">
+        <span [ngClass]="hasReportSaldo(r) ? (getReportSaldo(r) >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold') : 'text-gray-400'">
+          @if (hasReportSaldo(r)) {
+            S/ {{ getReportSaldo(r) | number:'1.2-2' }}
+          } @else {
+            —
+          }
+        </span>
+      </ng-container>
+
+      <!-- Acciones -->
+      <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let r">
+        <div class="flex items-center justify-end gap-1" (click)="$event.stopPropagation()">
+          <button
+            type="button"
+            (click)="goToReportDetail(r, $event)"
+            title="Ver detalle"
+            class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+            </svg>
+          </button>
+          <!-- Slot fijo de eliminar: mantiene los iconos alineados en columna entre filas (VD-35) -->
+          <span class="inline-flex items-center justify-center h-9 w-9">
+            @if (canDeleteReport(r)) {
+              <button
+                type="button"
+                (click)="openDeleteReportModal(r, $event)"
+                title="Eliminar rendición"
+                class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                </svg>
+              </button>
+            }
+          </span>
+        </div>
+      </ng-container>
+    </app-data-table>
+  }
+
+  } <!-- fin @if activeTab === 'directas' -->
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- TAB 3: CAJA CHICA                                           -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @if (activeTab() === 'caja-chica') {
+
+  <!-- Action bar -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <p class="text-sm text-gray-500">Sube tus comprobantes de caja chica. Contabilidad los incluirá en el reporte correspondiente.</p>
+    <app-button label="Nueva Caja Chica" (clicked)="navigateToNuevaCajaChica()">
+      <app-icon name="plus" size="sm" />
+    </app-button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
+    <div class="flex flex-wrap gap-3 items-end">
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
+        <input
+          type="date"
+          [value]="cajaDateFrom()"
+          (change)="cajaDateFrom.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
+        <input
+          type="date"
+          [value]="cajaDateTo()"
+          (change)="cajaDateTo.set($any($event.target).value)"
+          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearCajaFilters()">
+        <app-icon name="close" size="sm" />
+      </app-button>
+
+    </div>
+  </div>
+
+  @if (cajaChicaLoading()) {
+    <div class="flex justify-center p-12">
+      <span class="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
+    </div>
+  } @else if (filteredCajaChicaReports.length === 0) {
+    <app-empty-state icon="wallet" title="Sin rendiciones de caja chica" description="Crea una nueva para empezar a subir comprobantes.">
+      <app-button label="Nueva Caja Chica" (clicked)="navigateToNuevaCajaChica()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </app-empty-state>
+  } @else {
+    <app-data-table [items]="filteredCajaChicaReports">
+      <!-- Fecha -->
+      <ng-container *appColumn="'fecha'; header: 'Fecha'; cellClass: 'text-xs text-gray-500'; let report">
+        {{ report.createdAt | date:'dd/MM/yyyy' }}
+      </ng-container>
+
+      <!-- Título -->
+      <ng-container *appColumn="'titulo'; header: 'Título'; cellClass: 'max-w-[320px]'; let report">
+        <div class="flex items-center gap-2">
+          <span class="shrink-0 inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-700 uppercase tracking-wide">CC</span>
+          <p class="font-medium text-gray-900 break-words">{{ report.title }}</p>
+        </div>
+      </ng-container>
+
+      <!-- Comprobantes -->
+      <ng-container *appColumn="'comprobantes'; header: 'Comprobantes'; align: 'center'; cellClass: 'text-gray-600 text-xs'; let report">
+        {{ report.expenseIds.length }}
+      </ng-container>
+
+      <!-- Total -->
+      <ng-container *appColumn="'total'; header: 'Total'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let report">
+        S/ {{ cajaChicaTotalExpenses(report) | number:'1.2-2' }}
+      </ng-container>
+
+      <!-- Acciones -->
+      <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let report">
+        <div class="flex items-center justify-end gap-1">
+          <a
+            [routerLink]="['/mis-rendiciones', report._id, 'detalle']"
+            [queryParams]="{tab: activeTab()}"
+            title="Ver detalle"
+            class="p-1.5 rounded-lg text-gray-400 hover:text-primary hover:bg-primary/10 transition-colors inline-flex"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+            </svg>
+          </a>
+          @if (canDeleteReport(report)) {
+            <button
+              type="button"
+              (click)="openDeleteReportModal(report, $event)"
+              title="Eliminar caja chica"
+              class="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+              </svg>
+            </button>
+          }
+        </div>
+      </ng-container>
+    </app-data-table>
+  }
+
+  } <!-- fin @if activeTab === 'caja-chica' -->
+
+</div>
+
+<app-create-rendicion-modal
+  [isOpen]="showCreateModal"
+  [collaboratorId]="currentUserId"
+  (close)="onModalClose($event)"
+/>
+
+
+<!-- Modal: Procedimientos y Consideraciones -->
+<app-modal [open]="showGuidelines()" size="xl" (closed)="toggleGuidelines()">
+  <div class="flex items-center justify-between -mt-2 -mx-2 mb-4">
+    <div class="flex items-center gap-3">
+      <div class="p-2 bg-primary/10 text-primary rounded-lg shrink-0">
+        <app-icon name="file-text" size="sm" />
+      </div>
+      <div>
+        <h2 class="text-base font-bold text-secondary">Procedimientos y Consideraciones</h2>
+        <p class="text-xs text-tertiary mt-0.5">Normas importantes para la rendición de viáticos</p>
+      </div>
+    </div>
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" (clicked)="toggleGuidelines()">
+      <app-icon name="close" size="sm" />
+    </app-button>
+  </div>
+    <div class="overflow-y-auto">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div>
+          <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">1</span>
+            Procedimiento General
+          </h3>
+          <ol class="space-y-4 text-sm text-gray-700 list-decimal list-outside ml-4">
+            <li class="pl-2"><span class="font-medium text-gray-900">Entrega de rendición:</span> Entrega el formato Excel y la rendición física a los <strong class="text-primary">02 días hábiles</strong> de retorno de campo.</li>
+            <li class="pl-2"><span class="font-medium text-gray-900">Validación (Administración):</span> Se realiza la validación de la entrega al día siguiente de recibido.</li>
+            <li class="pl-2"><span class="font-medium text-gray-900">Conformidad:</span> Remisión al Director de Proyectos para su conformidad.</li>
+            <li class="pl-2"><span class="font-medium text-red-700">Penalidad:</span> En caso excepcional, de no rendir hasta el cierre de mes, automáticamente se considerará como <strong class="text-red-700">adelanto de sueldo</strong>.</li>
+          </ol>
+        </div>
+        <div>
+          <h3 class="font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold">2</span>
+            Consideraciones Clave
+          </h3>
+          <ul class="space-y-3 text-sm text-gray-700 list-disc list-outside ml-4">
+            <li class="pl-1">La <strong class="text-gray-900">boleta de venta</strong> debe estar afecta al Nuevo RUS.</li>
+            <li class="pl-1">La boleta de venta <strong>nunca debe iniciar su RUC con dígito 20</strong>; de ser así, solicita factura. Caso contrario será <strong class="text-red-700">ND (No Deducible)</strong>.</li>
+            <li class="pl-1">Importes mayores a <strong>S/ 500</strong>: Efectuar consulta RUC para validar condición de activo y habido en SUNAT.</li>
+            <li class="pl-1">Documentos obligatorios: <strong class="text-gray-900">Factura PDF</strong> y <strong class="text-gray-900">Archivo XML</strong>.</li>
+            <li class="pl-1">Movilidad local diaria <strong class="text-primary">&lt; S/ 37.20 x día</strong> (solo en Lima). En provincia debe ser factura o comprobante de caja.</li>
+            <li class="pl-1">Comprobante por alimentación <strong>detallada</strong> (NO por "Consumo").</li>
+            <li class="pl-1 font-medium text-gray-900">Todo gasto de vehículo debe consignar obligatoriamente la Placa (peaje, combustible, lubricante, repuestos, mantenimiento, etc).</li>
+            <li class="pl-1">Alojamiento: Detallar personas y días.</li>
+            <li class="pl-1">Al contratar proveedores debe ceñirse al procedimiento de contratación.</li>
+            <li class="pl-1">El <strong>comprobante de caja</strong> debe estar firmado por quien recibe el efectivo y detallar bien el servicio prestado (Obligatorio).</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="pt-4 border-t border-divider flex justify-end">
+      <app-button variant="secondary" label="Cerrar" (clicked)="toggleGuidelines()" />
+    </div>
+</app-modal>
+
+<!-- Modal: Cancelar rendición solicitada -->
+<app-modal [open]="showCancelReportModal()" size="sm" (closed)="showCancelReportModal.set(false)">
+  <div class="flex items-center gap-3 mb-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center">
+      <app-icon name="circle-alert" size="sm" class="text-warning-ink" />
+    </div>
+    <div>
+      <h3 class="text-base font-semibold text-secondary">Cancelar solicitud</h3>
+      <p class="text-xs text-tertiary mt-0.5 line-clamp-1">{{ cancellingReport()?.title }}</p>
+    </div>
+  </div>
+  <label class="block text-sm font-medium text-secondary mb-1">Motivo (opcional)</label>
+  <textarea
+    rows="3"
+    [value]="cancelReportReason()"
+    (input)="cancelReportReason.set($any($event.target).value)"
+    class="w-full rounded-lg border border-divider px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-warning/50 focus:border-warning resize-none"
+    placeholder="Ej: Ya no realizare el viaje..."
+  ></textarea>
+  <div class="flex gap-3 mt-4">
+    <app-button variant="secondary" [fullWidth]="true" label="Volver" [disabled]="isCancellingReport()" (clicked)="showCancelReportModal.set(false)" />
+    <app-button variant="primary" [fullWidth]="true" [loading]="isCancellingReport()" loadingLabel="Cancelando..." label="Confirmar" [disabled]="isCancellingReport()" (clicked)="confirmCancelReport()" />
+  </div>
+</app-modal>
+
+<!-- Modal: Eliminar rendición -->
+<app-modal [open]="showDeleteReportModal()" size="sm" (closed)="showDeleteReportModal.set(false)">
+  <div class="flex items-center gap-3 mb-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-error/10 flex items-center justify-center">
+      <app-icon name="trash" size="sm" class="text-error-ink" />
+    </div>
+    <div>
+      <h3 class="text-base font-semibold text-secondary">Eliminar solicitud</h3>
+      <p class="text-xs text-tertiary mt-0.5 line-clamp-1">{{ deletingReport()?.title }}</p>
+    </div>
+  </div>
+  <p class="text-sm text-tertiary">Se eliminará la solicitud y todos sus comprobantes de forma permanente. Esta acción no se puede deshacer.</p>
+  <div class="flex gap-3 mt-4">
+    <app-button variant="secondary" [fullWidth]="true" label="Volver" [disabled]="isDeletingReport()" (clicked)="showDeleteReportModal.set(false)" />
+    <app-button variant="danger" [fullWidth]="true" [loading]="isDeletingReport()" loadingLabel="Eliminando..." label="Eliminar" [disabled]="isDeletingReport()" (clicked)="confirmDeleteReport()" />
+  </div>
+</app-modal>
+
+<!-- Modal: Eliminar solicitud de viáticos -->
+<app-modal [open]="showDeleteAdvanceModal()" size="sm" (closed)="showDeleteAdvanceModal.set(false)">
+  <div class="flex items-center gap-3 mb-4">
+    <div class="flex-shrink-0 w-10 h-10 rounded-full bg-error/10 flex items-center justify-center">
+      <app-icon name="trash" size="sm" class="text-error-ink" />
+    </div>
+    <div>
+      <h3 class="text-base font-semibold text-secondary">Eliminar solicitud de viáticos</h3>
+      <p class="text-xs text-tertiary">El registro se eliminará permanentemente</p>
+    </div>
+  </div>
+  <p class="text-sm text-tertiary">¿Estás seguro de que deseas eliminar esta solicitud? Esta acción no se puede deshacer.</p>
+  <div class="flex gap-3 mt-4">
+    <app-button variant="secondary" [fullWidth]="true" label="Volver" [disabled]="isDeletingAdvance()" (clicked)="showDeleteAdvanceModal.set(false)" />
+    <app-button variant="danger" [fullWidth]="true" [loading]="isDeletingAdvance()" loadingLabel="Eliminando..." label="Eliminar" [disabled]="isDeletingAdvance()" (clicked)="confirmDeleteAdvance()" />
+  </div>
+</app-modal>

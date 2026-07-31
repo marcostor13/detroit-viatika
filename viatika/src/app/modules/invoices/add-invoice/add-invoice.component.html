@@ -1,0 +1,1194 @@
+<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full gap-4 p-5">
+  <h1 class="text-2xl font-bold text-secondary">
+    @if (id) {
+      @if (expenseType() === 'planilla_movilidad') { Editar Planilla de Movilidad }
+      @else if (expenseType() === 'otros_gastos') { Editar Gasto }
+      @else if (expenseType() === 'recibo_caja') { Editar Recibo de Caja }
+      @else { Editar factura }
+    }
+    @else if (expenseType() === 'planilla_movilidad') { Nueva Planilla de Movilidad }
+    @else if (expenseType() === 'otros_gastos') { Nuevo Gasto }
+    @else if (expenseType() === 'recibo_caja') { Agregar Recibo de Caja }
+    @else { Agregar Factura }
+  </h1>
+  <app-button
+    label="Volver"
+    variant="secondary"
+    size="md"
+    (clicked)="back()"
+  >
+    <app-icon name="arrow-left" size="sm" />
+  </app-button>
+</div>
+
+<form [formGroup]="form" (ngSubmit)="saveOrUpdate()" class="flex flex-col gap-4 sm:gap-6 p-2 sm:p-5">
+
+  @if(rendicionId) {
+    <div class="w-full max-w-xs">
+      <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+        <div class="flex items-center gap-3 mb-2">
+          <div class="p-2 bg-error/10 text-error rounded-lg">
+            <app-icon name="dollar-sign" size="sm" />
+          </div>
+          <p class="font-medium text-gray-500">Total gastado</p>
+        </div>
+        <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ rendicionSpent() | number:'1.2-2' }}</p>
+      </div>
+    </div>
+  }
+
+  @if(!id) {
+  <!-- Selector de tipo de gasto -->
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <p class="text-sm font-medium text-secondary mb-3">Tipo de gasto</p>
+    <div class="flex flex-wrap gap-3">
+      <button type="button"
+        (click)="setExpenseType('factura')"
+        [class]="expenseType() === 'factura'
+          ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
+          : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
+      >
+        <app-icon name="file-text" size="sm" />
+        Factura
+      </button>
+      <button type="button"
+        (click)="setExpenseType('planilla_movilidad')"
+        [class]="expenseType() === 'planilla_movilidad'
+          ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
+          : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
+      >
+        <app-icon name="car" size="sm" />
+        Planilla de Movilidad
+      </button>
+      <button type="button"
+        (click)="setExpenseType('otros_gastos')"
+        [class]="expenseType() === 'otros_gastos'
+          ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
+          : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
+      >
+        <app-icon name="clipboard-list" size="sm" />
+        Otros Gastos
+      </button>
+    </div>
+  </div>
+  }
+
+  <!-- Proyecto + OT + Categoría. En planilla directa el centro de costo y la OT
+       se heredan de la rendición y no se muestran; el bloque solo reaparece
+       cuando queda la categoría por resolver (ver showMovilidadCategoryBlock). -->
+  @if (!isDirectaPlanilla() || showMovilidadCategoryBlock) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-6">
+    <!-- En rendición directa el centro de costo es el de la rendición: no se elige por comprobante. -->
+    @if (!isDirectaContext()) {
+    <div class="flex flex-col gap-2">
+      <label for="proyectId" class="text-sm font-medium text-secondary">
+        Proyecto <span class="text-error">*</span>
+      </label>
+      <app-project-select
+        formControlName="proyectId"
+        [projects]="proyects"
+        placeholder="Seleccione un proyecto"
+        [invalid]="!!(proyectId?.invalid && proyectId?.touched)"
+      />
+      @if (proyectId?.invalid && proyectId?.touched) {
+      <span class="text-sm text-error">El proyecto es requerido</span>
+      }
+    </div>
+    }
+
+    <!-- En directa la OT se hereda de la rendición; si no la tiene, se pide en el bloque de fallback de más abajo. -->
+    @if (expenseType() === 'planilla_movilidad' && !isDirectaPlanilla()) {
+    <div class="flex flex-col gap-2">
+      <label for="ordenTrabajoId" class="text-sm font-medium text-secondary">
+        Orden de Trabajo <span class="text-error">*</span>
+      </label>
+      <select
+        id="ordenTrabajoId"
+        formControlName="ordenTrabajoId"
+        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer disabled:bg-gray-50 disabled:text-tertiary disabled:cursor-not-allowed"
+        style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+      >
+        <option value="">Seleccione una OT</option>
+        @for (ot of filteredOrdenesTrabajo; track ot._id) {
+        <option [value]="ot._id">{{ ot.nombre }}</option>
+        }
+      </select>
+      @if (viaticoOrdenTrabajoInherited()) {
+      <p class="text-xs text-tertiary">Heredada de la solicitud de viático. No se puede cambiar aquí.</p>
+      } @else if (proyectId?.value && filteredOrdenesTrabajo.length === 0) {
+      <p class="text-xs text-amber-600">El centro de costo elegido no tiene órdenes de trabajo activas.</p>
+      } @else {
+      <p class="text-xs text-tertiary">Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005). Solo se listan las OT del centro de costo elegido.</p>
+      }
+    </div>
+    }
+
+    <!-- Categoría: en planilla de movilidad se resuelve entre las categorías "Planilla de movilidad" asignadas al colaborador.
+         En la DJ al extranjero cada rubro (Alimentación/Movilidad) lleva la suya, así que aquí no se elige. -->
+    @if (expenseType() !== 'planilla_movilidad' && !isDj()) {
+    <div class="flex flex-col gap-2">
+      <label for="categoryId" class="text-sm font-medium text-secondary">
+        Categoría <span class="text-error">*</span>
+      </label>
+      <div class="relative">
+        <select
+          id="categoryId"
+          formControlName="categoryId"
+          class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+          style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+        >
+          <option value="">Seleccione una categoría</option>
+          @for(category of filteredCategories; track category._id){
+          <option value="{{ category._id }}">{{ category.name }}</option>
+          }
+        </select>
+        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">
+          <app-icon name="chevron-down" size="sm" />
+        </div>
+      </div>
+      @if (categoryId?.invalid && categoryId?.touched) {
+      <span class="text-sm text-error">La categoría es requerida</span>
+      }
+    </div>
+    } @else if (showMovilidadCategorySelect) {
+      <div class="flex flex-col gap-2">
+        <label for="categoryId" class="text-sm font-medium text-secondary">
+          Categoría de Planilla de movilidad <span class="text-error">*</span>
+        </label>
+        <div class="relative">
+          <select
+            id="categoryId"
+            formControlName="categoryId"
+            class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+            style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+          >
+            <option value="">Seleccione una categoría</option>
+            @for(category of movilidadCategories; track category._id){
+            <!-- Se muestra la cuenta junto al nombre: un colaborador puede tener
+                 dos "Planilla de movilidad" (Servicios 91x y Comercial 92x) con
+                 el mismo nombre, indistinguibles sin la cuenta. -->
+            <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
+            }
+          </select>
+          <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">
+            <app-icon name="chevron-down" size="sm" />
+          </div>
+        </div>
+        @if (categoryId?.invalid && categoryId?.touched) {
+        <span class="text-sm text-error">La categoría es requerida</span>
+        }
+      </div>
+    } @else if (categoriesLoaded() && movilidadCategories.length === 0) {
+      <div class="flex flex-col gap-2">
+        <span class="text-sm text-error">
+          No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.
+        </span>
+      </div>
+    }
+  </div>
+  }
+
+  <!-- Fallback: rendiciones directas creadas antes de tener OT propia (sin OT que heredar) -->
+  @if (needsFallbackOt()) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-2">
+      <label for="ordenTrabajoIdFallback" class="text-sm font-medium text-secondary">
+        Orden de Trabajo <span class="text-error">*</span>
+      </label>
+      <select
+        id="ordenTrabajoIdFallback"
+        formControlName="ordenTrabajoId"
+        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
+        style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
+      >
+        <option value="">Seleccione una OT</option>
+        @for (ot of filteredOrdenesTrabajo; track ot._id) {
+        <option [value]="ot._id">{{ ot.nombre }}</option>
+        }
+      </select>
+      <p class="text-xs text-tertiary">Esta rendición directa no tiene una OT propia asignada. Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005).</p>
+    </div>
+  </div>
+  }
+
+  @if(!id && expenseType() === 'factura') {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-2">
+      <label for="file" class="text-sm font-medium text-secondary">
+        Adjuntar factura <span class="text-error">*</span>
+      </label>
+
+      <div
+        [class]="selectedFile
+          ? 'bg-green-50 border-2 border-green-400 rounded-xl p-8 text-center w-full cursor-pointer transition-all duration-200'
+          : 'bg-background border-2 border-dashed border-tertiary rounded-xl p-8 text-center w-full cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group'"
+        (click)="fileInput.click()"
+      >
+        @if (selectedFile) {
+        <app-icon name="circle-check" size="xl" class="mx-auto text-success" />
+        <p class="mt-3 text-sm font-medium text-success-ink break-all px-2">{{ selectedFile.name }}</p>
+        <p class="mt-1 text-xs text-success">Haz clic para cambiar el archivo</p>
+        } @else {
+        <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+        <p class="mt-3 text-sm text-secondary font-medium">
+          Haga clic para seleccionar una factura
+        </p>
+        <p class="mt-1 text-xs text-tertiary">
+          Formatos soportados: PDF, JPG, PNG
+        </p>
+        }
+        <input
+          type="file"
+          id="file"
+          accept="*/*"
+          capture="environment"
+          (change)="onFileSelected($event)"
+          class="hidden"
+          #fileInput
+        />
+      </div>
+      @if (imageUrl?.invalid && imageUrl?.touched) {
+      <span class="text-sm text-error mt-1">La factura es requerida</span>
+      }
+    </div>
+  </div>
+  } @if (previewImage) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-4">
+      <div class="flex justify-between items-center">
+        <label for="preview" class="text-sm font-medium text-secondary">Vista previa</label>
+        <button
+          class="text-sm text-primary hover:text-primary/80 font-medium transition-colors"
+          (click)="openInvoice()"
+          type="button"
+        >
+          Ver en pantalla completa
+        </button>
+      </div>
+      <div class="relative h-80 border border-gray-200 rounded-xl overflow-hidden bg-background">
+        <img
+          [src]="previewImage"
+          class="absolute inset-0 w-full h-full object-contain"
+        />
+      </div>
+    </div>
+  </div>
+  }
+  @if(!id && expenseType() === 'factura' && showPostOcrReview()) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-amber-200 p-6 space-y-4">
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+      Revisa y ajusta los datos extraídos por OCR antes de guardar el comprobante.
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="flex flex-col gap-1">
+        <label for="rucEmisorOcr" class="text-xs font-medium text-secondary">RUC Emisor</label>
+        <input
+          id="rucEmisorOcr"
+          type="text"
+          formControlName="rucEmisor"
+          (blur)="lookupRazonSocial($any($event.target).value)"
+          class="w-full h-[40px] px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+        @if (rucLookupLoading()) {
+          <span class="text-xs text-gray-400 mt-1">Consultando SUNAT...</span>
+        } @else if (fetchedRazonSocial()) {
+          <span class="text-xs text-green-700 mt-1 font-medium">{{ fetchedRazonSocial() }}</span>
+        } @else if (rucNotFound()) {
+          <span class="text-xs text-red-600 mt-1 font-medium">RUC inválido o no encontrado</span>
+        }
+      </div>
+      <div class="flex flex-col gap-1">
+        <label for="fechaEmisionOcr" class="text-xs font-medium text-secondary">Fecha Emisión</label>
+        <input
+          id="fechaEmisionOcr"
+          type="date"
+          [max]="todayIso"
+          formControlName="fechaEmision"
+          class="w-full h-[40px] px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label for="serieOcr" class="text-xs font-medium text-secondary">Serie</label>
+        <input
+          id="serieOcr"
+          type="text"
+          formControlName="serie"
+          (input)="onSerieChange()"
+          class="w-full h-[40px] px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label for="correlativoOcr" class="text-xs font-medium text-secondary">Correlativo</label>
+        <input
+          id="correlativoOcr"
+          type="text"
+          formControlName="correlativo"
+          class="w-full h-[40px] px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+      <!-- Tipo de comprobante (VD-70): el OCR puede detectarlo mal; SUNAT valida
+           con este dato, así que debe poder corregirse antes de revalidar. -->
+      <div class="flex flex-col gap-1">
+        <label for="tipoComprobanteOcr" class="text-xs font-medium text-secondary">Tipo de comprobante</label>
+        <select
+          id="tipoComprobanteOcr"
+          formControlName="tipoComprobante"
+          class="w-full h-[40px] px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+        >
+          @for (tipo of TIPOS_COMPROBANTE; track tipo) {
+          <option [value]="tipo">{{ tipo }}</option>
+          }
+        </select>
+      </div>
+      <div class="flex flex-col gap-1">
+        <label for="placaVehiculoOcr" class="text-xs font-medium text-secondary">Placa de Vehículo <span class="text-tertiary font-normal">(si aplica)</span></label>
+        <input
+          id="placaVehiculoOcr"
+          type="text"
+          formControlName="placaVehiculo"
+          placeholder="Ej: ABC-123"
+          class="w-full h-[40px] px-3 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+      <!-- Monto extraído por OCR -->
+      <div class="flex flex-col gap-1 sm:col-span-2">
+        <label class="text-xs font-medium text-secondary">
+          Monto S/.
+          <span class="text-tertiary font-normal">(extraído por OCR)</span>
+        </label>
+        <div class="flex items-center gap-2">
+          @if (!isEditingOcrAmount()) {
+          <div class="flex-1 h-[40px] px-3 flex items-center rounded-lg border text-sm font-semibold tabular-nums transition-colors"
+            [class.border-gray-200]="!ocrAmountWasEdited"
+            [class.bg-gray-50]="!ocrAmountWasEdited"
+            [class.text-secondary]="!ocrAmountWasEdited"
+            [class.border-amber-300]="ocrAmountWasEdited"
+            [class.bg-amber-50]="ocrAmountWasEdited"
+            [class.text-amber-900]="ocrAmountWasEdited">
+            S/ {{ (ocrAmountWasEdited ? editedOcrTotal()! : ocrTotalAmount()) | number:'1.2-2' }}
+            @if (ocrAmountWasEdited) {
+              <span class="ml-2 text-xs font-normal text-amber-600">(editado)</span>
+            }
+          </div>
+          <button type="button" (click)="startEditOcrAmount()" title="Editar monto"
+            class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors">
+            <app-icon name="edit" size="sm" />
+          </button>
+          } @else {
+          <input type="number" min="0" step="0.01"
+            [value]="editedOcrTotal() ?? ocrTotalAmount()"
+            (input)="editedOcrTotal.set(+$any($event.target).value)"
+            autofocus
+            class="flex-1 h-[40px] px-3 rounded-lg border border-amber-300 bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400/30 text-sm tabular-nums" />
+          <button type="button" (click)="confirmEditOcrAmount()" title="Confirmar monto"
+            class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+            <app-icon name="check" size="sm" />
+          </button>
+          }
+        </div>
+        @if (ocrAmountWasEdited) {
+        <div class="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+          <app-icon name="triangle-alert" size="sm" class="shrink-0" />
+          Monto editado. OCR extrajo: S/ {{ ocrTotalAmount() | number:'1.2-2' }}.
+        </div>
+        }
+      </div>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="comentarioOcr" class="text-xs font-medium text-secondary">
+        Comentario <span class="text-error">*</span>
+        <span class="text-tertiary font-normal ml-1">(resumen del concepto del comprobante)</span>
+      </label>
+      <textarea
+        id="comentarioOcr"
+        formControlName="comentario"
+        rows="3"
+        placeholder="Ej: Servicio de transporte de carga por Empresa XYZ por S/ 1,000.00."
+        class="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none text-sm"
+        [class.border-error]="!form.get('comentario')?.value?.trim()"
+      ></textarea>
+      @if (!form.get('comentario')?.value?.trim()) {
+      <span class="text-xs text-error">El comentario es obligatorio</span>
+      }
+    </div>
+    <!-- Estado SUNAT (VD-70): solo una factura VALIDO_ACEPTADO puede guardarse. -->
+    <div class="rounded-lg border px-3 py-2 text-sm flex items-start gap-2"
+      [class.border-green-200]="sunatIsValid()"
+      [class.bg-green-50]="sunatIsValid()"
+      [class.text-green-800]="sunatIsValid()"
+      [class.border-red-200]="!sunatIsValid()"
+      [class.bg-red-50]="!sunatIsValid()"
+      [class.text-red-800]="!sunatIsValid()">
+      <app-icon [name]="sunatIsValid() ? 'circle-check' : 'triangle-alert'" size="sm" class="shrink-0 mt-0.5" />
+      <div class="flex-1">
+        <span class="font-semibold">Validación SUNAT:</span> {{ sunatStatusMessage() }}
+        @if (!sunatIsValid()) {
+        <p class="text-xs mt-0.5">Corrige el RUC, serie, correlativo o fecha y vuelve a validar. La factura no se puede guardar hasta que SUNAT la acepte.</p>
+        }
+      </div>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        (click)="revalidateSunat()"
+        [disabled]="isLoading() || isSunatValidating()"
+        class="px-4 py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/5 disabled:opacity-50"
+      >
+        {{ isSunatValidating() ? 'Validando con SUNAT...' : 'Revalidar SUNAT' }}
+      </button>
+      <button
+        type="button"
+        (click)="confirmPostOcrReview()"
+        [disabled]="isLoading() || isSunatValidating() || !form.get('comentario')?.value?.trim() || !sunatIsValid()"
+        class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
+      >
+        Confirmar y guardar factura
+      </button>
+    </div>
+  </div>
+  }
+  @if (percentage() > 0 && percentage() < 100) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-3">
+      <label class="text-sm font-medium text-secondary">Progreso de carga</label>
+      <div class="w-full bg-background rounded-full h-3 overflow-hidden">
+        <div
+          class="bg-primary h-3 rounded-full transition-all duration-300 ease-out"
+          [style.width.%]="percentage()"
+        ></div>
+      </div>
+      <p class="text-sm text-tertiary text-right">{{ percentage() }}%</p>
+    </div>
+  </div>
+  } @if(id && expenseType() === 'factura') {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-6">
+    <div class="flex flex-col gap-2">
+      <label for="fechaEmision" class="text-sm font-medium text-secondary">Fecha de Emisión</label>
+      <input
+        id="fechaEmision"
+        type="date"
+        [max]="todayIso"
+        formControlName="fechaEmision"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+      />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label for="rucEmisor" class="text-sm font-medium text-secondary">RUC Emisor</label>
+      <input
+        id="rucEmisor"
+        type="text"
+        formControlName="rucEmisor"
+        (blur)="lookupRazonSocial($any($event.target).value)"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+      />
+      @if (rucLookupLoading()) {
+        <span class="text-xs text-gray-400">Consultando SUNAT...</span>
+      } @else if (fetchedRazonSocial()) {
+        <span class="text-xs text-green-700 font-medium">{{ fetchedRazonSocial() }}</span>
+      } @else if (rucNotFound()) {
+        <span class="text-xs text-red-600 font-medium">RUC inválido o no encontrado</span>
+      }
+    </div>
+    <div class="flex flex-col gap-2">
+      <label for="serie" class="text-sm font-medium text-secondary">Serie</label>
+      <input
+        id="serie"
+        type="text"
+        formControlName="serie"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+        placeholder="Ej: F001"
+      />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label for="correlativo" class="text-sm font-medium text-secondary">Correlativo</label>
+      <input
+        id="correlativo"
+        type="text"
+        formControlName="correlativo"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+        placeholder="Ej: 00001234"
+      />
+    </div>
+    <!-- Monto editable en edición -->
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Monto S/.</label>
+      <div class="flex items-center gap-2">
+        @if (!editingInvoiceAmount()) {
+        <div class="flex-1 h-[42px] px-4 flex items-center rounded-lg border text-sm font-semibold tabular-nums transition-colors"
+          [class.border-gray-200]="!invoiceAmountWasEdited"
+          [class.bg-background]="!invoiceAmountWasEdited"
+          [class.text-secondary]="!invoiceAmountWasEdited"
+          [class.border-amber-300]="invoiceAmountWasEdited"
+          [class.bg-amber-50]="invoiceAmountWasEdited"
+          [class.text-amber-900]="invoiceAmountWasEdited">
+          S/ {{ (invoiceAmountWasEdited ? editedInvoiceTotal()! : (originalInvoice?.total ?? 0)) | number:'1.2-2' }}
+          @if (invoiceAmountWasEdited) {
+            <span class="ml-2 text-xs font-normal text-amber-600">(editado)</span>
+          }
+        </div>
+        <button type="button" (click)="startEditInvoiceAmount()" title="Editar monto"
+          class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-colors">
+          <app-icon name="edit" size="sm" />
+        </button>
+        } @else {
+        <input type="number" min="0" step="0.01"
+          [value]="editedInvoiceTotal() ?? (originalInvoice?.total ?? 0)"
+          (input)="editedInvoiceTotal.set(+$any($event.target).value)"
+          autofocus
+          class="flex-1 h-[42px] px-4 rounded-lg border border-amber-300 bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400/30 text-sm tabular-nums" />
+        <button type="button" (click)="confirmEditInvoiceAmount()" title="Confirmar monto"
+          class="shrink-0 w-10 h-10 flex items-center justify-center rounded-lg border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+          <app-icon name="check" size="sm" />
+        </button>
+        }
+      </div>
+      @if (invoiceAmountWasEdited) {
+      <div class="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <app-icon name="triangle-alert" size="sm" class="shrink-0" />
+        Monto editado. Valor anterior: S/ {{ (originalInvoice?.total ?? 0) | number:'1.2-2' }}.
+      </div>
+      }
+    </div>
+    <div class="flex flex-col gap-2">
+      <label for="placaVehiculoEdit" class="text-sm font-medium text-secondary">Placa del vehículo</label>
+      <input
+        id="placaVehiculoEdit"
+        type="text"
+        formControlName="placaVehiculo"
+        placeholder="Opcional"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+      />
+    </div>
+  </div>
+  }
+
+  <!-- ===== PLANILLA DE MOVILIDAD ===== -->
+  @if(expenseType() === 'planilla_movilidad') {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-sm font-semibold text-secondary">Filas de la planilla</h3>
+      <button type="button"
+        (click)="addMobilityRow()"
+        class="flex items-center gap-1 text-sm text-primary font-medium hover:text-primary/80 transition-colors"
+      >
+        <app-icon name="plus" size="sm" />
+        Agregar fila
+      </button>
+    </div>
+
+    @if (mobilityDailyLimit) {
+    <div class="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-xs"
+      [class.bg-red-50]="hasAnyMobilityLimitExceeded()"
+      [class.border]="hasAnyMobilityLimitExceeded()"
+      [class.border-error]="hasAnyMobilityLimitExceeded()"
+      [class.text-error]="hasAnyMobilityLimitExceeded()"
+      [class.bg-blue-50]="!hasAnyMobilityLimitExceeded()"
+      [class.text-blue-700]="!hasAnyMobilityLimitExceeded()">
+      <app-icon name="info" size="sm" class="shrink-0" />
+      <span>
+        @if (hasAnyMobilityLimitExceeded()) {
+          Una o más fechas superan el límite diario de S/ {{ mobilityDailyLimit | number:'1.2-2' }}. Corrige los montos para poder guardar.
+        } @else {
+          Límite diario configurado: S/ {{ mobilityDailyLimit | number:'1.2-2' }} por día.
+        }
+      </span>
+    </div>
+    }
+
+    @if(mobilityRowsArray.length === 0) {
+    <div class="text-center py-8 text-tertiary text-sm">
+      No hay filas aún. Haz clic en "Agregar fila" para empezar.
+    </div>
+    }
+
+    <div formArrayName="mobilityRows" class="flex flex-col gap-3">
+      <!-- track por identidad del FormGroup, no por índice: las filas nuevas se
+           insertan al inicio (VD-71) y con `track i` Angular reutilizaba los
+           nodos por posición, dejando los selects en cascada (departamento /
+           provincia / distrito) con el valor de la fila anterior. -->
+      @for(row of mobilityRowsArray.controls; track row; let i = $index) {
+      <div [formGroupName]="i" class="border border-gray-200 rounded-lg p-2 sm:p-4 bg-white">
+        <div class="flex justify-between items-center mb-3">
+          <span class="text-xs font-semibold text-tertiary uppercase tracking-wide">Fila {{ i + 1 }}</span>
+          <button type="button" (click)="removeMobilityRow(i)" class="text-error/70 hover:text-error transition-colors">
+            <app-icon name="close" size="sm" />
+          </button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <!-- Colaborador (por fila): siempre quien rinde. La planilla de movilidad ya no admite terceros (VD-28). -->
+          <div class="flex flex-col gap-1 sm:col-span-3">
+            <label class="text-xs font-medium text-secondary">Colaborador</label>
+            <input type="text" [value]="currentUserName" readonly
+              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-gray-50 text-tertiary text-sm cursor-not-allowed" />
+          </div>
+          <!-- Fecha -->
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-secondary">Fecha <span class="text-error">*</span></label>
+            <input type="date" formControlName="fecha"
+              [max]="todayIso"
+              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+          </div>
+          <!-- Origen -->
+          <div class="flex flex-col gap-2 sm:col-span-3">
+            <span class="text-xs font-semibold text-secondary uppercase tracking-wide">Origen</span>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-secondary">
+                Dirección <span class="text-error">*</span>
+                <span class="text-tertiary font-normal ml-1">(busca y selecciona)</span>
+              </label>
+              <input type="text" formControlName="origen"
+                  appPlacesAutocomplete
+                  (placeSelected)="onOrigenSelected($event, i)"
+                  placeholder="Ej: Av. Javier Prado 123, Lima"
+                  autocomplete="off"
+                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+              @if (row.get('origenLat')?.value) {
+              <span class="text-xs text-success flex items-center gap-1 mt-0.5">
+                <app-icon name="check" size="sm" />
+                Ubicación confirmada
+              </span>
+              }
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-secondary">Departamento <span class="text-error">*</span></label>
+                <select formControlName="origenDepartamento" (change)="onOrigenDepartamentoChange(i)"
+                  class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+                  <option value="">Seleccionar</option>
+                  @for (dep of departamentos; track dep.label) {
+                  <option [value]="dep.label">{{ dep.label }}</option>
+                  }
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-secondary">Provincia <span class="text-error">*</span></label>
+                <select formControlName="origenProvincia" (change)="onOrigenProvinciaChange(i)"
+                  class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+                  <option value="">Seleccionar</option>
+                  @for (prov of getProvinciasOrigen(i); track prov.label) {
+                  <option [value]="prov.label">{{ prov.label }}</option>
+                  }
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-secondary">Distrito <span class="text-error">*</span></label>
+                <select formControlName="origenDistrito"
+                  class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+                  <option value="">Seleccionar</option>
+                  @for (dist of getDistritosOrigen(i); track dist.label) {
+                  <option [value]="dist.label">{{ dist.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+          </div>
+          <!-- Destino -->
+          <div class="flex flex-col gap-2 sm:col-span-3">
+            <span class="text-xs font-semibold text-secondary uppercase tracking-wide">Destino</span>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium text-secondary">
+                Dirección <span class="text-error">*</span>
+                <span class="text-tertiary font-normal ml-1">(busca y selecciona)</span>
+              </label>
+              <input type="text" formControlName="destino"
+                  appPlacesAutocomplete
+                  (placeSelected)="onDestinoSelected($event, i)"
+                  placeholder="Ej: Aeropuerto Jorge Chávez, Callao"
+                  autocomplete="off"
+                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+              @if (row.get('destinoLat')?.value) {
+              <span class="text-xs text-success flex items-center gap-1 mt-0.5">
+                <app-icon name="check" size="sm" />
+                Ubicación confirmada
+              </span>
+              }
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-secondary">Departamento <span class="text-error">*</span></label>
+                <select formControlName="destinoDepartamento" (change)="onDestinoDepartamentoChange(i)"
+                  class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+                  <option value="">Seleccionar</option>
+                  @for (dep of departamentos; track dep.label) {
+                  <option [value]="dep.label">{{ dep.label }}</option>
+                  }
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-secondary">Provincia <span class="text-error">*</span></label>
+                <select formControlName="destinoProvincia" (change)="onDestinoProvinciaChange(i)"
+                  class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+                  <option value="">Seleccionar</option>
+                  @for (prov of getProvinciasDestino(i); track prov.label) {
+                  <option [value]="prov.label">{{ prov.label }}</option>
+                  }
+                </select>
+              </div>
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-secondary">Distrito <span class="text-error">*</span></label>
+                <select formControlName="destinoDistrito"
+                  class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+                  <option value="">Seleccionar</option>
+                  @for (dist of getDistritosDestino(i); track dist.label) {
+                  <option [value]="dist.label">{{ dist.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+          </div>
+          <!-- Distancia calculada (solo si hay coords) -->
+          @if (row.get('distanciaKm')?.value) {
+          <div class="sm:col-span-3 flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-3 py-2">
+            <app-icon name="map-pin" size="sm" class="text-primary flex-shrink-0" />
+            <span class="text-xs text-primary font-medium">
+              Distancia aproximada: <strong>{{ row.get('distanciaKm')?.value | number:'1.1-1' }} km</strong>
+            </span>
+            <span class="text-xs text-tertiary">(línea recta)</span>
+          </div>
+          }
+          <!-- Total -->
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-secondary">Total S/. <span class="text-error">*</span></label>
+            <input type="number" formControlName="total" placeholder="0.00" min="0" step="0.01"
+              [class.border-error]="isMobilityRowDateOverLimit(i)"
+              [class.ring-error]="isMobilityRowDateOverLimit(i)"
+              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+            @if (isMobilityRowDateOverLimit(i)) {
+            <p class="text-xs text-error flex items-center gap-1">
+              <app-icon name="triangle-alert" size="sm" class="shrink-0" />
+              Supera el límite diario de S/ {{ mobilityDailyLimit | number:'1.2-2' }}
+              (acumulado ese día: S/ {{ getMobilityDateTotal(row.get('fecha')?.value) | number:'1.2-2' }})
+            </p>
+            }
+          </div>
+          <!-- Gestión -->
+          <div class="flex flex-col gap-1 sm:col-span-3">
+            <label class="text-xs font-medium text-secondary">Gestión (Motivo) <span class="text-error">*</span></label>
+            <input type="text" formControlName="gestion" placeholder="Motivo del traslado"
+              class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm"
+              [class.border-error]="row.get('gestion')?.invalid && row.get('gestion')?.touched"
+              [class.ring-error]="row.get('gestion')?.invalid && row.get('gestion')?.touched" />
+            @if (row.get('gestion')?.invalid && row.get('gestion')?.touched) {
+            <p class="text-xs text-error">Indica el motivo del traslado.</p>
+            }
+          </div>
+        </div>
+      </div>
+      }
+    </div>
+
+    @if(mobilityRowsArray.length > 0) {
+    <div class="flex justify-end mt-4 pt-4 border-t border-tertiary/20">
+      <div class="flex items-center gap-3">
+        <span class="text-sm text-secondary font-medium">TOTAL S/.</span>
+        <span class="text-xl font-bold text-secondary">{{ getMobilityTotal() | number:'1.2-2' }}</span>
+      </div>
+    </div>
+    }
+  </div>
+
+  @if(!id) {
+  <!-- Adjunto opcional para la planilla -->
+  <div class="bg-quaternary rounded-xl shadow-soft border border-tertiary/20 p-6">
+    <div class="flex items-center gap-2 mb-4">
+      <app-icon name="paperclip" size="sm" class="text-tertiary" />
+      <p class="text-sm font-medium text-secondary">Adjunto de respaldo <span class="text-tertiary font-normal">(opcional)</span></p>
+    </div>
+
+    <div
+      class="bg-background border-2 border-dashed border-tertiary/40 rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
+      (click)="fileInputMobility.click()"
+    >
+      @if (selectedFile) {
+      <div class="flex items-center justify-center gap-3">
+        <app-icon name="file-text" size="lg" class="text-primary" />
+        <div class="text-left">
+          <p class="text-sm font-medium text-secondary">{{ selectedFile.name }}</p>
+          <p class="text-xs text-tertiary">Haz clic para cambiar el archivo</p>
+        </div>
+      </div>
+      } @else {
+      <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+      <p class="mt-2 text-sm text-secondary font-medium">Haz clic para adjuntar un comprobante</p>
+      <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
+      }
+      <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputMobility />
+    </div>
+  </div>
+  }
+  }
+
+  <!-- ===== OTROS GASTOS ===== -->
+  @if(expenseType() === 'otros_gastos') {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-5">
+
+    <!-- Selector de sub-tipo (solo para otros_gastos) -->
+    <div>
+      <label class="block text-sm font-medium text-secondary mb-3">Tipo de documento <span class="text-error">*</span></label>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        @for (opt of otrosSubTipoOpciones; track opt.code) {
+        <button type="button"
+          (click)="selectOtrosSubTipo(opt.code)"
+          class="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 transition-all text-center"
+          [class.border-primary]="otrosSubTipo() === opt.code"
+          [class.bg-primary]="otrosSubTipo() === opt.code"
+          [class.text-white]="otrosSubTipo() === opt.code"
+          [class.border-gray-200]="otrosSubTipo() !== opt.code"
+          [class.bg-white]="otrosSubTipo() !== opt.code"
+          [class.text-secondary]="otrosSubTipo() !== opt.code"
+        >
+          <span class="text-xs font-bold tabular-nums">{{ opt.code }}</span>
+          <span class="text-xs leading-tight">{{ opt.label }}</span>
+          @if (opt.hint) {
+          <span class="text-[10px] leading-tight opacity-70">{{ opt.hint }}</span>
+          }
+        </button>
+        }
+      </div>
+    </div>
+
+    @if (otrosSubTipoMuestraDocumento()) {
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="flex flex-col gap-2">
+        <label for="otrosRucEmisor" class="text-sm font-medium text-secondary">
+          RUC Emisor
+          @if (otrosSubTipoMuestraDocumento()) { <span class="text-error">*</span> }
+        </label>
+        <input id="otrosRucEmisor" type="text" formControlName="rucEmisor"
+          (blur)="lookupRazonSocial($any($event.target).value)"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+        @if (rucLookupLoading()) {
+          <span class="text-xs text-gray-400">Consultando SUNAT...</span>
+        } @else if (fetchedRazonSocial()) {
+          <span class="text-xs text-green-700 font-medium">{{ fetchedRazonSocial() }}</span>
+        } @else if (rucNotFound()) {
+          <span class="text-xs text-red-600 font-medium">RUC inválido o no encontrado</span>
+        }
+      </div>
+      <div class="flex flex-col gap-2">
+        <label for="otrosSerie" class="text-sm font-medium text-secondary">
+          Serie
+          @if (otrosSubTipo() === 'BV') { <span class="text-error">*</span> }
+        </label>
+        <input id="otrosSerie" type="text" formControlName="serie" placeholder="Ej: B001"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      </div>
+      <div class="flex flex-col gap-2">
+        <label for="otrosCorrelativo" class="text-sm font-medium text-secondary">
+          Número
+          @if (otrosSubTipo() === 'BV') { <span class="text-error">*</span> }
+        </label>
+        <input id="otrosCorrelativo" type="text" formControlName="correlativo" placeholder="Ej: 00001234"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      </div>
+    </div>
+    }
+
+    <!-- En la DJ al extranjero el monto sale del detalle diario por rubro y el
+         adjunto es opcional: ambos viven en el bloque de más abajo. -->
+    @if (!isDj()) {
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Descripción del gasto</label>
+      <input type="text" formControlName="description" placeholder="Ej: Refrigerio de trabajo, útiles de escritorio..."
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Monto Total S/. <span class="text-error">*</span></label>
+      <input type="number" formControlName="totalOtros" placeholder="0.00" min="0" step="0.01"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+    </div>
+    @if(!id) {
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Adjunto <span class="text-error">*</span></label>
+      <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
+        (click)="fileInputOtros.click()">
+        <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+        <p class="mt-2 text-sm text-secondary font-medium">
+          {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar un comprobante' }}
+        </p>
+        <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
+        <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputOtros />
+      </div>
+    </div>
+    }
+    }
+  </div>
+
+  <!-- Declaración Jurada simple: AL (alimentación sin documentación) y DJ nacional (legado) -->
+  @if(!id && otrosSubTipoRequiereDeclaracion() && !isDj()) {
+  <div class="bg-amber-50 rounded-xl border border-amber-200 p-6 space-y-4">
+    <div class="flex items-center gap-2 mb-1">
+      <app-icon name="shield-check" size="sm" class="text-amber-600 flex-shrink-0" />
+      <h3 class="text-sm font-semibold text-amber-800">{{ otrosSubTipo() === 'AL' ? 'Declaración Jurada (alimentación sin documentación)' : 'Declaración Jurada' }}</h3>
+    </div>
+    <p class="text-sm text-amber-700 leading-relaxed">
+      "Declaro bajo juramento que los gastos detallados son verídicos, fueron realizados en cumplimiento de mis funciones y no cuentan con comprobante de pago emitido por proveedor."
+    </p>
+    <label class="flex items-start gap-3 cursor-pointer">
+      <input type="checkbox" formControlName="declaracionJurada"
+        class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 cursor-pointer flex-shrink-0" />
+      <span class="text-sm text-amber-800 font-medium">Acepto y firmo la declaración jurada declarando que la información es verdadera.</span>
+    </label>
+  </div>
+  }
+
+  <!-- Declaración Jurada al extranjero (DJE): detalle diario por rubro + PDF oficial -->
+  @if(!id && isDj()) {
+  <div class="bg-amber-50 rounded-xl border border-amber-200 p-6 space-y-5">
+    <div class="flex items-center gap-2 mb-1">
+      <app-icon name="shield-check" size="sm" class="text-amber-600 flex-shrink-0" />
+      <h3 class="text-sm font-semibold text-amber-800">Declaración Jurada — Viaje al exterior</h3>
+    </div>
+    <p class="text-sm text-amber-700 leading-relaxed">
+      Sustenta tus viáticos por Alimentación y Movilidad sin comprobante del proveedor. Llena las filas de cada rubro; el adjunto es opcional.
+    </p>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">Ciudad de destino</label>
+        <input type="text" formControlName="djDestino" placeholder="Ej: Quito"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      </div>
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">País</label>
+        <input type="text" formControlName="djPais" placeholder="Ej: Ecuador"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      </div>
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">Moneda</label>
+        <input type="text" formControlName="djMoneda" placeholder="US$" readonly
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-gray-50 text-tertiary cursor-not-allowed focus:outline-none transition-all text-sm" />
+      </div>
+    </div>
+
+    <!-- I. Gastos de Alimentación -->
+    <div class="bg-white rounded-lg border border-amber-200 p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h4 class="text-sm font-semibold text-secondary">I. Gastos de Alimentación</h4>
+        <button type="button" (click)="addDjRow('alimentacion')"
+          class="text-xs font-semibold text-primary hover:underline">+ Agregar fila</button>
+      </div>
+      <!-- Categoría detectada por nombre entre las asignadas al colaborador; si hay
+           varias (Servicios 91x / Comercial 92x) o ninguna, se elige a mano. -->
+      @if (djAlimentacionAuto()) {
+      <p class="text-xs text-tertiary">Categoría: <span class="font-semibold text-secondary">{{ djAlimentacionAuto()?.name }}</span></p>
+      } @else if (djAlimentacionRowsArray.length > 0) {
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-secondary">Categoría <span class="text-error">*</span></label>
+        <select formControlName="djAlimentacionCategoryId"
+          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+          <option value="">Seleccione una categoría</option>
+          @for(category of djCategoriesFor('alimentacion'); track category._id){
+          <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
+          }
+        </select>
+        @if (djCategoriesFor('alimentacion').length === 0) {
+        <span class="text-xs text-error">No tienes asignada ninguna categoría de Alimentación. Contacta a un administrador.</span>
+        }
+      </div>
+      }
+      <div formArrayName="djAlimentacionRows" class="flex flex-col gap-2">
+        @for (row of djAlimentacionRowsArray.controls; track row; let i = $index) {
+        <div [formGroupName]="i" class="flex items-end gap-2">
+          <div class="flex flex-col gap-1 flex-1">
+            <label class="text-xs font-medium text-secondary">Fecha</label>
+            <input type="date" formControlName="fecha" [max]="todayIso"
+              class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background text-sm" />
+          </div>
+          <div class="flex flex-col gap-1 flex-1">
+            <label class="text-xs font-medium text-secondary">Monto ({{ form.get('djMoneda')?.value || 'US$' }})</label>
+            <input type="number" formControlName="monto" min="0" step="0.01"
+              class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background text-sm" />
+          </div>
+          <button type="button" (click)="removeDjRow('alimentacion', i)" title="Quitar fila"
+            class="h-[38px] w-[38px] flex items-center justify-center text-error/70 hover:text-error hover:bg-error/5 rounded-lg">
+            <app-icon name="close" size="sm" />
+          </button>
+        </div>
+        }
+      </div>
+      @if (djAlimentacionRowsArray.length > 0) {
+      <p class="text-right text-sm font-semibold text-secondary">Total Alimentación: {{ getDjRowsTotal('alimentacion') | number:'1.2-2' }}</p>
+      }
+    </div>
+
+    <!-- II. Gastos de Movilidad -->
+    <div class="bg-white rounded-lg border border-amber-200 p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h4 class="text-sm font-semibold text-secondary">II. Gastos de Movilidad</h4>
+        <button type="button" (click)="addDjRow('movilidad')"
+          class="text-xs font-semibold text-primary hover:underline">+ Agregar fila</button>
+      </div>
+      @if (djMovilidadAuto()) {
+      <p class="text-xs text-tertiary">Categoría: <span class="font-semibold text-secondary">{{ djMovilidadAuto()?.name }}</span></p>
+      } @else if (djMovilidadRowsArray.length > 0) {
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium text-secondary">Categoría <span class="text-error">*</span></label>
+        <select formControlName="djMovilidadCategoryId"
+          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
+          <option value="">Seleccione una categoría</option>
+          @for(category of djCategoriesFor('movilidad'); track category._id){
+          <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
+          }
+        </select>
+        @if (djCategoriesFor('movilidad').length === 0) {
+        <span class="text-xs text-error">No tienes asignada ninguna categoría de Movilidad. Contacta a un administrador.</span>
+        }
+      </div>
+      }
+      <div formArrayName="djMovilidadRows" class="flex flex-col gap-2">
+        @for (row of djMovilidadRowsArray.controls; track row; let i = $index) {
+        <div [formGroupName]="i" class="flex items-end gap-2">
+          <div class="flex flex-col gap-1 flex-1">
+            <label class="text-xs font-medium text-secondary">Fecha</label>
+            <input type="date" formControlName="fecha" [max]="todayIso"
+              class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background text-sm" />
+          </div>
+          <div class="flex flex-col gap-1 flex-1">
+            <label class="text-xs font-medium text-secondary">Monto ({{ form.get('djMoneda')?.value || 'US$' }})</label>
+            <input type="number" formControlName="monto" min="0" step="0.01"
+              class="w-full h-[38px] px-3 rounded-lg border border-tertiary/40 bg-background text-sm" />
+          </div>
+          <button type="button" (click)="removeDjRow('movilidad', i)" title="Quitar fila"
+            class="h-[38px] w-[38px] flex items-center justify-center text-error/70 hover:text-error hover:bg-error/5 rounded-lg">
+            <app-icon name="close" size="sm" />
+          </button>
+        </div>
+        }
+      </div>
+      @if (djMovilidadRowsArray.length > 0) {
+      <p class="text-right text-sm font-semibold text-secondary">Total Movilidad: {{ getDjRowsTotal('movilidad') | number:'1.2-2' }}</p>
+      }
+    </div>
+
+    <p class="text-right text-base font-bold text-secondary">Total declarado: {{ djTotal | number:'1.2-2' }}</p>
+
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Ciudad donde firma</label>
+      <input type="text" formControlName="djLugarFirma" placeholder="Ej: Lima"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Adjunto <span class="text-tertiary font-normal">(opcional)</span></label>
+      <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
+        (click)="fileInputDj.click()">
+        <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+        <p class="mt-2 text-sm text-secondary font-medium">
+          {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar un comprobante (opcional)' }}
+        </p>
+        <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
+        <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputDj />
+      </div>
+    </div>
+
+    <p class="text-sm text-amber-700 leading-relaxed">
+      "Declaro bajo juramento haber realizado el viaje incurriendo en los gastos detallados, los cuales no han podido ser sustentados con documentos emitidos por el prestador del servicio."
+    </p>
+    <label class="flex items-start gap-3 cursor-pointer">
+      <input type="checkbox" formControlName="declaracionJurada"
+        class="mt-0.5 w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 cursor-pointer flex-shrink-0" />
+      <span class="text-sm text-amber-800 font-medium">Acepto y firmo la declaración jurada declarando que la información es verdadera.</span>
+    </label>
+
+    @if (savedDeclaracionJurada()) {
+    <button type="button" (click)="downloadDeclaracionJuradaPdf()"
+      class="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-white font-semibold text-sm hover:opacity-90">
+      Descargar declaración jurada (PDF)
+    </button>
+    }
+  </div>
+  }
+  }
+
+  <!-- ===== RECIBO DE CAJA ===== -->
+  @if(expenseType() === 'recibo_caja') {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-5">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">Razón social</label>
+        <input type="text" formControlName="receiptRazonSocial"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
+      </div>
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">RUC</label>
+        <input type="text" formControlName="receiptRuc"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
+      </div>
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">N° Documento</label>
+        <input type="text" formControlName="receiptNumeroDocumento"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
+      </div>
+      <div class="flex flex-col gap-2">
+        <label class="text-sm font-medium text-secondary">Fecha <span class="text-error">*</span></label>
+        <input type="date" [max]="todayIso" formControlName="receiptFecha"
+          class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
+      </div>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Concepto <span class="text-error">*</span></label>
+      <textarea formControlName="receiptConcepto" rows="2"
+        class="w-full rounded-lg border border-gray-200 px-4 py-2 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"></textarea>
+    </div>
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Monto total S/. <span class="text-error">*</span></label>
+      <input type="number" min="0" step="0.01" formControlName="receiptMonto"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
+    </div>
+    @if(!id) {
+    <div class="flex flex-col gap-2">
+      <label class="text-sm font-medium text-secondary">Adjunto del recibo <span class="text-error">*</span></label>
+      <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
+        (click)="fileInputReceipt.click()">
+        <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+        <p class="mt-2 text-sm text-secondary font-medium">
+          {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar el recibo' }}
+        </p>
+        <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputReceipt />
+      </div>
+    </div>
+    }
+  </div>
+  }
+
+  @if(id) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-2">
+      <label for="comentarioEdit" class="text-sm font-medium text-secondary">
+        Comentario
+      </label>
+      <textarea
+        id="comentarioEdit"
+        formControlName="comentario"
+        rows="3"
+        placeholder="Ej: Servicio de transporte de carga..."
+        class="w-full px-3 py-2 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none text-sm"
+      ></textarea>
+    </div>
+  </div>
+  }
+
+  <div class="flex flex-col sm:flex-row gap-3 justify-end pt-4">
+    <app-button
+      label="Cancelar"
+      variant="secondary"
+      size="md"
+      [disabled]="isLoading() || isSunatValidating()"
+      (clicked)="back()"
+    ></app-button>
+    <!-- Tras guardar la DJ se sigue en la pantalla para descargar el PDF: el botón
+         se bloquea para no registrar el mismo documento dos veces. -->
+    <app-button
+      [label]="getButtonLabel()"
+      variant="primary"
+      size="md"
+      [disabled]="!isFormValid() || isLoading() || isSunatValidating() || showPostOcrReview() || !!savedDeclaracionJurada()"
+      (clicked)="saveOrUpdate()"
+    >
+      @if (isLoading() || isSunatValidating()) {
+      <app-icon name="loader" size="sm" class="animate-spin" />
+      }
+    </app-button>
+  </div>
+</form>

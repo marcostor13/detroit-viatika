@@ -1,0 +1,922 @@
+<div class="w-full p-5 lg:p-8">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-4 mb-6">
+    <div class="flex items-center gap-3">
+      <h1 class="text-2xl font-bold text-secondary">Rendiciones</h1>
+    </div>
+    @if (hasActiveFilters) {
+    <button
+      (click)="clearFilters()"
+      class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-tertiary border border-tertiary/30 rounded-xl hover:bg-background hover:text-secondary transition-colors"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+      </svg>
+      Limpiar filtros
+    </button>
+    }
+  </div>
+
+  <!-- Filters -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+
+      <!-- Usuario -->
+      <div>
+        <label class="block text-xs font-medium text-tertiary mb-1">Colaborador</label>
+        <app-worker-select
+          [workers]="workerOptions"
+          [(ngModel)]="filterUserId"
+          (ngModelChange)="applyFilters()"
+          [allowEmpty]="true"
+          emptyLabel="Todos"
+          placeholder="Todos"
+          triggerClass="!bg-white !border-tertiary/30 !px-3 !py-2"
+        />
+      </div>
+
+      <!-- Proyecto / Centro de costo -->
+      <div>
+        <label class="block text-xs font-medium text-tertiary mb-1">Centro de Costo</label>
+        <app-project-select
+          [projects]="projects"
+          [(ngModel)]="filterProjectId"
+          (ngModelChange)="applyFilters()"
+          [allowEmpty]="true"
+          emptyLabel="Todos"
+          placeholder="Todos"
+          triggerClass="!bg-white !border-tertiary/30 !px-3 !py-2"
+        />
+      </div>
+
+      <!-- Tipo -->
+      <div>
+        <label class="block text-xs font-medium text-tertiary mb-1">Tipo</label>
+        <select
+          [(ngModel)]="filterKind"
+          (ngModelChange)="applyFilters()"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterKind"
+          [class.text-secondary]="filterKind"
+        >
+          <option value="" class="text-secondary">Todos</option>
+          @for (k of kindOptions; track k.value) {
+          <option [value]="k.value" class="text-secondary">{{ k.label }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Estado -->
+      <div>
+        <label class="block text-xs font-medium text-tertiary mb-1">Estado</label>
+        <select
+          [(ngModel)]="filterStatus"
+          (ngModelChange)="applyFilters()"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterStatus"
+          [class.text-secondary]="filterStatus"
+        >
+          <option value="" class="text-secondary">Todos</option>
+          @for (st of statusOptions; track st.value) {
+          <option [value]="st.value" class="text-secondary">{{ st.label }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- Fecha desde -->
+      <div>
+        <label class="block text-xs font-medium text-tertiary mb-1">Desde</label>
+        <input
+          type="date"
+          [(ngModel)]="filterDateFrom"
+          (ngModelChange)="applyFilters()"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterDateFrom"
+          [class.text-secondary]="filterDateFrom"
+        />
+      </div>
+
+      <!-- Fecha hasta -->
+      <div>
+        <label class="block text-xs font-medium text-tertiary mb-1">Hasta</label>
+        <input
+          type="date"
+          [(ngModel)]="filterDateTo"
+          (ngModelChange)="applyFilters()"
+          class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+          [class.text-gray-400]="!filterDateTo"
+          [class.text-secondary]="filterDateTo"
+        />
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Loading -->
+  @if (isLoading) {
+  <div class="flex justify-center py-16">
+    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  </div>
+  } @else {
+
+  <!-- Summary -->
+  <p class="text-sm text-tertiary mb-3">
+    {{ filteredItems.length }} registro{{ filteredItems.length !== 1 ? 's' : '' }}
+    @if (hasActiveFilters) { <span class="text-primary font-medium">(filtrados)</span> }
+  </p>
+
+  <!-- Table -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft overflow-hidden">
+    @if (filteredItems.length === 0) {
+    <div class="flex flex-col items-center justify-center py-20 text-center gap-4">
+      <div class="w-16 h-16 rounded-2xl bg-tertiary/10 flex items-center justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-tertiary/40">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm font-semibold text-secondary">No hay rendiciones</p>
+        <p class="text-xs text-tertiary mt-1">Ajusta los filtros para ver más resultados</p>
+      </div>
+    </div>
+    } @else {
+
+    <!-- Desktop table -->
+    <table class="hidden md:table w-full text-sm">
+      <thead>
+        <tr class="bg-background border-b border-tertiary/15">
+          <th class="px-2 py-3.5 w-8"></th>
+          <th class="text-left px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Colaborador</th>
+          <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Tipo</th>
+          <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Título</th>
+          <th class="text-right px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Presupuesto</th>
+          <th class="text-center px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Estado</th>
+          <th class="text-right px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-tertiary/8">
+        @for (item of filteredItems; track item._id) {
+        <tr class="hover:bg-background/60 transition-colors group" [class.bg-background]="isExpanded(item._id)">
+
+          <!-- Expandir -->
+          <td class="px-2 py-3.5">
+            <button type="button" (click)="toggleExpand(item._id, $event)" title="Ver más"
+              [attr.aria-expanded]="isExpanded(item._id)"
+              class="inline-flex items-center justify-center w-6 h-6 rounded-md text-tertiary hover:bg-tertiary/10 hover:text-secondary transition-colors">
+              <svg class="w-4 h-4 transition-transform" [class.rotate-90]="isExpanded(item._id)" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
+          </td>
+
+          <!-- Colaborador -->
+          <td class="px-5 py-3.5">
+            <div class="flex items-center gap-3 min-w-0">
+              <button
+                (click)="goToDetail(item)"
+                class="w-9 h-9 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-bold shrink-0 select-none"
+              >
+                {{ item.userInitials }}
+              </button>
+              <button
+                (click)="goToDetail(item)"
+                class="font-semibold text-primary hover:underline break-words text-left"
+              >
+                {{ item.userName }}
+              </button>
+            </div>
+          </td>
+
+          <!-- Tipo -->
+          <td class="px-4 py-3.5">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap" [class]="item.kindColor">
+              {{ item.kindLabel }}
+            </span>
+          </td>
+
+          <!-- Título -->
+          <td class="px-4 py-3.5">
+            <span class="block break-words font-medium text-secondary" [title]="item.title">{{ item.title }}</span>
+          </td>
+
+          <!-- Presupuesto -->
+          <td class="px-4 py-3.5 text-right">
+            <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
+          </td>
+
+          <!-- Estado -->
+          <td class="px-4 py-3.5 text-center">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold uppercase" [class]="item.statusColor">
+              {{ item.statusLabel }}
+            </span>
+            @if (item.directaProgress && item.directaProgress.total > 0) {
+              <div class="text-xs text-tertiary mt-1" [title]="item.directaProgress.approved + ' de ' + item.directaProgress.total + ' comprobantes con su cadena completa'">
+                {{ item.directaProgress.approved }}/{{ item.directaProgress.total }} comprobantes
+              </div>
+            }
+          </td>
+
+          <!-- Acciones — el ojo (Ver detalle) va primero y los iconos condicionales
+               ocupan slots de ancho fijo (vacíos cuando no aplican), de modo que el
+               grupo tenga ancho constante y todos los iconos queden alineados en
+               columna entre filas (VD-35). -->
+          <td class="px-5 py-3.5">
+            <div class="flex flex-nowrap items-center justify-end gap-1">
+              <button
+                (click)="goToDetail(item)" title="Ver detalle"
+                class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </button>
+              <span class="inline-flex items-center justify-center h-9 w-9">
+                @if (item.canApproveNow) {
+                  <button (click)="openApproveModal(item); $event.stopPropagation()" [disabled]="isActing()" [title]="'Aprobar (nivel ' + (item.approvalLevel + 1) + ' de ' + item.requiredLevels + ')'"
+                    class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                  </button>
+                }
+              </span>
+              <span class="inline-flex items-center justify-center h-9 w-9">
+                @if (item.canReject) {
+                  <button (click)="openRejectModal(item); $event.stopPropagation()" [disabled]="isActing()" title="Rechazar"
+                    class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                  </button>
+                }
+              </span>
+              <span class="inline-flex items-center justify-center h-9 w-9">
+                @if (item.canDeleteItem) {
+                  <button
+                    (click)="openDeleteModal(item); $event.stopPropagation()" title="Eliminar"
+                    class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-error hover:bg-error/10 transition-colors"
+                  >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                }
+              </span>
+              <span class="inline-flex items-center justify-center h-9 w-9">
+                @if (item.source === 'report' && item.status === 'viatico_approved' && userCanAccessPagos) {
+                  <a [routerLink]="['/tesoreria']" title="Pago pendiente en Tesorería"
+                    class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-orange-600 hover:bg-orange-50 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </a>
+                }
+              </span>
+            </div>
+          </td>
+
+        </tr>
+        @if (isExpanded(item._id)) {
+        <tr class="bg-background/60">
+          <td class="px-4 pb-3.5 pt-0" colspan="7">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 pl-8">
+              <div>
+                <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Centro de Costo</span>
+                <span class="text-sm text-secondary break-words">{{ item.projectName }}</span>
+              </div>
+              <div>
+                <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Fecha</span>
+                <span class="text-sm text-secondary">{{ item.createdAt | date:'dd/MM/yyyy' }}</span>
+              </div>
+            </div>
+          </td>
+        </tr>
+        }
+        }
+      </tbody>
+    </table>
+
+    <!-- Mobile cards -->
+    <div class="md:hidden divide-y divide-tertiary/10">
+      @for (item of filteredItems; track item._id) {
+      <div class="p-4">
+
+        <div class="flex items-start gap-3 mb-3">
+          <button
+            (click)="goToDetail(item)"
+            class="w-10 h-10 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold shrink-0 select-none"
+          >
+            {{ item.userInitials }}
+          </button>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <button
+                  (click)="goToDetail(item)"
+                  class="font-semibold text-primary hover:underline text-left truncate block max-w-full"
+                >
+                  {{ item.userName }}
+                </button>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap shrink-0" [class]="item.kindColor">
+                    {{ item.kindLabel }}
+                  </span>
+                  <p class="text-xs text-secondary truncate font-medium" [title]="item.title">{{ item.title }}</p>
+                </div>
+                <p class="text-xs text-tertiary mt-0.5 truncate">{{ item.projectName }}</p>
+              </div>
+              <div class="flex flex-col items-end gap-0.5">
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="item.statusColor">
+                  {{ item.statusLabel }}
+                </span>
+                @if (item.directaProgress && item.directaProgress.total > 0) {
+                  <span class="text-[10px] text-tertiary whitespace-nowrap">{{ item.directaProgress.approved }}/{{ item.directaProgress.total }} comprobantes</span>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-start justify-between gap-2 pl-[52px]">
+          <span class="text-xs text-tertiary">{{ item.createdAt | date:'dd/MM/yyyy' }}</span>
+          <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
+        </div>
+
+        <div class="flex items-center gap-2 pl-[52px] mt-3">
+          <button
+            (click)="goToDetail(item)"
+            class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary hover:text-white transition-colors"
+          >
+            Ver detalle
+          </button>
+          @if (item.canApproveNow) {
+            <button (click)="openApproveModal(item)" [disabled]="isActing()"
+              class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+            </button>
+          }
+          @if (item.canReject) {
+            <button (click)="openRejectModal(item)" [disabled]="isActing()"
+              class="inline-flex items-center justify-center h-9 w-9 rounded-lg text-tertiary hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          }
+          @if (item.canDeleteItem) {
+            <button
+              (click)="openDeleteModal(item)"
+              class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-error/10 text-error hover:bg-error hover:text-white transition-colors"
+            >
+              Eliminar
+            </button>
+          }
+          @if (item.source === 'report' && item.status === 'viatico_approved' && userCanAccessPagos) {
+            <a [routerLink]="['/tesoreria']"
+              class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors">
+              Pago pendiente
+            </a>
+          }
+        </div>
+
+      </div>
+      }
+    </div>
+
+    }
+  </div>
+
+  }
+</div>
+
+<!-- Modal: confirmar aprobación -->
+@if (showApproveModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-secondary/50 backdrop-blur-sm"
+       (click)="showApproveModal.set(false)">
+    <div class="bg-quaternary rounded-2xl shadow-xl border border-tertiary/20 w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
+         (click)="$event.stopPropagation()">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-emerald-100">
+          <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-secondary">Confirmar aprobación</h2>
+          <p class="text-xs text-tertiary mt-0.5">
+            @if (pendingApproveItem()?.isContabilidadGate) {
+              Aprobación final (Contabilidad)
+            } @else {
+              Nivel {{ (pendingApproveItem()?.approvalLevel ?? 0) + 1 }} de {{ pendingApproveItem()?.requiredLevels ?? 1 }}
+            }
+          </p>
+        </div>
+      </div>
+      <div class="bg-background rounded-xl border border-tertiary/15 p-4 mb-5 space-y-2.5">
+        <div class="flex justify-between items-center text-sm">
+          <span class="text-tertiary">Colaborador</span>
+          <span class="font-semibold text-secondary">{{ pendingApproveItem()?.userName }}</span>
+        </div>
+        <div class="flex justify-between items-center text-sm">
+          <span class="text-tertiary">Solicitud</span>
+          <span class="font-medium text-secondary">{{ pendingApproveItem()?.title }}</span>
+        </div>
+        <div class="flex justify-between items-center text-sm">
+          <span class="text-tertiary">Fecha de solicitud</span>
+          <span class="font-medium text-secondary">{{ pendingApproveItem()?.createdAt | date:'dd/MM/yyyy' }}</span>
+        </div>
+        <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
+          <span class="text-sm text-tertiary">Monto solicitado</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
+        </div>
+      </div>
+      @if (approveViaticoLines().length > 0) {
+      <div class="mb-5">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-2">Detalle por categoría</p>
+
+        <!-- Móvil: lista acordeón (resumen + flecha para ver detalle) -->
+        <div class="md:hidden rounded-xl border border-tertiary/15 divide-y divide-tertiary/10 overflow-hidden">
+          @for (ln of approveViaticoLines(); track $index) {
+          <div>
+            <!-- Resumen: categoría + total + flecha -->
+            <button type="button" (click)="toggleApproveLine($index)"
+              class="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-background transition-colors">
+              <div class="min-w-0">
+                <span class="block text-xs font-medium text-secondary truncate">{{ viaticoCategoryName(ln) }}</span>
+                @if (ln.detalle) { <span class="block text-xs text-tertiary truncate">{{ ln.detalle }}</span> }
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-sm font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"
+                  class="w-3.5 h-3.5 text-tertiary transition-transform duration-200"
+                  [class.-rotate-180]="isApproveLineExpanded($index)">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </div>
+            </button>
+            <!-- Detalle expandible -->
+            @if (isApproveLineExpanded($index)) {
+            <div class="px-3 pt-2 pb-2.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-tertiary">
+              <span>Importe <span class="font-medium text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</span></span>
+              <span>Pers. <span class="font-medium text-secondary tabular-nums">{{ ln.peopleCount }}</span></span>
+              <span>Días <span class="font-medium text-secondary tabular-nums">{{ ln.days }}</span></span>
+            </div>
+            }
+          </div>
+          }
+        </div>
+
+        <!-- Desktop: tabla completa (hay espacio para todas las columnas) -->
+        <div class="hidden md:block rounded-xl border border-tertiary/15 overflow-hidden">
+          <table class="min-w-full text-xs">
+            <thead class="bg-background">
+              <tr>
+                <th class="px-3 py-2 text-left font-semibold text-tertiary">Categoría</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Importe</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Pers.</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Días</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Total</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-tertiary/10">
+              @for (ln of approveViaticoLines(); track $index) {
+              <tr>
+                <td class="px-3 py-2 text-secondary">
+                  {{ viaticoCategoryName(ln) }}
+                  @if (ln.detalle) { <span class="block text-tertiary">{{ ln.detalle }}</span> }
+                </td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.peopleCount }}</td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.days }}</td>
+                <td class="px-3 py-2 text-right font-semibold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+      }
+      <!-- Comprobantes de la rendición directa (facturas cargadas por el colaborador) -->
+      @if (directaExpenses(pendingApproveItem()).length > 0) {
+      <div class="mb-5">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-2">Comprobantes</p>
+        <div class="rounded-xl border border-tertiary/15 divide-y divide-tertiary/10 overflow-hidden">
+          @for (exp of directaExpenses(pendingApproveItem()); track exp._id) {
+          <div class="flex items-center justify-between gap-3 px-3 py-2.5">
+            <div class="min-w-0">
+              <span class="block text-xs font-medium text-secondary truncate">{{ expenseProveedor(exp) }}</span>
+              <span class="block text-xs text-tertiary truncate">{{ expenseDocNumber(exp) }}</span>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <span class="text-sm font-bold text-secondary tabular-nums">S/ {{ exp.total | number:'1.2-2' }}</span>
+              @if (expenseFileUrl(exp)) {
+                <button type="button" (click)="openExpenseFile(exp)"
+                  class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
+                  </svg>
+                  Ver
+                </button>
+              } @else {
+                <span class="text-xs text-tertiary">Sin archivo</span>
+              }
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      }
+      <div class="flex gap-3">
+        <button (click)="showApproveModal.set(false)"
+          class="flex-1 h-10 border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
+          Cancelar
+        </button>
+        <button (click)="confirmApprove()" [disabled]="isActing()"
+          class="flex-1 h-10 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 bg-emerald-600 hover:bg-emerald-700">
+          @if (isActing()) {
+            <span class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+          } @else {
+            Aprobar
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Modal: detalle de solicitud (pendiente de aprobar/rechazar) -->
+@if (showDetailModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-secondary/50 backdrop-blur-sm"
+       (click)="showDetailModal.set(false)">
+    <div class="bg-quaternary rounded-2xl shadow-xl border border-tertiary/20 w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
+         (click)="$event.stopPropagation()">
+
+      <!-- Encabezado -->
+      <div class="flex items-start justify-between gap-3 mb-5">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/>
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <h2 class="text-base font-bold text-secondary truncate" [title]="detailItem()?.title">{{ detailItem()?.title }}</h2>
+            <p class="text-xs text-tertiary mt-0.5">Detalle de la solicitud</p>
+          </div>
+        </div>
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="detailItem()?.statusColor">
+          {{ detailItem()?.statusLabel }}
+        </span>
+      </div>
+
+      <!-- Datos generales -->
+      <div class="bg-background rounded-xl border border-tertiary/15 p-4 mb-5 space-y-2.5">
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Colaborador</span>
+          <span class="font-semibold text-secondary text-right break-words">{{ detailItem()?.userName }}</span>
+        </div>
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Centro de Costo</span>
+          <span class="font-medium text-secondary text-right break-words">{{ detailCentroCosto() }}</span>
+        </div>
+        @if (detailOrdenTrabajo()) {
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Orden de Trabajo</span>
+          <span class="font-medium text-secondary text-right break-words">{{ detailOrdenTrabajo() }}</span>
+        </div>
+        }
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Fecha de solicitud</span>
+          <span class="font-medium text-secondary">{{ detailItem()?.createdAt | date:'dd/MM/yyyy' }}</span>
+        </div>
+        @if (detailStartDate() || detailEndDate()) {
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Periodo</span>
+          <span class="font-medium text-secondary text-right">
+            {{ detailStartDate() ? (detailStartDate() | date:'dd/MM/yyyy') : '—' }}
+            @if (detailEndDate()) { <span class="text-tertiary">→</span> {{ detailEndDate() | date:'dd/MM/yyyy' }} }
+          </span>
+        </div>
+        }
+        <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
+          <span class="text-sm text-tertiary">Monto solicitado</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ detailItem()?.amount | number:'1.2-2' }}</span>
+        </div>
+      </div>
+
+      <!-- Observaciones -->
+      @if (detailObservations()) {
+      <div class="mb-5">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1.5">Observaciones</p>
+        <p class="text-sm text-secondary bg-background rounded-xl border border-tertiary/15 px-3 py-2.5 break-words whitespace-pre-line">{{ detailObservations() }}</p>
+      </div>
+      }
+
+      <!-- Detalle por categoría -->
+      @if (detailLines().length > 0) {
+      <div class="mb-5">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-2">Detalle por categoría</p>
+
+        <!-- Móvil: lista acordeón -->
+        <div class="md:hidden rounded-xl border border-tertiary/15 divide-y divide-tertiary/10 overflow-hidden">
+          @for (ln of detailLines(); track $index) {
+          <div>
+            <button type="button" (click)="toggleDetailLine($index)"
+              class="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-background transition-colors">
+              <div class="min-w-0">
+                <span class="block text-xs font-medium text-secondary truncate">{{ viaticoCategoryName(ln) }}</span>
+                @if (ln.detalle) { <span class="block text-xs text-tertiary truncate">{{ ln.detalle }}</span> }
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-sm font-bold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"
+                  class="w-3.5 h-3.5 text-tertiary transition-transform duration-200"
+                  [class.-rotate-180]="isDetailLineExpanded($index)">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </div>
+            </button>
+            @if (isDetailLineExpanded($index)) {
+            <div class="px-3 pt-2 pb-2.5 flex flex-wrap gap-x-5 gap-y-1 text-xs text-tertiary">
+              <span>Importe <span class="font-medium text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</span></span>
+              <span>Pers. <span class="font-medium text-secondary tabular-nums">{{ ln.peopleCount }}</span></span>
+              <span>Días <span class="font-medium text-secondary tabular-nums">{{ ln.days }}</span></span>
+            </div>
+            }
+          </div>
+          }
+        </div>
+
+        <!-- Desktop: tabla completa -->
+        <div class="hidden md:block rounded-xl border border-tertiary/15 overflow-hidden">
+          <table class="min-w-full text-xs">
+            <thead class="bg-background">
+              <tr>
+                <th class="px-3 py-2 text-left font-semibold text-tertiary">Categoría</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Importe</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Pers.</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Días</th>
+                <th class="px-3 py-2 text-right font-semibold text-tertiary">Total</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-tertiary/10">
+              @for (ln of detailLines(); track $index) {
+              <tr>
+                <td class="px-3 py-2 text-secondary">
+                  {{ viaticoCategoryName(ln) }}
+                  @if (ln.detalle) { <span class="block text-tertiary">{{ ln.detalle }}</span> }
+                </td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.importe | number:'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.peopleCount }}</td>
+                <td class="px-3 py-2 text-right text-secondary tabular-nums">{{ ln.days }}</td>
+                <td class="px-3 py-2 text-right font-semibold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ ln.lineTotal | number:'1.2-2' }}</td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+      }
+
+      <!-- Comprobantes de la rendición directa (facturas cargadas por el colaborador) -->
+      @if (directaExpenses(detailItem()).length > 0) {
+      <div class="mb-5">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-2">Comprobantes</p>
+        <div class="rounded-xl border border-tertiary/15 divide-y divide-tertiary/10 overflow-hidden">
+          @for (exp of directaExpenses(detailItem()); track exp._id) {
+          <div class="flex items-center justify-between gap-3 px-3 py-2.5">
+            <div class="min-w-0">
+              <span class="block text-xs font-medium text-secondary truncate">{{ expenseProveedor(exp) }}</span>
+              <span class="block text-xs text-tertiary truncate">{{ expenseDocNumber(exp) }}</span>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+              <span class="text-sm font-bold text-secondary tabular-nums">S/ {{ exp.total | number:'1.2-2' }}</span>
+              @if (expenseFileUrl(exp)) {
+                <button type="button" (click)="openExpenseFile(exp)"
+                  class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/>
+                  </svg>
+                  Ver
+                </button>
+              } @else {
+                <span class="text-xs text-tertiary">Sin archivo</span>
+              }
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      }
+
+      <!-- Acciones -->
+      <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <button (click)="showDetailModal.set(false)"
+          class="w-full sm:w-auto sm:mr-auto min-h-[44px] px-4 inline-flex items-center justify-center border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
+          Cerrar
+        </button>
+        @if (detailItem()?.canReject) {
+          <button (click)="rejectFromDetail()" [disabled]="isActing()"
+            class="w-full sm:w-auto min-h-[44px] px-4 inline-flex items-center justify-center border border-red-300 text-red-600 rounded-xl text-sm font-semibold hover:bg-red-50 transition-colors disabled:opacity-50">
+            Rechazar
+          </button>
+        }
+        @if (detailItem()?.canApproveNow) {
+          <button (click)="approveFromDetail()" [disabled]="isActing()"
+            class="w-full sm:w-auto min-h-[44px] px-4 inline-flex items-center justify-center rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-50 bg-emerald-600 hover:bg-emerald-700">
+            Aprobar
+          </button>
+        }
+      </div>
+
+      <!-- Trazabilidad del flujo (aprobaciones paso a paso, VD-31) — debajo de las acciones -->
+      @if (detailFlowSteps().length > 0) {
+      <div class="mt-6 pt-5 border-t border-tertiary/15">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Estado</p>
+        <div>
+          @for (step of detailFlowSteps(); track $index; let last = $last) {
+          <div class="flex gap-3">
+            <div class="flex flex-col items-center">
+              @if (step.state === 'completed') {
+                <div class="w-6 h-6 rounded-full bg-green-100 border-2 border-green-500 flex items-center justify-center shrink-0">
+                  <svg class="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+              } @else if (step.state === 'active') {
+                <div class="w-6 h-6 rounded-full bg-blue-50 border-2 border-blue-500 flex items-center justify-center shrink-0">
+                  <div class="w-2 h-2 rounded-full bg-blue-500"></div>
+                </div>
+              } @else if (step.state === 'rejected') {
+                <div class="w-6 h-6 rounded-full bg-red-100 border-2 border-red-500 flex items-center justify-center shrink-0">
+                  <svg class="w-2.5 h-2.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </div>
+              } @else {
+                <div class="w-6 h-6 rounded-full border-2 border-tertiary/20 flex items-center justify-center shrink-0">
+                  <div class="w-1.5 h-1.5 rounded-full bg-tertiary/20"></div>
+                </div>
+              }
+              @if (!last) {
+                <div class="w-0.5 flex-1 my-1 min-h-[14px]"
+                     [ngClass]="{
+                       'bg-green-300': step.state === 'completed',
+                       'bg-blue-300': step.state === 'active',
+                       'bg-red-200': step.state === 'rejected',
+                       'bg-tertiary/20': step.state === 'upcoming'
+                     }"></div>
+              }
+            </div>
+            <div class="flex-1 pt-0" [class.pb-3]="!last">
+              <p class="text-sm font-medium"
+                 [class.text-secondary]="step.state !== 'upcoming'"
+                 [class.text-tertiary]="step.state === 'upcoming'">
+                {{ step.label }}
+              </p>
+              @if (step.date) { <p class="text-xs text-tertiary mt-0.5">{{ step.date }}</p> }
+              @if (step.description) {
+                <p class="text-xs font-medium mt-0.5"
+                   [class.text-blue-600]="step.state === 'active'"
+                   [class.text-red-600]="step.state === 'rejected'">{{ step.description }}</p>
+              }
+              @if (step.notes) { <p class="text-xs text-tertiary italic mt-0.5">{{ step.notes }}</p> }
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      }
+
+    </div>
+  </div>
+}
+
+<!-- Modal: rechazo -->
+@if (showRejectModal()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-secondary/50 backdrop-blur-sm"
+       (click)="showRejectModal.set(false)">
+    <div class="bg-quaternary rounded-2xl shadow-xl border border-tertiary/20 w-full max-w-md p-6"
+         (click)="$event.stopPropagation()">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-11 h-11 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+          <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-secondary">Rechazar solicitud</h2>
+          <p class="text-xs text-tertiary mt-0.5">
+            {{ selectedRejectItem()?.userName }} — {{ selectedRejectItem()?.currencySymbol }} {{ selectedRejectItem()?.amount | number:'1.2-2' }}
+          </p>
+        </div>
+      </div>
+      <form [formGroup]="rejectForm">
+        <label class="block text-sm font-semibold text-secondary mb-1.5">
+          Motivo del rechazo <span class="text-red-500">*</span>
+        </label>
+        <textarea
+          formControlName="rejectionReason"
+          rows="4"
+          placeholder="Describe el motivo del rechazo (mínimo 10 caracteres)..."
+          class="w-full border border-tertiary/30 rounded-xl px-3 py-2.5 text-sm text-secondary bg-background focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-300 resize-none"
+        ></textarea>
+        @if (rejectForm.get('rejectionReason')?.touched && rejectForm.get('rejectionReason')?.invalid) {
+          <p class="text-xs text-red-500 mt-1">El motivo debe tener al menos 10 caracteres.</p>
+        }
+      </form>
+      <div class="flex gap-3 mt-5">
+        <button (click)="showRejectModal.set(false)"
+          class="flex-1 h-10 border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
+          Cancelar
+        </button>
+        <button (click)="confirmReject()" [disabled]="isActing() || rejectForm.invalid"
+          class="flex-1 h-10 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-50">
+          @if (isActing()) {
+            <span class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+          } @else {
+            Confirmar rechazo
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (reportToDelete) {
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-secondary/50 backdrop-blur-sm"
+     (click)="cancelDelete()">
+  <div class="bg-quaternary rounded-2xl shadow-soft border border-tertiary/20 w-full max-w-sm p-6"
+       (click)="$event.stopPropagation()">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center shrink-0">
+        <svg class="w-5 h-5 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+      </div>
+      <div>
+        <h2 class="text-base font-bold text-secondary">Eliminar rendicion</h2>
+        <p class="text-xs text-tertiary">Esta accion no se puede deshacer.</p>
+      </div>
+    </div>
+    <p class="text-sm text-secondary mb-1">
+      ¿Eliminar la rendicion de <span class="font-semibold">{{ getDeleteItemName() }}</span>?
+    </p>
+    <p class="text-xs text-tertiary mb-3 truncate" [title]="getDeleteItemTitle()">{{ getDeleteItemTitle() }}</p>
+
+    @if (loadingDeletionPreview()) {
+    <div class="flex items-center gap-2 text-xs text-tertiary mb-4">
+      <div class="w-3.5 h-3.5 border-2 border-tertiary/30 border-t-tertiary rounded-full animate-spin"></div>
+      Calculando qué se va a eliminar...
+    </div>
+    } @else {
+      @if (deletionPreview(); as preview) {
+        @if (!preview.allowed) {
+        <div class="rounded-xl border border-error/30 bg-error/10 px-3 py-2.5 mb-4">
+          <p class="text-xs font-semibold text-error">No se puede eliminar</p>
+          <p class="text-xs text-error/90 mt-0.5">{{ preview.reason }}</p>
+        </div>
+        } @else {
+        <div class="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 mb-4 flex flex-col gap-1.5">
+          <p class="text-xs font-semibold text-warning-ink">Esto se eliminará junto con la rendición:</p>
+          <ul class="text-xs text-warning-ink/90 list-disc list-inside space-y-0.5">
+            @if (preview.expensesCount > 0) {
+            <li>{{ preview.expensesCount }} comprobante(s) — S/ {{ preview.expensesTotal | number:'1.2-2' }}</li>
+            }
+            @if (preview.filesCount > 0) {
+            <li>{{ preview.filesCount }} archivo(s) adjunto(s)</li>
+            }
+            @if (preview.expensesCount === 0) {
+            <li>Sin comprobantes cargados</li>
+            }
+            @for (adv of preview.linkedAdvances; track $index) {
+            <li>Anticipo vinculado ({{ advanceStatusLabel(adv.status) }}, S/ {{ adv.amount | number:'1.2-2' }}) quedará desvinculado, no se elimina</li>
+            }
+            @if (preview.isCajaChica && preview.cajaChicaReferenced) {
+            <li>Se quitará de el/los reporte(s) de caja chica que ya la incluían</li>
+            }
+          </ul>
+        </div>
+        }
+      }
+    }
+
+    <div class="flex gap-3">
+      <button (click)="cancelDelete()"
+        class="flex-1 h-[42px] border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
+        Cancelar
+      </button>
+      <button (click)="confirmDelete()" [disabled]="isDeleting || loadingDeletionPreview() || deletionPreview()?.allowed === false"
+        class="flex-1 h-[42px] bg-error text-white rounded-xl text-sm font-semibold hover:bg-error/90 transition-colors disabled:opacity-50">
+        @if (isDeleting) { Eliminando... } @else { Eliminar }
+      </button>
+    </div>
+  </div>
+</div>
+}

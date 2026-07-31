@@ -1,0 +1,288 @@
+<div class="px-4 sm:px-6 py-6">
+
+  <!-- ── Greeting ──────────────────────────────────────────────── -->
+  <div class="mb-7">
+    <h1 class="text-2xl font-bold text-secondary">{{ greeting }}, {{ userName }} 👋</h1>
+    <p class="text-sm text-tertiary mt-1">{{ subtitle }}</p>
+  </div>
+
+  @if (isLoading()) {
+  <div class="flex justify-center py-20">
+    <div class="animate-spin rounded-full h-9 w-9 border-b-2 border-primary"></div>
+  </div>
+  } @else {
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!--  COORDINADOR                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @if (isApprover()) {
+
+  <!-- ── Sección: Aprobaciones de mi equipo ───────────────────────── -->
+  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Aprobaciones de mi equipo</h2>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+
+    <!-- Solicitudes por aprobar (PRIMERO) -->
+    <a routerLink="/rendiciones"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Solicitudes por aprobar</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiSolicitudesPendientes() > 0 ? 'bg-error/10' : 'bg-ink-100'">
+          <app-icon name="circle-check" size="sm" [class]="kpiSolicitudesPendientes() > 0 ? 'text-error' : 'text-tertiary'" />
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">{{ kpiSolicitudesPendientes() }}</p>
+      <p class="text-xs text-tertiary">
+        @if (kpiSolicitudesPendientes() > 0) { solicitud{{ kpiSolicitudesPendientes() !== 1 ? 'es' : '' }} de viáticos por aprobar }
+        @else { sin solicitudes pendientes }
+      </p>
+    </a>
+
+    <!-- Rendiciones por aprobar -->
+    <a routerLink="/rendiciones"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Rendiciones por aprobar</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiRendicionesPorAprobar() > 0 ? 'bg-primary/10' : 'bg-ink-100'">
+          <app-icon name="clipboard-list" size="sm" [class]="kpiRendicionesPorAprobar() > 0 ? 'text-primary' : 'text-tertiary'" />
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">{{ kpiRendicionesPorAprobar() }}</p>
+      <p class="text-xs text-tertiary">
+        @if (kpiRendicionesPorAprobar() > 0) { rendición{{ kpiRendicionesPorAprobar() !== 1 ? 'es' : '' }} esperando revisión }
+        @else { sin rendiciones por aprobar }
+      </p>
+    </a>
+
+  </div>
+
+  <!-- Listados -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Solicitudes por aprobar',
+      rows: visibleSolicitudes(),
+      total: solicitudesRows().length,
+      showAllSig: showAllAprobaciones,
+      empty: 'No hay solicitudes de viáticos por aprobar.',
+      showUser: true,
+      approveKind: 'solicitud'
+    }"></ng-container>
+
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Rendiciones por aprobar',
+      rows: visibleRendicionesAprob(),
+      total: rendicionesRows().length,
+      showAllSig: showAllPersonal,
+      empty: 'No hay rendiciones por aprobar.',
+      showUser: true,
+      approveKind: 'rendicion'
+    }"></ng-container>
+  </div>
+
+  <!-- ── Sección: Mi actividad (rendiciones propias del coordinador) ── -->
+  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mt-9 mb-3">Mi actividad</h2>
+  <ng-container *ngTemplateOutlet="miActividad"></ng-container>
+
+  }
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!--  TESORERÍA — Rendiciones pendientes por cerrar (VD-66/VD-49)   -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @else if (isTesoreria) {
+
+  <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-3">Pendientes de Tesorería</h2>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+    <!-- Rendiciones por cerrar -->
+    <a routerLink="/rendiciones"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Pendientes por cerrar</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiRendicionesPorCerrar() > 0 ? 'bg-primary/10' : 'bg-ink-100'">
+          <app-icon name="clipboard-list" size="sm" [class]="kpiRendicionesPorCerrar() > 0 ? 'text-primary' : 'text-tertiary'" />
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">{{ kpiRendicionesPorCerrar() }}</p>
+      <p class="text-xs text-tertiary">
+        @if (kpiRendicionesPorCerrar() > 0) { rendición{{ kpiRendicionesPorCerrar() !== 1 ? 'es' : '' }} lista{{ kpiRendicionesPorCerrar() !== 1 ? 's' : '' }} para cerrar }
+        @else { sin rendiciones por cerrar }
+      </p>
+    </a>
+
+    <!-- Pagos pendientes (VD-76): reembolsos + viáticos por pagar -->
+    <a routerLink="/tesoreria"
+      class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">Pagos pendientes</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+          [class]="kpiPagosPendientes() > 0 ? 'bg-error/10' : 'bg-ink-100'">
+          <app-icon name="dollar-sign" size="sm" [class]="kpiPagosPendientes() > 0 ? 'text-error' : 'text-tertiary'" />
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">{{ kpiPagosPendientes() }}</p>
+      <p class="text-xs text-tertiary">
+        @if (kpiPagosPendientes() > 0) { pago{{ kpiPagosPendientes() !== 1 ? 's' : '' }} por registrar }
+        @else { sin pagos pendientes }
+      </p>
+    </a>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Rendiciones por cerrar',
+      rows: visibleRendicionesPorCerrar(),
+      total: rendicionesPorCerrarRows().length,
+      showAllSig: showAllPorCerrar,
+      empty: 'No hay rendiciones pendientes por cerrar.',
+      showUser: true
+    }"></ng-container>
+
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Pagos pendientes',
+      rows: visiblePagosPendientes(),
+      total: pagosPendientesRows().length,
+      showAllSig: showAllPagos,
+      empty: 'No hay pagos pendientes.',
+      showUser: true,
+      navTo: '/tesoreria'
+    }"></ng-container>
+  </div>
+
+  }
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!--  COLABORADOR                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  @else {
+
+  <ng-container *ngTemplateOutlet="miActividad"></ng-container>
+
+  }
+
+  } <!-- end @else isLoading -->
+
+</div>
+
+<!-- ── Plantilla reutilizable de listado (5 + expandir) ──────────── -->
+<ng-template #listCard let-title="title" let-rows="rows" let-total="total" let-showAllSig="showAllSig"
+  let-empty="empty" let-showUser="showUser" let-approveKind="approveKind" let-navTo="navTo">
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 overflow-hidden">
+    <div class="px-5 py-4 border-b border-tertiary/10 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-secondary">{{ title }}</h2>
+      <span class="text-xs text-tertiary">{{ total }}</span>
+    </div>
+
+    @if (rows.length === 0) {
+    <p class="px-5 py-10 text-center text-sm text-tertiary">{{ empty }}</p>
+    } @else {
+    <ul class="divide-y divide-tertiary/10">
+      @for (row of rows; track row._id) {
+      <li (click)="rowClick(row, navTo)"
+        class="px-5 py-3 flex items-center gap-3 hover:bg-primary/5 cursor-pointer transition-colors">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-secondary truncate">{{ row.title }}</p>
+          <p class="text-xs text-tertiary truncate">
+            @if (showUser) {<span class="font-medium text-secondary/70">{{ row.userName }}</span> · }@if (row.project) {{{ row.project }} · }{{ row.createdAt | date:'dd/MM/yyyy' }}
+          </p>
+        </div>
+        <span class="text-sm font-semibold text-secondary whitespace-nowrap">{{ row.currencySymbol }} {{ row.amount | number:'1.2-2' }}</span>
+        <span class="text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap" [class]="row.statusColor">{{ row.statusLabel }}</span>
+        @if (approveKind && canApproveRow(row, approveKind)) {
+        <span (click)="$event.stopPropagation()">
+          <app-button
+            variant="success"
+            size="sm"
+            [label]="acting() === row._id ? '...' : (approveKind === 'rendicion' ? 'Aprobar rendición' : 'Aprobar')"
+            [disabled]="acting() === row._id"
+            (clicked)="approveRow(row, approveKind)"
+          />
+        </span>
+        }
+      </li>
+      }
+    </ul>
+
+    @if (total > PREVIEW) {
+    <button (click)="showAllSig.set(!showAllSig())"
+      class="w-full px-5 py-3 text-xs font-semibold text-primary hover:bg-primary/5 transition-colors border-t border-tertiary/10">
+      {{ showAllSig() ? 'Ver menos' : 'Expandir (' + (total - PREVIEW) + ' más)' }}
+    </button>
+    }
+    }
+  </div>
+</ng-template>
+
+<!-- ── Tarjeta KPI reutilizable ──────────────────────────────────── -->
+<ng-template #kpiCard let-title="title" let-value="value" let-hint="hint" let-link="link"
+  let-qp="qp" let-accent="accent" let-money="money">
+  <a [routerLink]="link" [queryParams]="qp || {}"
+    class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">{{ title }}</span>
+      <div class="w-8 h-8 rounded-xl flex items-center justify-center" [class]="iconBg(accent, value > 0)">
+        <app-icon [name]="money ? 'dollar-sign' : 'clipboard-list'" size="sm" [class]="iconText(accent, value > 0)" />
+      </div>
+    </div>
+    <p class="text-3xl font-bold text-secondary">@if (money) {S/. {{ value | number:'1.2-2' }}} @else {{{ value }}}</p>
+    <p class="text-xs text-tertiary">{{ hint }}</p>
+  </a>
+</ng-template>
+
+<!-- ── "Mi actividad" reutilizable (colaborador + coordinador) ───── -->
+<!-- Separa VIÁTICOS (solicitudes + rendiciones) de RENDICIONES DIRECTAS. -->
+<ng-template #miActividad>
+  <!-- VIÁTICOS -->
+  @if (canSeeViaticos) {
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Viáticos</h3>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Solicitudes de viáticos', value: kpiSolicitudesViaticos(), accent: 'yellow',
+      link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'pendientes de aprobación'
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Rendiciones de viáticos', value: kpiRendicionesViaticos(), accent: 'blue',
+      link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'por rendir'
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Rendiciones cerradas', value: kpiViaticosCerradas(), accent: 'green',
+      link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'finalizadas'
+    }"></ng-container>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Mis solicitudes de viáticos', rows: visibleSolViaticos(),
+      total: misSolicitudesViaticosRows().length, showAllSig: showAllViaticos,
+      empty: 'No tienes solicitudes de viáticos.', showUser: false
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Mis rendiciones de viáticos', rows: visibleRendViaticos(),
+      total: misRendicionesViaticosRows().length, showAllSig: showAllRendiciones,
+      empty: 'No tienes rendiciones de viáticos.', showUser: false
+    }"></ng-container>
+  </div>
+  }
+
+  <!-- RENDICIONES DIRECTAS -->
+  @if (canSeeRendiciones) {
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Rendiciones directas</h3>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Rendiciones directas', value: kpiDirectasSinCerrar(), accent: 'purple',
+      link: '/mis-rendiciones', qp: { tab: 'directas' }, hint: 'sin cerrar'
+    }"></ng-container>
+    <ng-container *ngTemplateOutlet="kpiCard; context: {
+      title: 'Por enviar a revisión', value: kpiPendientesDirectas(), accent: 'red',
+      link: '/mis-rendiciones', qp: { tab: 'directas' }, hint: 'con gastos por subir o enviar'
+    }"></ng-container>
+  </div>
+  <div class="grid grid-cols-1 gap-4 mt-4">
+    <ng-container *ngTemplateOutlet="listCard; context: {
+      title: 'Mis rendiciones directas', rows: visibleDirectasPropias(),
+      total: misDirectasRows().length, showAllSig: showAllDirectas,
+      empty: 'No tienes rendiciones directas.', showUser: false
+    }"></ng-container>
+  </div>
+  }
+</ng-template>

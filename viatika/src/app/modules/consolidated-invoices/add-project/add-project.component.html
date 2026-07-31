@@ -1,0 +1,50 @@
+<div class="flex items-center justify-between w-full gap-2 p-5">
+  <button
+    class="bg-color1 text-white px-4 py-1 flex items-center gap-2 rounded-full"
+    (click)="back()"
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke-width="1.5"
+      stroke="currentColor"
+      class="w-7"
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        d="M6.75 15.75 3 12m0 0 3.75-3.75M3 12h18"
+      />
+    </svg>
+
+    Volver
+  </button>
+  <h1 class="text-xl font-bold">
+    @if (isEditing) { Editar Proyecto } @else { Agregar Proyecto }
+  </h1>
+</div>
+
+<form class="flex flex-col gap-4 p-5">
+  <div class="flex flex-col gap-2">
+    <label for="name" class="font-medium">
+      Nombre del Proyecto <span class="text-color1">*</span>
+    </label>
+    <input
+      id="name"
+      type="text"
+      [(ngModel)]="project.name"
+      name="name"
+      class="w-full p-2 border border-gray-300"
+      placeholder="Ej: Proyecto nuevo"
+    />
+  </div>
+
+  <button
+    type="button"
+    (click)="save()"
+    class="bg-color1 text-white px-4 py-2 rounded-full w-full lg:w-1/4 mt-3"
+  >
+    @if (isEditing) { Actualizar } @else { Guardar }
+  </button>
+</form>

@@ -1,0 +1,124 @@
+<div class="p-6">
+  <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold text-secondary mb-2">Órdenes de Trabajo</h1>
+      <p class="text-tertiary">
+        Gestiona las OT y su relación con el centro de costo al que se imputa el gasto.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <app-button variant="secondary" size="sm" label="Plantilla" (clicked)="downloadTemplate()">
+        <app-icon name="download" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="Importar Excel" loadingLabel="Importando..." [loading]="importing()" (clicked)="triggerFileInput()">
+        <app-icon name="upload" size="sm" />
+      </app-button>
+      <input #fileInput type="file" accept=".xlsx,.xls" class="hidden" (change)="onFileSelected($event)" />
+      <app-button label="Nueva OT" variant="primary" size="md" (clicked)="navigateToForm()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </div>
+  </div>
+
+  <!-- Import result banner -->
+  @if (importResult()) {
+    <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-4 flex flex-col gap-2 mb-6">
+      <div class="flex items-center gap-2">
+        <app-icon name="circle-check" size="sm" class="text-success" />
+        <span class="text-sm font-medium text-secondary">{{ importResult()!.created }} orden(es) de trabajo importada(s)</span>
+        <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" class="ml-auto" (clicked)="importResult.set(null)">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      </div>
+      @if (importResult()!.errors.length > 0) {
+        <div class="border-t border-tertiary/10 pt-2 mt-1">
+          <p class="text-xs font-semibold text-error mb-1">{{ importResult()!.errors.length }} error(es):</p>
+          <ul class="text-xs text-error space-y-0.5 max-h-28 overflow-y-auto">
+            @for (e of importResult()!.errors; track e.row) {
+              <li>Fila {{ e.row }}: {{ e.reason }}</li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+  }
+
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-4 mb-6">
+    <div class="flex flex-wrap gap-3">
+      <div class="relative flex-1 min-w-[220px]">
+        <app-icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
+        <input
+          type="text"
+          [ngModel]="search()"
+          (ngModelChange)="onSearch($event)"
+          placeholder="Buscar por nombre de OT..."
+          class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+        />
+      </div>
+      <select
+        [ngModel]="filterCostCenter()"
+        (ngModelChange)="onFilterCostCenter($event)"
+        class="px-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+      >
+        <option value="">Todos los centros de costo</option>
+        @for (cc of centrosCosto(); track cc._id) {
+          <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-center items-center py-12">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  } @else if (result().data.length === 0) {
+    <app-empty-state
+      icon="file-text"
+      title="Sin órdenes de trabajo"
+      description="Aún no se ha creado ninguna orden de trabajo con estos filtros."
+    >
+      <app-button label="Crear la primera OT" variant="primary" size="md" (clicked)="navigateToForm()" />
+    </app-empty-state>
+  } @else {
+    <app-data-table [items]="result().data">
+      <ng-container *appColumn="'nombre'; header: 'Nombre'; let row">
+        <span class="font-mono font-semibold text-secondary">{{ row.nombre }}</span>
+      </ng-container>
+
+      <ng-container *appColumn="'centroCosto'; header: 'Centro de costo'; let row">
+        <span class="text-sm text-secondary">{{ centroCostoLabel(row) || '—' }}</span>
+      </ng-container>
+
+      <ng-container *appColumn="'estado'; header: 'Estado'; align: 'center'; let row">
+        <app-badge [variant]="row.isActive ? 'success' : 'neutral'">{{ row.isActive ? 'Activa' : 'Inactiva' }}</app-badge>
+      </ng-container>
+
+      <ng-container *appColumn="'creado'; header: 'Creado'; detail: true; let row">
+        {{ row.createdAt | date: 'dd/MM/yyyy' }}
+      </ng-container>
+
+      <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let row">
+        <div class="flex items-center justify-end gap-1">
+          <app-button variant="ghost" size="sm" label="" ariaLabel="Editar" (clicked)="navigateToForm(row._id)">
+            <app-icon name="edit" size="sm" />
+          </app-button>
+          <app-button variant="ghost" size="sm" label="" ariaLabel="Eliminar" (clicked)="delete(row)">
+            <app-icon name="trash" size="sm" class="text-error" />
+          </app-button>
+        </div>
+      </ng-container>
+    </app-data-table>
+
+    <div class="mt-4">
+      <app-paginator
+        [total]="result().total"
+        [page]="result().page"
+        [pages]="result().pages"
+        [limit]="result().limit"
+        (pageChange)="onPageChange($event)"
+        (limitChange)="onLimitChange($event)"
+      />
+    </div>
+  }
+</div>

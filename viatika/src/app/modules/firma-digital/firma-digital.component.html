@@ -1,0 +1,175 @@
+<div class="max-w-3xl mx-auto px-5 py-8">
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Configuración de Firma Digital</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Tu firma digital se utilizará automáticamente en los reportes de rendición de viáticos (Excel y PDF).
+    </p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+
+    @if (savedSignatureImage) {
+      <div class="flex flex-col items-center">
+        <h3 class="font-medium text-gray-700 mb-4">Tu firma actual:</h3>
+        <div class="border-2 border-gray-200 border-dashed rounded-xl p-4 bg-gray-50 flex items-center justify-center w-full max-w-md h-40">
+          <img [src]="savedSignatureImage" alt="Firma del colaborador" class="max-h-full max-w-full mix-blend-multiply" />
+        </div>
+
+        <div class="flex gap-4 mt-8">
+          <button
+            type="button"
+            (click)="deleteSavedSignature()"
+            class="px-5 py-2.5 rounded-lg border border-red-200 text-red-600 font-medium hover:bg-red-50 focus:ring-4 focus:ring-red-100 transition-all text-sm"
+          >
+            Eliminar
+          </button>
+          <button
+            type="button"
+            (click)="startNewSignature()"
+            class="px-5 py-2.5 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 focus:ring-4 focus:ring-primary/20 transition-all text-sm"
+          >
+            Reemplazar firma
+          </button>
+        </div>
+      </div>
+    } @else {
+      <div class="flex flex-col items-center">
+        <div class="inline-flex p-1 bg-gray-100 rounded-lg mb-6">
+          <button
+            type="button"
+            (click)="setMode('draw')"
+            [class.bg-white]="mode() === 'draw'"
+            [class.shadow-sm]="mode() === 'draw'"
+            [class.text-primary]="mode() === 'draw'"
+            [class.text-gray-500]="mode() !== 'draw'"
+            class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+          >
+            Dibujar firma
+          </button>
+          <button
+            type="button"
+            (click)="setMode('upload')"
+            [class.bg-white]="mode() === 'upload'"
+            [class.shadow-sm]="mode() === 'upload'"
+            [class.text-primary]="mode() === 'upload'"
+            [class.text-gray-500]="mode() !== 'upload'"
+            class="px-4 py-2 rounded-md text-sm font-medium transition-all"
+          >
+            Adjuntar documento de firma digital
+          </button>
+        </div>
+
+        @if (mode() === 'draw') {
+          <h3 class="font-medium text-gray-700 mb-4 w-full text-center">Dibuja tu firma en el recuadro inferior:</h3>
+
+          <div class="relative w-full max-w-md bg-white border-2 border-gray-200 rounded-xl overflow-hidden cursor-crosshair touch-none shadow-inner">
+            <canvas
+              #signatureCanvas
+              width="400"
+              height="200"
+              class="w-full h-auto bg-transparent"
+              (mousedown)="onPointerDown($event)"
+              (mousemove)="onPointerMove($event)"
+              (mouseup)="onPointerUp()"
+              (mouseleave)="onPointerUp()"
+              (touchstart)="onPointerDown($event)"
+              (touchmove)="onPointerMove($event)"
+              (touchend)="onPointerUp()"
+              (touchcancel)="onPointerUp()"
+            ></canvas>
+          </div>
+
+          <div class="flex w-full max-w-md justify-between items-center mt-6">
+            <button
+              type="button"
+              (click)="clearSignature()"
+              class="px-4 py-2 text-gray-500 hover:text-gray-700 font-medium text-sm transition-colors"
+            >
+              Limpiar lienzo
+            </button>
+
+            <button
+              type="button"
+              (click)="saveSignature()"
+              [disabled]="!hasSignature || isSaving"
+              class="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm shadow-sm"
+            >
+              @if (isSaving) {
+                <div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div>
+                Guardando{{ uploadProgress() > 0 && uploadProgress() < 100 ? ' ' + uploadProgress() + '%' : '...' }}
+              } @else {
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                Guardar Firma
+              }
+            </button>
+          </div>
+        } @else {
+          <h3 class="font-medium text-gray-700 mb-2 w-full text-center">Sube la imagen de tu firma digital</h3>
+          <p class="text-xs text-gray-500 mb-4 text-center">Formatos aceptados: PNG, JPG, WEBP. Tamaño máximo 5 MB. Se redimensionará automáticamente.</p>
+
+          @if (uploadedSignaturePreview()) {
+            <div class="border-2 border-gray-200 border-dashed rounded-xl p-4 bg-gray-50 flex items-center justify-center w-full max-w-md h-40">
+              <img [src]="uploadedSignaturePreview()" alt="Vista previa firma" class="max-h-full max-w-full mix-blend-multiply" />
+            </div>
+            @if (uploadedFileName()) {
+              <p class="mt-3 text-xs text-gray-500 truncate max-w-md">Archivo: {{ uploadedFileName() }}</p>
+            }
+          } @else {
+            <label
+              for="signatureFileInput"
+              class="w-full max-w-md flex flex-col items-center justify-center px-6 py-10 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
+            >
+              @if (isProcessingUpload()) {
+                <div class="w-6 h-6 rounded-full border-2 border-gray-300 border-t-primary animate-spin mb-2"></div>
+                <span class="text-sm text-gray-500">Procesando imagen...</span>
+              } @else {
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-10 h-10 text-gray-400 mb-2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 7.5 7.5 12M12 7.5v12" />
+                </svg>
+                <span class="text-sm font-medium text-gray-700">Selecciona un archivo</span>
+                <span class="text-xs text-gray-500 mt-1">o arrástralo aquí</span>
+              }
+            </label>
+            <input
+              id="signatureFileInput"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              class="hidden"
+              (change)="onSignatureFileSelected($event)"
+            />
+          }
+
+          <div class="flex w-full max-w-md justify-between items-center mt-6">
+            <button
+              type="button"
+              (click)="clearUploadedSignature()"
+              [disabled]="!uploadedSignaturePreview()"
+              class="px-4 py-2 text-gray-500 hover:text-gray-700 font-medium text-sm transition-colors disabled:opacity-40"
+            >
+              Quitar imagen
+            </button>
+
+            <button
+              type="button"
+              (click)="saveSignature()"
+              [disabled]="!uploadedSignaturePreview() || isSaving"
+              class="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm shadow-sm"
+            >
+              @if (isSaving) {
+                <div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div>
+                Guardando{{ uploadProgress() > 0 && uploadProgress() < 100 ? ' ' + uploadProgress() + '%' : '...' }}
+              } @else {
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                Guardar Firma
+              }
+            </button>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

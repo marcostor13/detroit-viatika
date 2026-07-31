@@ -1,0 +1,46 @@
+@if (pages > 0) {
+<div class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3">
+  <div class="flex items-center gap-2 text-xs text-tertiary">
+    <span>Filas por página:</span>
+    <select
+      [value]="limit"
+      (change)="changeLimit($event)"
+      class="h-8 px-2 rounded-lg border border-tertiary/30 bg-background text-secondary text-xs focus:outline-none focus:ring-1 focus:ring-primary/30"
+    >
+      @for (l of limits; track l) {
+        <option [value]="l" [selected]="l === limit">{{ l }}</option>
+      }
+    </select>
+    <span class="ml-2">{{ from }}-{{ to }} de {{ total }}</span>
+  </div>
+  <div class="flex items-center gap-1">
+    <button
+      (click)="prev()"
+      [disabled]="!hasPrev"
+      class="w-8 h-8 rounded-lg flex items-center justify-center text-tertiary hover:bg-background hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+    </button>
+    @for (n of pageNumbers; track n) {
+      <button
+        (click)="goTo(n)"
+        [class.bg-primary]="n === page"
+        [class.text-white]="n === page"
+        [class.text-secondary]="n !== page"
+        class="w-8 h-8 rounded-lg text-xs font-medium hover:bg-background transition-colors"
+      >{{ n }}</button>
+    }
+    <button
+      (click)="next()"
+      [disabled]="!hasNext"
+      class="w-8 h-8 rounded-lg flex items-center justify-center text-tertiary hover:bg-background hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+    >
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  </div>
+</div>
+}

@@ -1,0 +1,24 @@
+# Local full-stack convenience compose (NOT used by Coolify — Coolify builds each
+# app independently from its own subfolder, see DEPLOY_SETUP.md).
+services:
+  backend:
+    build: ./viatika-back
+    container_name: viatika_backend
+    restart: unless-stopped
+    ports:
+      - '${BACKEND_PORT:-3016}:${BACKEND_PORT:-3016}'
+    env_file:
+      - ./viatika-back/.env
+
+  frontend:
+    build:
+      context: ./viatika
+      args:
+        API_URL: ${API_URL:-http://localhost:3016/api}
+        GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    container_name: viatika_frontend
+    restart: unless-stopped
+    ports:
+      - '${FRONTEND_PORT:-4200}:80'
+    depends_on:
+      - backend

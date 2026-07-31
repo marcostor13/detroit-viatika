@@ -1,0 +1,51 @@
+<app-modal [open]="showSignatureModal" size="sm" [closeOnBackdrop]="false" (closed)="dismissSignatureModal()">
+  <div class="flex items-start gap-3">
+    <div class="w-10 h-10 rounded-full bg-warning/10 flex items-center justify-center flex-shrink-0">
+      <app-icon name="triangle-alert" size="sm" class="text-warning" />
+    </div>
+    <div>
+      <p class="text-sm font-semibold text-secondary">Firma digital no configurada</p>
+      <p class="text-xs text-tertiary mt-1">Debe configurar su firma digital para poder firmar documentos y rendiciones en la plataforma.</p>
+    </div>
+  </div>
+  <div class="flex gap-3 mt-4">
+    <app-button label="Configurar firma" variant="primary" [fullWidth]="true" (clicked)="goToSignature()" />
+    <app-button label="Ahora no" variant="ghost" (clicked)="dismissSignatureModal()" />
+  </div>
+</app-modal>
+
+<div class="flex h-screen bg-background">
+  <app-sidebar
+    [sidebarVisible]="sidebarVisible"
+    (sidebarToggle)="toggleSidebar()"
+  >
+  </app-sidebar>
+
+  <div class="flex-1 flex flex-col lg:ml-0 overflow-x-hidden">
+    <header
+      class="relative bg-quaternary shadow-soft border-b border-tertiary/20 lg:ml-0 lg:pl-0 pl-16"
+    >
+      <button
+        (click)="toggleSidebar()"
+        class="lg:hidden absolute top-1/2 left-4 -translate-y-1/2 z-40 p-3 rounded-xl bg-quaternary shadow-soft text-secondary hover:text-primary hover:bg-background transition-all duration-300 hover:shadow-lg hover:scale-105 border border-tertiary/20"
+        aria-label="Abrir menú"
+      >
+        <app-icon name="menu" size="md" />
+      </button>
+
+      <div class="flex items-center justify-end px-6 py-4">
+        <div class="flex items-center space-x-4">
+          <app-notification-bell></app-notification-bell>
+
+        </div>
+      </div>
+    </header>
+
+    <main class="flex-1 overflow-auto bg-background">
+      <div class="p-2 sm:p-4 md:p-6">
+        <router-outlet />
+      </div>
+    </main>
+  </div>
+</div>
+

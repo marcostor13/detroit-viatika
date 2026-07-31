@@ -1,0 +1,16 @@
+node_modules
+dist
+.angular
+coverage
+test-results
+e2e
+playwright-report
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+README.md
+*.md
+.vscode
+.editorconfig

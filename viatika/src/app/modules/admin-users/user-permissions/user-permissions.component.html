@@ -1,0 +1,237 @@
+<div class="max-w-3xl mx-auto p-5">
+  <!-- Header -->
+  <div class="flex items-center gap-4 mb-6">
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" (clicked)="goBack()">
+      <app-icon name="arrow-left" size="sm" />
+    </app-button>
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">Permisos del Usuario</h1>
+      @if (user) {
+        <p class="text-sm text-tertiary mt-0.5">{{ user.name }} — {{ user.role.name }}</p>
+      }
+    </div>
+  </div>
+
+  @if (user) {
+    <!-- Aviso para Superadministrador -->
+    @if (user.role.name === 'Superadministrador') {
+    <div class="rounded-lg bg-warning/10 border border-warning/30 p-4 mb-6 text-sm text-warning-ink">
+      <strong>Acceso total por rol:</strong> Este usuario es Superadministrador y tiene acceso a todos los módulos de la plataforma por su rol. Los permisos configurados aquí no afectan su acceso.
+    </div>
+    }
+
+    <!-- Módulos -->
+    <app-card [hover]="false" class="mb-6">
+      <h2 class="text-base font-semibold text-secondary mb-1">Acceso a Módulos</h2>
+      <p class="text-sm text-tertiary mb-5">Selecciona los módulos a los que este usuario tendrá acceso en la plataforma.</p>
+
+      <div class="space-y-3">
+        @for (mod of availableModules; track mod.key) {
+          <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
+            <input
+              type="checkbox"
+              class="mt-0.5 h-4 w-4 rounded border-tertiary/40 text-primary accent-primary cursor-pointer"
+              [checked]="hasModule(mod.key)"
+              (change)="toggleModule(mod.key, $any($event.target).checked)"
+            />
+            <div>
+              <p class="text-sm font-medium text-secondary">{{ mod.label }}</p>
+              <p class="text-xs text-tertiary mt-0.5">{{ mod.description }}</p>
+            </div>
+          </label>
+        }
+      </div>
+    </app-card>
+
+    <!-- Centros de costo asignados -->
+    <app-card [hover]="false" class="mb-6">
+      <h2 class="text-base font-semibold text-secondary mb-1">Centros de Costo Asignados</h2>
+      <p class="text-sm text-tertiary mb-5">
+        Marca con la estrella el <strong>centro de costo principal</strong> del colaborador: cuando solicite un
+        viático hacia un centro de costo que no esté en esta lista, el aprobador del principal actúa como primer
+        nivel, seguido del aprobador del centro de costo elegido. Si no marcas ninguno, se usa el primero de la lista.
+      </p>
+
+      @if (assignedProjects.length === 0) {
+        <p class="text-sm text-tertiary text-center py-4 border border-dashed border-divider rounded-lg mb-4">
+          Sin centros de costo asignados todavía.
+        </p>
+      } @else {
+        <div class="space-y-2 mb-4">
+          @for (p of assignedProjects; track p._id; let i = $index) {
+            <div class="flex items-center gap-3 px-4 py-2.5 rounded-lg border border-divider">
+              <app-button
+                [variant]="isPrimary(p._id) ? 'primary' : 'ghost'"
+                size="sm"
+                label=""
+                [ariaLabel]="isPrimary(p._id) ? 'Centro de costo principal' : 'Marcar como principal'"
+                [disabled]="isPrimary(p._id)"
+                (clicked)="setPrimary(p._id!)"
+              >
+                <app-icon name="star" size="sm" />
+              </app-button>
+              <span class="text-xs font-semibold text-tertiary w-16 shrink-0">
+                {{ isPrimary(p._id) ? 'Principal' : 'Nivel ' + (i + 1) }}
+              </span>
+              <span class="text-sm text-secondary flex-1">{{ projectLabel(p) }}</span>
+              <div class="flex items-center gap-1 shrink-0">
+                <app-button variant="ghost" size="sm" label="" ariaLabel="Subir" [disabled]="i === 0" (clicked)="moveProjectUp(i)">
+                  <app-icon name="chevron-up" size="sm" />
+                </app-button>
+                <app-button variant="ghost" size="sm" label="" ariaLabel="Bajar" [disabled]="i === assignedProjects.length - 1" (clicked)="moveProjectDown(i)">
+                  <app-icon name="chevron-down" size="sm" />
+                </app-button>
+                <app-button variant="ghost" size="sm" label="" ariaLabel="Quitar" (clicked)="removeProject(i)">
+                  <app-icon name="trash" size="sm" />
+                </app-button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      @if (availableProjectCandidates.length > 0) {
+        <select
+          class="h-[42px] w-full px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          (change)="addProject($any($event.target).value); $any($event.target).value = ''"
+        >
+          <option value="">+ Agregar centro de costo…</option>
+          @for (p of availableProjectCandidates; track p._id) {
+            <option [value]="p._id">{{ projectLabel(p) }}</option>
+          }
+        </select>
+      }
+    </app-card>
+
+    <!-- Categorías permitidas -->
+    <app-card [hover]="false" class="mb-6">
+      <div class="flex items-start justify-between gap-3 mb-1">
+        <h2 class="text-base font-semibold text-secondary">Categorías Permitidas</h2>
+        @if (!categoriesLoading()) {
+          <span class="text-xs text-tertiary">{{ selectedCount }} seleccionada(s)</span>
+        }
+      </div>
+      <p class="text-sm text-tertiary mb-5">
+        Selecciona las categorías que puede usar este usuario al registrar gastos.
+      </p>
+
+      @if (categoriesLoading()) {
+        <div class="flex justify-center py-8">
+          <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+        </div>
+      } @else if (allCategories().length === 0) {
+        <p class="text-sm text-tertiary text-center py-6">
+          No hay categorías. Créalas primero desde Configuración → Categorías.
+        </p>
+      } @else {
+
+        <!-- Búsqueda + acciones masivas -->
+        <div class="flex items-center gap-3 mb-3">
+          <div class="relative flex-1">
+            <app-icon name="search" size="sm" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-tertiary" />
+            <input
+              type="text"
+              [value]="categorySearch()"
+              (input)="categorySearch.set($any($event.target).value)"
+              placeholder="Buscar categoría..."
+              class="w-full h-[34px] pl-8 pr-3 rounded-lg border border-divider bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+          <app-button variant="ghost" size="sm" label="Todas" (clicked)="selectAllCategories()" />
+          <app-button variant="ghost" size="sm" label="Quitar todos" (clicked)="clearAllCategories()" />
+        </div>
+
+        <!-- Perfiles: al elegir uno se marcan todas sus categorías de una vez (VD-38) -->
+        @if (categoryProfiles().length > 0) {
+          <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="text-xs font-semibold text-tertiary uppercase tracking-wider mr-0.5">Perfiles:</span>
+            @for (perfil of categoryProfiles(); track perfil._id) {
+              <button type="button" (click)="toggleProfile(perfil)"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+                [ngClass]="isProfileSelected(perfil)
+                  ? 'bg-primary text-white border-primary'
+                  : (isProfilePartial(perfil)
+                      ? 'bg-primary/10 text-primary border-primary/30'
+                      : 'bg-background text-secondary border-divider hover:border-primary/40')">
+                {{ perfil.name }}
+                <span class="opacity-70">· {{ profileCount(perfil) }}</span>
+              </button>
+            }
+          </div>
+        }
+
+        <!-- Lista única de categorías -->
+        <div class="max-h-80 overflow-y-auto rounded-xl border border-divider divide-y divide-divider">
+          @for (cat of filteredCategories; track cat._id) {
+            <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-background cursor-pointer transition-colors">
+              <input type="checkbox" class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
+                [checked]="hasCategory(cat._id!)" (change)="toggleCategory(cat._id!, $any($event.target).checked)" />
+              <span class="text-sm text-secondary flex-1">{{ cat.name }}</span>
+              @if (cat.cuenta) { <span class="text-xs text-tertiary/60">{{ cat.cuenta }}</span> }
+            </label>
+          } @empty {
+            <p class="text-sm text-tertiary text-center py-6">Sin resultados para tu búsqueda.</p>
+          }
+        </div>
+      }
+    </app-card>
+
+    <!-- Otros Gastos: sub-tipos opcionales (VD-91) -->
+    <app-card [hover]="false" class="mb-6">
+      <h2 class="text-base font-semibold text-secondary mb-1">Opciones de "Otros Gastos"</h2>
+      <p class="text-sm text-tertiary mb-5">
+        Habilita o deshabilita para este usuario los tipos de documento opcionales que verá al
+        registrar un gasto de tipo "Otros Gastos". Si los desmarcas, no aparecerán en su selector.
+      </p>
+      <div class="space-y-3">
+        <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-tertiary/40 text-primary accent-primary cursor-pointer"
+            [checked]="isOtrosGastoOpcionalHabilitado('recibosDiversos')"
+            (change)="toggleOtrosGastoOpcional('recibosDiversos', $any($event.target).checked)"
+          />
+          <div>
+            <p class="text-sm font-medium text-secondary">Recibos diversos</p>
+            <p class="text-xs text-tertiary mt-0.5">Trámites legales (p. ej. vigencia de poder).</p>
+          </div>
+        </label>
+        <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-tertiary/40 text-primary accent-primary cursor-pointer"
+            [checked]="isOtrosGastoOpcionalHabilitado('djExtranjero')"
+            (change)="toggleOtrosGastoOpcional('djExtranjero', $any($event.target).checked)"
+          />
+          <div>
+            <p class="text-sm font-medium text-secondary">DJ. Declaración jurada (viajes al extranjero)</p>
+            <p class="text-xs text-tertiary mt-0.5">Declaración jurada para gastos de viajes al extranjero.</p>
+          </div>
+        </label>
+      </div>
+    </app-card>
+
+    <!-- Nota informativa -->
+    <div class="rounded-lg bg-primary/5 border border-primary/20 p-4 mb-6 text-sm text-primary">
+      <strong>Nota:</strong> Los cambios requieren que el usuario vuelva a iniciar sesión para que tengan efecto.
+      Los perfiles de categoría son una referencia: de las categorías asignadas se derivan los centros de costo visibles.
+    </div>
+
+    <!-- Acciones -->
+    <div class="flex items-center justify-end gap-3">
+      <app-button variant="secondary" label="Cancelar" (clicked)="goBack()" />
+      <app-button
+        variant="primary"
+        label="Guardar Permisos"
+        loadingLabel="Guardando..."
+        [loading]="saving"
+        [disabled]="saving"
+        (clicked)="save()"
+      />
+    </div>
+  } @else {
+    <div class="flex justify-center py-16">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  }
+</div>

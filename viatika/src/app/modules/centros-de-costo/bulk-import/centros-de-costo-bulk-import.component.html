@@ -1,0 +1,100 @@
+<div class="p-5 flex flex-col gap-6">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" (clicked)="back()">
+      <app-icon name="arrow-left" size="sm" />
+    </app-button>
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">Carga masiva de Centros de Costo</h1>
+      <p class="text-sm text-tertiary mt-0.5">Importa centros de costo desde un archivo Excel</p>
+    </div>
+  </div>
+
+  <!-- Instructions card -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-2xl flex flex-col gap-6">
+
+    <!-- Step 1: Download template -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
+        <h3 class="text-sm font-semibold text-secondary">Descarga la plantilla</h3>
+      </div>
+      <p class="text-xs text-tertiary pl-8">
+        Solo <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">Nombre Proyecto</span> es obligatorio.
+        La plantilla incluye una hoja "Instrucciones" con el detalle de cada columna (línea de negocio, cuentas contables, aprobadores N1/N2/N3, etc.).
+      </p>
+      <div class="pl-8">
+        <app-button variant="secondary" label="Descargar plantilla" (clicked)="downloadTemplate()">
+          <app-icon name="download" size="sm" />
+        </app-button>
+      </div>
+    </div>
+
+    <div class="border-t border-tertiary/10"></div>
+
+    <!-- Step 2: Upload file -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
+        <h3 class="text-sm font-semibold text-secondary">Sube el archivo completado</h3>
+      </div>
+      <div class="pl-8">
+        <input
+          type="file"
+          accept=".xlsx,.xls"
+          (change)="onFileChange($event)"
+          class="block w-full text-sm text-tertiary file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+        />
+        @if (file) {
+          <p class="text-xs text-tertiary mt-2">Archivo seleccionado: <span class="font-medium text-secondary">{{ file.name }}</span></p>
+        }
+      </div>
+    </div>
+
+    <div class="border-t border-tertiary/10"></div>
+
+    <!-- Step 3: Import -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">3</span>
+        <h3 class="text-sm font-semibold text-secondary">Ejecuta la importación</h3>
+      </div>
+      <div class="pl-8">
+        <app-button
+          [label]="loading ? 'Importando...' : 'Importar centros de costo'"
+          variant="primary"
+          size="md"
+          [disabled]="!file || loading"
+          (clicked)="import()"
+        />
+      </div>
+    </div>
+
+    <!-- Result -->
+    @if (result) {
+      <div class="rounded-xl bg-background border border-tertiary/20 p-4 flex flex-col gap-1.5">
+        <p class="text-sm font-semibold text-secondary">Resultado de la importación</p>
+        <p class="text-sm text-success-ink">Creados: <span class="font-bold">{{ result.created }}</span></p>
+        @if (result.skipped.length) {
+          <p class="text-sm text-warning-ink">Omitidos (duplicados): {{ result.skipped.join(', ') }}</p>
+        }
+        @if (result.errors.length) {
+          <div class="text-sm text-error-ink">
+            <p class="font-medium">Errores:</p>
+            <ul class="list-disc list-inside mt-1 space-y-0.5">
+              @for (err of result.errors; track $index) {
+                <li class="text-xs">{{ err }}</li>
+              }
+            </ul>
+          </div>
+        }
+        @if (result.created > 0 && !result.errors.length) {
+          <app-button variant="ghost" size="sm" label="Volver al listado" class="w-fit" (clicked)="back()" />
+        }
+      </div>
+    }
+
+  </div>
+
+</div>
