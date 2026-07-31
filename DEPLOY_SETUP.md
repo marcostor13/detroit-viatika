@@ -1,135 +1,80 @@
 # Plan de despliegue: monorepo en Coolify (develop + producción)
 
-Estado actual vs. destino:
+**Estado: ejecutado hasta el punto donde bloquea la infraestructura de Coolify. Ver sección 0.**
 
 | | Antes | Después |
 |---|---|---|
-| Frontend | Netlify, repo `detroit-viatika` (rama `marcos`/`main`) | Coolify, monorepo `detroit-viatika`, carpeta `viatika/` |
-| Backend | Coolify develop, repo `detroit-viatika-back` (rama `develop`) | Coolify develop + producción, monorepo `detroit-viatika`, carpeta `viatika-back/` |
+| Frontend | Netlify, repo `detroit-viatika` | Coolify, monorepo `detroit-viatika`, carpeta `viatika/` |
+| Backend | Coolify (servidor viejo, otro host) | Coolify develop + producción, monorepo `detroit-viatika`, carpeta `viatika-back/` |
 | Repos | 2 repos separados | 1 repo (`detroit-viatika`, reutilizado) con 2 carpetas |
 
-Config ya preparada en este repo (no requiere tocar GitHub/Coolify/Cloudflare):
-- `viatika/Dockerfile`, `viatika/nginx.conf`, `viatika/.dockerignore` — build de producción del frontend servido por nginx.
-- `viatika-back/Dockerfile` — ya existía, sin cambios.
-- `.github/workflows/deploy-{frontend,backend}-{develop,main}.yml` — 4 workflows, cada uno dispara un webhook de Coolify solo cuando cambian archivos de su carpeta (`paths:`), para no redeployar el backend por un cambio de frontend y viceversa.
-- `docker-compose.yml` (raíz) — solo para levantar front+back localmente con Docker; Coolify no lo usa, construye cada app por separado desde su Dockerfile.
-- `.gitignore` (raíz) — incluye `.env.deploy`.
-
-Todo lo de abajo requiere las credenciales de `.env.deploy` (GitHub, Coolify, Cloudflare) y no se ha ejecutado — son los pasos a correr cuando confirmes el plan.
-
 ---
 
-## 1. Restructurar a monorepo (local)
+## 0. Estado real (actualizado)
 
-`C:\Marcos\Proyectos\Detroit\viatika` (esta carpeta) pasa a ser la raíz del repo único. `viatika/` y `viatika-back/` son hoy dos repos git independientes (remotos `detroit-viatika` y `detroit-viatika-back`); hay que quitarles el `.git` propio y convertir la carpeta padre en el único repo.
+### Hecho
+- **Monorepo restructurado y pusheado.** `main` = contenido de los `main` originales de cada repo; `develop` = contenido de trabajo actual (rama `marcos` de ambos repos al momento de la migración). Historial de commits del frontend preservado en `viatika/.git.bak` localmente (no en el repo); los 65 commits que solo existían en local ya están respaldados en `origin/marcos` de `detroit-viatika`.
+- **Coolify** (`http://161.132.166.142:8000`, proyecto `l68ih0sk7lba2eury9b2sn6d` "My first project"): 4 apps creadas y completamente configuradas (repo, rama, Dockerfile, base directory, puerto, dominio, variables de entorno, auto-deploy nativo desactivado):
+  | App | UUID | Dominio |
+  |---|---|---|
+  | viatika-frontend-develop | `hpthjhif64pglhrhnt1n239t` | qa-detroit-viatika.tecdidata.com |
+  | viatika-backend-develop | `ceyhrauio16o1yn5hs4v3hhy` | qa-apidetroit-viatika.tecdidata.com |
+  | viatika-frontend-main | `cyrw9v2hjyhqb78eeg59hbs7` | detroit.viatika.tecdidata.com |
+  | viatika-backend-main | `e9e5t2mje9q9p6kq9ahphmp4` | apidetroit.viatika.tecdidata.com |
+- **GitHub Actions**: 4 workflows con `paths:` filtrado, apuntando al endpoint de deploy de Coolify (`GET /api/v1/deploy?uuid=...` + `Authorization: Bearer`). 5 secrets ya cargados en el repo: `COOLIFY_API_TOKEN`, `COOLIFY_FRONTEND_DEVELOP_WEBHOOK_URL`, `COOLIFY_BACKEND_DEVELOP_WEBHOOK_URL`, `COOLIFY_FRONTEND_PROD_WEBHOOK_URL`, `COOLIFY_BACKEND_PROD_WEBHOOK_URL`.
+- **Cloudflare DNS**: 4 registros A creados (DNS-only, sin proxy) apuntando a `161.132.166.142`. Zona `tecdidata.com` (id `11e92a4b421ed48ec43f0354eff0f312`). No se tocaron los registros existentes (`api.viatika...`, `app.viatika...`, `tema.viatika...` → apuntan a otro servidor/Netlify, fuera de este alcance).
+- `COOLIFY_TOKEN_DEVELOP` (el de `.env.deploy`) es inválido (401). Se usó `COOLIFY_TOKEN_PRODUCTION` para todo, dado que solo hay un team/proyecto en esta instancia.
 
-**Decisión tomada**: se reutiliza el repo `detroit-viatika` (mismo nombre, mismo remoto). El historial de commits del frontend **se conserva** (no se hace force-push destructivo de su historial); el backend entra como carpeta nueva sin importar su historial de commits (monorepo limpio, según lo acordado). El repo `detroit-viatika-back` queda intacto en GitHub como archivo histórico, sin más commits.
-
-```bash
-cd C:\Marcos\Proyectos\Detroit\viatika
-
-# 1. Quitar el remoto/historial propio de viatika-back (no se pierde el código,
-#    solo se deja de trackear como repo independiente)
-rm -rf viatika-back/.git
-
-# 2. Usar el repo de viatika/ (con su historial) como base del monorepo:
-#    mover su .git a la raíz.
-mv viatika/.git .git
-git checkout main   # o la rama que corresponda; frontend hoy está en "marcos"
-
-# 3. Añadir el backend y los archivos nuevos de la raíz
-git add viatika-back .github docker-compose.yml .gitignore
-git add viatika/Dockerfile viatika/nginx.conf viatika/.dockerignore
-git commit -m "Convertir a monorepo: agregar viatika-back/, workflows de deploy y Docker del frontend"
-
-# 4. Repetir el mismo commit (cherry-pick o rebase) sobre develop
-git checkout develop
-git merge main --no-edit   # o cherry-pick del commit anterior
+### Bloqueado — requiere que arregles el servidor
+Los 2 intentos de deploy (`viatika-backend-develop`) fallaron con:
 ```
+Deployment failed: ssh: connect to host host.docker.internal port 22: Operation timed out
+```
+El servidor "localhost" registrado en Coolify (el mismo host donde corre Coolify) no es alcanzable por SSH desde el contenedor de Coolify — confirmado con `POST /api/v1/servers/{uuid}/validate` (`is_reachable` pasó de `true` cacheado a `false` en vivo). Esto bloquea el deploy de las 4 apps por igual; no es un problema de configuración de la app.
 
-Después de esto, `git status` en la raíz debe mostrar un único repo con `viatika/` y `viatika-back/` como carpetas normales (sin `.git` anidados). Verificar con `git log --oneline -1` en ambas ramas antes de continuar.
+**Para desbloquear**: en la VPS (161.132.166.142), verificar que `sshd` esté corriendo, que la clave pública de Coolify esté en `~/.ssh/authorized_keys` del usuario `root` (o el usuario configurado), y que el puerto 22 sea alcanzable desde el contenedor de Coolify hacia `host.docker.internal`. En Coolify: Servers → localhost → botón "Validate server" para reintentar el chequeo.
 
----
-
-## 2. GitHub
-
-Repo ya existe (`marcostor13/detroit-viatika`), solo hace falta:
-
-1. Push del monorepo restructurado:
-   ```bash
-   git push origin main
-   git push origin develop
-   ```
-2. Confirmar que `main` es la rama por defecto en GitHub (Settings → Branches).
-3. Agregar 4 **Repository secrets** (Settings → Secrets and variables → Actions), con las URLs de webhook que Coolify genera al crear cada app (paso 3):
-   - `COOLIFY_FRONTEND_DEVELOP_WEBHOOK_URL`
-   - `COOLIFY_BACKEND_DEVELOP_WEBHOOK_URL`
-   - `COOLIFY_FRONTEND_PROD_WEBHOOK_URL`
-   - `COOLIFY_BACKEND_PROD_WEBHOOK_URL`
-4. Repo `detroit-viatika-back`: archivar (Settings → Danger Zone → Archive) o al menos desactivar su Actions (`deploy.yml` ya apunta a Coolify develop; si se deja activo y alguien pushea ahí por error, redeployaría el backend viejo standalone). Recomendado: archivar.
+### Pendiente después de desbloquear
+1. Disparar deploy de las 4 apps (manual desde Coolify o con `git push` una vez el workflow esté probado) y confirmar que build+healthcheck pasan.
+2. Verificar TLS (Let's Encrypt) emitido en los 4 dominios.
+3. Probar login, subida de comprobantes (S3), notificaciones por email en develop y producción.
+4. Apagar Netlify (sección 5).
+5. Archivar `detroit-viatika-back` en GitHub (Settings → Danger Zone → Archive).
+6. Opcional: pedir a Coolify un `COOLIFY_TOKEN_DEVELOP` válido si se quiere aislar accesos por equipo/entorno más adelante.
 
 ---
 
-## 3. Coolify — crear 4 apps
+## Config en el repo (ya en `main` y `develop`)
+- `viatika/Dockerfile`, `viatika/nginx.conf`, `viatika/.dockerignore` — build de producción del frontend, ARGs `API_URL`/`GOOGLE_MAPS_API_KEY`/`STORAGE_KEY`/`STORAGE_PATH` consumidos por `scripts/set-env.js` en build time.
+- `viatika-back/Dockerfile` — ya existía, sin cambios.
+- `.github/workflows/deploy-{frontend,backend}-{develop,main}.yml` — dispara el deploy de Coolify solo cuando cambian archivos de su carpeta.
+- `docker-compose.yml` (raíz) — solo para levantar front+back local con Docker; Coolify no lo usa.
+- `.gitignore` (raíz) — incluye `.env.deploy`, `.git.bak`, `.codebase-memory`.
 
-Mismo servidor Coolify (`COOLIFY_URL`), pero cada entorno usa un token distinto (`COOLIFY_TOKEN_DEVELOP` / `COOLIFY_TOKEN_PRODUCTION`) — probablemente proyectos/equipos separados dentro de la misma instancia. Crear:
+⚠️ **Nota puerto backend**: `viatika-back/Dockerfile` expone 3040; ya se seteó `PORT=3040` como variable de entorno en las 2 apps backend para que coincida.
 
-| App | Token | Rama | Base directory | Dockerfile | Puerto | Dominio |
-|---|---|---|---|---|---|---|
-| viatika-frontend-develop | DEVELOP | `develop` | `/viatika` | `Dockerfile` | 80 | `FRONTEND_DOMAIN_DEVELOP` |
-| viatika-backend-develop | DEVELOP | `develop` | `/viatika-back` | `Dockerfile` | 3040 | `BACKEND_DOMAIN_DEVELOP` |
-| viatika-frontend-main | PRODUCTION | `main` | `/viatika` | `Dockerfile` | 80 | `FRONTEND_DOMAIN_PROD` |
-| viatika-backend-main | PRODUCTION | `main` | `/viatika-back` | `Dockerfile` | 3040 | `BACKEND_DOMAIN_PROD` |
-
-Para cada una (UI de Coolify: New Resource → Application → Public/Private Git Repository):
-
-1. Repository: `https://github.com/marcostor13/detroit-viatika`, branch según tabla.
-2. Build Pack: **Dockerfile**. Base Directory: según tabla (esto es lo que hace posible el monorepo — Coolify solo usa esa subcarpeta como contexto de build).
-3. Port: según tabla (el frontend expone 80 dentro del contenedor vía nginx; el backend expone 3040).
-4. **Automatic deployment on push**: desactivar el auto-deploy nativo de Coolify (para que el disparo lo controlen los 4 GitHub Actions con `paths:` y no se redeploye por cambios ajenos a la carpeta). En su lugar, copiar la **Webhook URL** de cada app (Settings → Webhooks) y pegarla como el secret de GitHub correspondiente (paso 2.3).
-5. Variables de entorno:
-   - **Backend** (`viatika-back/.env.example` tiene la lista completa): `MONGO_URI`, `CLIENT_ID`, `CLIENT_SECRET`, `PORT=3040` (⚠️ ver nota abajo), `PASSRAMDOM`, `JWT_SECRET`, `EMAIL_PROVIDER`, `USER_EMAIL`, `PASSWORD_EMAIL`, `EMAILS_ENABLED`, `OPENAI_API_KEY`, `AWS_S3_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `GHP_TOKEN`, `SCHEDULER_TEST_KEY`. Valores distintos para develop vs. main (Mongo/S3 separados si aplica).
-   - **Frontend**: marcar como **Build Variables** (no runtime — se consumen en build time vía `scripts/set-env.js`/Docker `ARG`): `API_URL` (develop → `BACKEND_DOMAIN_DEVELOP`, main → `BACKEND_DOMAIN_PROD`, con `https://` y sufijo `/api`), `GOOGLE_MAPS_API_KEY`, opcional `STORAGE_KEY`/`STORAGE_PATH`.
-6. Domains: agregar el dominio de la tabla; Coolify emite el certificado TLS automáticamente (Let's Encrypt) una vez el DNS resuelva (paso 4).
-7. Health check: backend no tiene endpoint `/health` explícito revisado — usar `GET /api` o desactivar health check si responde 404; frontend usa el default de nginx (200 en `/`).
-
-⚠️ **Nota puerto backend**: `viatika-back/Dockerfile` hace `EXPOSE 3040` y el `CMD` corre `dist/main` que escucha en `process.env.PORT ?? 3000`. Definir `PORT=3040` como variable de entorno en Coolify para que coincida con el puerto expuesto/mapeado (si se deja el default de `.env.example`, 3016, Coolify enrutaría al puerto equivocado).
+⚠️ **Nota build args frontend**: el flag `inject_build_args_to_dockerfile` no existe en esta versión de Coolify (4.1.2) — devolvió 422. El Dockerfile del frontend ya declara los `ARG` necesarios; si tras el primer build exitoso `API_URL`/`GOOGLE_MAPS_API_KEY` no llegan al bundle (revisar `environment.prod.ts` generado o el bundle servido), avisar para ajustar la estrategia (por ejemplo, pasar los valores como `docker_compose_custom_build_command` o via `dockerfile` inline).
 
 ---
 
-## 4. Cloudflare DNS
+## 5. Decomisionar Netlify (pendiente, hacer después de validar los deploys)
 
-Con `CLOUDFLARE_API_TOKEN`, crear/actualizar 4 registros (tipo A o CNAME, según si Coolify usa IP fija o proxy) apuntando al servidor de Coolify (`161.132.166.142`), con proxy de Cloudflare **desactivado** (DNS only) si Coolify gestiona su propio TLS vía Let's Encrypt, para evitar conflicto de certificados:
-
-- `apidetroit.viatika.tecdidata.com` → backend-main
-- `detroit.viatika.tecdidata.com` → frontend-main
-- `qa-apidetroit-viatika.tecdidata.com` → backend-develop
-- `qa-detroit-viatika.tecdidata.com` → frontend-develop
+1. Confirmar que `frontend-main` y `frontend-develop` en Coolify sirven correctamente en sus dominios antes de tocar nada.
+2. En Netlify: quitar el dominio custom del sitio (o pausar el sitio).
+3. Eliminar el sitio de Netlify cuando esté confirmado que no hay tráfico.
+4. `viatika/netlify.toml` puede eliminarse del repo (ya no se usa).
 
 ---
 
-## 5. Decomisionar Netlify
+## Checklist de verificación
 
-1. Confirmar que `frontend-main` y `frontend-develop` en Coolify sirven correctamente en sus dominios QA antes de tocar nada en producción.
-2. En Netlify: quitar el dominio custom del sitio (o pausar el sitio) una vez el DNS de Cloudflare apunte a Coolify.
-3. Eliminar el sitio de Netlify (o dejarlo desconectado del repo) cuando esté confirmado que no hay tráfico.
-4. `viatika/netlify.toml` puede quedar en el repo sin efecto (no se usa fuera de Netlify) o eliminarse — recomendado eliminarlo para que no confunda a futuro.
-
----
-
-## 6. Checklist de verificación
-
-- [ ] `git log` en `main` y `develop` del monorepo muestra ambas carpetas.
-- [ ] Push a `develop` solo con cambios en `viatika-back/**` → solo corre `deploy-backend-develop.yml`.
-- [ ] Push a `develop` solo con cambios en `viatika/**` → solo corre `deploy-frontend-develop.yml`.
-- [ ] Las 4 apps en Coolify responden en sus dominios con TLS válido.
-- [ ] Frontend develop apunta a backend develop (`API_URL` correcto), frontend prod a backend prod.
+- [x] `git log` en `main` y `develop` del monorepo muestra ambas carpetas.
+- [x] 4 apps creadas en Coolify con config correcta.
+- [x] Secrets de GitHub Actions cargados.
+- [x] DNS de Cloudflare apuntando a Coolify.
+- [ ] SSH del servidor Coolify funcionando (bloqueado, ver sección 0).
+- [ ] Las 4 apps responden en sus dominios con TLS válido.
+- [ ] Push a `develop` solo con cambios en `viatika-back/**` → solo corre `deploy-backend-develop.yml` (probar una vez el deploy inicial funcione).
 - [ ] Login, subida de comprobantes (S3) y notificaciones por email funcionan en ambos entornos.
-- [ ] Netlify decomisionado y DNS solo apunta a Coolify.
+- [ ] Netlify decomisionado.
 - [ ] `detroit-viatika-back` archivado en GitHub.
-
----
-
-## Pendiente de tu confirmación antes de ejecutar
-
-Este documento es el plan; nada de lo anterior se ha ejecutado (no se crearon repos, apps de Coolify ni registros DNS). Cuando confirmes, se ejecuta en este orden: (1) restructurar y pushear el monorepo, (2) crear las 4 apps en Coolify, (3) DNS, (4) verificar, (5) apagar Netlify y archivar el repo viejo.
