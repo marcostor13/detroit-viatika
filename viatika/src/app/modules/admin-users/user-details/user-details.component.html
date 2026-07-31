@@ -1,0 +1,127 @@
+<div class="w-full p-4 sm:p-5 lg:p-8">
+
+  <!-- Header -->
+  <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
+    <div class="flex items-center gap-3 min-w-0">
+      <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" class="shrink-0" (clicked)="goBack()">
+        <app-icon name="arrow-left" size="sm" />
+      </app-button>
+      <h1 class="text-xl sm:text-2xl font-bold text-secondary truncate">Detalles del Colaborador</h1>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <app-button variant="secondary" size="sm" label="Editar" (clicked)="goToEdit()">
+        <app-icon name="edit" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="Permisos" (clicked)="goToPermisos()">
+        <app-icon name="shield-check" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="" (clicked)="goToRendiciones()">
+        <app-icon name="file-text" size="sm" />
+        <span class="hidden sm:inline">Ver Rendiciones</span>
+        <span class="sm:hidden">Rendiciones</span>
+      </app-button>
+    </div>
+  </div>
+
+  @if (!user) {
+  <div class="flex justify-center py-16">
+    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+  </div>
+  } @else {
+
+  <!-- User Card -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6 mb-6">
+    <div class="flex flex-col sm:flex-row gap-5 sm:gap-6">
+      <!-- Avatar -->
+      <div class="flex-shrink-0 flex items-start">
+        <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary font-bold text-xl sm:text-2xl">
+          {{ user.name.charAt(0).toUpperCase() }}
+        </div>
+      </div>
+      <!-- Info -->
+      <div class="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="min-w-0">
+          <p class="text-xs text-tertiary mb-0.5">Nombre</p>
+          <p class="font-semibold text-secondary truncate">{{ user.name }}</p>
+        </div>
+        <div class="min-w-0">
+          <p class="text-xs text-tertiary mb-0.5">Email</p>
+          <p class="font-medium text-secondary truncate" [title]="user.email">{{ user.email }}</p>
+        </div>
+        <div>
+          <p class="text-xs text-tertiary mb-0.5">Rol</p>
+          <app-badge variant="info">{{ roleName }}</app-badge>
+        </div>
+        <div>
+          <p class="text-xs text-tertiary mb-0.5">Estado</p>
+          <app-badge [variant]="user.isActive ? 'success' : 'error'">
+            {{ user.isActive ? 'Activo' : 'Inactivo' }}
+          </app-badge>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Datos bancarios -->
+  @if (user.bankAccount?.bankName || user.bankAccount?.accountNumber || user.bankAccount?.cci) {
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6 mb-6">
+    <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-4">Datos Bancarios</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      @if (user.bankAccount?.bankName) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">Banco</p>
+        <p class="font-semibold text-secondary truncate" [title]="user.bankAccount?.bankName ?? ''">{{ user.bankAccount?.bankName }}</p>
+      </div>
+      }
+      @if (user.bankAccount?.accountNumber) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">N° de Cuenta</p>
+        <p class="font-semibold text-secondary font-mono truncate" [title]="user.bankAccount?.accountNumber ?? ''">{{ user.bankAccount?.accountNumber }}</p>
+      </div>
+      }
+      @if (user.bankAccount?.cci) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">CCI</p>
+        <p class="font-semibold text-secondary font-mono truncate" [title]="user.bankAccount?.cci ?? ''">{{ user.bankAccount?.cci }}</p>
+      </div>
+      }
+      @if (user.bankAccount?.accountType) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">Tipo de cuenta</p>
+        <p class="font-semibold text-secondary capitalize truncate">{{ user.bankAccount?.accountType }}</p>
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- Notificaciones por correo -->
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6 mb-6">
+    <div class="flex items-center justify-between gap-4">
+      <div class="min-w-0 flex-1">
+        <h2 class="text-sm font-bold text-secondary uppercase tracking-wider">Notificaciones por correo</h2>
+        <p class="text-xs text-tertiary mt-1">
+          @if (user.emailNotificationsEnabled) {
+            El colaborador recibe notificaciones por correo electronico.
+          } @else {
+            El colaborador no recibe notificaciones por correo electronico.
+          }
+        </p>
+      </div>
+      <button
+        (click)="toggleNotifications()"
+        [disabled]="isTogglingNotifications()"
+        class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
+        [ngClass]="user.emailNotificationsEnabled ? 'bg-primary' : 'bg-tertiary/30'"
+        [title]="user.emailNotificationsEnabled ? 'Desactivar notificaciones' : 'Activar notificaciones'"
+      >
+        <span
+          class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition duration-200 ease-in-out"
+          [ngClass]="user.emailNotificationsEnabled ? 'translate-x-5' : 'translate-x-0'"
+        ></span>
+      </button>
+    </div>
+  </div>
+
+  } <!-- end @if user -->
+</div>

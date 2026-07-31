@@ -1,0 +1,90 @@
+@if (notificationService.visible | async) {
+  @let type = (notificationService.type | async);
+
+  <div class="fixed top-5 right-5 z-[9999] pointer-events-none">
+    <div
+      class="toast-wrap pointer-events-auto flex items-start gap-3.5 bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] border overflow-hidden w-[360px] max-w-[calc(100vw-2.5rem)] relative"
+      [class.border-l-4]="true"
+      [ngClass]="{
+        'border-green-200 border-l-green-500': type === 'success',
+        'border-red-200 border-l-red-500':     type === 'error',
+        'border-amber-200 border-l-amber-500': type === 'warning'
+      }"
+    >
+      <!-- Content row -->
+      <div class="flex items-start gap-3 flex-1 px-4 pt-4 pb-5">
+
+        <!-- Icon badge -->
+        <div
+          class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-0.5"
+          [ngClass]="{
+            'bg-green-100 text-green-600': type === 'success',
+            'bg-red-100 text-red-600':     type === 'error',
+            'bg-amber-100 text-amber-600': type === 'warning'
+          }"
+        >
+          <!-- Success -->
+          @if (type === 'success') {
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          }
+          <!-- Error -->
+          @if (type === 'error') {
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          }
+          <!-- Warning -->
+          @if (type === 'warning') {
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0 3.75h.008v.008H12v-.008zm-9.303-3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 13.124z" />
+            </svg>
+          }
+        </div>
+
+        <!-- Label + message -->
+        <div class="flex-1 min-w-0">
+          <p
+            class="text-[11px] font-semibold uppercase tracking-wider mb-0.5"
+            [ngClass]="{
+              'text-green-600': type === 'success',
+              'text-red-600':   type === 'error',
+              'text-amber-600': type === 'warning'
+            }"
+          >
+            @if (type === 'success') { Éxito }
+            @if (type === 'error')   { Error }
+            @if (type === 'warning') { Advertencia }
+          </p>
+          <p class="text-sm text-gray-700 leading-snug">{{ notificationService.message | async }}</p>
+        </div>
+
+        <!-- Close button -->
+        <button
+          (click)="notificationService.hide()"
+          class="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors mt-0.5"
+          aria-label="Cerrar"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+      </div>
+
+      <!-- Progress bar -->
+      <div class="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-100">
+        <div
+          class="progress-bar h-full rounded-full"
+          [ngClass]="{
+            'bg-green-400': type === 'success',
+            'bg-red-400':   type === 'error',
+            'bg-amber-400': type === 'warning'
+          }"
+        ></div>
+      </div>
+
+    </div>
+  </div>
+}

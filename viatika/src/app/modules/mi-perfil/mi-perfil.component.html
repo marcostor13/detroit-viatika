@@ -1,0 +1,105 @@
+<div class="p-4 sm:p-6">
+  <div class="mb-6 sm:mb-8">
+    <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-1 sm:mb-2">Mi Perfil</h1>
+    <p class="text-sm sm:text-base text-gray-600">Gestiona tu información personal y contraseña</p>
+  </div>
+
+  <section class="bg-white rounded-lg shadow-lg p-5 sm:p-6 mb-8">
+    <h2 class="text-lg sm:text-xl font-semibold text-gray-900 mb-5 sm:mb-6">Perfil</h2>
+
+    @if (!showProfileForm && !showPasswordForm) {
+    <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-5">
+      <div class="flex items-center gap-4 md:gap-5 min-w-0 flex-1">
+        <div class="relative w-16 h-16 flex-shrink-0">
+          @if (currentUser?.profilePic) {
+            <img [src]="currentUser!.profilePic" alt="Foto de perfil" class="w-16 h-16 rounded-full object-cover border-2 border-gray-200" />
+          } @else {
+            <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center border-2 border-gray-200">
+              <span class="text-primary font-bold text-xl">{{ (currentUser?.name || '?')[0].toUpperCase() }}</span>
+            </div>
+          }
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-base font-semibold text-gray-900 truncate">{{ currentUser?.name || '—' }}</p>
+          <p class="text-sm text-gray-500 truncate" [title]="currentUser?.email ?? ''">{{ currentUser?.email }}</p>
+          <p class="text-xs text-gray-400 mt-0.5 truncate">{{ currentUser?.roleName || currentUser?.role?.name }}</p>
+        </div>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto md:flex-shrink-0">
+        <app-button label="Editar perfil" variant="primary" size="md" (clicked)="editProfile()" />
+        <app-button label="Cambiar contraseña" variant="secondary" size="md" (clicked)="editPassword()" />
+      </div>
+    </div>
+    }
+
+    @if (showProfileForm) {
+    <div class="space-y-5 max-w-md">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-2">Foto de perfil</label>
+        <div class="flex items-center gap-4">
+          <label for="profilePicInput" class="relative w-16 h-16 flex-shrink-0 cursor-pointer group">
+            @if (profilePicPreview || currentUser?.profilePic) {
+              <img [src]="profilePicPreview || currentUser!.profilePic" alt="Preview" class="w-16 h-16 rounded-full object-cover border-2 border-gray-200" />
+            } @else {
+              <div class="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center border-2 border-gray-200">
+                <span class="text-primary font-bold text-xl">{{ (currentUser?.name || '?')[0].toUpperCase() }}</span>
+              </div>
+            }
+            <div class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+              </svg>
+            </div>
+          </label>
+          <div class="flex-1">
+            <input id="profilePicInput" type="file" accept="image/*" class="hidden" (change)="onProfilePicSelected($event)" [disabled]="isUploadingProfilePic || isSavingProfile" />
+            <p class="text-xs text-gray-500">JPG, PNG. Máximo 2MB</p>
+            @if (isUploadingProfilePic) {
+            <div class="mt-2">
+              <div class="w-full bg-gray-200 rounded-full h-1.5">
+                <div class="bg-primary h-1.5 rounded-full transition-all duration-300" [style.width.%]="profilePicUploadProgress"></div>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">Subiendo... {{ profilePicUploadProgress }}%</p>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+      <div>
+        <label for="profileName" class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+        <input id="profileName" type="text" [(ngModel)]="profileName"
+          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+          placeholder="Tu nombre completo" />
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <app-button [label]="isSavingProfile || isUploadingProfilePic ? 'Guardando...' : 'Guardar'" variant="primary" size="md"
+          [disabled]="isSavingProfile || isUploadingProfilePic" (clicked)="saveProfile()" />
+        <app-button label="Cancelar" variant="secondary" size="md" [disabled]="isSavingProfile || isUploadingProfilePic" (clicked)="cancelProfileEdit()" />
+      </div>
+    </div>
+    }
+
+    @if (showPasswordForm) {
+    <div class="space-y-4 max-w-md">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Nueva contraseña</label>
+        <input type="password" [(ngModel)]="newPassword"
+          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+          placeholder="Mínimo 8 caracteres" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Confirmar contraseña</label>
+        <input type="password" [(ngModel)]="confirmPassword"
+          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm"
+          placeholder="Repite la contraseña" />
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <app-button [label]="isSavingPassword ? 'Guardando...' : 'Guardar contraseña'" variant="primary" size="md"
+          [disabled]="isSavingPassword" (clicked)="savePassword()" />
+        <app-button label="Cancelar" variant="secondary" size="md" [disabled]="isSavingPassword" (clicked)="cancelPasswordEdit()" />
+      </div>
+    </div>
+    }
+  </section>
+</div>

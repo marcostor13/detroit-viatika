@@ -1,0 +1,226 @@
+<div class="admin-users">
+  <div class="p-5 flex flex-col gap-6">
+
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div>
+        <h1 class="text-2xl font-bold text-secondary">Colaboradores</h1>
+        <p class="text-sm text-tertiary mt-0.5">{{ result().total }} {{ result().total === 1 ? 'usuario' : 'usuarios' }}</p>
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <app-button variant="secondary" size="md" label="Carga masiva" (clicked)="navigateToBulkImport()">
+          <app-icon name="upload" size="sm" />
+        </app-button>
+        <app-button label="Crear Usuario" variant="primary" size="md" (clicked)="redirectToCreateUser()">
+          <app-icon name="plus" size="sm" />
+        </app-button>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col sm:flex-row gap-3">
+      <div class="relative flex-1">
+        <app-icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" />
+        <input
+          type="text"
+          [(ngModel)]="searchText"
+          (ngModelChange)="applyFilters()"
+          placeholder="Buscar por nombre o email..."
+          class="w-full pl-9 pr-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+      <select
+        [(ngModel)]="filterRole"
+        (ngModelChange)="applyFilters()"
+        class="px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+      >
+        <option value="">Todos los roles</option>
+        @for (role of roleOptions; track role.value) {
+          <option [value]="role.value">{{ role.label }}</option>
+        }
+      </select>
+      <select
+        [(ngModel)]="filterStatus"
+        (ngModelChange)="applyFilters()"
+        class="px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
+      >
+        <option value="">Todos los estados</option>
+        <option value="active">Activos</option>
+        <option value="inactive">Inactivos</option>
+      </select>
+      @if (hasActiveFilters) {
+        <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearFilters()">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      }
+    </div>
+
+    <!-- Content -->
+    @if (filteredUsers.length === 0) {
+      @if (hasActiveFilters) {
+        <app-empty-state icon="search" title="Sin resultados" description="No hay usuarios que coincidan con los filtros aplicados.">
+          <app-button variant="ghost" size="sm" label="Limpiar filtros" (clicked)="clearFilters()" />
+        </app-empty-state>
+      } @else {
+        <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft">
+          <app-empty-state icon="users" title="No hay usuarios" description="Crea el primero con el botón de arriba" />
+        </div>
+      }
+    } @else {
+      <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft overflow-hidden">
+
+        <!-- Desktop table -->
+        <table class="hidden sm:table w-full text-sm">
+          <thead class="bg-background border-b border-tertiary/20">
+            <tr>
+              <th class="text-left px-5 py-3 text-xs font-semibold text-tertiary uppercase tracking-wider">Nombre</th>
+              <th class="text-left px-5 py-3 text-xs font-semibold text-tertiary uppercase tracking-wider">Email</th>
+              <th class="text-left px-5 py-3 text-xs font-semibold text-tertiary uppercase tracking-wider">Rol</th>
+              <th class="text-left px-5 py-3 text-xs font-semibold text-tertiary uppercase tracking-wider">Estado</th>
+              <th class="text-right px-5 py-3 text-xs font-semibold text-tertiary uppercase tracking-wider">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-tertiary/10">
+            @for (user of filteredUsers; track user._id) {
+              <tr class="hover:bg-background/50 transition-colors">
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0 uppercase select-none">
+                      {{ getInitials(user.name) }}
+                    </div>
+                    <span class="font-medium text-secondary">{{ user.name }}</span>
+                  </div>
+                </td>
+                <td class="px-5 py-3.5 text-tertiary">{{ user.email }}</td>
+                <td class="px-5 py-3.5">
+                  <app-badge [variant]="user.roleName === 'Coordinador' ? 'neutral' : 'info'">
+                    {{ user.roleName }}
+                  </app-badge>
+                </td>
+                <td class="px-5 py-3.5">
+                  <app-badge [variant]="user.isActive ? 'success' : 'warning'">
+                    {{ user.isActive ? 'Activo' : 'Inactivo' }}
+                  </app-badge>
+                </td>
+                <td class="px-5 py-3.5 text-right">
+                  <div class="flex justify-end gap-1">
+                    <button type="button"
+                      (click)="router.navigate(['/admin-users', user._id, 'details'])"
+                      class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors" title="Ver perfil">
+                      <app-icon name="eye" size="sm" />
+                    </button>
+                    <button type="button"
+                      (click)="redirectToCreateUser(user._id)"
+                      class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors" title="Editar">
+                      <app-icon name="edit" size="sm" />
+                    </button>
+                    <button type="button"
+                      (click)="toggleUserActive(user._id)"
+                      class="p-2 rounded-lg text-tertiary hover:text-warning-ink hover:bg-warning/10 transition-colors"
+                      [title]="user.isActive ? 'Desactivar' : 'Activar'">
+                      <app-icon name="refresh" size="sm" />
+                    </button>
+                    <button type="button"
+                      (click)="resetPassword(user._id)"
+                      class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors" title="Resetear contraseña">
+                      <app-icon name="shield-check" size="sm" />
+                    </button>
+                    <button type="button"
+                      (click)="deleteUser(user._id)"
+                      class="p-2 rounded-lg text-tertiary hover:text-error hover:bg-error/10 transition-colors" title="Eliminar">
+                      <app-icon name="trash" size="sm" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+
+        <!-- Mobile list -->
+        <div class="sm:hidden divide-y divide-tertiary/10">
+          @for (user of filteredUsers; track user._id) {
+            <div class="p-4 hover:bg-background/50 transition-colors">
+              <div class="flex items-center gap-3 mb-2.5">
+                <div class="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm uppercase shrink-0 select-none">
+                  {{ getInitials(user.name) }}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="font-semibold text-secondary truncate leading-tight">{{ user.name }}</p>
+                  <p class="text-xs text-tertiary truncate mt-0.5">{{ user.email }}</p>
+                </div>
+              </div>
+              <div class="flex gap-2 mb-3">
+                <app-badge [variant]="user.roleName === 'Coordinador' ? 'neutral' : 'info'">
+                  {{ user.roleName }}
+                </app-badge>
+                <app-badge [variant]="user.isActive ? 'success' : 'warning'">
+                  {{ user.isActive ? 'Activo' : 'Inactivo' }}
+                </app-badge>
+              </div>
+              <div class="flex items-center gap-1">
+                <app-button variant="secondary" size="sm" label="Ver perfil" class="flex-1" (clicked)="router.navigate(['/admin-users', user._id, 'details'])">
+                  <app-icon name="eye" size="sm" />
+                </app-button>
+                <button type="button"
+                  (click)="redirectToCreateUser(user._id)"
+                  class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors" title="Editar">
+                  <app-icon name="edit" size="sm" />
+                </button>
+                <button type="button"
+                  (click)="toggleUserActive(user._id)"
+                  class="p-2 rounded-lg text-tertiary hover:text-warning-ink hover:bg-warning/10 transition-colors"
+                  [title]="user.isActive ? 'Desactivar' : 'Activar'">
+                  <app-icon name="refresh" size="sm" />
+                </button>
+                <button type="button"
+                  (click)="resetPassword(user._id)"
+                  class="p-2 rounded-lg text-tertiary hover:text-primary hover:bg-primary/10 transition-colors" title="Resetear contraseña">
+                  <app-icon name="shield-check" size="sm" />
+                </button>
+                <button type="button"
+                  (click)="deleteUser(user._id)"
+                  class="p-2 rounded-lg text-tertiary hover:text-error hover:bg-error/10 transition-colors" title="Eliminar">
+                  <app-icon name="trash" size="sm" />
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+
+        <app-paginator
+          [total]="result().total"
+          [page]="result().page"
+          [pages]="result().pages"
+          [limit]="result().limit"
+          (pageChange)="onPageChange($event)"
+          (limitChange)="onLimitChange($event)"
+        />
+      </div>
+    }
+
+  </div>
+</div>
+
+<!-- Modal contrasena reseteada -->
+<app-modal [open]="showResetPasswordModal" title="Contrasena reseteada" size="sm" (closed)="closeResetPasswordModal()">
+  <p class="text-sm text-tertiary -mt-2 mb-4">
+    Comparte esta contrasena temporal con el colaborador. Al iniciar sesion se le pedira cambiarla.
+  </p>
+  <div class="bg-background rounded-xl border border-tertiary/20 p-3 flex items-center justify-between gap-3 mb-4">
+    <span class="font-mono text-sm text-secondary select-all tracking-wide">{{ resetPasswordTemp }}</span>
+    <app-button
+      variant="ghost"
+      size="sm"
+      [label]="resetPasswordCopied ? 'Copiado' : 'Copiar'"
+      (clicked)="copyResetPassword()"
+    />
+  </div>
+  <app-button
+    label="Cerrar"
+    variant="primary"
+    size="md"
+    [fullWidth]="true"
+    (clicked)="closeResetPasswordModal()"
+  />
+</app-modal>

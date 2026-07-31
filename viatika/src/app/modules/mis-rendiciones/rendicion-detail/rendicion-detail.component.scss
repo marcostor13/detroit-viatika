@@ -1,0 +1,14 @@
+/* Acciones: ancho completo en mobile (touch targets ≥44px), inline desde md */
+.rendicion-actions {
+  app-button ::ng-deep button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  @media (min-width: 768px) {
+    app-button ::ng-deep button {
+      width: auto;
+      min-height: unset;
+    }
+  }
+}

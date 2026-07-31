@@ -1,0 +1,442 @@
+<div class="p-5 flex flex-col gap-6">
+
+  <!-- Header -->
+  <div class="flex items-center gap-3">
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" (clicked)="back()">
+      <app-icon name="arrow-left" size="sm" />
+    </app-button>
+    <div>
+      <h1 class="text-2xl font-bold text-secondary">
+        {{ id ? 'Editar Colaborador' : 'Nuevo Colaborador' }}
+      </h1>
+      <p class="text-sm text-tertiary mt-0.5">
+        {{ id ? 'Modifica los datos del colaborador' : 'Completa los campos para crear un nuevo colaborador' }}
+      </p>
+    </div>
+  </div>
+
+  <!-- Step indicator (new user + role requiring permissions + role selected) -->
+  @if (!id && form.get('roleId')?.value && selectedRoleNeedsPermissions) {
+    <div class="flex items-center gap-3 max-w-xl">
+      <div class="flex items-center gap-2">
+        <div
+          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors"
+          [ngClass]="step === 1 ? 'bg-primary text-white' : 'bg-primary/15 text-primary'"
+        >1</div>
+        <span class="text-sm font-medium" [ngClass]="step === 1 ? 'text-secondary' : 'text-tertiary'">Datos</span>
+      </div>
+      <div class="flex-1 h-px bg-tertiary/20"></div>
+      <div class="flex items-center gap-2">
+        <div
+          class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors"
+          [ngClass]="step === 2 ? 'bg-primary text-white' : 'bg-tertiary/15 text-tertiary'"
+        >2</div>
+        <span class="text-sm font-medium" [ngClass]="step === 2 ? 'text-secondary' : 'text-tertiary'">Permisos</span>
+      </div>
+    </div>
+  }
+
+  <!-- Step 1: User details form -->
+  @if (step === 1) {
+    <form [formGroup]="form" class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-xl">
+      <div class="flex flex-col gap-5">
+
+        <!-- Nombre -->
+        <app-input
+          label="Nombre"
+          type="text"
+          formControlName="name"
+          placeholder="Nombre completo"
+          [required]="true"
+          [error]="name?.invalid && name?.touched ? 'El nombre es requerido' : ''"
+        />
+
+        <!-- Email -->
+        <app-input
+          label="Email"
+          type="email"
+          formControlName="email"
+          placeholder="correo@empresa.com"
+          [required]="true"
+          [error]="email?.invalid && email?.touched ? 'El email es requerido y debe ser válido' : ''"
+        />
+
+        <!-- Rol -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Rol *</label>
+          <select
+            formControlName="roleId"
+            class="h-[42px] px-3 rounded-xl border bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+            [ngClass]="roleId?.invalid && roleId?.touched ? 'border-red-400' : 'border-tertiary/30'"
+          >
+            <option value="" disabled>Selecciona un rol</option>
+            @for (role of roles; track role._id) {
+              <option [value]="role._id">{{ role.name }}</option>
+            }
+          </select>
+          @if (roleId?.invalid && roleId?.touched) {
+            <p class="text-xs text-red-500">El rol es requerido</p>
+          }
+        </div>
+
+        <!-- Full access note for admin roles (new user only) -->
+        @if (!id && form.get('roleId')?.value && selectedRoleIsAdmin) {
+          <div class="border-t border-tertiary/10 pt-4">
+            <div class="flex items-center gap-2 px-3 py-2.5 bg-primary/5 border border-primary/20 rounded-xl">
+              <app-icon name="circle-check" size="sm" class="text-primary flex-shrink-0" />
+              <p class="text-sm text-secondary">Este rol tiene <span class="font-semibold text-primary">acceso completo</span> a la empresa por su rol. No requiere configurar permisos individuales.</p>
+            </div>
+          </div>
+        }
+
+        <!-- Separador campos opcionales -->
+        <div class="border-t border-tertiary/10 pt-1">
+          <p class="text-xs text-tertiary font-medium uppercase tracking-wider">Datos adicionales <span class="font-normal normal-case">(opcionales)</span></p>
+        </div>
+
+        <!-- DNI -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">DNI</label>
+          <input
+            type="text"
+            formControlName="dni"
+            placeholder="Ej: 12345678"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <!-- Código de Empleado -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Código de Empleado</label>
+          <input
+            type="text"
+            formControlName="employeeCode"
+            placeholder="Ej: EMP-001"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <!-- Área -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Área</label>
+          <input
+            type="text"
+            formControlName="area"
+            placeholder="Ej: Operaciones"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <!-- Cargo -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Cargo</label>
+          <input
+            type="text"
+            formControlName="cargo"
+            placeholder="Ej: Analista de campo"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <!-- Dirección -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Dirección</label>
+          <input
+            type="text"
+            formControlName="address"
+            placeholder="Ej: Av. Lima 123, Lima"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <!-- Teléfono -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Teléfono</label>
+          <input
+            type="text"
+            formControlName="phone"
+            placeholder="Ej: 987654321"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <!-- Datos bancarios -->
+        <div class="border-t border-tertiary/10 pt-1">
+          <p class="text-xs text-tertiary font-medium uppercase tracking-wider">Datos bancarios <span class="font-normal normal-case">(opcionales)</span></p>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Banco</label>
+          <input
+            type="text"
+            formControlName="bankName"
+            placeholder="Ej: BCP, Interbank, BBVA"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">N° de Cuenta</label>
+          <input
+            type="text"
+            formControlName="accountNumber"
+            placeholder="Ej: 00000000000"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">CCI</label>
+          <input
+            type="text"
+            formControlName="cci"
+            placeholder="Ej: 00320000000000000000"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Tipo de cuenta</label>
+          <select
+            formControlName="accountType"
+            class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+          >
+            <option value="">Sin especificar</option>
+            <option value="ahorros">Ahorros</option>
+            <option value="corriente">Corriente</option>
+          </select>
+        </div>
+
+        <!-- Cadena de aprobadores (solo si el rol es Colaborador) -->
+        @if (selectedRoleIsCollaborador) {
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Aprobadores (en orden)</label>
+
+            @if (approverIds.length > 0) {
+              <ol class="flex flex-col gap-1.5 mb-1">
+                @for (aid of approverIds; track aid; let i = $index) {
+                  <li class="flex items-center gap-2 px-3 py-2 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary">
+                    <span class="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">{{ i + 1 }}</span>
+                    <span class="flex-1 truncate">{{ approverName(aid) }}</span>
+                    <button type="button" class="text-tertiary hover:text-primary disabled:opacity-30" [disabled]="i === 0" (click)="moveApproverUp(i)" title="Subir">
+                      <app-icon name="chevron-up" size="sm" />
+                    </button>
+                    <button type="button" class="text-tertiary hover:text-primary disabled:opacity-30" [disabled]="i === approverIds.length - 1" (click)="moveApproverDown(i)" title="Bajar">
+                      <app-icon name="chevron-down" size="sm" />
+                    </button>
+                    <button type="button" class="text-tertiary hover:text-error" (click)="removeApprover(i)" title="Quitar">
+                      <app-icon name="close" size="sm" />
+                    </button>
+                  </li>
+                }
+              </ol>
+            }
+
+            @if (availableApproverCandidates.length > 0) {
+              <select
+                #approverSelect
+                (change)="addApprover(approverSelect.value); approverSelect.value = ''"
+                class="h-[42px] px-3 rounded-xl border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+              >
+                <option value="">Añadir aprobador...</option>
+                @for (u of availableApproverCandidates; track u._id) {
+                  <option [value]="u._id">{{ u.name }} — {{ u.email }}</option>
+                }
+              </select>
+            }
+            <p class="text-xs text-tertiary">Solo usuarios con rol Coordinador pueden ser aprobadores. Aprueban en el orden mostrado: el primero, luego el segundo, etc. El colaborador necesita al menos uno para poder solicitar anticipos/viáticos.</p>
+          </div>
+        }
+
+        <!-- Acciones -->
+        <div class="flex gap-3 pt-1">
+          @if (!id && selectedRoleNeedsPermissions) {
+            <app-button
+              label="Siguiente: Permisos"
+              variant="primary"
+              size="md"
+              (clicked)="goToStep2()"
+            />
+          } @else if (!id) {
+            <app-button
+              label="Crear colaborador"
+              variant="primary"
+              size="md"
+              (clicked)="createUser()"
+            />
+          } @else {
+            <app-button
+              label="Actualizar"
+              variant="primary"
+              size="md"
+              (clicked)="updateUser()"
+            />
+          }
+          <app-button label="Cancelar" variant="secondary" size="md" (clicked)="back()" />
+        </div>
+
+      </div>
+    </form>
+  }
+
+  <!-- Step 2: Permissions -->
+  @if (step === 2 && !id) {
+    <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 max-w-xl flex flex-col gap-6">
+
+      <!-- Modules -->
+      <div>
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Acceso a módulos</p>
+        <div class="flex flex-col gap-2">
+          @for (mod of step2Modules; track mod.key) {
+            <label class="flex items-start gap-3 p-2.5 rounded-xl border border-tertiary/10 hover:bg-background cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                class="mt-0.5 h-4 w-4 rounded border-tertiary/30 accent-primary cursor-pointer flex-shrink-0"
+                [checked]="hasModule(mod.key)"
+                (change)="toggleModule(mod.key, $any($event.target).checked)"
+              />
+              <div>
+                <p class="text-sm font-medium text-secondary">{{ mod.label }}</p>
+                <p class="text-xs text-tertiary mt-0.5">{{ mod.description }}</p>
+              </div>
+            </label>
+          }
+        </div>
+      </div>
+
+      <!-- Approval permissions (not shown for Colaborador) -->
+      @if (showApprovalPermissions) {
+      <div class="border-t border-tertiary/10 pt-5">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Aprobación de viáticos</p>
+        <div class="flex flex-col gap-2">
+          <label class="flex items-start gap-3 p-2.5 rounded-xl border border-tertiary/10 hover:bg-background cursor-pointer transition-colors">
+            <input type="checkbox" class="mt-0.5 h-4 w-4 rounded accent-primary cursor-pointer flex-shrink-0" [(ngModel)]="permissions.canApproveL1" />
+            <div>
+              <p class="text-sm font-medium text-secondary">Aprobación Nivel 1</p>
+              <p class="text-xs text-tertiary mt-0.5">Puede aprobar o rechazar viáticos en primera instancia.</p>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 p-2.5 rounded-xl border border-tertiary/10 hover:bg-background cursor-pointer transition-colors">
+            <input type="checkbox" class="mt-0.5 h-4 w-4 rounded accent-primary cursor-pointer flex-shrink-0" [(ngModel)]="permissions.canApproveL2" />
+            <div>
+              <p class="text-sm font-medium text-secondary">Aprobación Nivel 2</p>
+              <p class="text-xs text-tertiary mt-0.5">Puede aprobar montos altos, registrar pagos y liquidaciones.</p>
+            </div>
+          </label>
+        </div>
+      </div>
+      }
+
+      <!-- Categories -->
+      <div class="border-t border-tertiary/10 pt-5">
+        <div class="flex items-center justify-between mb-1">
+          <p class="text-xs font-semibold text-tertiary uppercase tracking-wider">Categorías permitidas</p>
+          @if (!categoriesLoading()) {
+            <span class="text-xs text-tertiary">{{ selectedCategoryCount }} / {{ totalCategoryCount }}</span>
+          }
+        </div>
+        <p class="text-xs text-tertiary mb-4">Define qué categorías puede usar este colaborador al registrar gastos.</p>
+
+        @if (categoriesLoading()) {
+          <div class="flex justify-center py-6">
+            <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+          </div>
+        } @else {
+
+          <!-- Quick groups -->
+          @if (groups().length > 0) {
+            <div class="mb-4">
+              <p class="text-xs text-tertiary font-medium mb-2">Grupos rápidos</p>
+              <div class="flex flex-wrap gap-2">
+                @for (group of groups(); track group._id) {
+                  <button
+                    (click)="toggleGroup(group)"
+                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors"
+                    [class]="groupIsFullySelected(group)
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : groupIsPartiallySelected(group)
+                        ? 'border-primary/40 bg-primary/5 text-primary/70'
+                        : 'border-tertiary/30 text-tertiary hover:border-primary/30 hover:bg-background'"
+                  >
+                    {{ group.name }}
+                    <span class="opacity-60">({{ group.categoryIds.length }})</span>
+                  </button>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Search + bulk actions -->
+          <div class="flex items-center gap-3 mb-3">
+            <div class="relative flex-1">
+              <app-icon name="search" size="sm" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-tertiary" />
+              <input
+                type="text"
+                [value]="categorySearch()"
+                (input)="categorySearch.set($any($event.target).value)"
+                placeholder="Buscar categoría..."
+                class="w-full h-[34px] pl-8 pr-3 rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+            </div>
+            <app-button variant="ghost" size="sm" label="Todas" (clicked)="selectAllCategories()" />
+            <app-button variant="ghost" size="sm" label="Ninguna" (clicked)="clearAllCategories()" />
+          </div>
+
+          <!-- Category list -->
+          @if (allCategories().length === 0) {
+            <p class="text-sm text-tertiary text-center py-6">No hay categorías disponibles. Crea categorías desde Configuración.</p>
+          } @else {
+            <div class="max-h-64 overflow-y-auto rounded-xl border border-tertiary/20 divide-y divide-tertiary/10">
+              @for (cat of filteredCategories; track cat._id) {
+                <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-background cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-tertiary/30 accent-primary cursor-pointer"
+                    [checked]="hasCategory(cat._id!)"
+                    (change)="toggleCategory(cat._id!, $any($event.target).checked)"
+                  />
+                  <div class="flex-1 min-w-0">
+                    <span class="text-sm text-secondary">{{ cat.name }}</span>
+                    @if (cat.cuenta) {
+                      <span class="ml-2 text-xs text-tertiary">{{ cat.cuenta }}</span>
+                    }
+                  </div>
+                  @if (cat.limit != null) {
+                    <span class="text-xs text-primary whitespace-nowrap">S/ {{ cat.limit | number:'1.2-2' }}</span>
+                  }
+                </label>
+              }
+            </div>
+          }
+
+        }
+      </div>
+
+      <!-- Actions -->
+      <div class="flex gap-3 border-t border-tertiary/10 pt-4">
+        <app-button label="Crear colaborador" variant="primary" size="md" (clicked)="createUser()" />
+        <app-button label="Atrás" variant="secondary" size="md" (clicked)="step = 1" />
+      </div>
+
+    </div>
+  }
+
+</div>
+
+<!-- Modal contraseña temporal -->
+<app-modal [open]="showPasswordModal" title="Usuario creado" size="sm" (closed)="closePasswordModal()">
+  <p class="text-sm text-tertiary -mt-2 mb-4">
+    Comparte esta contrasena temporal con el colaborador. Al iniciar sesion se le pedira cambiarla.
+  </p>
+  <div class="bg-background rounded-xl border border-tertiary/20 p-3 flex items-center justify-between gap-3 mb-4">
+    <span class="font-mono text-sm text-secondary select-all tracking-wide">{{ temporaryPassword }}</span>
+    <app-button variant="ghost" size="sm" [label]="passwordCopied ? 'Copiado' : 'Copiar'" (clicked)="copyPassword()" />
+  </div>
+  <app-button
+    label="Continuar"
+    variant="primary"
+    size="md"
+    [fullWidth]="true"
+    (clicked)="closePasswordModal()"
+  />
+</app-modal>

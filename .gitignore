@@ -1,0 +1,27 @@
+# Root-level ignores for the monorepo. viatika/ and viatika-back/ keep their
+# own .gitignore for tool-specific build output (dist, node_modules, etc).
+
+# Backups of the old standalone repos' .git dirs, kept locally as a safety net
+# during the monorepo migration. Not meant to be tracked.
+/viatika/.git.bak/
+/viatika-back/.git.bak/
+_tmp_main/
+
+# Local tool state, not shared with the team.
+.claude/settings.local.json
+.codebase-memory/
+
+.env.deploy
+.env
+.env.*
+!.env.example
+!*/.env.example
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json

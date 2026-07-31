@@ -1,0 +1,103 @@
+<div class="px-5 py-6 max-w-4xl mx-auto">
+  <!-- Header -->
+  <div class="flex items-center gap-4 mb-8">
+    <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" (clicked)="goBack()">
+      <app-icon name="arrow-left" size="md" />
+    </app-button>
+    <h1 class="text-2xl font-bold text-secondary">Detalle de Comprobante</h1>
+  </div>
+
+  @if(isLoading) {
+    <div class="flex justify-center p-12">
+      <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+    </div>
+  } @else if(invoice) {
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Left Column: Main Info -->
+      <div class="md:col-span-2 space-y-6">
+
+        <!-- Provider Card -->
+        <app-card [hover]="false">
+          <h2 class="text-sm font-semibold text-tertiary uppercase tracking-wider mb-4">Información del Emisor</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
+            <div>
+              <p class="text-xs text-tertiary/70">Razón Social</p>
+              <p class="font-medium text-secondary">{{ invoiceData.razonSocial || 'No disponible' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-tertiary/70">RUC</p>
+              <p class="font-medium text-secondary">{{ invoiceData.rucEmisor || 'No disponible' }}</p>
+            </div>
+            <div class="sm:col-span-2">
+              <p class="text-xs text-tertiary/70">Dirección</p>
+              <p class="font-medium text-secondary">{{ invoiceData.direccionEmisor || 'No disponible' }}</p>
+            </div>
+          </div>
+        </app-card>
+
+        <!-- Document Info Card -->
+        <app-card [hover]="false">
+          <h2 class="text-sm font-semibold text-tertiary uppercase tracking-wider mb-4">Datos del Comprobante</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
+            <div>
+              <p class="text-xs text-tertiary/70">Tipo de Documento</p>
+              <p class="font-medium text-secondary">{{ invoiceData.tipoComprobante || 'No disponible' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-tertiary/70">Serie y Número</p>
+              <p class="font-medium text-secondary">{{ invoiceData.serie }}-{{ invoiceData.correlativo }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-tertiary/70">Fecha de Emisión</p>
+              <p class="font-medium text-secondary">{{ invoiceData.fechaEmision || '-' }}</p>
+            </div>
+            <div>
+              <p class="text-xs text-tertiary/70">Moneda</p>
+              <p class="font-medium text-secondary">{{ invoiceData.moneda || 'No disponible' }}</p>
+            </div>
+          </div>
+        </app-card>
+
+      </div>
+
+      <!-- Right Column: Status and Actions -->
+      <div class="space-y-6">
+
+        <!-- Status Card -->
+        <app-card [hover]="false" class="text-center">
+          <h2 class="text-sm font-semibold text-tertiary uppercase tracking-wider mb-4">Estado del Gasto</h2>
+          <div class="flex justify-center mb-4">
+            <app-badge [variant]="getStatusVariant(invoice.status)" size="md">{{ getStatusName(invoice.status) }}</app-badge>
+          </div>
+          <p class="text-3xl font-bold text-secondary mb-1">
+            {{ invoiceData.moneda || 'S/' }} {{ invoiceData.montoTotal || invoice.total | number:'1.2-2' }}
+          </p>
+          <p class="text-xs text-tertiary/70">Total Comprobante</p>
+        </app-card>
+
+        <!-- Attachment Card -->
+        <app-card [hover]="false">
+          <div class="flex flex-col items-center">
+            <div class="w-16 h-16 bg-background rounded-lg flex items-center justify-center text-tertiary mb-4">
+              <app-icon name="file-text" size="lg" />
+            </div>
+
+            <app-button
+              label="Ver Archivo Original"
+              variant="primary"
+              size="sm"
+              (clicked)="downloadFile()"
+            >
+              <app-icon name="download" size="sm" />
+            </app-button>
+          </div>
+        </app-card>
+
+      </div>
+
+    </div>
+  } @else {
+    <app-empty-state icon="file-text" title="No se pudo cargar la información del comprobante." />
+  }
+</div>

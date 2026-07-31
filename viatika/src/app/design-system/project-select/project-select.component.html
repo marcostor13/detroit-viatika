@@ -1,0 +1,90 @@
+<div class="relative w-full">
+  <!-- Disparador -->
+  <button
+    #trigger
+    type="button"
+    (click)="toggle()"
+    [disabled]="disabled()"
+    [class.border-red-400]="invalid()"
+    [class.opacity-50]="disabled()"
+    [class.cursor-not-allowed]="disabled()"
+    class="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-left focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow {{ triggerClass() }}"
+  >
+    <span class="truncate" [class.text-gray-400]="!selectedLabel()" [class.text-gray-900]="selectedLabel()">
+      {{ selectedLabel() || placeholder() }}
+    </span>
+    <svg
+      class="w-4 h-4 text-gray-400 shrink-0 transition-transform"
+      [class.rotate-180]="open()"
+      viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
+    >
+      <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+    </svg>
+  </button>
+
+  <!-- Panel desplegable (position: fixed para no ser recortado por overflow) -->
+  @if (open()) {
+  <div
+    class="fixed z-[1000] rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden flex flex-col"
+    [style.top.px]="panelPos().top"
+    [style.left.px]="panelPos().left"
+    [style.width.px]="panelPos().width"
+    [style.max-height.px]="panelPos().maxHeight"
+    [style.transform]="panelPos().dropUp ? 'translateY(calc(-100% - 8px))' : 'translateY(8px)'"
+  >
+    <!-- Buscador -->
+    <div class="p-2 border-b border-gray-100 shrink-0">
+      <div class="relative">
+        <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd" />
+        </svg>
+        <input
+          #searchInput
+          type="text"
+          autofocus
+          [value]="search()"
+          (input)="search.set($any($event.target).value)"
+          (click)="$event.stopPropagation()"
+          placeholder="Buscar proyecto…"
+          class="w-full pl-8 pr-3 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+        />
+      </div>
+    </div>
+
+    <!-- Opciones -->
+    <ul class="flex-1 overflow-y-auto py-1">
+      @if (allowEmpty()) {
+      <li>
+        <button
+          type="button"
+          (click)="clear()"
+          class="w-full text-left px-3.5 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          [ngClass]="{ 'bg-gray-50': !selectedId() }"
+        >
+          {{ emptyLabel() }}
+        </button>
+      </li>
+      }
+      @for (p of filteredProjects(); track p._id) {
+      <li>
+        <button
+          type="button"
+          (click)="pick(p)"
+          class="w-full text-left px-3.5 py-2 text-sm text-gray-900 hover:bg-gray-50 flex items-center justify-between gap-2"
+          [ngClass]="{ 'bg-gray-50': selectedId() === p._id }"
+        >
+          <span class="truncate">{{ projectLabel(p) }}</span>
+          @if (selectedId() === p._id) {
+          <svg class="w-4 h-4 text-primary shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M16.704 5.29a.75.75 0 010 1.06l-7.5 7.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 111.06-1.06l2.97 2.97 6.97-6.97a.75.75 0 011.06 0z" clip-rule="evenodd" />
+          </svg>
+          }
+        </button>
+      </li>
+      } @empty {
+      <li class="px-3.5 py-3 text-sm text-gray-400 text-center">Sin resultados</li>
+      }
+    </ul>
+  </div>
+  }
+</div>
