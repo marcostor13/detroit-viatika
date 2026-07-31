@@ -16,4 +16,5 @@ jobs:
         run: |
           curl --silent --show-error --fail \
             --max-time 30 \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_API_TOKEN }}" \
             "${{ secrets.COOLIFY_BACKEND_PROD_WEBHOOK_URL }}"
