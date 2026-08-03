@@ -3,13 +3,45 @@
     <div>
       <h1 class="text-3xl font-bold text-secondary mb-2">Órdenes de Trabajo</h1>
       <p class="text-tertiary">
-        Gestiona las OT usadas para imputar el gasto de una factura por departamento.
+        Gestiona las OT y su relación con el centro de costo al que se imputa el gasto.
       </p>
     </div>
-    <app-button label="Nueva OT" variant="primary" size="md" (clicked)="navigateToForm()">
-      <app-icon name="plus" size="sm" />
-    </app-button>
+    <div class="flex items-center gap-2 flex-wrap">
+      <app-button variant="secondary" size="sm" label="Plantilla" (clicked)="downloadTemplate()">
+        <app-icon name="download" size="sm" />
+      </app-button>
+      <app-button variant="secondary" size="sm" label="Importar Excel" loadingLabel="Importando..." [loading]="importing()" (clicked)="triggerFileInput()">
+        <app-icon name="upload" size="sm" />
+      </app-button>
+      <input #fileInput type="file" accept=".xlsx,.xls" class="hidden" (change)="onFileSelected($event)" />
+      <app-button label="Nueva OT" variant="primary" size="md" (clicked)="navigateToForm()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </div>
   </div>
+
+  <!-- Import result banner -->
+  @if (importResult()) {
+    <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-4 flex flex-col gap-2 mb-6">
+      <div class="flex items-center gap-2">
+        <app-icon name="circle-check" size="sm" class="text-success" />
+        <span class="text-sm font-medium text-secondary">{{ importResult()!.created }} orden(es) de trabajo importada(s)</span>
+        <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" class="ml-auto" (clicked)="importResult.set(null)">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      </div>
+      @if (importResult()!.errors.length > 0) {
+        <div class="border-t border-tertiary/10 pt-2 mt-1">
+          <p class="text-xs font-semibold text-error mb-1">{{ importResult()!.errors.length }} error(es):</p>
+          <ul class="text-xs text-error space-y-0.5 max-h-28 overflow-y-auto">
+            @for (e of importResult()!.errors; track e.row) {
+              <li>Fila {{ e.row }}: {{ e.reason }}</li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+  }
 
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-4 mb-6">
     <div class="flex flex-wrap gap-3">
@@ -19,18 +51,18 @@
           type="text"
           [ngModel]="search()"
           (ngModelChange)="onSearch($event)"
-          placeholder="Buscar por código o descripción..."
+          placeholder="Buscar por nombre de OT..."
           class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
         />
       </div>
       <select
-        [ngModel]="filterDepartamento()"
-        (ngModelChange)="onFilterDepartamento($event)"
+        [ngModel]="filterCostCenter()"
+        (ngModelChange)="onFilterCostCenter($event)"
         class="px-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
       >
-        <option value="">Todos los departamentos</option>
-        @for (dept of departamentos; track dept.code) {
-          <option [value]="dept.code">{{ dept.label }}</option>
+        <option value="">Todos los centros de costo</option>
+        @for (cc of centrosCosto(); track cc._id) {
+          <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
         }
       </select>
     </div>
@@ -50,16 +82,12 @@
     </app-empty-state>
   } @else {
     <app-data-table [items]="result().data">
-      <ng-container *appColumn="'codigo'; header: 'Código'; let row">
-        <span class="font-mono font-semibold text-secondary tabular-nums">{{ row.codigo }}</span>
+      <ng-container *appColumn="'nombre'; header: 'Nombre'; let row">
+        <span class="font-mono font-semibold text-secondary">{{ row.nombre }}</span>
       </ng-container>
 
-      <ng-container *appColumn="'departamento'; header: 'Departamento'; let row">
-        <span class="text-sm text-secondary">{{ departamentoLabel(row.departamento) }}</span>
-      </ng-container>
-
-      <ng-container *appColumn="'descripcion'; header: 'Descripción'; let row">
-        <span class="text-sm text-tertiary">{{ row.descripcion || '—' }}</span>
+      <ng-container *appColumn="'centroCosto'; header: 'Centro de costo'; let row">
+        <span class="text-sm text-secondary">{{ centroCostoLabel(row) || '—' }}</span>
       </ng-container>
 
       <ng-container *appColumn="'estado'; header: 'Estado'; align: 'center'; let row">

@@ -50,6 +50,11 @@ export class ConfiguracionComponent implements OnInit {
   limitsMovilidadDiario: number | null = null;
   isSavingLimits = false;
 
+  // Cuenta de cargo para pagos BBVA (VD-7)
+  showPaymentAccountForm = false;
+  paymentAccount: string = '';
+  isSavingPaymentAccount = false;
+
   // Notifications
   showNotificationsForm = false;
   notificationsEnabled = false;
@@ -77,12 +82,6 @@ export class ConfiguracionComponent implements OnInit {
   showAccountingForm = false;
   accountingForm: IAccountingConfig = { ...DEFAULT_ACCOUNTING_CONFIG };
   isSavingAccounting = false;
-
-  // Tesoreria emails
-  showTesoreriaEmailsForm = false;
-  tesoreriaEmails: string[] = [];
-  newTesoreriaEmail = '';
-  isSavingTesoreriaEmails = false;
 
   get currentUser() { return this.userStateService.getUser(); }
   get isAdminUser() { return this.userStateService.isAdmin() || this.userStateService.isSuperAdmin(); }
@@ -115,10 +114,10 @@ export class ConfiguracionComponent implements OnInit {
       (config: ICompanyConfig | null) => {
         this.companyConfig = config;
         this.limitsMovilidadDiario = config?.limits?.movilidadDiario ?? null;
+        this.paymentAccount = config?.paymentAccount ?? '';
         this.notificationsEnabled = config?.notificationSettings?.enabled ?? false;
         this.notificationsFrequency = config?.notificationSettings?.frequency ?? 'semanal';
         this.notificationsDay = config?.notificationSettings?.notificationDay ?? 1;
-        this.tesoreriaEmails = [...(config?.tesoreriaEmails ?? [])];
       }
     );
   }
@@ -148,6 +147,33 @@ export class ConfiguracionComponent implements OnInit {
       error: () => {
         this.notificationService.show('Error al guardar los límites', 'error');
         this.isSavingLimits = false;
+      },
+    });
+  }
+
+  editPaymentAccount() {
+    this.paymentAccount = this.companyConfig?.paymentAccount ?? '';
+    this.showPaymentAccountForm = true;
+  }
+
+  cancelPaymentAccountEdit() {
+    this.showPaymentAccountForm = false;
+    this.paymentAccount = this.companyConfig?.paymentAccount ?? '';
+  }
+
+  savePaymentAccount() {
+    const companyId = this.companyConfig?._id || this.companyConfig?.companyId;
+    if (!companyId) return;
+    this.isSavingPaymentAccount = true;
+    this.companyConfigService.updatePaymentAccount(companyId, (this.paymentAccount ?? '').trim()).subscribe({
+      next: () => {
+        this.notificationService.show('Cuenta de cargo actualizada correctamente', 'success');
+        this.showPaymentAccountForm = false;
+        this.isSavingPaymentAccount = false;
+      },
+      error: () => {
+        this.notificationService.show('Error al guardar la cuenta de cargo', 'error');
+        this.isSavingPaymentAccount = false;
       },
     });
   }
@@ -184,54 +210,6 @@ export class ConfiguracionComponent implements OnInit {
       error: () => {
         this.notificationService.show('Error al guardar la configuración de notificaciones', 'error');
         this.isSavingNotifications = false;
-      },
-    });
-  }
-
-  editTesoreriaEmails() {
-    this.tesoreriaEmails = [...(this.companyConfig?.tesoreriaEmails ?? [])];
-    this.newTesoreriaEmail = '';
-    this.showTesoreriaEmailsForm = true;
-  }
-
-  cancelTesoreriaEmailsEdit() {
-    this.showTesoreriaEmailsForm = false;
-    this.tesoreriaEmails = [...(this.companyConfig?.tesoreriaEmails ?? [])];
-    this.newTesoreriaEmail = '';
-  }
-
-  addTesoreriaEmail() {
-    const email = this.newTesoreriaEmail.trim().toLowerCase();
-    if (!email || !email.includes('@')) {
-      this.notificationService.show('Ingresa un correo electrónico válido', 'error');
-      return;
-    }
-    if (this.tesoreriaEmails.includes(email)) {
-      this.notificationService.show('Este correo ya está en la lista', 'error');
-      return;
-    }
-    this.tesoreriaEmails.push(email);
-    this.newTesoreriaEmail = '';
-  }
-
-  removeTesoreriaEmail(index: number) {
-    this.tesoreriaEmails.splice(index, 1);
-  }
-
-  saveTesoreriaEmails() {
-    const companyId = this.companyConfig?._id || this.companyConfig?.companyId;
-    if (!companyId) return;
-    this.isSavingTesoreriaEmails = true;
-    this.invoicesService.updateTesoreriaEmails(companyId, this.tesoreriaEmails).subscribe({
-      next: () => {
-        this.notificationService.show('Correos de tesoreria guardados', 'success');
-        this.showTesoreriaEmailsForm = false;
-        this.isSavingTesoreriaEmails = false;
-        this.companyConfigService.refreshConfig();
-      },
-      error: () => {
-        this.notificationService.show('Error al guardar los correos de tesoreria', 'error');
-        this.isSavingTesoreriaEmails = false;
       },
     });
   }

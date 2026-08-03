@@ -66,20 +66,6 @@ export class ExpenseController {
     return this.expenseService.extractDepositInfo(body.url, body.mimeType)
   }
 
-  /**
-   * Escanea un comprobante de caja (imagen o PDF, por URL ya subida a S3) y
-   * extrae los campos para autorellenar el formulario. Ligero: no persiste.
-   */
-  @Post('scan-cash-voucher')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  async scanCashVoucher(@Body() body: { url?: string; mimeType?: string }) {
-    if (!body?.url) {
-      throw new Error('No se proporcionó la URL del comprobante de caja.')
-    }
-    return this.expenseService.scanCashVoucher(body.url, body.mimeType)
-  }
-
   @Post('analyze-image')
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -181,27 +167,6 @@ export class ExpenseController {
     body.clientId = clientId
     body.userId = req.user?.sub || req.user?._id || body.userId
     const result = await this.expenseService.createCashReceiptExpense(body)
-    this.auditLogService.log({
-      userId: req.user?._id || req.user?.sub,
-      userName: req.user?.name || req.user?.email || 'Usuario',
-      action: 'create_other_expense',
-      module: 'facturas',
-      entityId: (result as any)?._id?.toString(),
-      clientId,
-    })
-    return result
-  }
-
-  @Post('cash-voucher')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  async createCashVoucher(@Body() body: CreateExpenseDto, @Request() req) {
-    const clientId = body.clientId || req.user?.clientId
-    if (!clientId)
-      throw new Error('No se pudo obtener la empresa del usuario ni del body')
-    body.clientId = clientId
-    body.userId = req.user?.sub || req.user?._id || body.userId
-    const result = await this.expenseService.createCashVoucherExpense(body)
     this.auditLogService.log({
       userId: req.user?._id || req.user?.sub,
       userName: req.user?.name || req.user?.email || 'Usuario',
@@ -482,9 +447,11 @@ export class ExpenseController {
 
   // ─── Aprobación dual: Coordinador / Contabilidad ─────────────────────────────
 
+  // La autorización real la hace canActOnChain en el servicio (¿el actor está
+  // en approverIds del paso pendiente?, o Superadmin) — el aprobador puede
+  // tener cualquier rol, por eso no se restringe por @Roles aquí.
   @Patch('invoice/:id/approve-coord')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COORDINADOR)
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   approveByCoord(
     @Param('id') id: string,
     @Request()
@@ -494,8 +461,7 @@ export class ExpenseController {
   }
 
   @Patch('invoice/:id/reject-coord')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COORDINADOR)
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   rejectByCoord(
     @Param('id') id: string,
     @Body() body: { reason: string },

@@ -10,6 +10,7 @@ import {
 import { CreateExpenseDto } from './dto/create-expense.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
+import { findActionableChainStep, isChainFullyApproved, plainChainStep, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
 import { InjectModel } from '@nestjs/mongoose'
@@ -78,20 +79,17 @@ export interface DepositScanResult {
   titular?: string
 }
 
-/** Datos extraídos de un comprobante de caja (escaneo OCR para autorellenar). */
-export interface CashVoucherScanResult {
-  entregadoA?: string
-  fecha?: string
-  direccion?: string
-  concepto?: string
-  monto: number
-}
-
 @Injectable()
 export class ExpenseService {
   private readonly logger = new Logger(ExpenseService.name)
   private readonly openai: OpenAI
   private readonly visionModel = 'gpt-5.1'
+  /**
+   * Umbral mínimo de caracteres para considerar que un PDF tiene capa de texto.
+   * Por debajo se asume escaneo/imagen y se envía el PDF completo al modelo de
+   * visión (VD-50).
+   */
+  private readonly PDF_MIN_TEXT_LENGTH = 20
 
   constructor(
     private readonly configService: ConfigService,
@@ -249,6 +247,34 @@ export class ExpenseService {
         content: [
           { type: 'text' as const, text: prompt },
           { type: 'image_url' as const, image_url: { url: imageUrl } },
+        ],
+      },
+    ]
+  }
+
+  /**
+   * Mensajes para leer un PDF con el modelo de visión enviando el archivo
+   * completo (base64). Se usa como respaldo cuando el PDF es un escaneo/imagen
+   * sin capa de texto: el modelo lee la imagen dentro del PDF (VD-50).
+   */
+  private buildPdfFileMessages(
+    prompt: string,
+    buffer: Buffer,
+    filename?: string
+  ) {
+    const dataUrl = `data:application/pdf;base64,${buffer.toString('base64')}`
+    return [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'text' as const, text: prompt },
+          {
+            type: 'file' as const,
+            file: {
+              filename: filename || 'documento.pdf',
+              file_data: dataUrl,
+            },
+          },
         ],
       },
     ]
@@ -451,7 +477,7 @@ export class ExpenseService {
 
   private async generateInternalCode(
     userId: string | undefined,
-    expenseType: 'planilla_movilidad' | 'comprobante_caja',
+    expenseType: 'planilla_movilidad',
     expenseReportId?: string
   ): Promise<string> {
     const ownerUserId = await this.resolveOwnerUserId(userId, expenseReportId)
@@ -561,6 +587,9 @@ export class ExpenseService {
   ) {
     if (!body.clientId) {
       throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
+    }
+    if (!body.categoryId) {
+      throw new HttpException('La categoría es requerida', HttpStatus.BAD_REQUEST)
     }
 
     const categoryObject = Types.ObjectId.createFromHexString(body.categoryId)
@@ -912,103 +941,6 @@ export class ExpenseService {
     }
   }
 
-  /**
-   * Escanea un comprobante de caja (imagen o PDF, por URL) y extrae los campos
-   * para autorellenar el formulario: entregado a, fecha, dirección, concepto y
-   * monto. Ligero: no persiste Expense ni valida nada; el usuario revisa y edita
-   * los datos antes de guardar.
-   */
-  async scanCashVoucher(
-    url: string,
-    mimeType?: string
-  ): Promise<CashVoucherScanResult> {
-    const isPdf =
-      (mimeType ? mimeType.toLowerCase().includes('pdf') : false) ||
-      /\.pdf(\?|$)/i.test(url)
-
-    const prompt =
-      'Eres un asistente que extrae datos de un COMPROBANTE DE CAJA (vale de ' +
-      'caja / comprobante de egreso de efectivo). Devuelve EXCLUSIVAMENTE un ' +
-      'JSON con la forma {"entregadoA": "<texto>", "fecha": "<dd/mm/aaaa>", ' +
-      '"direccion": "<texto>", "concepto": "<texto>", "monto": <número>}. ' +
-      'entregadoA es la persona o entidad a quien se entrega el dinero ' +
-      '("entregado a", "recibí de", "señor(es)"); fecha es la fecha del ' +
-      'comprobante; direccion la dirección si aparece; concepto el detalle o ' +
-      'motivo del pago/egreso; monto el importe total como número (sin símbolo ' +
-      'de moneda ni separadores de miles, punto decimal). Si un dato no ' +
-      'aparece, usa cadena vacía (o 0 para monto).'
-
-    try {
-      let content: string
-      if (isPdf) {
-        const buffer = await this.fetchUrlAsBuffer(url)
-        const pdfModule = await import('pdf-parse')
-        const pdfParse: (data: Buffer) => Promise<{ text: string }> =
-          pdfModule.default ?? pdfModule
-        const parsed = await pdfParse(buffer)
-        const text = (parsed.text || '').substring(0, 15000)
-        const completion = await this.openai.chat.completions.create({
-          model: this.visionModel,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: prompt },
-                { type: 'text', text },
-              ],
-            },
-          ],
-          temperature: 0,
-          max_completion_tokens: 512,
-        })
-        content = completion.choices[0]?.message?.content || ''
-      } else {
-        const completion = await this.openai.chat.completions.create({
-          model: this.visionModel,
-          messages: this.buildVisionMessages(prompt, url),
-          temperature: 0,
-          max_completion_tokens: 512,
-        })
-        content = completion.choices[0]?.message?.content || ''
-      }
-      return this.parseCashVoucherScan(content)
-    } catch (error) {
-      this.logger.error('Error al escanear el comprobante de caja:', error)
-      throw new HttpException(
-        'No se pudo escanear el comprobante de caja.',
-        HttpStatus.INTERNAL_SERVER_ERROR
-      )
-    }
-  }
-
-  private parseCashVoucherScan(raw: string): CashVoucherScanResult {
-    const cleaned = (raw || '')
-      .replace(/^```json\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim()
-    let obj: any = {}
-    try {
-      obj = JSON.parse(cleaned)
-    } catch {
-      obj = {}
-    }
-    const monto =
-      typeof obj.monto === 'string'
-        ? Number(String(obj.monto).replace(/,/g, '')) || 0
-        : Number(obj.monto) || 0
-    const str = (v: unknown) => {
-      const s = v == null ? '' : String(v).trim()
-      return s.length ? s : undefined
-    }
-    return {
-      entregadoA: str(obj.entregadoA),
-      fecha: str(obj.fecha),
-      direccion: str(obj.direccion),
-      concepto: str(obj.concepto),
-      monto: monto > 0 ? monto : 0,
-    }
-  }
-
   async analyzeImageWithUrl(body: CreateExpenseDto): Promise<Expense> {
     // Si la caja chica de la rendición ya fue finalizada por Contabilidad, no se
     // permiten más gastos. Se valida antes del análisis para no gastar la llamada
@@ -1045,6 +977,14 @@ export class ExpenseService {
         validation,
         expenseStatus
       )
+
+      if (body.userId) {
+        await this.expenseReportService.buildChainForNewExpense(
+          expense._id.toString(),
+          body.userId,
+          body.clientId
+        )
+      }
 
       if (body.expenseReportId) {
         await this.expenseReportService.addExpenseToReport(
@@ -1086,20 +1026,27 @@ export class ExpenseService {
       const parsed = await pdfParse(file.buffer)
       const textFromPdf = parsed.text || ''
 
-      console.log('textFromPdf', textFromPdf)
-
       const prompt = PROMPT1
+      // Si el PDF trae capa de texto se envía el texto (más barato); si es un
+      // escaneo/imagen sin texto, se manda el PDF completo al modelo de visión
+      // para que lea la imagen dentro del PDF (VD-50).
+      const hasText = textFromPdf.trim().length >= this.PDF_MIN_TEXT_LENGTH
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+        hasText
+          ? [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: prompt },
+                  { type: 'text', text: textFromPdf.substring(0, 15000) },
+                ],
+              },
+            ]
+          : this.buildPdfFileMessages(prompt, file.buffer, file.originalname)
+
       const completion = await this.openai.chat.completions.create({
         model: this.visionModel,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              { type: 'text', text: textFromPdf.substring(0, 15000) },
-            ],
-          },
-        ],
+        messages,
         temperature: 0,
         max_completion_tokens: 8192,
       })
@@ -1131,6 +1078,14 @@ export class ExpenseService {
         validation,
         expenseStatus
       )
+
+      if (body.userId) {
+        await this.expenseReportService.buildChainForNewExpense(
+          expense._id.toString(),
+          body.userId,
+          body.clientId
+        )
+      }
 
       if (body.expenseReportId) {
         await this.expenseReportService.addExpenseToReport(
@@ -1171,6 +1126,29 @@ export class ExpenseService {
         HttpStatus.BAD_REQUEST
       )
     }
+
+    // La categoría de la planilla de movilidad se elige entre las categorías
+    // "Planilla de movilidad" asignadas al colaborador (el frontend la resuelve
+    // sola si solo tiene una, o le pide elegir si tiene más de una). El backend
+    // valida que exista, pertenezca al cliente y sea efectivamente una categoría
+    // de planilla de movilidad.
+    if (!body.categoryId) {
+      throw new HttpException(
+        'No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const movilidadCategory = await this.categoryService.findOne(
+      body.categoryId,
+      body.clientId
+    )
+    if (!/planilla de movilidad/i.test(movilidadCategory.name)) {
+      throw new HttpException(
+        'La categoría seleccionada no es una categoría de Planilla de movilidad.',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    body.categoryId = (movilidadCategory as any)._id.toString()
 
     const client = await this.clientModel.findById(body.clientId).lean().exec()
     const dailyLimit = client?.limits?.movilidadDiario ?? null
@@ -1233,6 +1211,14 @@ export class ExpenseService {
       }),
     })
 
+    if (body.userId) {
+      await this.expenseReportService.buildChainForNewExpense(
+        (expense as any)._id.toString(),
+        body.userId,
+        body.clientId
+      )
+    }
+
     if (body.expenseReportId) {
       await this.expenseReportService.addExpenseToReport(
         body.expenseReportId,
@@ -1246,6 +1232,9 @@ export class ExpenseService {
   async createOtherExpense(body: CreateExpenseDto): Promise<Expense> {
     if (!body.clientId) {
       throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
+    }
+    if (!body.categoryId) {
+      throw new HttpException('La categoría es requerida', HttpStatus.BAD_REQUEST)
     }
     // Caja chica finalizada: no se permiten más gastos.
     await this.expenseReportService.assertReportNotLockedByCajaChica(
@@ -1338,6 +1327,14 @@ export class ExpenseService {
       }),
     })
 
+    if (body.userId) {
+      await this.expenseReportService.buildChainForNewExpense(
+        (expense as any)._id.toString(),
+        body.userId,
+        body.clientId
+      )
+    }
+
     if (body.expenseReportId) {
       await this.expenseReportService.addExpenseToReport(
         body.expenseReportId,
@@ -1351,6 +1348,9 @@ export class ExpenseService {
   async createCashReceiptExpense(body: CreateExpenseDto): Promise<Expense> {
     if (!body.clientId) {
       throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
+    }
+    if (!body.categoryId) {
+      throw new HttpException('La categoría es requerida', HttpStatus.BAD_REQUEST)
     }
     // Caja chica finalizada: no se permiten más gastos.
     await this.expenseReportService.assertReportNotLockedByCajaChica(
@@ -1423,74 +1423,13 @@ export class ExpenseService {
       }),
     })
 
-    if (body.expenseReportId) {
-      await this.expenseReportService.addExpenseToReport(
-        body.expenseReportId,
-        (expense as any)._id.toString()
+    if (body.userId) {
+      await this.expenseReportService.buildChainForNewExpense(
+        (expense as any)._id.toString(),
+        body.userId,
+        body.clientId
       )
     }
-
-    return expense
-  }
-
-  async createCashVoucherExpense(body: CreateExpenseDto): Promise<Expense> {
-    if (!body.clientId) {
-      throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
-    }
-    // Caja chica finalizada: no se permiten más gastos.
-    await this.expenseReportService.assertReportNotLockedByCajaChica(
-      body.expenseReportId
-    )
-    if (!body.total || body.total <= 0) {
-      throw new HttpException(
-        'Se requiere un monto válido',
-        HttpStatus.BAD_REQUEST
-      )
-    }
-    const description = (body.data || '').trim()
-    if (!description) {
-      throw new HttpException(
-        'El concepto del comprobante es obligatorio',
-        HttpStatus.BAD_REQUEST
-      )
-    }
-
-    const normalizedFecha = this.normalizeFechaEmisionValue(body.fechaEmision)
-    const deadlineMeta = this.evaluateDeadline(
-      normalizedFecha ?? body.fechaEmision
-    )
-    const categoryMeta = await this.evaluateCategoryLimit(body, body.total)
-    const internalCode = await this.generateInternalCode(
-      body.userId,
-      'comprobante_caja',
-      body.expenseReportId
-    )
-
-    const expense = await this.expenseRepository.create({
-      categoryId: new Types.ObjectId(body.categoryId),
-      proyectId: new Types.ObjectId(body.proyectId),
-      clientId: body.clientId,
-      expenseReportId: body.expenseReportId
-        ? new Types.ObjectId(body.expenseReportId)
-        : undefined,
-      total: body.total,
-      description,
-      expenseType: 'comprobante_caja',
-      file: body.imageUrl,
-      status: 'pending',
-      createdBy: body.userId || 'system',
-      fechaEmision: normalizedFecha ?? body.fechaEmision,
-      observado: deadlineMeta.observado,
-      observacionPlazo: deadlineMeta.observacionPlazo,
-      diasRetraso: deadlineMeta.diasRetraso,
-      categoryLimitPercent: categoryMeta.percent,
-      categoryLimitWarning: categoryMeta.warning,
-      internalCode,
-      data: JSON.stringify({
-        type: 'comprobante_caja',
-        payload: body.data || '',
-      }),
-    })
 
     if (body.expenseReportId) {
       await this.expenseReportService.addExpenseToReport(
@@ -1580,6 +1519,14 @@ export class ExpenseService {
       createdBy: createExpenseDto.userId,
     })
     const expense = await createdExpense.save()
+
+    if (createExpenseDto.userId) {
+      await this.expenseReportService.buildChainForNewExpense(
+        expense._id.toString(),
+        createExpenseDto.userId,
+        createExpenseDto.clientId
+      )
+    }
 
     if (createExpenseDto.expenseReportId) {
       await this.expenseReportService.addExpenseToReport(
@@ -2045,27 +1992,44 @@ export class ExpenseService {
 
     // Corrección de un comprobante rechazado por el colaborador dueño: vuelve a
     // revisión. El front reenvía el `status: 'rejected'` original del documento, así
-    // que aquí se sobreescribe el estado y se reabren únicamente las aprobaciones que
-    // estaban rechazadas (la aprobación ya emitida por el otro rol se conserva).
+    // que aquí se sobreescribe el estado y se reabre únicamente el lado que estaba
+    // rechazado (la aprobación ya emitida por el otro rol se conserva). El lado
+    // "coordinador" ahora es una cadena de niveles: reabrirlo reinicia el turno al
+    // primer paso de la cadena ya construida (no se re-resuelve el centro de costo aquí).
     const existingAny = existing as unknown as {
       status?: string
-      approvalCoord?: { status?: string }
-      approvalCont?: { status?: string }
+      contabilidadStatus?: string
+      approverChain?: ChainStep[]
+      requiredLevels?: number
     }
     if (
       actor.roleName === ROLES.COLABORADOR &&
       existingAny.status === 'rejected'
     ) {
-      const coordRejected = existingAny.approvalCoord?.status === 'rejected'
-      const contRejected = existingAny.approvalCont?.status === 'rejected'
+      const contRejected = existingAny.contabilidadStatus === 'rejected'
+      const coordRejected = !contRejected
+      const nextCont = contRejected ? 'pending' : (existingAny.contabilidadStatus ?? 'pending')
+      if (coordRejected) {
+        updateDoc.approvalLevel = 0
+        // Aprobación en paralelo entre niveles: `approvalLevel` es solo el
+        // contador — cada paso guarda su propio `approved`. Reabrir el
+        // comprobante debe limpiar TODOS los pasos, no solo el contador, o
+        // quedarían aprobaciones previas "fantasma" (approved:true) mientras
+        // el contador ya muestra 0.
+        updateDoc.approverChain = (existingAny.approverChain ?? []).map(step => ({
+          ...plainChainStep(step),
+          approved: false,
+          approvedBy: undefined,
+          approvedAt: undefined,
+        }))
+      }
+      if (contRejected) {
+        updateDoc.contabilidadStatus = 'pending'
+        updateDoc.contabilidadRejectionReason = ''
+      }
       const nextCoord = coordRejected
         ? 'pending'
-        : (existingAny.approvalCoord?.status ?? 'pending')
-      const nextCont = contRejected
-        ? 'pending'
-        : (existingAny.approvalCont?.status ?? 'pending')
-      if (coordRejected) updateDoc.approvalCoord = { status: 'pending' }
-      if (contRejected) updateDoc.approvalCont = { status: 'pending' }
+        : this.chainCoordStatus(existingAny)
       updateDoc.status = this.computeCombinedStatus(nextCoord, nextCont)
       updateDoc.rejectionReason = ''
       updateDoc.rejectedBy = ''
@@ -2599,7 +2563,26 @@ export class ExpenseService {
     }
   }
 
-  // ─── Aprobación dual: Coordinador / Contabilidad ─────────────────────────────
+  // ─── Aprobación por documento: cadena de centro de costo / Contabilidad ─────
+
+  /**
+   * 'approved' si la cadena N1/N2/[N2 sel] del comprobante ya se completó.
+   * `approverChain === undefined` significa que la cadena aún no se construyó
+   * (la rendición no ha sido enviada — ver `buildExpenseChains`); eso NO es lo
+   * mismo que una cadena ya construida y vacía por regla 1.6 (todos los niveles
+   * omitidos), que sí cuenta como completada. Sin esta distinción, `0 >= 0`
+   * marca como "approved" tanto lo uno como lo otro.
+   */
+  private chainCoordStatus(expense: {
+    approverChain?: ChainStep[]
+    approvalLevel?: number
+    requiredLevels?: number
+  }): 'pending' | 'approved' {
+    if (expense.approverChain === undefined) return 'pending'
+    const required = expense.requiredLevels ?? expense.approverChain.length ?? 0
+    const level = expense.approvalLevel ?? 0
+    return level >= required ? 'approved' : 'pending'
+  }
 
   private computeCombinedStatus(
     coordStatus: string | undefined,
@@ -2612,6 +2595,14 @@ export class ExpenseService {
     return 'pending'
   }
 
+  /**
+   * Aprueba UN paso de la cadena de centro de costo (regla 1.4) del
+   * comprobante. Aprobación en paralelo entre niveles: cualquier aprobador de
+   * cualquier paso aún pendiente puede actuar, sin importar el orden (N2
+   * puede aprobar antes que N1), o Superadministrador. Cuando TODOS los pasos
+   * quedan aprobados, el comprobante pasa a la espera del gate de
+   * Contabilidad — que exige la cadena completa, no un paso puntual.
+   */
   async approveByCoord(
     id: string,
     actor: ExpenseActorContext
@@ -2619,22 +2610,36 @@ export class ExpenseService {
     const expense = await this.loadExpenseOrThrow(id)
     this.assertCompanyAccess(expense, actor)
     const existing = expense as any
-    const contStatus = existing.approvalCont?.status ?? 'pending'
-    const newCombined = this.computeCombinedStatus('approved', contStatus)
+    const chain: ChainStep[] = existing.approverChain ?? []
+    if (chain.length === 0) {
+      throw new BadRequestException(
+        'Este comprobante aún no tiene una cadena de aprobación asignada — la rendición debe estar enviada.'
+      )
+    }
+    const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName })
+    if (stepIndex === -1) {
+      throw new ForbiddenException('No te corresponde aprobar este comprobante en este momento')
+    }
+
+    const step = chain[stepIndex]
+    const approvalLevel = existing.approvalLevel ?? 0
+    const history = existing.approvalHistory ?? []
+    history.push({ level: step.level, approvedBy: actor.userId, action: 'approved', date: new Date() })
+    chain[stepIndex] = {
+      ...plainChainStep(step),
+      approved: true,
+      approvedBy: new Types.ObjectId(actor.userId),
+      approvedAt: new Date(),
+    }
+    const nextLevel = approvalLevel + 1
+    const isComplete = isChainFullyApproved(chain)
+    const contStatus = existing.contabilidadStatus ?? 'pending'
+    const newCombined = this.computeCombinedStatus(isComplete ? 'approved' : 'pending', contStatus)
+
     const updated = await this.expenseRepository
       .findByIdAndUpdate(
         id,
-        {
-          $set: {
-            approvalCoord: {
-              status: 'approved',
-              userId: actor.userId,
-              userName: actor.roleName,
-              date: new Date(),
-            },
-            status: newCombined,
-          },
-        },
+        { $set: { approverChain: chain, approvalLevel: nextLevel, approvalHistory: history, status: newCombined } },
         { new: true }
       )
       .exec()
@@ -2643,7 +2648,9 @@ export class ExpenseService {
       .create({
         userId: String(expense.createdBy),
         title: 'Comprobante revisado por Coordinador',
-        message: `Tu comprobante fue aprobado por el coordinador.`,
+        message: isComplete
+          ? 'Tu comprobante fue aprobado por los aprobadores de centro de costo.'
+          : `Tu comprobante fue aprobado por uno de sus aprobadores de centro de costo (nivel ${step.level}). Falta la aprobación de los demás niveles pendientes.`,
         type: 'info',
         actionUrl: `/mis-rendiciones/${this.expenseReportIdString(expense)}/detalle`,
       })
@@ -2660,18 +2667,33 @@ export class ExpenseService {
       throw new BadRequestException('El motivo de rechazo es obligatorio.')
     const expense = await this.loadExpenseOrThrow(id)
     this.assertCompanyAccess(expense, actor)
+    const existing = expense as any
+    const chain: ChainStep[] = existing.approverChain ?? []
+    const isAdminOverride = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD].includes(actor.roleName as any)
+    let rejectedAtLevel = (existing.approvalLevel ?? 0) + 1
+    if (chain.length > 0) {
+      // Aprobación en paralelo: cualquier aprobador de un paso aún pendiente
+      // puede rechazar el comprobante completo — no solo "el turno actual".
+      const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName })
+      if (stepIndex === -1) {
+        throw new ForbiddenException('No te corresponde rechazar este comprobante en este momento')
+      }
+      rejectedAtLevel = chain[stepIndex].level
+    } else if (!isAdminOverride) {
+      // Sin cadena configurada para este centro de costo: no hay un aprobador
+      // de turno al que restringir, así que solo Administración/Contabilidad
+      // pueden rechazar (evita que cualquier usuario autenticado lo haga).
+      throw new ForbiddenException('No te corresponde rechazar este comprobante en este momento')
+    }
+    const history = existing.approvalHistory ?? []
+    history.push({ level: rejectedAtLevel, approvedBy: actor.userId, action: 'rejected', notes: reason, date: new Date() })
+
     const updated = await this.expenseRepository
       .findByIdAndUpdate(
         id,
         {
           $set: {
-            approvalCoord: {
-              status: 'rejected',
-              userId: actor.userId,
-              userName: actor.roleName,
-              date: new Date(),
-              reason,
-            },
+            approvalHistory: history,
             status: 'rejected',
             rejectionReason: reason,
           },
@@ -2692,6 +2714,7 @@ export class ExpenseService {
     return updated
   }
 
+  /** Gate final de Contabilidad, posterior a completar la cadena de centro de costo del comprobante. */
   async approveByContabilidad(
     id: string,
     actor: ExpenseActorContext
@@ -2699,19 +2722,21 @@ export class ExpenseService {
     const expense = await this.loadExpenseOrThrow(id)
     this.assertCompanyAccess(expense, actor)
     const existing = expense as any
-    const coordStatus = existing.approvalCoord?.status ?? 'pending'
+    const coordStatus = this.chainCoordStatus(existing)
+    if (coordStatus !== 'approved') {
+      throw new BadRequestException(
+        'Este comprobante aún no completó la cadena de aprobación de centro de costo (N1/N2). No puede aprobarse por Contabilidad todavía.'
+      )
+    }
     const newCombined = this.computeCombinedStatus(coordStatus, 'approved')
     const updated = await this.expenseRepository
       .findByIdAndUpdate(
         id,
         {
           $set: {
-            approvalCont: {
-              status: 'approved',
-              userId: actor.userId,
-              userName: actor.roleName,
-              date: new Date(),
-            },
+            contabilidadStatus: 'approved',
+            contabilidadApprovedBy: actor.userId,
+            contabilidadApprovedAt: new Date(),
             status: newCombined,
           },
         },
@@ -2745,13 +2770,10 @@ export class ExpenseService {
         id,
         {
           $set: {
-            approvalCont: {
-              status: 'rejected',
-              userId: actor.userId,
-              userName: actor.roleName,
-              date: new Date(),
-              reason,
-            },
+            contabilidadStatus: 'rejected',
+            contabilidadApprovedBy: actor.userId,
+            contabilidadApprovedAt: new Date(),
+            contabilidadRejectionReason: reason,
             status: 'rejected',
             rejectionReason: reason,
           },
@@ -2800,19 +2822,19 @@ export class ExpenseService {
 
     const expenses = await this.expenseRepository
       .find({ _id: { $in: ids } })
-      .select('approvalCont status')
+      .select('contabilidadStatus approverChain approvalLevel requiredLevels status')
       .lean()
       .exec()
 
     let count = 0
     for (const expense of expenses) {
       const e = expense as any
-      const contStatus = e.approvalCont?.status ?? 'pending'
-      if (contStatus === 'approved' && e.status !== 'approved') {
+      const contStatus = e.contabilidadStatus ?? 'pending'
+      const coordStatus = this.chainCoordStatus(e)
+      const combined = this.computeCombinedStatus(coordStatus, contStatus)
+      if (combined === 'approved' && e.status !== 'approved') {
         await this.expenseRepository
-          .findByIdAndUpdate(String(e._id), {
-            $set: { status: 'approved' },
-          })
+          .findByIdAndUpdate(String(e._id), { $set: { status: 'approved' } })
           .exec()
         count++
       }
@@ -2820,11 +2842,17 @@ export class ExpenseService {
     return { approved: count }
   }
 
+  /**
+   * Aprueba, para cada comprobante elegible del reporte, el paso pendiente en
+   * el que le toca actuar al actor (aprobación en paralelo entre niveles —
+   * un comprobante con más de un nivel pendiente solo resuelve el paso del
+   * actor, los demás niveles siguen pendientes hasta que actúen sus propios
+   * aprobadores).
+   */
   async batchApproveByCoord(
     reportId: string,
     actor: ExpenseActorContext
   ): Promise<{ approved: number }> {
-    const { Model: ExpenseModel } = { Model: this.expenseRepository }
     const report = await (this.expenseReportService as any).expenseReportModel
       ?.findById(reportId)
       .select('expenseIds clientId')
@@ -2849,32 +2877,37 @@ export class ExpenseService {
 
     const expenses = await this.expenseRepository
       .find({ _id: { $in: ids } })
-      .select('approvalCoord approvalCont status createdBy expenseReportId')
-      .lean()
+      .select('approverChain approvalLevel requiredLevels approvalHistory contabilidadStatus status createdBy expenseReportId total')
       .exec()
 
     let count = 0
     for (const expense of expenses) {
       const e = expense as any
-      const contStatus = e.approvalCont?.status ?? 'pending'
-      const coordStatus = e.approvalCoord?.status ?? 'pending'
-      if (contStatus === 'approved' && coordStatus !== 'approved') {
-        const newCombined = this.computeCombinedStatus('approved', 'approved')
-        await this.expenseRepository
-          .findByIdAndUpdate(String(e._id), {
-            $set: {
-              approvalCoord: {
-                status: 'approved',
-                userId: actor.userId,
-                userName: actor.roleName,
-                date: new Date(),
-              },
-              status: newCombined,
-            },
-          })
-          .exec()
-        count++
+      const chain: ChainStep[] = e.approverChain ?? []
+      if (chain.length === 0 || e.status === 'rejected') continue
+      const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName })
+      if (stepIndex === -1) continue
+
+      const step = chain[stepIndex]
+      const approvalLevel = e.approvalLevel ?? 0
+      const history = e.approvalHistory ?? []
+      history.push({ level: step.level, approvedBy: actor.userId, action: 'approved', date: new Date() })
+      chain[stepIndex] = {
+        ...plainChainStep(step),
+        approved: true,
+        approvedBy: new Types.ObjectId(actor.userId),
+        approvedAt: new Date(),
       }
+      const nextLevel = approvalLevel + 1
+      const isComplete = isChainFullyApproved(chain)
+      const contStatus = e.contabilidadStatus ?? 'pending'
+      const newCombined = this.computeCombinedStatus(isComplete ? 'approved' : 'pending', contStatus)
+      await this.expenseRepository
+        .findByIdAndUpdate(String(e._id), {
+          $set: { approverChain: chain, approvalLevel: nextLevel, approvalHistory: history, status: newCombined },
+        })
+        .exec()
+      count++
     }
     return { approved: count }
   }

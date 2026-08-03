@@ -41,7 +41,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
   configOpen = false;
 
   isConfigSection(): boolean {
-    return ['/configuracion', '/mi-firma', '/categorias', '/centros-de-costo', '/lineas-negocio', '/perfiles-categoria', '/audit-log', '/mi-perfil']
+    return ['/configuracion', '/mi-firma', '/categorias', '/perfiles-categorias', '/centros-de-costo', '/lineas-negocio', '/audit-log', '/mi-perfil']
       .some(p => this.currentPath.startsWith(p));
   }
 
@@ -150,8 +150,12 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.userStateService.isContabilidad();
   }
 
-  isCoordinador(): boolean {
-    return this.userStateService.isCoordinador();
+  isApprover(): boolean {
+    return this.userStateService.isApprover();
+  }
+
+  isTesoreria(): boolean {
+    return this.userStateService.isTesoreria();
   }
 
   canAccessTesoreria(): boolean {
@@ -168,6 +172,11 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   hasModulePermission(module: string): boolean {
     return this.userStateService.hasModulePermission(module);
+  }
+
+  /** VD-77: chequeo estricto (sin bypass de rol) para que el menú de Contabilidad respete sus permisos. */
+  hasModuleStrict(module: string): boolean {
+    return this.userStateService.hasModuleStrict(module);
   }
 
   logout() {

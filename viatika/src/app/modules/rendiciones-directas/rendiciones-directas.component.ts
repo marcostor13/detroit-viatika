@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -10,11 +10,11 @@ import { AdminUsersService } from '../admin-users/services/admin-users.service';
 import { IUserResponse } from '../../interfaces/user.interface';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ICategory } from '../invoices/interfaces/category.interface';
+import { WorkerSelectComponent, WorkerOption } from '../../design-system/worker-select/worker-select.component';
 import {
   RendicionExportService,
   RendicionExportData,
   MobilitySheetExportData,
-  CashVoucherExportData,
   ReceiptExportData,
 } from '../../services/rendicion-export.service';
 import {
@@ -25,7 +25,7 @@ import {
 @Component({
   selector: 'app-rendiciones-directas',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, WorkerSelectComponent],
   templateUrl: './rendiciones-directas.component.html',
 })
 export class RendicionesDirectasComponent implements OnInit {
@@ -66,6 +66,10 @@ export class RendicionesDirectasComponent implements OnInit {
   projects = signal<IProject[]>([]);
   categories = signal<ICategory[]>([]);
   users = signal<IUserResponse[]>([]);
+  /** VD-84: usuarios mapeados a WorkerOption para el selector buscable de colaborador. */
+  workerOptions = computed<WorkerOption[]>(() =>
+    this.users().map(u => ({ _id: u._id ?? '', name: u.name, email: u.email, dni: (u as any).dni }))
+  );
 
   // Acciones
   approvingId = signal<string | null>(null);
@@ -184,7 +188,7 @@ export class RendicionesDirectasComponent implements OnInit {
   }
 
   reportOrigenLabel(r: any): string {
-    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Coordinador', colaborador: 'Colaborador' };
+    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Aprobador', colaborador: 'Colaborador' };
     return labels[r?.origin] ?? 'Colaborador';
   }
 
@@ -198,11 +202,37 @@ export class RendicionesDirectasComponent implements OnInit {
     if (r?.effectivelyClosed) return 'Cerrada';
     const map: Record<string, string> = {
       open: 'Abierta', solicited: 'Solicitada', submitted: 'Enviada',
+      pending_l1: 'En solicitud',
       pending_accounting: 'En contabilidad', approved: 'Aprobada',
       rejected: 'Rechazada', closed: 'Cerrada', liquidated: 'Liquidada',
       reimbursed: 'Reembolsada', cancelled: 'Cancelada',
     };
     return map[String(r?.status || '')] ?? (r?.status || '—');
+  }
+
+  /**
+   * Color del badge de estado, igual que en /rendiciones (VD-51). Antes todos los
+   * estados salían en plomo; ahora se diferencia por color según el estado.
+   */
+  reportStatusBadgeClass(r: any): string {
+    if (r?.effectivelyClosed) return 'bg-gray-100 text-gray-500';
+    const map: Record<string, string> = {
+      solicited: 'bg-purple-100 text-purple-800',
+      open: 'bg-blue-100 text-blue-800',
+      submitted: 'bg-yellow-100 text-yellow-800',
+      pending_l1: 'bg-yellow-100 text-yellow-800',
+      pending_l2: 'bg-orange-100 text-orange-800',
+      pending_accounting: 'bg-amber-100 text-amber-800',
+      pending_contabilidad: 'bg-amber-100 text-amber-800',
+      approved: 'bg-green-100 text-green-800',
+      rejected: 'bg-red-100 text-red-800',
+      liquidated: 'bg-emerald-100 text-emerald-800',
+      settled: 'bg-emerald-100 text-emerald-800',
+      reimbursed: 'bg-emerald-100 text-emerald-800',
+      closed: 'bg-gray-100 text-gray-800',
+      cancelled: 'bg-gray-100 text-gray-500',
+    };
+    return map[String(r?.status || '')] ?? 'bg-gray-100 text-gray-700';
   }
 
   reportFecha(r: any): string { return formatFechaEmisionDdMmYyyy(r?.createdAt) || '—'; }
@@ -253,7 +283,7 @@ export class RendicionesDirectasComponent implements OnInit {
         this.approvingId.set(null);
         this.notifications.show('Documento marcado como revisado.', 'success');
         this.data.update(list => list.map(row =>
-          row._id === e._id ? { ...row, approvalCont: { status: 'approved' } } : row
+          row._id === e._id ? { ...row, contabilidadStatus: 'approved' } : row
         ));
       },
       error: (err) => {
@@ -311,7 +341,6 @@ export class RendicionesDirectasComponent implements OnInit {
     const t = e?.expenseType;
     if (t === 'planilla_movilidad') return 'planilla_movilidad';
     if (t === 'otros_gastos') return 'otros_gastos';
-    if (t === 'comprobante_caja') return 'comprobante_caja';
     if (t === 'recibo_caja') return 'recibo_caja';
     return 'factura';
   }
@@ -320,7 +349,6 @@ export class RendicionesDirectasComponent implements OnInit {
     if (this.isDeposito(e)) return 'DEP';
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = e?.subTipo ?? this.getData(e)['subTipo'];
@@ -328,6 +356,7 @@ export class RendicionesDirectasComponent implements OnInit {
       if (sub === 'BV') return 'BV';
       if (sub === 'RC') return 'RC';
       if (sub === 'DJ') return 'DJ';
+      if (sub === 'DJE') return 'DJE';
       if (sub === 'OT') return 'OT';
       return 'SC';
     }
@@ -345,7 +374,7 @@ export class RendicionesDirectasComponent implements OnInit {
     if (code === 'PM') return 'bg-yellow-100 text-yellow-800';
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
-    if (code === 'DJ') return 'bg-amber-100 text-amber-800';
+    if (code === 'DJ' || code === 'DJE') return 'bg-amber-100 text-amber-800';
     if (code === 'TK') return 'bg-teal-100 text-teal-700';
     if (code === 'RC') return 'bg-indigo-100 text-indigo-700';
     return 'bg-blue-100 text-blue-700';
@@ -372,7 +401,7 @@ export class RendicionesDirectasComponent implements OnInit {
   getOrigen(e: any): string { return e._report?._origin || 'colaborador'; }
 
   getOrigenLabel(e: any): string {
-    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Coordinador', colaborador: 'Colaborador' };
+    const labels: Record<string, string> = { contabilidad: 'Contabilidad', coordinador: 'Aprobador', colaborador: 'Colaborador' };
     return labels[this.getOrigen(e)] ?? 'Colaborador';
   }
 
@@ -406,7 +435,7 @@ export class RendicionesDirectasComponent implements OnInit {
 
   getDocNumber(e: any): string {
     const type = e?.expenseType;
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return (typeof e?.internalCode === 'string' && e.internalCode) ? e.internalCode : '-';
     }
     if (type === 'recibo_caja') {
@@ -425,14 +454,6 @@ export class RendicionesDirectasComponent implements OnInit {
   getProveedor(e: any): string {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
-    if (type === 'comprobante_caja') {
-      try {
-        const d = this.getData(e);
-        const raw = d['payload'];
-        const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {});
-        return String(obj['entregadoA'] || '-');
-      } catch { return '-'; }
-    }
     const d = this.getData(e);
     const r = d['razonSocial'];
     if (typeof r === 'string' && r.trim()) return r.trim();
@@ -444,7 +465,6 @@ export class RendicionesDirectasComponent implements OnInit {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') { const rows: any[] = e?.mobilityRows || []; const first = rows[0]; return first?.gestion || `${rows.length} filas`; }
     if (type === 'otros_gastos') return e?.description || 'DJ firmada';
-    if (type === 'comprobante_caja') { try { const d = this.getData(e); const raw = d['payload']; const obj: any = typeof raw === 'string' ? JSON.parse(raw) : (raw ?? {}); return String(obj['concepto'] || ''); } catch { return ''; } }
     const d = this.getData(e);
     return String(d['concepto'] || e.description || '');
   }
@@ -467,18 +487,6 @@ export class RendicionesDirectasComponent implements OnInit {
     return String(v);
   }
 
-  cashVoucherPayload(e: any): Record<string, unknown> {
-    const d = this.getData(e);
-    const raw = d['payload'];
-    let obj: any = {};
-    if (raw && typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { /**/ } }
-    else if (raw && typeof raw === 'object') { obj = raw; }
-    if (!obj['concepto'] && e['description']) { try { const p = JSON.parse(String(e['description'])); if (p?.concepto) obj = p; } catch { /**/ } }
-    return obj;
-  }
-
-  cashVoucherText(e: any, key: string): string { const v = this.cashVoucherPayload(e)[key]; if (v == null || v === '') return '—'; return String(v); }
-
   mobilityRows(e: any): any[] { const r = e?.mobilityRows; return Array.isArray(r) ? r : []; }
   mobilityRowTotal(row: any): number { const t = row?.total; if (typeof t === 'number') return t; const n = Number(t); return Number.isNaN(n) ? 0 : n; }
   trackRow(i: number): number { return i; }
@@ -487,9 +495,9 @@ export class RendicionesDirectasComponent implements OnInit {
   hasFile(e: any): boolean { return this.getFileUrl(e) !== null; }
   openFile(e: any, event: Event): void { event.stopPropagation(); const url = this.getFileUrl(e); url ? window.open(url, '_blank', 'noopener,noreferrer') : this.notifications.show('Sin documento adjunto', 'warning'); }
 
-  getEstadoCont(e: any): string { return e.approvalCont?.status === 'approved' ? 'Revisado' : 'Pendiente'; }
-  getEstadoContClass(e: any): string { return e.approvalCont?.status === 'approved' ? 'bg-teal-100 text-teal-700' : 'bg-yellow-100 text-yellow-700'; }
-  isRevisado(e: any): boolean { return e.approvalCont?.status === 'approved'; }
+  getEstadoCont(e: any): string { return e.contabilidadStatus === 'approved' ? 'Revisado' : 'Pendiente'; }
+  getEstadoContClass(e: any): string { return e.contabilidadStatus === 'approved' ? 'bg-teal-100 text-teal-700' : 'bg-yellow-100 text-yellow-700'; }
+  isRevisado(e: any): boolean { return e.contabilidadStatus === 'approved'; }
   getTotal(e: any): number { const t = e?.total; if (typeof t === 'number') return t; const n = Number(t); return Number.isNaN(n) ? 0 : n; }
   get totalMonto(): number { return this.data().reduce((sum, e) => sum + (this.isDeposito(e) ? 0 : this.getTotal(e)), 0); }
 
@@ -503,23 +511,16 @@ export class RendicionesDirectasComponent implements OnInit {
 
   async exportMobilityPdf(e: any, event: Event): Promise<void> {
     event.stopPropagation();
-    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
+    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
     const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToPdf(data);
   }
 
   async exportMobilityExcel(e: any, event: Event): Promise<void> {
     event.stopPropagation();
-    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), clienteProveedor: String(r.clienteProveedor || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
+    const rows = this.mobilityRows(e).map((r: any) => ({ fecha: String(r.fecha || ''), origen: String(r.origen || ''), destino: String(r.destino || ''), gestion: String(r.gestion || ''), total: this.mobilityRowTotal(r), proyecto: this.resolveProjectLabel(r.proyectId), colaborador: String(r.colaboradorNombre || this.getColaborador(e) || '') }));
     const data: MobilitySheetExportData = { fileBaseName: `planilla_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), proyecto: this.getProject(e), rows, total: this.getTotal(e) };
     await this.exportService.exportMobilitySheetToExcel(data);
-  }
-
-  async exportCashVoucherPdf(e: any, event: Event): Promise<void> {
-    event.stopPropagation();
-    const payload = this.cashVoucherPayload(e);
-    const data: CashVoucherExportData = { fileBaseName: `comprobante_${e._id}`, collaborator: this.getColaborador(e), collaboratorDni: this.getColaboradorDni(e), internalCode: e.internalCode, entregadoA: String(payload['entregadoA'] || ''), direccion: String(payload['direccion'] || ''), concepto: String(payload['concepto'] || ''), monto: this.getTotal(e), generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }), projectName: this.getProject(e), fechaEmision: this.emissionDateText(e) };
-    await this.exportService.exportCashVoucherToPdf(data);
   }
 
   async exportReceiptPdf(e: any, event: Event): Promise<void> {

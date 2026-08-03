@@ -27,12 +27,14 @@ import { CreateDirectaDepositDto } from './dto/create-directa-deposit.dto'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
 import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
+import { ProjectService } from '../project/project.service'
 
 @Controller('expense-report')
 export class ExpenseReportController {
   constructor(
     private readonly expenseReportService: ExpenseReportService,
-    private readonly auditLogService: AuditLogService
+    private readonly auditLogService: AuditLogService,
+    private readonly projectService: ProjectService
   ) {}
 
   /** Cliente activo del JWT (ObjectId string); vacío si sesión sin cliente (ej. super sin tenant). */
@@ -195,20 +197,25 @@ export class ExpenseReportController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get('client/:clientId')
-  findAllByClient(@Param('clientId') clientId: string, @Request() req: any) {
+  async findAllByClient(@Param('clientId') clientId: string, @Request() req: any) {
     const role = req.user.roles[0]
-    if (role === ROLES.COORDINADOR) {
-      return this.expenseReportService.findAllByCoordinator(
-        req.user._id,
-        clientId
-      )
+    const userId = req.user._id || req.user.sub
+    // El rol "Coordinador" casi nunca se asigna literalmente: en la práctica un
+    // aprobador es un Colaborador asignado como N1/N2 en algún centro de costo.
+    // Sin este chequeo, un aprobador-Colaborador nunca entraba a esta rama y no
+    // veía las rendiciones/solicitudes de su equipo pendientes de aprobar.
+    const isApprover =
+      role === ROLES.COORDINADOR ||
+      (await this.projectService.isApproverForClient(userId, clientId))
+    if (isApprover) {
+      return this.expenseReportService.findAllByCoordinator(userId, clientId)
     }
     const hasRendicionesPermission =
       req.user.permissions?.modules?.includes('rendiciones')
     const isRestrictedUser =
       role === ROLES.COLABORADOR && !hasRendicionesPermission
     if (isRestrictedUser) {
-      return this.expenseReportService.findAllByUser(req.user._id, clientId)
+      return this.expenseReportService.findAllByUser(userId, clientId)
     }
     return this.expenseReportService.findAllByClient(clientId)
   }
@@ -224,7 +231,7 @@ export class ExpenseReportController {
 
   /** Fase 6 — Tesorería: rendiciones aprobadas con reembolso pendiente de comprobante */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @Get('pending-reimbursements/client/:clientId')
   findPendingReimbursements(
     @Param('clientId') clientId: string,
@@ -232,7 +239,7 @@ export class ExpenseReportController {
   ) {
     const role = req.user?.roles?.[0] || req.user?.role
     const canPay =
-      [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD].includes(role) ||
+      [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA].includes(role) ||
       req.user?.permissions?.canApproveL2 === true
     if (!canPay) {
       throw new ForbiddenException(
@@ -386,7 +393,7 @@ export class ExpenseReportController {
 
   /** Fase 6 — Registro de pago de reembolso (contabilidad / tesorería con canApproveL2) */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @Patch(':id/register-reimbursement-payment')
   async registerReimbursementPayment(
     @Param('id') id: string,
@@ -443,12 +450,41 @@ export class ExpenseReportController {
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
+  @Get(':id/deletion-preview')
+  async getDeletionPreview(@Param('id') id: string, @Request() req: any) {
+    return this.expenseReportService.getDeletionPreview(id, {
+      userId: req.user._id || req.user.sub,
+      role: req.user.roles?.[0],
+    })
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
   @Delete(':id')
   async remove(@Param('id') id: string, @Request() req: any) {
     const result = await this.expenseReportService.remove(id, {
       userId: req.user._id || req.user.sub,
       role: req.user.roles?.[0],
     })
+    const summary = (result as any)?.deletionSummary as
+      | {
+          expensesDeleted: number
+          advancesUnlinked: number
+          cajaChicaReportsUpdated: number
+        }
+      | undefined
+    const details: string[] = []
+    if (summary?.expensesDeleted) {
+      details.push(`${summary.expensesDeleted} comprobante(s) eliminado(s)`)
+    }
+    if (summary?.advancesUnlinked) {
+      details.push(`${summary.advancesUnlinked} anticipo(s) desvinculado(s)`)
+    }
+    if (summary?.cajaChicaReportsUpdated) {
+      details.push(
+        `${summary.cajaChicaReportsUpdated} reporte(s) de caja chica actualizado(s)`
+      )
+    }
     await this.auditLogService.log({
       userId: req.user._id || req.user.sub,
       userName: req.user.name || req.user.email || 'Usuario',
@@ -456,6 +492,7 @@ export class ExpenseReportController {
       module: 'rendiciones',
       entityId: id,
       clientId: req.user.clientId,
+      details: details.length ? details.join('; ') : undefined,
     })
     return result
   }
@@ -677,11 +714,12 @@ export class ExpenseReportController {
   }
 
   /**
-   * Aprueba el nivel actual de la cadena de aprobadores del viático. Solo el
-   * aprobador (Coordinador) al que le toca el turno, o Superadmin.
+   * Aprueba el nivel actual de la cadena de aprobadores del viático. La
+   * autorización real la hace `canActOnChain` en el servicio (¿el actor está
+   * en approverIds del paso pendiente?, o Superadmin) — el aprobador puede
+   * tener cualquier rol, por eso no se restringe por @Roles aquí.
    */
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.COORDINADOR, ROLES.SUPER_ADMIN)
+  @UseGuards(AuthGuard('jwt'))
   @Patch(':id/viatico/approve')
   async approveViatico(
     @Param('id') id: string,
@@ -700,9 +738,33 @@ export class ExpenseReportController {
     return result
   }
 
-  /** Rechazar viático (aprobador al que le toca el turno, o Superadmin). */
+  /** Aprobación final de Contabilidad, tras completarse la cadena de centro de costo. */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.COORDINADOR, ROLES.SUPER_ADMIN)
+  @Roles(ROLES.CONTABILIDAD, ROLES.SUPER_ADMIN)
+  @Patch(':id/viatico/contabilidad-approve')
+  async approveViaticoContabilidad(
+    @Param('id') id: string,
+    @Body() body: { notes?: string },
+    @Request() req: any
+  ) {
+    const actorId = String(req.user._id || req.user.sub)
+    const actorRole = req.user?.roles?.[0] ?? ''
+    const result = await this.expenseReportService.approveViaticoContabilidad(
+      id,
+      { approvedBy: actorId, notes: body.notes },
+      actorId,
+      actorRole
+    )
+    await this.auditLogService.log({ userId: req.user._id || req.user.sub, userName: req.user.name || req.user.email || 'Usuario', action: 'approve_viatico_contabilidad', module: 'viaticos', entityId: id, clientId: req.user.clientId })
+    return result
+  }
+
+  /**
+   * Rechazar viático. El servicio ya distingue el caso (aprobador del paso
+   * pendiente vía canActOnChain, o Contabilidad/Superadmin en el gate final)
+   * — no se restringe por @Roles aquí.
+   */
+  @UseGuards(AuthGuard('jwt'))
   @Patch(':id/viatico/reject')
   async rejectViatico(
     @Param('id') id: string,
@@ -721,6 +783,13 @@ export class ExpenseReportController {
     return result
   }
 
+  /**
+   * @removed :id/directa/approve y :id/directa/reject — la aprobación de
+   * rendición directa ya no es a nivel de reporte. Usa los mismos endpoints
+   * por comprobante que la rendición normal: PATCH invoice/:id/approve-coord
+   * y PATCH invoice/:id/reject-coord (módulo expense).
+   */
+
   /** Reenviar viático tras rechazo. */
   @UseGuards(AuthGuard('jwt'))
   @Patch(':id/viatico/resubmit')
@@ -738,7 +807,7 @@ export class ExpenseReportController {
 
   /** Registrar pago del viático (tesorería / canApproveL2). */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @Patch(':id/viatico/register-payment')
   async registerViaticoPayment(
     @Param('id') id: string,

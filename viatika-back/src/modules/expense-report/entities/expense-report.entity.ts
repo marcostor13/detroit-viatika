@@ -8,6 +8,21 @@ import {
   PaymentInfo,
   ReturnRecord,
 } from '../../advance/entities/advance.entity'
+import { ChainStep } from '../../advance/approval-chain.util'
+
+/** Forma Mongoose de un `ChainStep` (ver approval-chain.util.ts) para subdocumentos embebidos. */
+export const chainStepSchemaDefinition = {
+  level: { type: Number, required: true },
+  projectId: { type: Types.ObjectId, ref: 'Project', required: true },
+  projectRole: { type: String, enum: ['principal', 'seleccionado'], required: true },
+  approverIds: { type: [{ type: Types.ObjectId, ref: 'User' }], default: [] },
+  escalatedFrom: { type: Number, required: false },
+  /** Aprobación en paralelo entre niveles: este paso específico ya fue resuelto. */
+  approved: { type: Boolean, default: false },
+  approvedBy: { type: Types.ObjectId, ref: 'User', required: false },
+  approvedAt: { type: Date, required: false },
+  _id: false,
+}
 
 export type ExpenseReportStatus =
   | 'solicited'
@@ -21,6 +36,7 @@ export type ExpenseReportStatus =
   | 'cancelled'
   | 'pending_l1'
   | 'pending_l2'
+  | 'pending_contabilidad'
   | 'viatico_approved'
   | 'partially_paid'
   | 'paid'
@@ -83,8 +99,9 @@ export interface ExpenseReportAffidavit {
  */
 export interface DirectaDepositInfo {
   amount: number
+  metodoPago?: 'deposito' | 'efectivo'
   scannedAmount?: number
-  receiptUrl: string
+  receiptUrl?: string
   receiptFileName?: string
   receiptMimeType?: string
   receiptSizeBytes?: number
@@ -134,21 +151,18 @@ export interface ExpenseReportDocument extends Document {
   createdBy: Types.ObjectId
   approvedBy?: Types.ObjectId
   projectId?: Types.ObjectId
+  /**
+   * Coordinador responsable de esta rendición (rol Coordinador), resuelto desde
+   * `Project.approverId` del centro de costo (`projectId`) al crearla o al cambiar
+   * su centro de costo. Es un snapshot: si luego cambia el aprobador del centro de
+   * costo, esta rendición conserva el coordinador original (no retroactivo).
+   */
+  assignedCoordinatorId?: Types.ObjectId
   motivo?: string
   codigo?: string
   gestion?: string
   isDirecta?: boolean
   isCajaChica?: boolean
-  /** ID del anticipo que consumió el saldo pendiente de esta rendición. */
-  pendingBalanceUsedInAdvanceId?: Types.ObjectId
-  /** ID de la rendición directa que consumió el saldo pendiente de esta rendición directa. */
-  pendingBalanceUsedInRendicionId?: Types.ObjectId
-  /** ID de la rendición directa de origen (cuando esta fue creada usando el saldo de otra). */
-  pendingBalanceFromReportId?: Types.ObjectId
-  /** Monto heredado desde la rendición de origen. */
-  pendingBalanceAmount?: number
-  /** Saldos de la bolsa consumidos para financiar esta rendición directa. */
-  saldoIds?: Types.ObjectId[]
   accountNumber?: string
   idDocument?: string
   peopleNames?: string[]
@@ -169,11 +183,23 @@ export interface ExpenseReportDocument extends Document {
   reopenHistory?: ReopenRecord[]
   // Campos exclusivos de viático
   viaticoAmount?: number
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
+  viaticoMoneda?: string
   viaticoRequiredLevels?: number
   viaticoApprovalLevel?: number
-  /** Cadena ordenada de aprobadores (snapshot de User.approverIds al crear la solicitud). */
-  viaticoApproverChain?: Types.ObjectId[]
+  /** Cadena por centro de costo (N2 principal/seleccionado), snapshot al crear la solicitud. */
+  viaticoApproverChain?: ChainStep[]
   viaticoApprovalHistory?: ApprovalEntry[]
+  /**
+   * Aprobación final de Contabilidad de la SOLICITUD (regla 1.3, gate tras
+   * completar `viaticoApproverChain`) — ver `approveViaticoContabilidad`.
+   * Campos propios y separados de `contabilidadApprovedAt`/`contabilidadApprovedBy`,
+   * que pertenecen a la aprobación de la RENDICIÓN de comprobantes (regla 1.4,
+   * posterior al pago); antes ambos gates compartían el mismo campo y el de la
+   * rendición pisaba el de la solicitud.
+   */
+  viaticoSolicitudContabilidadApprovedAt?: Date
+  viaticoSolicitudContabilidadApprovedBy?: Types.ObjectId
   viaticoPaidAmount?: number
   viaticoPayments?: AdvancePayment[]
   viaticoPaymentInfo?: PaymentInfo
@@ -190,11 +216,21 @@ export interface ExpenseReportDocument extends Document {
   viaticoBudgetCommitmentRecorded?: boolean
   viaticoRejectedBy?: string
   viaticoRejectionReason?: string
+  /** Quién rechazó: aprobador de centro de costo o Contabilidad (gate final). */
+  viaticoRejectedByRole?: 'centro_costo' | 'contabilidad'
   viaticoBankName?: string
   viaticoAccountNumber?: string
   viaticoCci?: string
   /** Orden de Trabajo (LIM-XXX-NNNNNN) a la que se imputa el gasto del viático. */
   viaticoOrdenTrabajoId?: Types.ObjectId
+  /**
+   * Orden de Trabajo (LIM-XXX-NNNNNN) elegida al crear la rendición directa;
+   * heredada por todos sus comprobantes.
+   * @remarks la cadena de aprobación de rendición directa ya NO vive aquí a
+   * nivel de reporte — se resuelve por comprobante, igual que una rendición
+   * normal (ver `Expense.approverChain`).
+   */
+  directaOrdenTrabajoId?: Types.ObjectId
 }
 
 @Schema({ timestamps: true })
@@ -243,7 +279,7 @@ export class ExpenseReport {
     enum: [
       'solicited', 'open', 'submitted', 'pending_accounting',
       'approved', 'rejected', 'reimbursed', 'closed', 'cancelled',
-      'pending_l1', 'pending_l2', 'viatico_approved', 'partially_paid', 'paid', 'settled', 'returned',
+      'pending_l1', 'pending_l2', 'pending_contabilidad', 'viatico_approved', 'partially_paid', 'paid', 'settled', 'returned',
     ],
   })
   status: ExpenseReportStatus
@@ -267,6 +303,14 @@ export class ExpenseReport {
 
   @Prop({ type: Types.ObjectId, ref: 'Project', required: false })
   projectId?: Types.ObjectId
+
+  /**
+   * Snapshot del coordinador responsable (ver interfaz arriba). Se resuelve desde
+   * `Project.approverId` al crear/editar `projectId`; no se recalcula si luego
+   * cambia el aprobador del centro de costo.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
+  assignedCoordinatorId?: Types.ObjectId
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Advance' }], default: [] })
   advanceIds?: Types.ObjectId[]
@@ -334,8 +378,9 @@ export class ExpenseReport {
   @Prop({
     type: {
       amount: { type: Number, required: true },
+      metodoPago: { type: String, enum: ['deposito', 'efectivo'] },
       scannedAmount: { type: Number },
-      receiptUrl: { type: String, required: true },
+      receiptUrl: { type: String },
       receiptFileName: { type: String },
       receiptMimeType: { type: String },
       receiptSizeBytes: { type: Number },
@@ -443,25 +488,14 @@ export class ExpenseReport {
   })
   reopenHistory?: ReopenRecord[]
 
-  @Prop({ type: Types.ObjectId, ref: 'Advance', required: false })
-  pendingBalanceUsedInAdvanceId?: Types.ObjectId
-
-  @Prop({ type: Types.ObjectId, ref: 'ExpenseReport', required: false })
-  pendingBalanceUsedInRendicionId?: Types.ObjectId
-
-  @Prop({ type: Types.ObjectId, ref: 'ExpenseReport', required: false })
-  pendingBalanceFromReportId?: Types.ObjectId
-
-  @Prop({ required: false })
-  pendingBalanceAmount?: number
-
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Saldo' }], default: undefined })
-  saldoIds?: Types.ObjectId[]
-
   // ─── Campos exclusivos de viático ────────────────────────────────────────────
 
   @Prop({ type: Number, required: false })
   viaticoAmount?: number
+
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
+  @Prop({ type: String, default: '01' })
+  viaticoMoneda?: string
 
   @Prop({ type: Number, default: 1 })
   viaticoRequiredLevels?: number
@@ -469,9 +503,9 @@ export class ExpenseReport {
   @Prop({ type: Number, default: 0 })
   viaticoApprovalLevel?: number
 
-  /** Cadena ordenada de aprobadores (snapshot de User.approverIds al crear la solicitud). */
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: undefined })
-  viaticoApproverChain?: Types.ObjectId[]
+  /** Cadena por centro de costo (N2 principal/seleccionado), snapshot al crear la solicitud. */
+  @Prop({ type: [chainStepSchemaDefinition], default: undefined })
+  viaticoApproverChain?: ChainStep[]
 
   @Prop({
     type: [
@@ -487,6 +521,18 @@ export class ExpenseReport {
     default: [],
   })
   viaticoApprovalHistory?: ApprovalEntry[]
+
+  /**
+   * Aprobación final de Contabilidad de la SOLICITUD (regla 1.3), separada de
+   * `contabilidadApprovedAt`/`contabilidadApprovedBy` (aprobación de la
+   * RENDICIÓN de comprobantes, regla 1.4) para no pisar el registro de
+   * auditoría de una fase con el de la otra.
+   */
+  @Prop({ type: Date, required: false })
+  viaticoSolicitudContabilidadApprovedAt?: Date
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
+  viaticoSolicitudContabilidadApprovedBy?: Types.ObjectId
 
   @Prop({ type: Number, required: false })
   viaticoPaidAmount?: number
@@ -576,6 +622,9 @@ export class ExpenseReport {
   @Prop({ type: String, required: false })
   viaticoRejectionReason?: string
 
+  @Prop({ required: false, enum: ['centro_costo', 'contabilidad'] })
+  viaticoRejectedByRole?: 'centro_costo' | 'contabilidad'
+
   @Prop({ type: String, required: false })
   viaticoBankName?: string
 
@@ -587,6 +636,14 @@ export class ExpenseReport {
 
   @Prop({ type: Types.ObjectId, ref: 'OrdenTrabajo', required: false })
   viaticoOrdenTrabajoId?: Types.ObjectId
+
+  /**
+   * Orden de Trabajo (LIM-XXX-NNNNNN) elegida al crear la rendición directa;
+   * heredada por todos sus comprobantes. La cadena de aprobación de rendición
+   * directa ya no vive a nivel de reporte — ver `Expense.approverChain`.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'OrdenTrabajo', required: false })
+  directaOrdenTrabajoId?: Types.ObjectId
 }
 
 export const ExpenseReportSchema = SchemaFactory.createForClass(ExpenseReport)

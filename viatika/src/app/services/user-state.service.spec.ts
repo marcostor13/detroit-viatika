@@ -258,6 +258,27 @@ describe('UserStateService — empty localStorage', () => {
       expect(service.hasModulePermission('tesoreria')).toBeFalse();
     });
 
+    // VD-77: hasModuleStrict NO tiene bypass para Contabilidad/Admin.
+    it('hasModuleStrict() returns false for Contabilidad without the module (VD-77)', () => {
+      const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['rendiciones'], canApproveL1: true, canApproveL2: true } }));
+      expect(service.hasModuleStrict('tesoreria')).toBeFalse();
+      // hasModulePermission sí conserva el bypass (no afecta guards ni otras vistas)
+      expect(service.hasModulePermission('tesoreria')).toBeTrue();
+    });
+
+    it('hasModuleStrict() returns true for Contabilidad with the module', () => {
+      const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['tesoreria'], canApproveL1: true, canApproveL2: true } }));
+      expect(service.hasModuleStrict('tesoreria')).toBeTrue();
+    });
+
+    it('hasModuleStrict() returns true for Superadministrador regardless of modules', () => {
+      const role = { _id: 'r3', name: 'Superadministrador', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
+      expect(service.hasModuleStrict('any-module')).toBeTrue();
+    });
+
     it('canApproveL1() returns true when canApproveL1 permission is true', () => {
       service.setUser(makeUser({ permissions: { modules: [], canApproveL1: true, canApproveL2: false } }));
       expect(service.canApproveL1()).toBeTrue();
@@ -290,6 +311,12 @@ describe('UserStateService — empty localStorage', () => {
       expect(service.canApproveL2()).toBeFalse();
     });
 
+    it('canApproveL2() returns true for Tesoreria role regardless of permission flag', () => {
+      const role = { _id: 'r4', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canApproveL2()).toBeTrue();
+    });
+
     it('canAccessTesoreria() returns true for Superadministrador', () => {
       const role = { _id: 'r3', name: 'Superadministrador', active: true, createdAt: new Date(), updatedAt: new Date() };
       service.setUser(makeUser({ role }));
@@ -304,6 +331,33 @@ describe('UserStateService — empty localStorage', () => {
     it('canAccessTesoreria() returns false when tesoreria module is not granted', () => {
       service.setUser(makeUser({ permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
       expect(service.canAccessTesoreria()).toBeFalse();
+    });
+
+    // El módulo "Pagos" manda sobre el rol: quitarlo debe ocultar el botón de
+    // pago en Rendiciones y cerrar /tesoreria también a Contabilidad/Admin.
+    it('canAccessTesoreria() returns false for Contabilidad without the tesoreria module', () => {
+      const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['rendiciones'], canApproveL1: true, canApproveL2: true } }));
+      expect(service.canAccessTesoreria()).toBeFalse();
+      expect(service.canAccessPagos()).toBeFalse();
+    });
+
+    it('canAccessTesoreria() returns true for Contabilidad with the tesoreria module', () => {
+      const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['tesoreria'], canApproveL1: true, canApproveL2: true } }));
+      expect(service.canAccessTesoreria()).toBeTrue();
+    });
+
+    it('canAccessTesoreria() returns false for Administrador without the tesoreria module', () => {
+      const role = { _id: 'r2', name: 'Administrador', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['rendiciones'], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canAccessTesoreria()).toBeFalse();
+    });
+
+    it('canAccessTesoreria() returns true for Tesoreria role regardless of modules', () => {
+      const role = { _id: 'r4', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canAccessTesoreria()).toBeTrue();
     });
   });
 });

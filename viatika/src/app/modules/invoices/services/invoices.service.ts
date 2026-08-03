@@ -7,9 +7,9 @@ import {
   SunatValidationInfo,
   ICreateMobilitySheetPayload,
   ICreateOtherExpensePayload,
+  ICreateDeclaracionJuradaPayload,
+  IDeclaracionJuradaResponse,
   ICreateCashReceiptPayload,
-  ICreateCashVoucherPayload,
-  ICashVoucherScanResult,
 } from '../interfaces/invoices.interface';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -36,10 +36,14 @@ export class InvoicesService {
 
   private http = inject(HttpClient);
 
-  analyzeInvoice(invoice: InvoicePayload): Observable<IInvoiceResponse> {
+  /**
+   * VD-70 Parte B: el escaneo de imagen envía el archivo (multipart) para OCR,
+   * SIN subirlo a storage ni crear el gasto. Devuelve solo { data, total, status }.
+   */
+  analyzeInvoice(formData: FormData): Observable<IInvoiceResponse> {
     return this.http.post<IInvoiceResponse>(
       `${this.url}/analyze-image`,
-      invoice
+      formData
     );
   }
 
@@ -47,6 +51,19 @@ export class InvoicesService {
     return this.http.post<IInvoiceResponse>(
       `${this.url}/analize-pdf`,
       formData
+    );
+  }
+
+  /** VD-70 Parte B: crea la factura al confirmar (tras el escaneo). */
+  createInvoice(payload: any): Observable<IInvoiceResponse> {
+    return this.http.post<IInvoiceResponse>(`${this.url}/invoice`, payload);
+  }
+
+  /** VD-70 Parte B: revalida con SUNAT sin gasto persistido (panel post-OCR). */
+  validateSunatStateless(payload: any): Observable<{ status?: string; details?: any; message?: string }> {
+    return this.http.post<{ status?: string; details?: any; message?: string }>(
+      `${this.url}/scan/validate-sunat`,
+      payload
     );
   }
 
@@ -208,17 +225,14 @@ export class InvoicesService {
     return this.http.post<IInvoiceResponse>(`${this.url}/other-expense`, payload);
   }
 
+  createDeclaracionJurada(
+    payload: ICreateDeclaracionJuradaPayload
+  ): Observable<IDeclaracionJuradaResponse> {
+    return this.http.post<IDeclaracionJuradaResponse>(`${this.url}/declaracion-jurada`, payload);
+  }
+
   createCashReceipt(payload: ICreateCashReceiptPayload): Observable<IInvoiceResponse> {
     return this.http.post<IInvoiceResponse>(`${this.url}/cash-receipt`, payload);
-  }
-
-  createCashVoucher(payload: ICreateCashVoucherPayload): Observable<IInvoiceResponse> {
-    return this.http.post<IInvoiceResponse>(`${this.url}/cash-voucher`, payload);
-  }
-
-  /** Escanea un comprobante de caja (imagen/PDF ya subido a S3) y extrae sus datos. */
-  scanCashVoucher(payload: { url: string; mimeType?: string }): Observable<ICashVoucherScanResult> {
-    return this.http.post<ICashVoucherScanResult>(`${this.url}/scan-cash-voucher`, payload);
   }
 
   // Métodos para validación SUNAT
@@ -245,7 +259,7 @@ export class InvoicesService {
         logo: client.logo,
         limits: client.limits,
         notificationSettings: client.notificationSettings,
-        tesoreriaEmails: client.tesoreriaEmails ?? [],
+        paymentAccount: client.paymentAccount,
       }))
     );
   }
@@ -260,13 +274,6 @@ export class InvoicesService {
     );
   }
 
-  updateTesoreriaEmails(companyId: string, emails: string[]): Observable<void> {
-    return this.http.patch<void>(
-      `${this.companyConfigUrl}/${companyId}/tesoreria-emails`,
-      { emails }
-    );
-  }
-
   updateCompanyConfig(
     companyId: string,
     config: Partial<ICompanyConfig>
@@ -276,6 +283,8 @@ export class InvoicesService {
     if (config.businessName) payload['businessName'] = config.businessName;
     if (config.logo) payload['logo'] = config.logo;
     if (config.limits !== undefined) payload['limits'] = config.limits;
+    if (config.paymentAccount !== undefined)
+      payload['paymentAccount'] = config.paymentAccount;
 
     return this.http.patch<any>(
       `${this.companyConfigUrl}/${companyId}`,
@@ -288,6 +297,7 @@ export class InvoicesService {
         businessName: client.comercialName || client.businessName,
         logo: client.logo,
         limits: client.limits,
+        paymentAccount: client.paymentAccount,
       }))
     );
   }

@@ -14,6 +14,11 @@ export class AccountingConfigService {
     return this.http.get<IAccountingConfig | null>(`${this.url}/${clientId}`);
   }
 
+  /** Códigos de moneda SUNAT disponibles para la empresa (endpoint liviano, todos los roles). */
+  getAvailableCurrencies(clientId: string): Observable<string[]> {
+    return this.http.get<string[]>(`${this.url}/${clientId}/currencies`);
+  }
+
   /** Upsert de la configuración contable (plan de cuentas + bancos). */
   saveConfig(
     clientId: string,

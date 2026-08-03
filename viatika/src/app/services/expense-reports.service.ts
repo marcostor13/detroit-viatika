@@ -12,6 +12,20 @@ import {
 } from '../interfaces/expense-report.interface';
 import { Observable } from 'rxjs';
 
+export interface IExpenseReportDeletionPreview {
+  allowed: boolean;
+  reason?: string;
+  type?: string;
+  isDirecta: boolean;
+  isCajaChica: boolean;
+  budget: number;
+  expensesCount: number;
+  expensesTotal: number;
+  filesCount: number;
+  linkedAdvances: { amount: number; status: string }[];
+  cajaChicaReferenced: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -43,6 +57,13 @@ export class ExpenseReportsService {
     return this.http.delete(`${this.apiUrl}/expense-report/${id}`);
   }
 
+  /** Vista previa de lo que se eliminaría (comprobantes, anticipos, caja chica) antes de confirmar el borrado. */
+  getDeletionPreview(id: string): Observable<IExpenseReportDeletionPreview> {
+    return this.http.get<IExpenseReportDeletionPreview>(
+      `${this.apiUrl}/expense-report/${id}/deletion-preview`
+    );
+  }
+
   findPendingReimbursements(clientId: string): Observable<IExpenseReport[]> {
     return this.http.get<IExpenseReport[]>(
       `${this.apiUrl}/expense-report/pending-reimbursements/client/${clientId}`
@@ -52,10 +73,13 @@ export class ExpenseReportsService {
   /** Contabilidad: crea una rendición directa con depósito inicial para un colaborador/coordinador. */
   createDirectaDeposit(payload: {
     userId: string;
+    projectId: string;
+    ordenTrabajoId: string;
     gestion?: string;
     amount: number;
+    metodoPago?: 'deposito' | 'efectivo';
     scannedAmount?: number;
-    receiptUrl: string;
+    receiptUrl?: string;
     receiptFileName?: string;
     receiptMimeType?: string;
     receiptSizeBytes?: number;
@@ -156,6 +180,7 @@ export class ExpenseReportsService {
       depositDate: string;
       bankOrigin?: string;
       operationNumber?: string;
+      amountReturned?: number;
       fileUrl: string;
       fileName?: string;
       scannedAmount?: number;
@@ -208,10 +233,26 @@ export class ExpenseReportsService {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/approve`, {});
   }
 
+  /** Aprobación final de Contabilidad, tras completarse la cadena de centro de costo. */
+  approveViaticoContabilidad(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/contabilidad-approve`, {});
+  }
+
   rejectViatico(id: string, rejectionReason: string): Observable<IExpenseReport> {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/viatico/reject`, { rejectionReason });
   }
 
+  /** Aprueba el paso del aprobador actual en la cadena de la RENDICIÓN a nivel de reporte (N1/N2…). Con la cadena completa, la rendición pasa a Contabilidad. */
+  approveRendicion(id: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/rendicion/approve`, {});
+  }
+
+  /** Rechaza la RENDICIÓN a nivel de reporte (cualquier aprobador de un paso pendiente). */
+  rejectRendicion(id: string, rejectionReason: string): Observable<IExpenseReport> {
+    return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}/rendicion/reject`, { rejectionReason });
+  }
+
+  /** Aprueba el turno actual de la cadena de aprobadores de centro de costo de una rendición directa. */
   registerViaticoPayment(id: string, payload: IRegisterReimbursementPaymentPayload): Observable<IExpenseReport> {
     return this.http.patch<IExpenseReport>(
       `${this.apiUrl}/expense-report/${id}/viatico/register-payment`,

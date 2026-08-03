@@ -5,21 +5,28 @@ export type ExpenseReportType = 'rendicion' | 'viatico' | 'directa' | 'caja_chic
 export type IExpenseReportStatus =
   | 'solicited' | 'open' | 'submitted' | 'pending_accounting'
   | 'approved' | 'rejected' | 'reimbursed' | 'closed' | 'cancelled'
-  | 'pending_l1' | 'pending_l2' | 'viatico_approved'
+  | 'pending_l1' | 'pending_l2' | 'pending_contabilidad' | 'viatico_approved'
   | 'partially_paid' | 'paid' | 'settled' | 'returned';
 
-export interface IViaticoLinePayload {
-  categoryId: string;
-  detalle?: string;
-  importe: number;
-  peopleCount: number;
-  glpPerDay: number;
-  days: number;
-  lineTotal: number;
+/** Espeja `ChainStep` del backend (approval-chain.util.ts). */
+export interface IChainStep {
+  level: number;
+  projectId: { _id: string; code?: string; name?: string } | string;
+  projectRole: 'principal' | 'seleccionado';
+  /** Cualquiera de estos aprobadores puede completar el paso. */
+  approverIds: ({ _id: string; name: string; email: string } | string)[];
+  /** Presente si este paso es resultado de un escalamiento (regla 1.5). */
+  escalatedFrom?: number;
+  /** Aprobación en paralelo entre niveles: este paso específico ya fue resuelto, sin importar el orden de los demás. */
+  approved?: boolean;
+  approvedBy?: { _id: string; name: string; email: string } | string;
+  approvedAt?: string;
 }
 
 export interface ICreateViaticoPayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   place: string;
   lat?: number;
   lng?: number;
@@ -28,13 +35,7 @@ export interface ICreateViaticoPayload {
   projectId: string;
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
-  lines: IViaticoLinePayload[];
   observations?: string;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
-  /** Saldos de la bolsa seleccionados (mismo centro de costo) que financian esta solicitud. */
-  saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -43,6 +44,8 @@ export interface ICreateViaticoPayload {
 
 export interface IResubmitViaticoPayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   place: string;
   lat?: number;
   lng?: number;
@@ -51,10 +54,7 @@ export interface IResubmitViaticoPayload {
   projectId: string;
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
-  lines: IViaticoLinePayload[];
   observations?: string;
-  /** Saldos de la bolsa re-seleccionados al corregir (si el viático no tiene ya uno). */
-  saldoIds?: string[];
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -63,7 +63,8 @@ export interface IResubmitViaticoPayload {
 
 export const VIATICO_REPORT_STATUS_LABELS: Partial<Record<IExpenseReportStatus, string>> = {
   pending_l1: 'En solicitud',
-  pending_l2: 'Aprobada por coordinador',
+  pending_l2: 'Aprobada por aprobadores',
+  pending_contabilidad: 'Pendiente de Contabilidad',
   viatico_approved: 'Aprobada',
   partially_paid: 'Pago parcial',
   open: 'Registrando gastos',
@@ -80,7 +81,9 @@ export const VIATICO_REPORT_STATUS_LABELS: Partial<Record<IExpenseReportStatus, 
 
 export const VIATICO_REPORT_STATUS_COLORS: Partial<Record<IExpenseReportStatus, string>> = {
   pending_l1: 'bg-yellow-100 text-yellow-700',
-  pending_l2: 'bg-orange-100 text-orange-700',
+  // Verde: la cadena de aprobadores ya aprobó (solo resta Contabilidad).
+  pending_l2: 'bg-green-100 text-green-700',
+  pending_contabilidad: 'bg-orange-100 text-orange-700',
   viatico_approved: 'bg-blue-100 text-blue-700',
   partially_paid: 'bg-cyan-100 text-cyan-700',
   open: 'bg-emerald-100 text-emerald-700',
@@ -153,8 +156,12 @@ export interface IExpenseReport {
   clientId: string;
   type?: ExpenseReportType;
   status: IExpenseReportStatus;
+  /** Coordinador snapshot de la rendición (regla 1.4), poblado con nombre/email. */
+  assignedCoordinatorId?: { _id: string; name: string; email?: string } | string;
   // ─── Viático fields (type='viatico') ──────────────────────────────────────
   viaticoAmount?: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
+  viaticoMoneda?: string;
   viaticoPlace?: string;
   viaticoStartDate?: string;
   viaticoEndDate?: string;
@@ -163,21 +170,43 @@ export interface IExpenseReport {
   viaticoPaidAmount?: number;
   viaticoApprovalLevel?: number;
   viaticoRequiredLevels?: number;
-  /** Cadena ordenada de aprobadores asignada al momento de crear la solicitud. */
-  viaticoApproverChain?: ({ _id: string; name: string; email: string } | string)[];
+  /** Cadena por centro de costo (N2 principal/seleccionado) asignada al crear la solicitud. */
+  viaticoApproverChain?: IChainStep[];
   viaticoApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /** Cadena de aprobación de la RENDICIÓN a nivel de reporte (N1/N2… del centro de costo), snapshot al enviar el viático. */
+  rendicionApproverChain?: IChainStep[];
+  rendicionApprovalLevel?: number;
+  rendicionRequiredLevels?: number;
+  rendicionApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /**
+   * Aprobación final de Contabilidad de la SOLICITUD (regla 1.3). Distinto de
+   * `contabilidadApprovedAt`/`contabilidadApprovedBy`, que pertenecen a la
+   * aprobación de la RENDICIÓN de comprobantes (regla 1.4, posterior al pago).
+   */
+  viaticoSolicitudContabilidadApprovedAt?: string;
+  viaticoSolicitudContabilidadApprovedBy?: any;
   viaticoRejectionReason?: string;
+  /** Quién rechazó: aprobador de centro de costo, o Contabilidad (gate final). */
+  viaticoRejectedByRole?: 'centro_costo' | 'contabilidad';
   viaticoObservations?: string;
   viaticoSolicitudVersion?: number;
   viaticoBankName?: string;
   viaticoAccountNumber?: string;
   viaticoCci?: string;
-  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, codigo, departamento, descripcion}). */
-  viaticoOrdenTrabajoId?: { _id: string; codigo: string; departamento: string; descripcion?: string } | string;
+  /** Orden de Trabajo a la que se imputa el gasto del viático (poblada: {_id, nombre, costCenterId}). */
+  viaticoOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string } | string;
   /** Motivo indicado por el administrador al rechazar */
   rejectionReason?: string;
   /** Quién rechazó: coordinador (revisión inicial) o contabilidad (aprobación final). */
   rejectedByRole?: 'coordinador' | 'contabilidad';
+  // ─── Rendición directa: cadena de aprobadores por centro de costo ─────────
+  directaApprovalLevel?: number;
+  directaRequiredLevels?: number;
+  /** Cadena ordenada de aprobadores de centro de costo, armada al enviar la rendición. */
+  directaApproverChain?: ({ _id: string; name: string; email: string } | string)[];
+  directaApprovalHistory?: Array<{ level: number; approvedBy: string; action: string; notes?: string; date: string }>;
+  /** Orden de Trabajo elegida al crear la rendición directa (heredada por todos sus comprobantes). */
+  directaOrdenTrabajoId?: { _id: string; nombre: string; costCenterId?: string } | string;
   expenseIds: any[];
   createdBy: any; // User who created it
   approvedBy?: any; // Admin who approved it
@@ -201,6 +230,8 @@ export interface IExpenseReport {
     depositDate: string;
     bankOrigin?: string;
     operationNumber?: string;
+    /** Monto devuelto ingresado manualmente por el colaborador. */
+    amountReturned?: number;
     /** Datos extraídos del comprobante por OCR/visión (informativos). */
     scannedAmount?: number;
     operationDate?: string;
@@ -258,22 +289,13 @@ export interface IExpenseReport {
   lockedByCajaChica?: boolean;
   /** Depósito inicial cuando la rendición directa fue iniciada por Contabilidad. */
   directaDeposit?: IDirectaDepositInfo;
-  /** Saldos de la bolsa (poblados) que financiaron esta rendición directa. */
-  saldoIds?: IReportFinancingSaldo[];
-  /** ID de la rendición directa de la que proviene el saldo heredado. */
-  pendingBalanceFromReportId?: string;
-  /** Código (RD-XXXX) de la rendición de origen del saldo heredado (derivado en backend). */
-  pendingBalanceFromCodigo?: string;
-  /** Monto heredado desde la rendición directa de origen. */
-  pendingBalanceAmount?: number;
-  /** ID de la rendición directa que consumió el saldo de esta. */
-  pendingBalanceUsedInRendicionId?: string;
 }
 
 export interface IDirectaDepositInfo {
   amount: number;
+  metodoPago?: 'deposito' | 'efectivo';
   scannedAmount?: number;
-  receiptUrl: string;
+  receiptUrl?: string;
   receiptFileName?: string;
   receiptMimeType?: string;
   receiptSizeBytes?: number;
@@ -286,17 +308,6 @@ export interface IDirectaDepositInfo {
   createdAt?: string;
 }
 
-/** Saldo de la bolsa (poblado) que financió una rendición directa. */
-export interface IReportFinancingSaldo {
-  _id: string;
-  type: 'pago' | 'rendicion_directa' | 'rendicion';
-  amount: number;
-  concepto?: string;
-  deposit?: { operationNumber?: string; titular?: string; operationDate?: string };
-  sourceReportId?: { _id: string; codigo?: string; title?: string; gestion?: string } | string | null;
-  createdAt?: string;
-}
-
 export interface ICreateExpenseReport {
   title?: string;
   description?: string;
@@ -304,14 +315,12 @@ export interface ICreateExpenseReport {
   userId: string;
   clientId: string;
   projectId?: string;
+  /** Orden de Trabajo elegida al crear la rendición directa (filtrada por el centro de costo). */
+  ordenTrabajoId?: string;
   motivo?: string;
   gestion?: string;
   isDirecta?: boolean;
   isCajaChica?: boolean;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  /** Saldos de la bolsa seleccionados para financiar esta rendición directa. */
-  saldoIds?: string[];
   // New fields
   accountNumber?: string;
   idDocument?: string;

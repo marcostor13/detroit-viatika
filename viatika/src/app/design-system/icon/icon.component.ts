@@ -37,6 +37,7 @@ import {
   LucideSend as Send,
   LucideSettings as Settings,
   LucideShieldCheck as ShieldCheck,
+  LucideStar as Star,
   LucideTag as Tag,
   LucideTriangleAlert as TriangleAlert,
   LucideTrash2 as Trash2,
@@ -107,6 +108,7 @@ const ICONS: Record<string, Type<unknown>> = {
   send: Send,
   'map-pin': MapPin,
   car: Car,
+  star: Star,
 };
 
 export type IconName = keyof typeof ICONS;

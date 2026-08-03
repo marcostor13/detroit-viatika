@@ -8,16 +8,23 @@ export interface BankAccount {
   accountType: 'ahorros' | 'corriente'
 }
 
+/** Tipo de documento para el archivo de pagos BBVA (VD-7). */
+export type UserDocumentType = 'R' | 'L' | 'P' | 'E' | 'M'
+
 export interface UserPermissions {
   modules: string[]
   canApproveL1: boolean
   canApproveL2: boolean
-  /** Categorías sueltas asignadas directamente (independientes de los perfiles). */
+  /** Categorías sueltas asignadas directamente al usuario. */
   categoryIds: string[]
-  /** @deprecated usar categoryProfileIds. Se conserva para migración. */
-  categoryProfileId?: string
-  /** Perfiles de categoría asignados (deriva centros de costo y categorías visibles). */
-  categoryProfileIds?: string[]
+  /**
+   * Centros de costo (Project) asignados al colaborador. `primaryProjectId`
+   * es la marca explícita del principal; si no está definida, se usa
+   * `projectIds[0]` como fallback (retrocompatibilidad).
+   */
+  projectIds: string[]
+  /** Centro de costo principal explícito. Debe estar contenido en `projectIds`. */
+  primaryProjectId?: string
 }
 
 export interface UserDocument extends Document {
@@ -29,6 +36,8 @@ export interface UserDocument extends Document {
   roleId: Types.ObjectId
   isActive: boolean
   dni?: string
+  /** Tipo de documento para pagos BBVA (R=RUC, L=DNI, P=Pasaporte, E=C.Ext., M=C.Mil.). Default L. */
+  documentType?: UserDocumentType
   employeeCode?: string
   /** Subcuenta contable 14 del colaborador (asientos Contanet). Si vacío, se usa el DNI en cols AN-AS. */
   subcuenta14?: string
@@ -74,6 +83,10 @@ export class User {
   @Prop()
   dni?: string
 
+  /** Tipo de documento para el archivo de pagos BBVA. Default L (DNI). */
+  @Prop({ type: String, enum: ['R', 'L', 'P', 'E', 'M'], default: 'L' })
+  documentType?: UserDocumentType
+
   @Prop()
   employeeCode?: string
 
@@ -109,8 +122,8 @@ export class User {
       canApproveL1: { type: Boolean, default: false },
       canApproveL2: { type: Boolean, default: false },
       categoryIds: { type: [String], default: [] },
-      categoryProfileId: { type: String, default: null },
-      categoryProfileIds: { type: [String], default: [] },
+      projectIds: { type: [String], default: [] },
+      primaryProjectId: { type: String, required: false },
       _id: false,
     },
     default: () => ({
@@ -118,6 +131,7 @@ export class User {
       canApproveL1: false,
       canApproveL2: false,
       categoryIds: [],
+      projectIds: [],
     }),
   })
   permissions: UserPermissions

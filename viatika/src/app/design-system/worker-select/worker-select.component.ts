@@ -45,6 +45,10 @@ export class WorkerSelectComponent implements ControlValueAccessor, OnDestroy {
   workers = input<WorkerOption[]>([]);
   /** Texto que se muestra cuando no hay selección. */
   placeholder = input<string>('Seleccione un trabajador…');
+  /** Permite limpiar la selección (muestra una opción para dejarlo sin valor). */
+  allowEmpty = input<boolean>(false);
+  /** Etiqueta de la opción vacía cuando `allowEmpty` es true. */
+  emptyLabel = input<string>('Sin asignar');
   /** Marca visual de error (borde rojo). */
   invalid = input<boolean>(false);
   /** Clases extra para el botón disparador. */
@@ -148,6 +152,12 @@ export class WorkerSelectComponent implements ControlValueAccessor, OnDestroy {
   pick(w: WorkerOption): void {
     this.selectedId.set(w._id ?? '');
     this.onChange(this.selectedId());
+    this.close();
+  }
+
+  clear(): void {
+    this.selectedId.set('');
+    this.onChange('');
     this.close();
   }
 

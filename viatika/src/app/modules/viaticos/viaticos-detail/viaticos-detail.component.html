@@ -59,19 +59,7 @@
 
             <div>
               <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Monto solicitado</p>
-              <p class="text-xl font-bold text-secondary">S/ {{ advance()!.amount | number:'1.2-2' }}</p>
-              @if (advance()!.pendingBalanceAmount != null && advance()!.pendingBalanceAmount! > 0) {
-                <div class="mt-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs space-y-1">
-                  <div class="flex justify-between gap-4">
-                    <span class="text-amber-700">Saldo pendiente (rendicion anterior)</span>
-                    <span class="font-semibold text-amber-800 tabular-nums">S/ {{ advance()!.pendingBalanceAmount | number:'1.2-2' }}</span>
-                  </div>
-                  <div class="flex justify-between gap-4">
-                    <span class="text-amber-700">Monto adicional solicitado</span>
-                    <span class="font-semibold text-amber-800 tabular-nums">S/ {{ advance()!.additionalAmount | number:'1.2-2' }}</span>
-                  </div>
-                </div>
-              }
+              <p class="text-xl font-bold text-secondary">{{ currencySymbol() }} {{ advance()!.amount | number:'1.2-2' }}</p>
             </div>
 
             <div class="sm:col-span-2">
@@ -116,7 +104,7 @@
                     <td class="px-5 py-3.5 text-right text-secondary">{{ ln.glpPerDay | number:'1.2-2' }}</td>
                     <td class="px-5 py-3.5 text-right text-secondary">{{ ln.days }}</td>
                     <td class="px-5 py-3.5 text-right text-secondary">{{ ln.peopleCount }}</td>
-                    <td class="px-5 py-3.5 text-right font-semibold text-secondary">S/ {{ ln.lineTotal | number:'1.2-2' }}</td>
+                    <td class="px-5 py-3.5 text-right font-semibold text-secondary">{{ currencySymbol() }} {{ ln.lineTotal | number:'1.2-2' }}</td>
                   </tr>
                 }
               </tbody>
@@ -127,13 +115,13 @@
                 <div class="px-5 py-3.5">
                   <div class="flex items-center justify-between mb-1">
                     <span class="font-medium text-secondary text-sm">{{ categoryName(ln) }}</span>
-                    <span class="font-semibold text-secondary text-sm">S/ {{ ln.lineTotal | number:'1.2-2' }}</span>
+                    <span class="font-semibold text-secondary text-sm">{{ currencySymbol() }} {{ ln.lineTotal | number:'1.2-2' }}</span>
                   </div>
                   @if (ln.detalle) {
                     <p class="text-xs text-secondary mb-1">{{ ln.detalle }}</p>
                   }
                   <p class="text-xs text-tertiary">
-                    S/ {{ ln.importe | number:'1.2-2' }} + S/ {{ ln.glpPerDay | number:'1.2-2' }} GLP/día &times; {{ ln.days }} días &times; {{ ln.peopleCount }} persona{{ ln.peopleCount !== 1 ? 's' : '' }}
+                    {{ currencySymbol() }} {{ ln.importe | number:'1.2-2' }} + {{ currencySymbol() }} {{ ln.glpPerDay | number:'1.2-2' }} GLP/día &times; {{ ln.days }} días &times; {{ ln.peopleCount }} persona{{ ln.peopleCount !== 1 ? 's' : '' }}
                   </p>
                 </div>
               }
@@ -247,18 +235,8 @@
             @if (lines().length > 0) {
               <div class="flex justify-between border-t border-tertiary/20 pt-3">
                 <span class="text-tertiary font-medium">Total</span>
-                <span class="text-secondary font-bold">S/ {{ advance()!.amount | number:'1.2-2' }}</span>
+                <span class="text-secondary font-bold">{{ currencySymbol() }} {{ advance()!.amount | number:'1.2-2' }}</span>
               </div>
-              @if (advance()!.pendingBalanceAmount != null && advance()!.pendingBalanceAmount! > 0) {
-                <div class="flex justify-between text-xs pt-1">
-                  <span class="text-tertiary">Saldo pendiente</span>
-                  <span class="text-amber-700 font-semibold tabular-nums">S/ {{ advance()!.pendingBalanceAmount | number:'1.2-2' }}</span>
-                </div>
-                <div class="flex justify-between text-xs">
-                  <span class="text-tertiary">Adicional</span>
-                  <span class="text-secondary font-medium tabular-nums">S/ {{ advance()!.additionalAmount | number:'1.2-2' }}</span>
-                </div>
-              }
             }
           </div>
         </div>
@@ -353,7 +331,7 @@
         </div>
       </div>
       <p class="text-sm text-secondary mb-5">
-        ¿Confirmas la cancelacion de la solicitud de <span class="font-semibold">S/ {{ advance()?.amount | number:'1.2-2' }}</span>?
+        ¿Confirmas la cancelacion de la solicitud de <span class="font-semibold">{{ currencySymbol() }} {{ advance()?.amount | number:'1.2-2' }}</span>?
         La solicitud pasara a estado Cancelada.
       </p>
       <div class="flex gap-3">
@@ -379,7 +357,7 @@
 
       <h2 class="text-lg font-bold text-secondary mb-1">Rechazar solicitud</h2>
       <p class="text-sm text-tertiary mb-4">
-        {{ collaboratorName() }} — S/ {{ advance()?.amount | number:'1.2-2' }}
+        {{ collaboratorName() }} — {{ currencySymbol() }} {{ advance()?.amount | number:'1.2-2' }}
       </p>
 
       <form [formGroup]="rejectForm">

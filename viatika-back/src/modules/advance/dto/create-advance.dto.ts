@@ -47,6 +47,11 @@ export class CreateAdvanceDto {
   @Min(1)
   amount: number
 
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si no se envía. */
+  @IsString()
+  @IsOptional()
+  moneda?: string
+
   @IsString()
   @IsNotEmpty()
   description: string
@@ -93,27 +98,6 @@ export class CreateAdvanceDto {
   @IsString()
   @IsOptional()
   observations?: string
-
-  /** Saldo trasladado desde una rendición anterior (nueva solicitud con saldo pendiente). */
-  @IsMongoId()
-  @IsOptional()
-  pendingBalanceFromReportId?: string
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  pendingBalanceAmount?: number
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  additionalAmount?: number
-
-  /** Saldos de la bolsa seleccionados para financiar esta solicitud (consumo completo, mismo centro de costo). */
-  @IsArray()
-  @IsMongoId({ each: true })
-  @IsOptional()
-  saldoIds?: string[]
 
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   @IsString()

@@ -4,13 +4,17 @@ import {
   RendicionExportData,
   AffidavitExportData,
   MobilitySheetExportData,
-  CashVoucherExportData,
   ReceiptExportData,
   SingleExpenseAffidavitData,
 } from './rendicion-export.service';
 import { CompanyConfigService } from './company-config.service';
+import { jsPDF } from 'jspdf';
 
 const mockCompanyConfigService = jasmine.createSpyObj('CompanyConfigService', ['getCompanyConfig']);
+
+/** PNG 1x1 válido: permite que jsPDF.addImage procese la firma en los tests. */
+const ONE_PX_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const makeRendicionData = (): RendicionExportData => ({
   fileBaseName: 'test-rendicion',
@@ -146,7 +150,7 @@ describe('RendicionExportService', () => {
         fechaGeneracion: '01/01/2026',
         total: 80,
         mobilityRows: [
-          { fecha: '01/01', clienteProveedor: 'Empresa', origen: 'Lima', destino: 'Callao', gestion: 'Reunión', total: 40 },
+          { fecha: '01/01', origen: 'Lima', destino: 'Callao', gestion: 'Reunión', total: 40 },
         ],
       };
       await expectAsync(service.exportSingleExpenseAffidavitToPdf(data)).toBeResolved();
@@ -192,43 +196,54 @@ describe('RendicionExportService', () => {
         collaborator: 'María',
         generatedAt: '01/01/2026',
         rows: [
-          { fecha: '01/01', clienteProveedor: 'Empresa', origen: 'Lima', destino: 'Miraflores', gestion: 'Gestión', total: 30 },
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'Gestión', total: 30 },
         ],
         total: 30,
       };
       await expectAsync(service.exportMobilitySheetToPdf(data)).toBeResolved();
     });
-  });
 
-  describe('exportCashVoucherToPdf', () => {
-    it('resolves without throwing for minimal data', async () => {
-      const data: CashVoucherExportData = {
-        fileBaseName: 'cash-voucher',
-        collaborator: 'Juan',
-        entregadoA: 'Pedro López',
-        concepto: 'Gastos de representación',
-        monto: 150,
+    /** Cuenta cuántas veces se dibujó la firma, usando un doc externo espiable. */
+    const countSignatureDraws = async (data: MobilitySheetExportData): Promise<number> => {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const addImage = spyOn(doc, 'addImage').and.stub();
+      await service.exportMobilitySheetToPdf(data, doc);
+      return addImage.calls
+        .allArgs()
+        .filter(args => (args[0] as unknown as string) === ONE_PX_PNG).length;
+    };
+
+    it('dibuja la firma del colaborador en cada línea con contenido (VD-67)', async () => {
+      const draws = await countSignatureDraws({
+        fileBaseName: 'mobility-firmas',
+        collaborator: 'María',
         generatedAt: '01/01/2026',
-      };
-      await expectAsync(service.exportCashVoucherToPdf(data)).toBeResolved();
+        signature: ONE_PX_PNG,
+        rows: [
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'G1', total: 30 },
+          { fecha: '02/01', origen: 'Lima', destino: 'Surco', gestion: 'G2', total: 20 },
+          { fecha: '03/01', origen: 'Lima', destino: 'Barranco', gestion: 'G3', total: 10 },
+        ],
+        total: 60,
+      });
+
+      // 3 filas con contenido + la firma del pie. Las filas de relleno (la
+      // planilla se completa hasta 10) no llevan firma.
+      expect(draws).toBe(4);
     });
 
-    it('resolves without throwing with all optional fields', async () => {
-      const data: CashVoucherExportData = {
-        fileBaseName: 'cash-full',
-        collaborator: 'Ana',
-        collaboratorDni: '87654321',
-        internalCode: 'EMP-001',
-        entregadoA: 'Carlos',
-        direccion: 'Av. Lima 100',
-        concepto: 'Servicios',
-        monto: 300,
-        generatedAt: '15/05/2026',
-        projectName: 'Proyecto Alpha',
-        clientName: 'Cliente SA',
-        fechaEmision: '15/05/2026',
-      };
-      await expectAsync(service.exportCashVoucherToPdf(data)).toBeResolved();
+    it('no dibuja firmas por línea cuando el colaborador no tiene firma (VD-67)', async () => {
+      const draws = await countSignatureDraws({
+        fileBaseName: 'mobility-sin-firma',
+        collaborator: 'María',
+        generatedAt: '01/01/2026',
+        rows: [
+          { fecha: '01/01', origen: 'Lima', destino: 'Miraflores', gestion: 'G1', total: 30 },
+        ],
+        total: 30,
+      });
+
+      expect(draws).toBe(0);
     });
   });
 
@@ -271,8 +286,8 @@ describe('RendicionExportService', () => {
         location: 'Lima',
         generatedAt: '01/01/2026',
         rows: [
-          { fecha: '01/01', clienteProveedor: 'Co', origen: 'A', destino: 'B', gestion: 'G', total: 25 },
-          { fecha: '02/01', clienteProveedor: 'Co', origen: 'B', destino: 'C', gestion: 'G', total: 30 },
+          { fecha: '01/01', origen: 'A', destino: 'B', gestion: 'G', total: 25 },
+          { fecha: '02/01', origen: 'B', destino: 'C', gestion: 'G', total: 30 },
         ],
         total: 55,
       };

@@ -224,7 +224,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     draft: 'Borrador',
     pending_l1: 'Pend. Nivel 1',
     pending_l2: 'Pend. Nivel 2',
+    pending_contabilidad: 'Pend. Contabilidad',
     approved: 'Aprobado',
+    viatico_approved: 'Aprobado',
+    partially_paid: 'Pago parcial',
     paid: 'Pagado',
     settled: 'Liquidado',
     rejected: 'Rechazado',
@@ -234,10 +237,18 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private readonly reportStatusLabels: Record<string, string> = {
     solicited: 'Solicitada',
-    open: 'Abierta',
+    open: 'Registrando gastos',
     submitted: 'Enviada',
     pending_accounting: 'Pend. contabilidad',
+    pending_contabilidad: 'Pend. contabilidad',
+    pending_l1: 'Pend. Nivel 1',
+    pending_l2: 'Pend. Nivel 2',
+    viatico_approved: 'Aprobada',
     approved: 'Aprobada',
+    partially_paid: 'Pago parcial',
+    paid: 'Pagada',
+    settled: 'Liquidada',
+    returned: 'Devuelta',
     rejected: 'Rechazada',
     reimbursed: 'Reembolsada',
     closed: 'Cerrada',
@@ -249,7 +260,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     planilla_movilidad: 'Movilidad',
     otros_gastos: 'Otros gastos',
     recibo_caja: 'Recibo de caja',
-    comprobante_caja: 'Comprobante de caja',
   };
 
   ngOnInit() {
@@ -1141,7 +1151,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   // ─── Template helpers ──────────────────────────────────────────────────────
 
   hasData(): boolean {
-    return !!this.data() && this.kpis().gastoCount > 0;
+    const k = this.kpis();
+    return (
+      !!this.data() &&
+      (k.gastoCount > 0 ||
+        k.anticipoSolicitadoCount > 0 ||
+        k.rendicionesTotal > 0)
+    );
   }
 
   expenseStatusLabel(status: string): string {

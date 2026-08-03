@@ -25,6 +25,10 @@ export type AuditAction =
   | 'resubmit_advance'
   | 'resend_coordinator_notification'
   | 'pay_advance'
+  | 'generate_payments_txt'
+  | 'reconcile_payments'
+  | 'simulate_reconcile_payments'
+  | 'confirm_manual_payments'
   | 'create_user'
   | 'update_user'
   | 'update_permissions'
@@ -70,10 +74,13 @@ export type AuditAction =
   | 'approve_viatico'
   | 'approve_viatico_l1'
   | 'approve_viatico_l2'
+  | 'approve_viatico_contabilidad'
   | 'reject_viatico'
   | 'resubmit_viatico'
   | 'register_viatico_payment'
   | 'cancel_viatico'
+  | 'approve_directa'
+  | 'reject_directa'
 
 @Schema({ timestamps: true })
 export class AuditLog {

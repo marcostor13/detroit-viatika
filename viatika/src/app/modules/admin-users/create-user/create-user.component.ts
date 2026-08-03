@@ -18,9 +18,7 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { ERoles } from '../interfaces/roles.enum';
 import { CategoriaService } from '../../../services/categoria.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { ICategory } from '../../invoices/interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 
 interface ModuleOption {
   key: string;
@@ -44,13 +42,13 @@ export class CreateUserComponent implements OnInit {
     inject(NotificationService);
   private userStateService: UserStateService = inject(UserStateService);
   private categoriaService = inject(CategoriaService);
-  private groupService = inject(CategoryGroupService);
   id: string = this.route.snapshot.params['id'];
   form: FormGroup = this.formBuilder.group({
     name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     roleId: ['', Validators.required],
     dni: [''],
+    documentType: ['L'],
     employeeCode: [''],
     area: [''],
     cargo: [''],
@@ -64,15 +62,10 @@ export class CreateUserComponent implements OnInit {
   step = 1;
   roles: IRoleResponse[] = [];
   enumRoles = ERoles;
-  /** Candidatos a aprobador: usuarios activos con rol Coordinador. */
-  coordinatorCandidates: IUserResponse[] = [];
-  /** Cadena ordenada de aprobadores (ids), en el orden en que deben aprobar. */
-  approverIds: string[] = [];
   temporaryPassword: string = '';
   showPasswordModal: boolean = false;
   passwordCopied: boolean = false;
   allCategories = signal<ICategory[]>([]);
-  groups = signal<ICategoryGroup[]>([]);
   categorySearch = signal('');
   categoriesLoading = signal(false);
 
@@ -80,7 +73,6 @@ export class CreateUserComponent implements OnInit {
     { key: 'mis-rendiciones', label: 'Mis Rendiciones', description: 'Ver y gestionar rendiciones propias' },
     { key: 'nueva-rendicion', label: 'Nueva Rendición', description: 'Crear nuevas rendiciones' },
     { key: 'rendiciones', label: 'Rendiciones (todas)', description: 'Ver rendiciones de todos los colaboradores' },
-    { key: 'invoice-approval', label: 'Aprobación de Facturas', description: 'Aprobar o rechazar comprobantes y rendiciones enviadas por otros colaboradores' },
     { key: 'viaticos', label: 'Viáticos', description: 'Gestión y seguimiento de anticipos' },
     { key: 'consolidated-invoices', label: 'Dashboard', description: 'Dashboard con KPIs y reportes consolidados de gastos' },
     { key: 'tesoreria', label: 'Pagos', description: 'Registrar comprobantes de pago' },
@@ -97,63 +89,11 @@ export class CreateUserComponent implements OnInit {
   };
 
   ngOnInit() {
-    this.loadCoordinatorCandidates();
     if (this.id) {
       this.getUser();
     }
     this.getRoles();
     this.loadCategoryData();
-  }
-
-  loadCoordinatorCandidates(): void {
-    this.adminUsersService.getUsers().subscribe({
-      next: (users) => {
-        const exclude = this.id;
-        this.coordinatorCandidates = users.filter((u) => {
-          if (!u.isActive) return false;
-          if (exclude && u._id === exclude) return false;
-          return u.role?.name === 'Coordinador';
-        });
-      },
-      error: () => {
-        this.coordinatorCandidates = [];
-      },
-    });
-  }
-
-  /** Candidatos aún no agregados a la cadena de aprobadores. */
-  get availableApproverCandidates(): IUserResponse[] {
-    return this.coordinatorCandidates.filter(
-      (u) => !this.approverIds.includes(u._id),
-    );
-  }
-
-  approverName(id: string): string {
-    const u = this.coordinatorCandidates.find((c) => c._id === id);
-    return u ? `${u.name} — ${u.email}` : id;
-  }
-
-  addApprover(id: string): void {
-    if (!id || this.approverIds.includes(id)) return;
-    this.approverIds = [...this.approverIds, id];
-  }
-
-  removeApprover(index: number): void {
-    this.approverIds = this.approverIds.filter((_, i) => i !== index);
-  }
-
-  moveApproverUp(index: number): void {
-    if (index <= 0) return;
-    const arr = [...this.approverIds];
-    [arr[index - 1], arr[index]] = [arr[index], arr[index - 1]];
-    this.approverIds = arr;
-  }
-
-  moveApproverDown(index: number): void {
-    if (index >= this.approverIds.length - 1) return;
-    const arr = [...this.approverIds];
-    [arr[index + 1], arr[index]] = [arr[index], arr[index + 1]];
-    this.approverIds = arr;
   }
 
   get selectedRoleIsCollaborador(): boolean {
@@ -169,7 +109,7 @@ export class CreateUserComponent implements OnInit {
 
   get selectedRoleNeedsPermissions(): boolean {
     const n = this.selectedRoleName;
-    return n === 'Colaborador' || n === 'Coordinador' || n === 'Contabilidad' || n === 'Administrador';
+    return n === 'Colaborador' || n === 'Coordinador' || n === 'Contabilidad' || n === 'Administrador' || n === 'Tesoreria';
   }
 
   get step2Modules(): ModuleOption[] {
@@ -199,6 +139,8 @@ export class CreateUserComponent implements OnInit {
       this.permissions = { modules: ['rendiciones', 'viaticos', 'tesoreria'], canApproveL1: true, canApproveL2: false, categoryIds: [] };
     } else if (name === 'Contabilidad') {
       this.permissions = { modules: allStep2, canApproveL1: true, canApproveL2: true, categoryIds: [] };
+    } else if (name === 'Tesoreria') {
+      this.permissions = { modules: ['tesoreria'], canApproveL1: false, canApproveL2: false, categoryIds: [] };
     } else if (name === 'Administrador') {
       this.permissions = { modules: allStep2, canApproveL1: false, canApproveL2: false, categoryIds: [] };
     }
@@ -222,13 +164,6 @@ export class CreateUserComponent implements OnInit {
     this.permissions = { modules: [], canApproveL1: false, canApproveL2: false, categoryIds: [] };
   }
 
-  private approverIdsFromUser(user: IUserResponse): string[] {
-    const list = user.approverIds ?? [];
-    return list.map((c) =>
-      typeof c === 'object' && c !== null && '_id' in c ? c._id : String(c),
-    );
-  }
-
   getRoleName(roleId: string) {
     return this.enumRoles[
       this.roles.find((role) => role._id === roleId)
@@ -236,7 +171,7 @@ export class CreateUserComponent implements OnInit {
     ];
   }
 
-  readonly allowedRoles = ['Administrador', 'Colaborador', 'Coordinador', 'Contabilidad'];
+  readonly allowedRoles = ['Administrador', 'Colaborador', 'Coordinador', 'Contabilidad', 'Tesoreria'];
 
   getRoles() {
     this.adminUsersService.getRoles().subscribe((roles) => {
@@ -254,6 +189,7 @@ export class CreateUserComponent implements OnInit {
       email: user.email,
       roleId: user.role._id,
       dni: user.dni || '',
+      documentType: user.documentType || 'L',
       employeeCode: user.employeeCode || '',
       area: user.area || '',
       cargo: user.cargo || '',
@@ -264,7 +200,6 @@ export class CreateUserComponent implements OnInit {
       cci: user.bankAccount?.cci || '',
       accountType: user.bankAccount?.accountType || '',
     });
-    this.approverIds = this.approverIdsFromUser(user);
   }
 
   getUser() {
@@ -277,9 +212,6 @@ export class CreateUserComponent implements OnInit {
     if (this.form.valid) {
       const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
       const payload: any = { ...rest };
-      if (this.selectedRoleIsCollaborador) {
-        payload.approverIds = this.approverIds;
-      }
       if (bankName || accountNumber || cci) {
         payload.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };
       }
@@ -310,10 +242,6 @@ export class CreateUserComponent implements OnInit {
       const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
       const updateData: any = { ...rest };
       delete updateData['password'];
-
-      if (this.selectedRoleIsCollaborador) {
-        updateData['approverIds'] = this.approverIds;
-      }
 
       if (bankName || accountNumber || cci) {
         updateData.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };
@@ -349,15 +277,12 @@ export class CreateUserComponent implements OnInit {
 
   loadCategoryData() {
     this.categoriesLoading.set(true);
-    Promise.all([
-      this.categoriaService.getAllFlatAdmin().toPromise(),
-      this.groupService.getAll().toPromise(),
-    ]).then(([cats, grps]) => {
-      this.allCategories.set(cats ?? []);
-      this.groups.set(grps ?? []);
-      this.categoriesLoading.set(false);
-    }).catch(() => {
-      this.categoriesLoading.set(false);
+    this.categoriaService.getAllFlatAdmin().subscribe({
+      next: (cats) => {
+        this.allCategories.set(cats ?? []);
+        this.categoriesLoading.set(false);
+      },
+      error: () => this.categoriesLoading.set(false),
     });
   }
 
@@ -405,30 +330,5 @@ export class CreateUserComponent implements OnInit {
 
   get totalCategoryCount(): number {
     return this.allCategories().length;
-  }
-
-  groupIsFullySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    return (group.categoryIds ?? []).length > 0 &&
-      (group.categoryIds ?? []).every((id) => ids.includes(id));
-  }
-
-  groupIsPartiallySelected(group: ICategoryGroup): boolean {
-    const ids = this.permissions.categoryIds ?? [];
-    return !this.groupIsFullySelected(group) &&
-      (group.categoryIds ?? []).some((id) => ids.includes(id));
-  }
-
-  toggleGroup(group: ICategoryGroup) {
-    const groupCatIds = group.categoryIds ?? [];
-    if (this.groupIsFullySelected(group)) {
-      this.permissions.categoryIds = (this.permissions.categoryIds ?? []).filter(
-        (id) => !groupCatIds.includes(id),
-      );
-    } else {
-      const current = new Set(this.permissions.categoryIds ?? []);
-      groupCatIds.forEach((id) => current.add(id));
-      this.permissions.categoryIds = Array.from(current);
-    }
   }
 }

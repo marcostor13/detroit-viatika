@@ -53,7 +53,7 @@
 
           <div>
             <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-1">Monto solicitado</p>
-            <p class="text-xl font-bold text-secondary">S/ {{ advance()!.amount | number:'1.2-2' }}</p>
+            <p class="text-xl font-bold text-secondary">{{ currencySymbol() }} {{ advance()!.amount | number:'1.2-2' }}</p>
           </div>
 
           <div class="sm:col-span-2">
@@ -110,7 +110,7 @@
               <td class="px-5 py-3.5 text-right text-secondary">{{ ln.glpPerDay | number:'1.2-2' }}</td>
               <td class="px-5 py-3.5 text-right text-secondary">{{ ln.days }}</td>
               <td class="px-5 py-3.5 text-right text-secondary">{{ ln.peopleCount }}</td>
-              <td class="px-5 py-3.5 text-right font-semibold text-secondary">S/ {{ ln.lineTotal | number:'1.2-2' }}</td>
+              <td class="px-5 py-3.5 text-right font-semibold text-secondary">{{ currencySymbol() }} {{ ln.lineTotal | number:'1.2-2' }}</td>
             </tr>
             }
           </tbody>
@@ -120,10 +120,10 @@
           <div class="px-5 py-3.5">
             <div class="flex items-center justify-between mb-1">
               <span class="font-medium text-secondary text-sm">{{ categoryName(ln) }}</span>
-              <span class="font-semibold text-secondary text-sm">S/ {{ ln.lineTotal | number:'1.2-2' }}</span>
+              <span class="font-semibold text-secondary text-sm">{{ currencySymbol() }} {{ ln.lineTotal | number:'1.2-2' }}</span>
             </div>
             <p class="text-xs text-tertiary">
-              S/ {{ ln.importe | number:'1.2-2' }} + S/ {{ ln.glpPerDay | number:'1.2-2' }} GLP/día &times; {{ ln.days }} días &times; {{ ln.peopleCount }} persona{{ ln.peopleCount !== 1 ? 's' : '' }}
+              {{ currencySymbol() }} {{ ln.importe | number:'1.2-2' }} + {{ currencySymbol() }} {{ ln.glpPerDay | number:'1.2-2' }} GLP/día &times; {{ ln.days }} días &times; {{ ln.peopleCount }} persona{{ ln.peopleCount !== 1 ? 's' : '' }}
             </p>
           </div>
           }
@@ -229,7 +229,7 @@
           @if (lines().length > 0) {
           <div class="flex justify-between border-t border-tertiary/20 pt-3">
             <span class="text-tertiary font-medium">Total</span>
-            <span class="text-secondary font-bold">S/ {{ advance()!.amount | number:'1.2-2' }}</span>
+            <span class="text-secondary font-bold">{{ currencySymbol() }} {{ advance()!.amount | number:'1.2-2' }}</span>
           </div>
           }
         </div>
@@ -276,7 +276,7 @@
       <h3 class="text-lg font-bold text-secondary mb-1">Registrar comprobante de pago</h3>
       <p class="text-sm text-tertiary mb-5">
         <span class="font-semibold text-secondary">{{ collaboratorName() }}</span>
-        &nbsp;·&nbsp;S/ {{ advance()!.amount | number:'1.2-2' }}
+        &nbsp;·&nbsp;{{ currencySymbol() }} {{ advance()!.amount | number:'1.2-2' }}
       </p>
 
       <form [formGroup]="paymentForm" class="space-y-4">

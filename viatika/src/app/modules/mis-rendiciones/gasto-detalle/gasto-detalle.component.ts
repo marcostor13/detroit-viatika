@@ -11,7 +11,7 @@ import {
 } from '../../../utils/fecha-emision.util';
 
 // ─── Tipos auxiliares ─────────────────────────────────────────────────────────
-type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos' | 'comprobante_caja';
+type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos';
 
 @Component({
   selector: 'app-gasto-detalle',
@@ -161,7 +161,6 @@ export class GastoDetalleComponent implements OnInit {
     const t = exp['expenseType'];
     if (t === 'planilla_movilidad') return 'planilla_movilidad';
     if (t === 'otros_gastos') return 'otros_gastos';
-    if (t === 'comprobante_caja') return 'comprobante_caja';
     return 'factura';
   }
 
@@ -170,7 +169,6 @@ export class GastoDetalleComponent implements OnInit {
       factura: 'Factura',
       planilla_movilidad: 'Planilla de Movilidad',
       otros_gastos: 'Otros Gastos',
-      comprobante_caja: 'Comprobante de Caja',
       recibo_caja: 'Recibo de Caja',
     };
     return m[String(exp['expenseType'] ?? '')] ?? 'Factura';
@@ -179,7 +177,6 @@ export class GastoDetalleComponent implements OnInit {
   getTypeCode(exp: Record<string, unknown>): string {
     const type = exp['expenseType'];
     if (type === 'planilla_movilidad') return 'PM';
-    if (type === 'comprobante_caja') return 'CC';
     if (type === 'recibo_caja') return 'H';
     if (type === 'otros_gastos') {
       const sub = (exp['subTipo'] as string) ?? (this.getData(exp)['subTipo'] as string);
@@ -187,6 +184,7 @@ export class GastoDetalleComponent implements OnInit {
       if (sub === 'BV') return 'BV';
       if (sub === 'RC') return 'RC';
       if (sub === 'DJ') return 'DJ';
+      if (sub === 'DJE') return 'DJE';
       if (sub === 'OT') return 'OT';
       return 'SC';
     }
@@ -203,7 +201,7 @@ export class GastoDetalleComponent implements OnInit {
     if (code === 'PM') return 'bg-yellow-100 text-yellow-800';
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
-    if (code === 'DJ') return 'bg-amber-100 text-amber-800';
+    if (code === 'DJ' || code === 'DJE') return 'bg-amber-100 text-amber-800';
     if (code === 'TK') return 'bg-teal-100 text-teal-700';
     if (code === 'RC') return 'bg-indigo-100 text-indigo-700';
     return 'bg-blue-100 text-blue-700';
@@ -227,25 +225,7 @@ export class GastoDetalleComponent implements OnInit {
     return String(v);
   }
 
-  cashVoucherPayload(exp: Record<string, unknown>): Record<string, unknown> {
-    const d = this.getData(exp);
-    const raw = d['payload'];
-    let obj: Record<string, unknown> = {};
-    if (raw && typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { /**/ } }
-    else if (raw && typeof raw === 'object') { obj = raw as Record<string, unknown>; }
-    if (!obj['concepto'] && exp['description']) {
-      try { const p = JSON.parse(String(exp['description'])); if (p?.concepto) obj = p; } catch { /**/ }
-    }
-    return obj;
-  }
-
-  cashVoucherText(exp: Record<string, unknown>, key: string): string {
-    const v = this.cashVoucherPayload(exp)[key];
-    if (v == null || v === '') return '—';
-    return String(v);
-  }
-
-  emissionDateText(exp: Record<string, unknown>): string {
+emissionDateText(exp: Record<string, unknown>): string {
     return formatFechaEmisionDdMmYyyy(resolveExpenseFechaEmision(exp as any));
   }
 
@@ -345,7 +325,7 @@ export class GastoDetalleComponent implements OnInit {
 
   getDocNumber(exp: Record<string, unknown>): string {
     const type = exp['expenseType'];
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja') {
+    if (type === 'planilla_movilidad') {
       return (typeof exp['internalCode'] === 'string' && exp['internalCode']) ? exp['internalCode'] as string : '-';
     }
     if (type === 'recibo_caja') {
@@ -363,7 +343,7 @@ export class GastoDetalleComponent implements OnInit {
 
   getProveedor(exp: Record<string, unknown>): string {
     const type = exp['expenseType'];
-    if (type === 'planilla_movilidad' || type === 'comprobante_caja' || type === 'otros_gastos') return '-';
+    if (type === 'planilla_movilidad' || type === 'otros_gastos') return '-';
     const d = this.getData(exp);
     const r = d['razonSocial'];
     if (typeof r === 'string' && r.trim()) return r.trim();
@@ -380,12 +360,6 @@ export class GastoDetalleComponent implements OnInit {
       return first?.gestion || `${rows.length} filas`;
     }
     if (type === 'otros_gastos') return exp['description'] as string || 'DJ firmada';
-    if (type === 'comprobante_caja') {
-      try {
-        const payload = this.cashVoucherPayload(exp);
-        return String(payload['concepto'] || '');
-      } catch { return ''; }
-    }
     const d = this.getData(exp);
     return String(d['concepto'] || '');
   }
@@ -403,8 +377,42 @@ export class GastoDetalleComponent implements OnInit {
   }
 
   getApprovalContStatus(exp: Record<string, unknown>): string {
-    const a = exp['approvalCont'] as any;
-    return a?.status ?? 'pending';
+    return (exp['contabilidadStatus'] as string) ?? 'pending';
+  }
+
+  // ─── Cadena de aprobación por centro de costo ────────────────────────────────
+
+  private chainStepApproverNames(step: Record<string, unknown> | undefined): string {
+    const approverIds = (step?.['approverIds'] as any[]) ?? [];
+    if (!approverIds.length) return '—';
+    return approverIds
+      .map((a: any) => (typeof a === 'object' ? (a.name ?? a._id) : a))
+      .join(' / ');
+  }
+
+  /** Cadena de niveles del comprobante, con estado y aprobador(es) de cada paso. Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
+  chainSteps(exp: Record<string, unknown>): Array<{
+    level: number;
+    state: 'completado' | 'pendiente';
+    approverNames: string;
+    escalatedFrom?: number;
+    approvedBy?: string;
+    date?: string;
+  }> {
+    const chain = (exp['approverChain'] as any[]) ?? [];
+    const history = (exp['approvalHistory'] as any[]) ?? [];
+    return chain.map((step: any) => {
+      const state: 'completado' | 'pendiente' = step.approved ? 'completado' : 'pendiente';
+      const entry = history.find((h: any) => h.level === step.level && h.action === 'approved');
+      return {
+        level: step.level,
+        state,
+        approverNames: this.chainStepApproverNames(step),
+        escalatedFrom: step.escalatedFrom,
+        approvedBy: entry?.approvedBy,
+        date: entry?.date,
+      };
+    });
   }
 
   canEdit(exp: Record<string, unknown>): boolean {

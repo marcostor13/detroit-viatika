@@ -307,20 +307,6 @@ export class UserService {
     }
   }
 
-  async findUserIdsByCoordinator(
-    coordinatorId: string,
-    clientId: string
-  ): Promise<Types.ObjectId[]> {
-    const users = await this.userModel
-      .find({
-        coordinatorId: new Types.ObjectId(coordinatorId),
-        clientId: new Types.ObjectId(clientId),
-      })
-      .select('_id')
-      .exec()
-    return users.map(u => u._id)
-  }
-
   /** Colaboradores que tienen a `approverId` en cualquier posición de su cadena de aprobadores. */
   async findUserIdsByApprover(
     approverId: string,
@@ -432,6 +418,15 @@ export class UserService {
   async update(id: string, updateUserDto: UpdateUserDto) {
     const updateData: any = { ...updateUserDto }
 
+    if (updateUserDto.permissions?.primaryProjectId) {
+      const projectIds = updateUserDto.permissions.projectIds ?? []
+      if (!projectIds.includes(updateUserDto.permissions.primaryProjectId)) {
+        throw new BadRequestException(
+          'El centro de costo principal debe estar entre los centros de costo asignados.'
+        )
+      }
+    }
+
     if (updateData.roleId) {
       updateData.roleId = new Types.ObjectId(updateData.roleId)
     }
@@ -482,16 +477,22 @@ export class UserService {
     signature?: string
     coordinatorId?: Types.ObjectId
     approverIds?: Types.ObjectId[]
+    projectIds?: string[]
+    primaryProjectId?: string
   } | null> {
     const u = await this.userModel
       .findById(userId)
-      .select('signature coordinatorId approverIds')
+      .select(
+        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId'
+      )
       .exec()
     if (!u) return null
     return {
       signature: u.signature,
       coordinatorId: u.coordinatorId,
       approverIds: u.approverIds,
+      projectIds: u.permissions?.projectIds ?? [],
+      primaryProjectId: u.permissions?.primaryProjectId,
     }
   }
 
@@ -614,6 +615,38 @@ export class UserService {
     const seen = new Set<string>()
     const out: { email: string; name: string }[] = []
     for (const u of [...scopedUsers, ...globalContabilidad]) {
+      const em = u.email?.trim().toLowerCase()
+      if (!em || seen.has(em)) continue
+      seen.add(em)
+      out.push({ email: u.email, name: u.name })
+    }
+    return out
+  }
+
+  /**
+   * Destinatarios de los correos "pendiente de pago" (rendición/viático
+   * aprobado). Reemplaza la antigua lista libre `Client.tesoreriaEmails`:
+   * ahora se notifica a los usuarios del cliente con rol Tesoreria.
+   */
+  async findTesoreriaNotifyRecipients(
+    clientId: string
+  ): Promise<{ email: string; name: string }[]> {
+    const tesoreriaRole = await this.roleService.getByName('Tesoreria')
+    if (!tesoreriaRole) return []
+
+    const scopedUsers = await this.userModel
+      .find({
+        clientId: new Types.ObjectId(clientId),
+        isActive: true,
+        emailNotificationsEnabled: true,
+        roleId: (tesoreriaRole as any)._id,
+      })
+      .select('email name')
+      .exec()
+
+    const seen = new Set<string>()
+    const out: { email: string; name: string }[] = []
+    for (const u of scopedUsers) {
       const em = u.email?.trim().toLowerCase()
       if (!em || seen.has(em)) continue
       seen.add(em)
@@ -895,6 +928,13 @@ export class UserService {
           canApproveL2: true,
           categoryIds: [],
         }
+      case 'Tesoreria':
+        return {
+          modules: ['tesoreria'],
+          canApproveL1: false,
+          canApproveL2: false,
+          categoryIds: [],
+        }
       case 'Administrador':
         return {
           modules: ALL_NON_COLAB,
@@ -946,6 +986,7 @@ export class UserService {
       'Coordinador',
       'Contabilidad',
       'Administrador',
+      'Tesoreria',
     ]
     const roleCache = new Map<string, Types.ObjectId | null>()
     const resolveRole = async (

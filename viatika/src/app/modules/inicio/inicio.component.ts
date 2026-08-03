@@ -6,12 +6,12 @@ import { catchError } from 'rxjs/operators';
 import { UserStateService } from '../../services/user-state.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { AdvanceService } from '../../services/advance.service';
-import { SaldoService } from '../../services/saldo.service';
 import { NotificationService } from '../../services/notification.service';
-import { IExpenseReport } from '../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep } from '../../interfaces/expense-report.interface';
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
+import { monedaSymbol } from '../../constants/moneda';
 
 /** Fila normalizada que alimenta los listados del inicio (colaborador y coordinador). */
 export interface DashRow {
@@ -21,6 +21,7 @@ export interface DashRow {
   userName: string;
   project: string;
   amount: number;
+  currencySymbol: string;
   status: string;
   statusLabel: string;
   statusColor: string;
@@ -40,7 +41,6 @@ export class InicioComponent implements OnInit {
   private expenseReportsService = inject(ExpenseReportsService);
   private advanceService = inject(AdvanceService);
   private notifications = inject(NotificationService);
-  saldoService = inject(SaldoService);
   private router = inject(Router);
 
   isLoading = signal(true);
@@ -65,9 +65,16 @@ export class InicioComponent implements OnInit {
 
   readonly PREVIEW = 5;
 
-  readonly isCoordinador = this.userState.isCoordinador();
+  /**
+   * Reemplaza el antiguo `isCoordinador` de solo lectura: "soy aprobador de algo?"
+   * en vez del rol. Se llena en ngOnInit vía refreshApproverStatus() (no se lee el
+   * signal cacheado de UserStateService a ciegas) porque este componente suele ser
+   * la primera pantalla tras el login, con mayor probabilidad de carrera contra esa
+   * consulta asíncrona.
+   */
+  isApprover = signal(false);
 
-  // Permisos → controlan qué tarjetas/listas propias se muestran (tanto coordinador
+  // Permisos → controlan qué tarjetas/listas propias se muestran (tanto aprobador
   // como colaborador se rigen por lo que tengan ACTIVADO). Modelo del negocio:
   //   • Viáticos (solicitudes + rendiciones de viáticos) → módulo 'mis-rendiciones'
   //   • Rendiciones directas                            → módulo 'nueva-rendicion'
@@ -79,6 +86,10 @@ export class InicioComponent implements OnInit {
   }
   get canSeeRendiciones(): boolean {
     return this.userState.canCreateRendicion();
+  }
+  /** Tesorería cierra las rendiciones (VD-66/VD-49): ve su propia sección en Inicio. */
+  get isTesoreria(): boolean {
+    return this.userState.isTesoreria();
   }
 
   readonly STATUS_LABELS = ADVANCE_STATUS_LABELS;
@@ -96,7 +107,7 @@ export class InicioComponent implements OnInit {
     cancelled: 'Cancelada',
     // fases de viático (cuando el viático se modela como reporte)
     pending_l1: 'En solicitud',
-    pending_l2: 'Aprobada por coordinador',
+    pending_l2: 'Aprobada por aprobadores',
     viatico_approved: 'Aprobada',
     partially_paid: 'Pago parcial',
     settled: 'Liquidada',
@@ -139,7 +150,7 @@ export class InicioComponent implements OnInit {
   }
 
   get subtitle(): string {
-    return this.isCoordinador
+    return this.isApprover()
       ? 'Aquí tienes lo pendiente de tu equipo.'
       : 'Aquí tienes un resumen de tu actividad.';
   }
@@ -191,14 +202,11 @@ export class InicioComponent implements OnInit {
 
   /**
    * Una rendición de viáticos cuenta como CERRADA cuando llegó a un estado final
-   * (cerrada / reembolsada / liquidada / saldo devuelto) O cuando su saldo pendiente
-   * ya fue resuelto: reutilizado/trasladado a otra solicitud o devuelto con
-   * comprobante. Mismo criterio que `isReportEffectivelyClosed` de mis-rendiciones.
+   * (cerrada / reembolsada / liquidada / saldo devuelto) O cuando ya fue devuelta
+   * con comprobante. Mismo criterio que `isReportEffectivelyClosed` de mis-rendiciones.
    */
   private isViaticoCerrado(r: IExpenseReport): boolean {
     return this.VIATICO_CLOSED_STATUSES.includes(r.status)
-      || !!(r as any).pendingBalanceUsedInRendicionId
-      || !!(r as any).pendingBalanceUsedInAdvanceId
       || !!(r as any).returnVoucher;
   }
 
@@ -256,20 +264,147 @@ export class InicioComponent implements OnInit {
   kpiSolicitudesPendientes = computed(() => this.solicitudesRows().length);
 
   /**
-   * Rendiciones por aprobar (equipo): 2ª etapa de la solicitud de viáticos. El viático
-   * ya fue aprobado y pagado; el colaborador rindió sus gastos y el reporte espera la
-   * aprobación del coordinador. SOLO estado 'submitted' (Enviada): cuando pasa a
-   * 'pending_accounting' (En contabilidad) ya salió del coordinador → no se lista ni
-   * cuenta aquí. Son viáticos en su fase de rendición — las directas NO van aquí.
+   * Rendiciones por aprobar (equipo). Con el modelo por comprobante (regla 1.4,
+   * VD-87) la rendición se aprueba aprobando TODOS sus gastos, así que acá entra
+   * cualquier rendición —viático en fase de rendición, directa o normal— con al
+   * menos un comprobante esperando la firma de ESTE aprobador. Antes se filtraba
+   * por `type === 'viatico' && status === 'submitted'`, que era el modelo viejo
+   * de aprobar el reporte completo de una vez: dejaba fuera a las directas y a
+   * todo lo que no estuviera en 'submitted', y por eso al aprobador no le
+   * aparecía nada en el Inicio aunque tuviera comprobantes por firmar.
+   *
+   * Se conserva el criterio de reporte para los viáticos ya enviados bajo el
+   * modelo anterior (sin cadena por comprobante), que siguen aprobándose con el
+   * botón "Aprobar Rendición" de respaldo.
    */
   rendicionesRows = computed<DashRow[]>(() =>
     this.teamReports()
-      .filter((r) => r.type === 'viatico' && r.status === 'submitted')
+      .filter(
+        (r) =>
+          this.hasExpensePendingMyApproval(r) ||
+          (r.type === 'viatico' && r.status === 'submitted')
+      )
       .sort((a, b) => this.ts(b.createdAt) - this.ts(a.createdAt))
       .map((r) => this.reportRow(r))
   );
 
+  /** Suma de los comprobantes cargados; 0 si `expenseIds` no viene poblado. */
+  private reportExpensesTotal(report: IExpenseReport): number {
+    return (report.expenseIds ?? []).reduce(
+      (sum: number, exp: any) =>
+        sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
+      0
+    );
+  }
+
+  /**
+   * ¿Queda algún comprobante de esta rendición esperando la firma del usuario
+   * actual? Mismo criterio que `hasActionableStep` en /rendiciones: un paso
+   * cuenta si aún no está aprobado y lo incluye entre sus aprobadores
+   * (aprobación en paralelo: no importa su posición en la cadena).
+   */
+  private hasExpensePendingMyApproval(report: IExpenseReport): boolean {
+    const me = String((this.userState.getUser() as any)?._id ?? '');
+    if (!me) return false;
+    return (report.expenseIds ?? [])
+      .filter((e: any) => e && typeof e === 'object' && e.status !== 'rejected')
+      .some((e: any) =>
+        (e.approverChain ?? []).some(
+          (step: any) =>
+            !step.approved &&
+            (step.approverIds ?? []).some(
+              (a: any) => String(typeof a === 'object' ? a?._id : a) === me
+            )
+        )
+      );
+  }
+
   kpiRendicionesPorAprobar = computed(() => this.rendicionesRows().length);
+
+  // ════════════════════════════════════════════════════════════════
+  //  TESORERÍA — Rendiciones pendientes por cerrar (VD-66/VD-49)
+  // ════════════════════════════════════════════════════════════════
+
+  /** Estados en los que una rendición está lista para que Tesorería la cierre. */
+  private readonly CERRABLE_STATUSES = ['approved', 'reimbursed'];
+
+  showAllPorCerrar = signal(false);
+
+  rendicionesPorCerrarRows = computed<DashRow[]>(() =>
+    this.teamReports()
+      .filter((r) => this.CERRABLE_STATUSES.includes(r.status))
+      .sort((a, b) => this.ts(b.createdAt) - this.ts(a.createdAt))
+      .map((r) => this.reportRow(r))
+  );
+
+  kpiRendicionesPorCerrar = computed(() => this.rendicionesPorCerrarRows().length);
+  visibleRendicionesPorCerrar = computed(() =>
+    this.slice(this.rendicionesPorCerrarRows(), this.showAllPorCerrar())
+  );
+
+  // ════════════════════════════════════════════════════════════════
+  //  TESORERÍA — Pagos pendientes (VD-76)
+  // ════════════════════════════════════════════════════════════════
+  // Las dos colas de PAGO SALIENTE que Tesorería ejecuta en /tesoreria:
+  //   1. Reembolsos al colaborador aprobados sin comprobante de pago
+  //      (endpoint dedicado `findPendingReimbursements`, mismo criterio que la
+  //      pestaña "Reembolsos" del módulo de Pagos).
+  //   2. Viáticos aprobados esperando el pago del anticipo (viatico_approved /
+  //      partially_paid, igual que `pendingViaticoPayments` en el módulo de Pagos).
+  // Estados mutuamente excluyentes → no hay doble conteo. Las devoluciones (dinero
+  // que entra) NO son pagos, por eso no cuentan aquí.
+
+  /** Reembolsos al colaborador pendientes de comprobante (endpoint dedicado). */
+  pendingReimbursements = signal<IExpenseReport[]>([]);
+
+  /** Viáticos aprobados que aún esperan el pago del anticipo. */
+  private readonly VIATICO_PAYABLE_STATUSES = ['viatico_approved', 'partially_paid'];
+
+  showAllPagos = signal(false);
+
+  private viaticoRemaining(r: IExpenseReport): number {
+    return Math.max(Number(r.viaticoAmount ?? 0) - Number(r.viaticoPaidAmount ?? 0), 0);
+  }
+
+  /** Fila de reembolso: monto = |settlement.difference|; badge fijo "Reembolso". */
+  private reembolsoRow(r: IExpenseReport): DashRow {
+    return {
+      ...this.reportRow(r),
+      amount: Math.abs(Number(r.settlement?.difference ?? 0)),
+      statusLabel: 'Reembolso',
+      statusColor: 'bg-teal-100 text-teal-700',
+    };
+  }
+
+  /** Fila de viático por pagar: monto = saldo pendiente; badge fijo "Viático por pagar". */
+  private viaticoPagoRow(r: IExpenseReport): DashRow {
+    return {
+      ...this.reportRow(r),
+      amount: this.viaticoRemaining(r),
+      statusLabel: 'Viático por pagar',
+      statusColor: 'bg-amber-100 text-amber-700',
+    };
+  }
+
+  reembolsosPendientesRows = computed<DashRow[]>(() =>
+    this.pendingReimbursements().map((r) => this.reembolsoRow(r))
+  );
+
+  viaticosPorPagarRows = computed<DashRow[]>(() =>
+    this.teamReports()
+      .filter((r) => r.type === 'viatico' && this.VIATICO_PAYABLE_STATUSES.includes(r.status))
+      .map((r) => this.viaticoPagoRow(r))
+  );
+
+  pagosPendientesRows = computed<DashRow[]>(() =>
+    [...this.reembolsosPendientesRows(), ...this.viaticosPorPagarRows()]
+      .sort((a, b) => this.ts(b.createdAt) - this.ts(a.createdAt))
+  );
+
+  kpiPagosPendientes = computed(() => this.pagosPendientesRows().length);
+  visiblePagosPendientes = computed(() =>
+    this.slice(this.pagosPendientesRows(), this.showAllPagos())
+  );
 
   // ─── Slices visibles (preview 5 + expandir) ───────────────────────
   // Mi actividad (propias) — Viáticos
@@ -287,7 +422,6 @@ export class InicioComponent implements OnInit {
 
   // ─── Carga ────────────────────────────────────────────────────────
   ngOnInit() {
-    this.saldoService.refreshTotal();
     // Trae los permisos vigentes del servidor (los de localStorage pueden estar
     // desactualizados si se cambiaron en otra sesión) para gatear bien las tarjetas.
     this.userState.refreshPermissions().subscribe();
@@ -301,11 +435,41 @@ export class InicioComponent implements OnInit {
       return;
     }
 
-    if (this.isCoordinador) {
-      this.loadCoordinador(clientId);
-    } else {
-      this.loadColaborador(userId, clientId);
+    // refreshApproverStatus() es una llamada HTTP async: se espera su valor emitido
+    // (no se lee el signal cacheado) para no perder la carrera contra el arranque.
+    // Tesorería tiene su propia vista (pendientes por cerrar) y no es aprobador,
+    // así que se decide antes de la rama coordinador/colaborador.
+    if (this.isTesoreria) {
+      this.loadTesoreria(clientId);
+      return;
     }
+
+    this.userState.refreshApproverStatus().subscribe((isApprover) => {
+      this.isApprover.set(isApprover);
+      if (isApprover) {
+        this.loadCoordinador(clientId);
+      } else {
+        this.loadColaborador(userId, clientId);
+      }
+    });
+  }
+
+  /**
+   * Tesorería: carga las rendiciones de la empresa (pendientes por cerrar + viáticos
+   * por pagar) y los reembolsos pendientes de comprobante (pagos pendientes, VD-76).
+   */
+  private loadTesoreria(clientId: string) {
+    forkJoin({
+      team: this.expenseReportsService.findAllByClient(clientId).pipe(catchError(() => of([]))),
+      reimbursements: this.expenseReportsService.findPendingReimbursements(clientId).pipe(catchError(() => of([]))),
+    }).subscribe({
+      next: ({ team, reimbursements }) => {
+        this.teamReports.set(team);
+        this.pendingReimbursements.set(reimbursements);
+        this.isLoading.set(false);
+      },
+      error: () => this.isLoading.set(false),
+    });
   }
 
   private loadColaborador(userId: string, clientId: string) {
@@ -413,6 +577,17 @@ export class InicioComponent implements OnInit {
     return typeof entry === 'object' ? entry._id : entry;
   }
 
+  /**
+   * ¿El usuario actual es aprobador de algún paso AÚN PENDIENTE de la cadena
+   * por centro de costo? Aprobación en paralelo entre niveles: cualquier paso
+   * no aprobado es accionable, sin importar su posición.
+   */
+  private hasActionableStep(chain: IChainStep[] | undefined): boolean {
+    return (chain ?? []).some(
+      (step: any) => !step.approved && step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    );
+  }
+
   // ─── Mapeo a filas ────────────────────────────────────────────────
   private reportRow(r: IExpenseReport): DashRow {
     return {
@@ -421,13 +596,18 @@ export class InicioComponent implements OnInit {
       title: r.title || (r as any).viaticoPlace || '—',
       userName: this.resolveUserName(r.userId),
       project: this.resolveProject((r as any).projectId),
-      amount: (r as any).viaticoAmount ?? r.budget ?? 0,
+      // La directa no tiene presupuesto propio (`budget` es 0): su monto es la
+      // suma de los comprobantes cargados, igual que en /rendiciones (VD-25).
+      amount: (r as any).isDirecta
+        ? this.reportExpensesTotal(r)
+        : ((r as any).viaticoAmount ?? r.budget ?? 0),
+      currencySymbol: monedaSymbol((r as any).viaticoMoneda),
       status: r.status,
       statusLabel: this.REPORT_STATUS_LABELS[r.status] ?? r.status,
       statusColor: this.REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600',
       createdAt: r.createdAt,
       canApproveNow: r.status === 'pending_l1' &&
-        (this.userState.isSuperAdmin() || this.approverIdAt(r.viaticoApproverChain, r.viaticoApprovalLevel ?? 0) === this.currentUserId),
+        (this.userState.isSuperAdmin() || this.hasActionableStep(r.viaticoApproverChain)),
     };
   }
 
@@ -439,6 +619,7 @@ export class InicioComponent implements OnInit {
       userName: this.resolveUserName(a.userId),
       project: this.resolveProject((a as any).projectId),
       amount: (a as any).amount ?? 0,
+      currencySymbol: monedaSymbol((a as any).moneda),
       status: a.status,
       statusLabel: this.STATUS_LABELS[a.status] ?? a.status,
       statusColor: this.STATUS_COLORS[a.status] ?? 'bg-gray-100 text-gray-600',
@@ -489,6 +670,20 @@ export class InicioComponent implements OnInit {
   }
 
   // ─── Navegación ───────────────────────────────────────────────────
+  /**
+   * Click de una fila del listado. Si el listado fija un destino (`navTo`, p. ej.
+   * "/tesoreria" para los pagos pendientes), navega ahí; si no, al detalle de la
+   * rendición. Mantiene intacto el comportamiento de los listados existentes que
+   * no pasan `navTo`.
+   */
+  rowClick(row: DashRow, navTo?: string) {
+    if (navTo) {
+      this.router.navigate([navTo]);
+      return;
+    }
+    this.goToRow(row);
+  }
+
   goToRow(row: DashRow) {
     if (row.source === 'advance') {
       this.router.navigate(['/viaticos', row._id]);

@@ -1,7 +1,11 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { AdvanceService } from '../../services/advance.service';
+import {
+  AdvanceService,
+  IGeneratePaymentsTxt,
+  IReconcileResult,
+} from '../../services/advance.service';
 import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
 import { UploadService } from '../../services/upload.service';
@@ -17,7 +21,8 @@ import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { TabsComponent, TabItem } from '../../design-system/tabs/tabs.component';
-type Tab = 'pendientes' | 'aprobados' | 'devoluciones' | 'rendiciones-directas';
+import { monedaSymbol } from '../../constants/moneda';
+type Tab = 'pendientes' | 'aprobados' | 'reembolsos' | 'devoluciones' | 'rendiciones-directas';
 
 @Component({
   selector: 'app-tesoreria',
@@ -39,10 +44,15 @@ export class TesoreriaComponent implements OnInit {
 
   get tabsList(): TabItem[] {
     const tabs: TabItem[] = [
-      { value: 'pendientes', label: 'Pendientes' },
-      { value: 'aprobados', label: 'En pago' },
+      // VD-32: se renombran las etiquetas visibles (no los `value`, que se usan en la lógica).
+      { value: 'pendientes', label: 'Fondos' },
+      { value: 'aprobados', label: 'Pagar' },
     ];
     if (this.canPayAndSettle) {
+      // VD-37: la pestaña "Reembolsos" muestra los reembolsos al colaborador
+      // (pendingReimbursements). Las devoluciones (saldo que devuelve el colaborador)
+      // recuperan su propia pestaña "Devoluciones".
+      tabs.push({ value: 'reembolsos', label: 'Reembolsos', badge: this.pendingReimbursements.length || undefined });
       tabs.push({ value: 'devoluciones', label: 'Devoluciones', badge: this.pendingReturns.length || undefined });
     }
     if (this.canManageDirectaDeposit) {
@@ -66,6 +76,11 @@ export class TesoreriaComponent implements OnInit {
   pendingViaticoPayments: IExpenseReport[] = [];
   /** Viáticos con al menos un pago de contabilidad registrado (pestaña "En pago"). */
   paidViaticoPayments: IExpenseReport[] = [];
+  // VD-82: agregados de dinero YA desembolsado, para las tarjetas "Pagados" y
+  // "Total desembolsado" (el stats legacy solo cubría la colección `advances`).
+  viaticoDesembolsado = 0;     // Σ viaticoPaidAmount de los viáticos
+  reembolsoPagadoCount = 0;    // # rendiciones con reembolso ya pagado
+  reembolsoDesembolsado = 0;   // Σ monto de reembolsos ya pagados
 
   selectedAdvance: IAdvance | null = null;
   selectedReportReimbursement: IExpenseReport | null = null;
@@ -141,6 +156,34 @@ export class TesoreriaComponent implements OnInit {
   get canPayAndSettle() { return this.userStateService.canApproveL2(); }
   /** Solo Contabilidad (y super) puede iniciar rendiciones directas con saldo. */
   get canManageDirectaDeposit() { return this.isContabilidad || this.isSuperAdmin; }
+
+  /**
+   * VD-82: contador "Pend. Pago". Debe reflejar TODOS los pagos que Tesorería tiene
+   * por ejecutar, no solo la colección `advances` (en desuso). Antes usaba
+   * `stats.pending_l2 + stats.approved` (solo anticipos legacy) y salía 0 aunque en
+   * la lista hubiera viáticos por pagar — p. ej. un colaborador SIN CCI (el CCI no
+   * influye: `pendingViaticoPayments` no filtra por datos bancarios). Ahora suma las
+   * tres colas de pago saliente del módulo: viáticos por pagar + reembolsos +
+   * anticipos legacy pendientes. Los estados son mutuamente excluyentes entre las
+   * tres fuentes → no hay doble conteo.
+   */
+  get pendPagoCount(): number {
+    return (
+      this.pendingViaticoPayments.length +
+      this.pendingReimbursements.length +
+      this.pendingAdvances.length
+    );
+  }
+
+  /** VD-82: "Pagados" = viáticos con pago + reembolsos pagados + anticipos legacy pagados. */
+  get pagadosCount(): number {
+    return this.paidViaticoPayments.length + this.reembolsoPagadoCount + (this.stats?.paid ?? 0);
+  }
+
+  /** VD-82: "Total desembolsado" = dinero real pagado (viáticos + reembolsos + anticipos legacy). */
+  get totalDesembolsado(): number {
+    return this.viaticoDesembolsado + this.reembolsoDesembolsado + (this.stats?.totalApprovedAmount ?? 0);
+  }
 
   // ─── Rendiciones Directas iniciadas por Contabilidad (con saldo) ─────────────
   directaReports = signal<any[]>([]);
@@ -236,13 +279,13 @@ export class TesoreriaComponent implements OnInit {
   private loadPendingViaticoPayments(): void {
     const cid = this.clientId;
     if (!cid || !this.canPayAndSettle) {
-      this.pendingViaticoPayments = [];
-      this.paidViaticoPayments = [];
+      this.resetPaymentAggregates();
       return;
     }
     this.expenseReportsService.findAllByClient(cid).subscribe({
       next: reports => {
-        const viaticos = (reports ?? []).filter(r => r.type === 'viatico');
+        const all = reports ?? [];
+        const viaticos = all.filter(r => r.type === 'viatico');
         // "Por pagar": aprobados o con pago parcial pendiente de completar.
         this.pendingViaticoPayments = viaticos.filter(
           r => ['viatico_approved', 'partially_paid'].includes(r.status)
@@ -253,12 +296,28 @@ export class TesoreriaComponent implements OnInit {
         this.paidViaticoPayments = viaticos.filter(
           r => Array.isArray(r.viaticoPayments) && r.viaticoPayments.length > 0
         );
+        // VD-82: agregados de lo ya desembolsado desde la MISMA lista (sin llamada
+        // extra). Viáticos por su acumulado pagado; reembolsos ya pagados por el
+        // |settlement.difference| de las rendiciones con comprobante registrado.
+        this.viaticoDesembolsado = viaticos.reduce(
+          (s, r) => s + Number(r.viaticoPaidAmount ?? 0), 0
+        );
+        const reembolsados = all.filter(r => !!r.reimbursementPaymentInfo);
+        this.reembolsoPagadoCount = reembolsados.length;
+        this.reembolsoDesembolsado = reembolsados.reduce(
+          (s, r) => s + Math.abs(Number(r.settlement?.difference ?? 0)), 0
+        );
       },
-      error: () => {
-        this.pendingViaticoPayments = [];
-        this.paidViaticoPayments = [];
-      },
+      error: () => this.resetPaymentAggregates(),
     });
+  }
+
+  private resetPaymentAggregates(): void {
+    this.pendingViaticoPayments = [];
+    this.paidViaticoPayments = [];
+    this.viaticoDesembolsado = 0;
+    this.reembolsoPagadoCount = 0;
+    this.reembolsoDesembolsado = 0;
   }
 
   viaticoUserName(report: IExpenseReport): string {
@@ -269,6 +328,10 @@ export class TesoreriaComponent implements OnInit {
 
   viaticoRemaining(report: IExpenseReport): number {
     return Math.max(Number(report.viaticoAmount ?? 0) - Number(report.viaticoPaidAmount ?? 0), 0);
+  }
+
+  viaticoCurrencySymbol(report: IExpenseReport | null | undefined): string {
+    return monedaSymbol(report?.viaticoMoneda);
   }
 
   /**
@@ -469,6 +532,10 @@ export class TesoreriaComponent implements OnInit {
 
   advanceRemaining(advance: IAdvance): number {
     return Math.max(Number(advance?.amount ?? 0) - this.advancePaid(advance), 0);
+  }
+
+  advanceCurrencySymbol(advance: IAdvance | null | undefined): string {
+    return monedaSymbol(advance?.moneda);
   }
 
   /** Contabilidad puede registrar/seguir registrando pagos mientras no se haya liquidado. */
@@ -946,14 +1013,152 @@ export class TesoreriaComponent implements OnInit {
     });
   }
 
-  /** Abre la página independiente para crear una rendición directa con depósito. */
-  goToNuevaRendicionDirecta(): void {
-    this.router.navigate(['/tesoreria/rendicion-directa/nueva']);
-  }
-
   directaUserName(rep: any): string {
     const u = rep?.userId;
     if (u && typeof u === 'object') return u.name || u.email || '—';
     return '—';
+  }
+
+  // ─── Pagos por lote BBVA (VD-7) ─────────────────────────────────────────────
+
+  showBatchModal = signal(false);
+  batchMode = signal<'generate' | 'reconcile'>('generate');
+  isGeneratingTxt = signal(false);
+  isReconciling = signal(false);
+  isSimulatingPdf = signal(false);
+  generateResult = signal<IGeneratePaymentsTxt | null>(null);
+  reconcileResult = signal<IReconcileResult | null>(null);
+
+  /** Solo quien paga (Tesorería/Contabilidad/Admin/Super) usa el lote BBVA. */
+  get canUseBatchPayments(): boolean {
+    return this.canPayAndSettle;
+  }
+
+  /** Genera el TXT, lo descarga y muestra el resumen (excluidos por datos incompletos). */
+  generatePaymentsTxt(): void {
+    if (this.isGeneratingTxt()) return;
+    this.isGeneratingTxt.set(true);
+    this.reconcileResult.set(null);
+    this.advanceService.generatePaymentsTxt().subscribe({
+      next: (res) => {
+        this.isGeneratingTxt.set(false);
+        this.generateResult.set(res);
+        this.batchMode.set('generate');
+        this.showBatchModal.set(true);
+        if (res.count > 0) {
+          this.downloadTxtFile(res.fileBase64, res.fileName);
+          this.notificationService.show(
+            `Archivo generado: ${res.count} pago(s) por S/ ${res.totalSoles.toFixed(2)}.`,
+            'success'
+          );
+        } else {
+          this.notificationService.show(
+            `No se generó el archivo: ${res.excluded.length} beneficiario(s) con datos bancarios incompletos.`,
+            'warning'
+          );
+        }
+      },
+      error: (e) => {
+        this.isGeneratingTxt.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo generar el archivo de pagos.',
+          'error'
+        );
+      },
+    });
+  }
+
+  /** Decodifica el base64 Latin-1 a bytes y dispara la descarga del .txt. */
+  private downloadTxtFile(base64: string, fileName: string): void {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'BBVAREND.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Sube el PDF de BBVA y muestra el resultado de la conciliación. */
+  onReconcileFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      this.notificationService.show('Debes subir el PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
+      input.value = '';
+      return;
+    }
+    this.reconcileFile(file);
+    input.value = '';
+  }
+
+  /** Envía el PDF (real o simulado) a conciliación y procesa el resultado. */
+  private reconcileFile(file: File): void {
+    this.isReconciling.set(true);
+    this.generateResult.set(null);
+    this.advanceService.reconcilePayments(file).subscribe({
+      next: (res) => {
+        this.isReconciling.set(false);
+        this.reconcileResult.set(res);
+        this.batchMode.set('reconcile');
+        this.showBatchModal.set(true);
+        const n = res.conciliados.length;
+        this.notificationService.show(
+          n > 0 ? `${n} pago(s) conciliado(s) y marcado(s) como pagados.` : 'No se conció ningún pago. Revisa el resumen.',
+          n > 0 ? 'success' : 'warning'
+        );
+        this.loadData();
+      },
+      error: (e) => {
+        this.isReconciling.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo procesar el PDF de BBVA.',
+          'error'
+        );
+      },
+    });
+  }
+
+  /**
+   * PRUEBAS: simula el PDF de retorno de BBVA. Pide al backend que marque como
+   * abonados todos los pagos pendientes y los concilie por el mismo motor que el
+   * PDF real, para continuar el flujo sin depender del banco. Ocultar/quitar
+   * antes de producción (la vía real es "Cargar pagos" con el PDF de BBVA).
+   */
+  simulateBbvaPdf(): void {
+    if (this.isSimulatingPdf() || this.isReconciling()) return;
+    this.isSimulatingPdf.set(true);
+    this.generateResult.set(null);
+    this.advanceService.simulateReconcile().subscribe({
+      next: (res) => {
+        this.isSimulatingPdf.set(false);
+        this.reconcileResult.set(res);
+        this.batchMode.set('reconcile');
+        this.showBatchModal.set(true);
+        const n = res.conciliados.length;
+        this.notificationService.show(
+          n > 0
+            ? `Simulación BBVA: ${n} pago(s) conciliado(s) y marcado(s) como pagados.`
+            : 'Simulación BBVA: no se concilió ningún pago. Revisa el resumen.',
+          n > 0 ? 'success' : 'warning'
+        );
+        this.loadData();
+      },
+      error: (e) => {
+        this.isSimulatingPdf.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo simular el PDF de BBVA.',
+          'error'
+        );
+      },
+    });
+  }
+
+  closeBatchModal(): void {
+    this.showBatchModal.set(false);
   }
 }

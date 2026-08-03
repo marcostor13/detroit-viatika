@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing'
-import { ForbiddenException } from '@nestjs/common'
 import { Types } from 'mongoose'
 import { AdvanceController } from './advance.controller'
 import { AdvanceService } from './advance.service'
+import { PaymentBatchService } from './payment/payment-batch.service'
 import { AuditLogService } from '../audit-log/audit-log.service'
 import { ROLES } from '../auth/enums/roles.enum'
 
@@ -25,10 +25,8 @@ const makeReq = (overrides: Record<string, unknown> = {}) => ({
 })
 
 const mockAdvanceService = {
-  create: jest.fn().mockResolvedValue({ _id: advanceId }),
   findMyAdvances: jest.fn().mockResolvedValue([]),
   findAllByClient: jest.fn().mockResolvedValue([]),
-  findForViaticosPage: jest.fn().mockResolvedValue([]),
   findPending: jest.fn().mockResolvedValue([]),
   getStats: jest.fn().mockResolvedValue({}),
   findOne: jest.fn().mockResolvedValue({ _id: advanceId }),
@@ -39,7 +37,6 @@ const mockAdvanceService = {
   resubmitRejected: jest
     .fn()
     .mockResolvedValue({ _id: advanceId, status: 'pending_l1' }),
-  resendCoordinatorNotification: jest.fn().mockResolvedValue({ sent: true }),
   registerPayment: jest
     .fn()
     .mockResolvedValue({ _id: advanceId, status: 'paid' }),
@@ -57,6 +54,14 @@ const mockAdvanceService = {
 
 const mockAuditLogService = { log: jest.fn().mockResolvedValue(undefined) }
 
+const mockPaymentBatchService = {
+  generateTxt: jest.fn().mockResolvedValue({ count: 0, totalSoles: 0, excluded: [] }),
+  reconcileFromPdf: jest
+    .fn()
+    .mockResolvedValue({ conciliados: [], sinConciliar: [], noAbonados: [] }),
+  confirmManual: jest.fn().mockResolvedValue({ pagados: 0, errores: [] }),
+}
+
 describe('AdvanceController', () => {
   let controller: AdvanceController
 
@@ -66,22 +71,11 @@ describe('AdvanceController', () => {
       controllers: [AdvanceController],
       providers: [
         { provide: AdvanceService, useValue: mockAdvanceService },
+        { provide: PaymentBatchService, useValue: mockPaymentBatchService },
         { provide: AuditLogService, useValue: mockAuditLogService },
       ],
     }).compile()
     controller = module.get<AdvanceController>(AdvanceController)
-  })
-
-  describe('create', () => {
-    it('extrae userId y clientId del JWT y delega al servicio', async () => {
-      const req = makeReq()
-      const dto: any = {}
-      const result = await controller.create(dto, req as never)
-      expect(mockAdvanceService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ userId, clientId })
-      )
-      expect(result).toBeDefined()
-    })
   })
 
   describe('findMy', () => {
@@ -98,45 +92,6 @@ describe('AdvanceController', () => {
     it('delega al servicio con clientId de la ruta', async () => {
       await controller.findAll(clientId)
       expect(mockAdvanceService.findAllByClient).toHaveBeenCalledWith(clientId)
-    })
-  })
-
-  describe('findForViaticosPage', () => {
-    it('lanza ForbiddenException si rol es COLABORADOR sin permisos de aprobacion', () => {
-      const req = makeReq({
-        roles: [ROLES.COLABORADOR],
-        role: ROLES.COLABORADOR,
-        permissions: {},
-      })
-      expect(() => controller.findForViaticosPage(req as never)).toThrow(
-        ForbiddenException
-      )
-    })
-
-    it('permite acceso a ADMIN', async () => {
-      const req = makeReq({ roles: [ROLES.ADMIN], role: ROLES.ADMIN })
-      await controller.findForViaticosPage(req as never)
-      expect(mockAdvanceService.findForViaticosPage).toHaveBeenCalled()
-    })
-
-    it('permite acceso a COLABORADOR con módulo viaticos', async () => {
-      const req = makeReq({
-        roles: [ROLES.COLABORADOR],
-        role: ROLES.COLABORADOR,
-        permissions: { modules: ['viaticos'] },
-      })
-      await controller.findForViaticosPage(req as never)
-      expect(mockAdvanceService.findForViaticosPage).toHaveBeenCalled()
-    })
-
-    it('permite acceso a COLABORADOR con canApproveL1', async () => {
-      const req = makeReq({
-        roles: [ROLES.COLABORADOR],
-        role: ROLES.COLABORADOR,
-        permissions: { canApproveL1: true },
-      })
-      await controller.findForViaticosPage(req as never)
-      expect(mockAdvanceService.findForViaticosPage).toHaveBeenCalled()
     })
   })
 
@@ -214,19 +169,6 @@ describe('AdvanceController', () => {
       )
       expect(mockAuditLogService.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'resubmit_advance' })
-      )
-    })
-  })
-
-  describe('resendCoordinatorEmail', () => {
-    it('llama al servicio y registra auditoria', async () => {
-      const req = makeReq()
-      await controller.resendCoordinatorEmail(advanceId, req as never)
-      expect(
-        mockAdvanceService.resendCoordinatorNotification
-      ).toHaveBeenCalledWith(advanceId, clientId)
-      expect(mockAuditLogService.log).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'resend_coordinator_notification' })
       )
     })
   })

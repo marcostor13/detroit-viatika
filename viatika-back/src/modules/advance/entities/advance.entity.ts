@@ -164,18 +164,12 @@ export interface AdvanceDocument extends Document {
   solicitudVersion?: number
   /** Monto contabilizado en compromiso presupuestal del centro de costo hasta el pago. */
   budgetCommitmentRecorded?: boolean
-  /** Rendición de origen cuando este anticipo incorpora un saldo pendiente de otra rendición. */
-  pendingBalanceFromReportId?: Types.ObjectId
-  /** Monto trasladado del saldo pendiente de la rendición de origen. */
-  pendingBalanceAmount?: number
-  /** Monto adicional solicitado por encima del saldo pendiente. */
-  additionalAmount?: number
-  /** Saldos de la bolsa consumidos para financiar esta solicitud de viáticos. */
-  saldoIds?: Types.ObjectId[]
   /** Datos bancarios alternativos ingresados en la solicitud (opcionales). */
   requestBankName?: string
   requestAccountNumber?: string
   requestCci?: string
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
+  moneda?: string
 }
 
 /**
@@ -262,6 +256,10 @@ export class Advance {
 
   @Prop({ required: true, min: 0 })
   amount: number
+
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
+  @Prop({ type: String, default: '01' })
+  moneda?: string
 
   @Prop({ required: true })
   description: string
@@ -397,18 +395,6 @@ export class Advance {
 
   @Prop({ type: Boolean, default: false })
   budgetCommitmentRecorded?: boolean
-
-  @Prop({ type: Types.ObjectId, ref: 'ExpenseReport', required: false })
-  pendingBalanceFromReportId?: Types.ObjectId
-
-  @Prop({ type: Number, required: false })
-  pendingBalanceAmount?: number
-
-  @Prop({ type: Number, required: false })
-  additionalAmount?: number
-
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Saldo' }], default: undefined })
-  saldoIds?: Types.ObjectId[]
 
   @Prop({ type: String, required: false })
   requestBankName?: string

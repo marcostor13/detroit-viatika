@@ -21,7 +21,6 @@ import { ROLES } from '../auth/enums/roles.enum'
 import { AuthGuard } from '@nestjs/passport'
 import { RolesGuard } from '../auth/guards/roles.guard'
 import { AuditLogService } from '../audit-log/audit-log.service'
-import { CategoryGroupService } from '../category-group/category-group.service'
 
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD)
@@ -29,8 +28,7 @@ import { CategoryGroupService } from '../category-group/category-group.service'
 export class ProjectController {
   constructor(
     private readonly projectService: ProjectService,
-    private readonly auditLogService: AuditLogService,
-    private readonly categoryGroupService: CategoryGroupService
+    private readonly auditLogService: AuditLogService
   ) {}
 
   @Post()
@@ -76,6 +74,29 @@ export class ProjectController {
     return result
   }
 
+  /**
+   * ¿El usuario autenticado es aprobador (cualquier nivel) de algún centro de
+   * costo de su empresa? Reemplaza el chequeo por rol "Coordinador" en el
+   * frontend (sidebar, dashboard, detalle de rendición) — no cubre el
+   * anticipo genérico legacy (`Advance.approverIds`), fuera de alcance.
+   */
+  @Get('me/am-i-approver')
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD,
+    ROLES.TESORERIA
+  )
+  async amIApprover(@Request() req: any) {
+    const userId = req.user._id || req.user.sub
+    const rawClient = req.user?.clientId
+    const clientId =
+      rawClient?._id?.toString?.() ?? rawClient?.toString?.() ?? String(rawClient ?? '')
+    const isApprover = await this.projectService.isApproverForClient(userId, clientId)
+    return { isApprover }
+  }
+
   @Get('bulk-import/template')
   async downloadTemplate() {
     const xlsx = await import('xlsx')
@@ -92,7 +113,13 @@ export class ProjectController {
   }
 
   @Get(':clientId')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD,
+    ROLES.TESORERIA
+  )
   async findAll(
     @Param('clientId') clientId: string,
     @Request() req: any,
@@ -101,33 +128,11 @@ export class ProjectController {
     @Query('search') search?: string,
     @Query('isActive') isActive?: string
   ) {
-    // El colaborador solo ve los centros de costo de sus perfiles efectivos.
-    const roles: string[] = req?.user?.roles ?? []
-    const isColaborador =
-      roles.includes(ROLES.COLABORADOR) &&
-      !roles.includes(ROLES.ADMIN) &&
-      !roles.includes(ROLES.SUPER_ADMIN) &&
-      !roles.includes(ROLES.CONTABILIDAD)
-
-    let categoryGroupIds: string[] | undefined
-    if (isColaborador) {
-      // El perfil se deriva de las categorías asignadas al usuario (perfil = referencia).
-      const categorias: string[] = req?.user?.permissions?.categoryIds ?? []
-      const perfiles = categorias.length
-        ? await this.categoryGroupService
-            .findIdsContainingAnyCategory(categorias, clientId)
-            .catch(() => [])
-        : []
-      // Solo filtra si hay perfiles derivados; si no, conserva el comportamiento previo (todos).
-      categoryGroupIds = perfiles.length ? perfiles : undefined
-    }
-
     return this.projectService.findAll(clientId, {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
       search,
       isActive: isActive === undefined ? undefined : isActive !== 'false',
-      categoryGroupIds,
     })
   }
 

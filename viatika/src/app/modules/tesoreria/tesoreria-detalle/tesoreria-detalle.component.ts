@@ -15,6 +15,7 @@ import {
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { BadgeComponent } from '../../../design-system/badge/badge.component';
+import { monedaSymbol } from '../../../constants/moneda';
 
 @Component({
   selector: 'app-tesoreria-detalle',
@@ -100,6 +101,10 @@ export class TesoreriaDetalleComponent implements OnInit {
   }
 
   back() { this.router.navigate(['/tesoreria']); }
+
+  currencySymbol(): string {
+    return monedaSymbol(this.advance()?.moneda);
+  }
 
   collaboratorName(): string {
     const u = this.advance()?.userId;

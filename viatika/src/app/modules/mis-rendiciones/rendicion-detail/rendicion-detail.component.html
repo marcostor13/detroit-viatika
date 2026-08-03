@@ -18,14 +18,24 @@
         <h1 class="text-xl sm:text-2xl font-bold text-secondary leading-tight">
           {{ report?.description || (report?.isDirecta ? 'Rendición Directa' : (report?.isCajaChica ? 'Rendición Caja Chica' : 'Rendición de viáticos')) }}
         </h1>
+        @if (getHeaderCentroCosto()) {
+          <p class="text-sm sm:text-base font-medium text-tertiary mt-1 flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Z" />
+            </svg>
+            @if (getHeaderCentroCostoCodigo()) {
+              <span class="font-semibold text-secondary">{{ getHeaderCentroCostoCodigo() }}</span>
+            }
+            {{ getHeaderCentroCosto() }}
+          </p>
+        }
         @if (report) {
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
             <span class="px-2.5 py-1 rounded-full text-xs font-semibold shrink-0" [ngClass]="{
               'bg-ink-100 text-ink-700': report.status === 'solicited' && !isEffectivelyClosed,
-              'bg-primary/10 text-primary': report.status === 'open' && !isEffectivelyClosed,
-              'bg-warning/10 text-warning-ink': (report.status === 'submitted' || report.status === 'pending_l1' || report.status === 'pending_l2' || report.status === 'cancelled') && !isEffectivelyClosed,
-              'bg-primary/20 text-primary': report.status === 'pending_accounting' && !isEffectivelyClosed,
-              'bg-success/10 text-success-ink': (report.status === 'approved' || report.status === 'viatico_approved' || report.status === 'partially_paid') && !isEffectivelyClosed,
+              'bg-info/10 text-info-ink': report.status === 'open' && !isEffectivelyClosed,
+              'bg-warning/10 text-warning-ink': (report.status === 'submitted' || report.status === 'pending_l1' || report.status === 'cancelled') && !isEffectivelyClosed,
+              'bg-success/10 text-success-ink': (report.status === 'pending_accounting' || report.status === 'pending_l2' || report.status === 'approved' || report.status === 'viatico_approved' || report.status === 'partially_paid') && !isEffectivelyClosed,
               'bg-success/20 text-success-ink': (report.status === 'reimbursed' || report.status === 'settled' || report.status === 'paid') && !isEffectivelyClosed,
               'bg-error/10 text-error': report.status === 'rejected' && !isEffectivelyClosed,
               'bg-background text-secondary': report.status === 'closed' || report.status === 'returned' || isEffectivelyClosed
@@ -109,6 +119,20 @@
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
             <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+          </svg>
+        </app-button>
+        <app-button
+          label="Solicitud de Fondos"
+          variant="secondary"
+          size="sm"
+          [fullWidth]="false"
+          [loading]="isExportingSolicitud()"
+          loadingLabel="Generando…"
+          [disabled]="isExportingSolicitud()"
+          (clicked)="exportSolicitudFondosPdf()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
           </svg>
         </app-button>
         <app-button
@@ -289,7 +313,7 @@
           @if (!report.isCajaChica) {
           <div class="relative group/submit">
             <app-button
-              [label]="report.status === 'rejected' ? 'Volver a enviar rendicion' : (report.isDirecta ? 'Enviar a Contabilidad' : 'Enviar Rendicion')"
+              [label]="report.status === 'rejected' ? 'Volver a enviar rendicion' : 'Enviar Rendicion'"
               variant="secondary"
               size="sm"
               [fullWidth]="false"
@@ -343,45 +367,35 @@
         <!-- Admin/Coordinador: rendición enviada — revisar comprobantes y aprobar (paso 1) -->
         @if (report.status === 'submitted' && isAdminView && !isPendingCoordinador) {
         <div class="flex flex-col gap-2 items-end">
-          @if (!allDocumentsApproved()) {
-            <p class="text-sm text-warning-ink bg-warning/10 border border-amber-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
-              Aprueba todos los comprobantes antes de poder aprobar la rendición.
-              <span class="font-semibold block mt-0.5">{{ approvedDocCount() }} / {{ totalDocCount() }} aprobados.</span>
-            </p>
-          }
-          <div class="flex flex-row flex-wrap gap-2 justify-end">
-            <app-button
-              [label]="canCoordinadorApprove ? 'Aprobar Rendición' : 'Pendiente de revisión'"
-              variant="primary"
-              size="sm"
-              [fullWidth]="false"
-              [disabled]="!canCoordinadorApprove"
-              (clicked)="openAdminApproveModal()"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </app-button>
-            <app-button label="Rechazar rendición" variant="danger" size="sm" [fullWidth]="false" (clicked)="openAdminRejectModal()">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" />
-              </svg>
-            </app-button>
-          </div>
+          <!-- VD-87: los aprobadores YA NO aprueban ni rechazan a nivel de
+               reporte. Solo aprueban/rechazan los comprobantes individuales
+               (acciones ✓/✗ en cada fila de la tabla de abajo). Al aprobar
+               TODOS, el backend pasa la rendición a Contabilidad automáticamente
+               (advanceToAccountingIfAllExpensesApproved). Aplica igual a
+               rendiciones estándar y a viáticos con cadena de centro de costo. -->
+          <p class="text-sm text-warning-ink bg-warning/10 border border-amber-200 px-3 py-2 rounded-lg max-w-xs leading-snug">
+            Revisa y aprueba cada comprobante en la tabla de abajo. Al aprobar todos, la rendición pasa automáticamente a Contabilidad.
+            <span class="font-semibold block mt-0.5">{{ approvedDocCount() }} / {{ totalDocCount() }} comprobantes aprobados.</span>
+          </p>
         </div>
         }
 
-        <!-- Contabilidad: rendición enviada — bloqueada hasta que coordinador apruebe -->
+        <!-- @removed: bloque de aprobación de directa a nivel de reporte
+             (canApproveDirectaChainStep). La directa ya no llega a
+             `pending_l1` — se aprueba por comprobante (ver sección de
+             comprobantes más abajo). -->
+
+        <!-- Contabilidad: rendición enviada — bloqueada hasta que los aprobadores aprueben -->
         @if (isPendingCoordinador) {
         <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary text-sm font-medium max-w-xs">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0 text-primary">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
           </svg>
-          Pendiente de aprobación del coordinador
+          Pendiente de aprobación de los aprobadores
         </div>
         }
 
-        <!-- Contabilidad/Admin: rendición aprobada por coordinador — aprobacion final (paso 2) -->
+        <!-- Contabilidad/Admin: rendición aprobada por los aprobadores — aprobacion final (paso 2) -->
         @if (report.status === 'pending_accounting' && isAdminView) {
         <div class="flex flex-col gap-2 items-end">
           @if (!canContabilidadApprove) {
@@ -389,7 +403,7 @@
               @if (report.isDirecta) {
                 Esta rendicion esta en espera de aprobacion de contabilidad.
               } @else {
-                Esta rendicion fue aprobada por el coordinador y esta en espera de aprobacion de contabilidad.
+                Esta rendicion fue aprobada por los aprobadores y esta en espera de aprobacion de contabilidad.
               }
             </p>
           }
@@ -438,7 +452,7 @@
             <p id="rejection-heading" class="font-semibold text-error">
               {{
                 (isSolicitudPhase ? 'Solicitud rechazada por ' : 'Rendición rechazada por ') +
-                (report.rejectedByRole === 'contabilidad' ? 'Contabilidad' : 'el Coordinador')
+                (report.rejectedByRole === 'contabilidad' ? 'Contabilidad' : 'un aprobador')
               }}
             </p>
             @if (report.rejectionReason) {
@@ -532,127 +546,7 @@
           </p>
         </div>
       </div>
-      } @else if (report.isDirecta && hasPendingBalanceCredit) {
-      <!-- Rendición directa creada desde saldo heredado -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
-        <!-- Saldo heredado -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-blue-200 p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-primary/10 text-primary rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Heredado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-primary tabular-nums">S/ {{ pendingBalanceCreditAmount | number:'1.2-2' }}</p>
-          <p class="text-xs text-tertiary/70 mt-1">{{ pendingBalanceFromLabel }}</p>
-        </div>
-        <!-- Total gastado -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-error/10 text-error rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Total Gastado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
-        </div>
-        <!-- Saldo disponible -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-success/10 text-success-ink rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Disponible</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': saldoLibre >= 0, 'text-error': saldoLibre < 0}">
-            S/ {{ saldoLibre | number:'1.2-2' }}
-          </p>
-        </div>
-      </div>
       } @else if (report.isDirecta || report.isCajaChica) {
-      @if (isSaldoUsadoEnOtraRendicion) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 mb-6 md:mb-8 w-full max-w-xl">
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-error/10 text-error rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Total Gastado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
-        </div>
-        <div class="rounded-xl shadow-sm border bg-warning/10 border-amber-200 p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-warning/10 text-warning-ink rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Disponible</p>
-          </div>
-          <p class="text-sm font-semibold text-warning-ink">Saldo utilizado en otra solicitud (S/ {{ saldoLibre | number:'1.2-2' }}) trasladado a nueva solicitud</p>
-        </div>
-      </div>
-      } @else if (hasFinancingSaldos) {
-      <!-- Rendición directa financiada con saldo de la bolsa -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
-        <!-- Presupuesto (financiado con saldo) -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-primary/10 text-primary rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Presupuesto</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ financingSaldosTotal | number:'1.2-2' }}</p>
-          <div class="mt-3 border-t border-divider pt-2 space-y-1.5">
-            <p class="text-[11px] font-semibold text-tertiary/70 uppercase tracking-wider">Financiado con saldo</p>
-            @for (s of financingSaldos; track s._id) {
-            <div class="flex justify-between gap-2 text-xs">
-              <span class="text-tertiary truncate">{{ financingSaldoTipo(s) }}@if (financingSaldoLabel(s)) { · {{ financingSaldoLabel(s) }} }</span>
-              <span class="font-medium text-secondary shrink-0 tabular-nums">S/ {{ s.amount | number:'1.2-2' }}</span>
-            </div>
-            }
-          </div>
-        </div>
-        <!-- Total gastado -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-error/10 text-error rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Total Gastado</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
-        </div>
-        <!-- Saldo disponible -->
-        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
-          <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 bg-success/10 text-success-ink rounded-lg">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-              </svg>
-            </div>
-            <p class="font-medium text-tertiary">Saldo Disponible</p>
-          </div>
-          <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': financingSaldoDisponible >= 0, 'text-error': financingSaldoDisponible < 0}">
-            S/ {{ financingSaldoDisponible | number:'1.2-2' }}
-          </p>
-        </div>
-      </div>
-      } @else {
       <div class="w-full max-w-xs mb-6 md:mb-8">
         <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
           <div class="flex items-center gap-3 mb-2">
@@ -666,7 +560,6 @@
           <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
         </div>
       </div>
-      }
       } @else {
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
         <!-- Budget assigned -->
@@ -721,29 +614,18 @@
         </div>
 
         <!-- Remaining balance -->
-        <div class="rounded-xl shadow-sm border p-4 sm:p-6"
-          [ngClass]="isSaldoUsadoEnOtraRendicion ? 'bg-warning/10 border-amber-200' : 'bg-quaternary border-divider'">
+        <div class="rounded-xl shadow-sm border p-4 sm:p-6 bg-quaternary border-divider">
           <div class="flex items-center gap-3 mb-2">
-            <div class="p-2 rounded-lg" [ngClass]="isSaldoUsadoEnOtraRendicion ? 'bg-warning/10 text-warning-ink' : 'bg-success/10 text-success-ink'">
-              @if (isSaldoUsadoEnOtraRendicion) {
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
-              </svg>
-              } @else {
+            <div class="p-2 rounded-lg bg-success/10 text-success-ink">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
               </svg>
-              }
             </div>
             <p class="font-medium text-tertiary">Saldo Disponible</p>
           </div>
-          @if (isSaldoUsadoEnOtraRendicion) {
-          <p class="text-sm font-semibold text-warning-ink">Saldo utilizado en otra solicitud (S/ {{ saldoLibre | number:'1.2-2' }}) trasladado a nueva solicitud</p>
-          } @else {
           <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': saldoLibre >= 0, 'text-error': saldoLibre < 0}">
             S/ {{ saldoLibre | number:'1.2-2' }}
           </p>
-          }
         </div>
       </div>
       }
@@ -981,6 +863,9 @@
         </h3>
         <div class="text-sm text-secondary space-y-1 mb-3">
           <p><span class="text-tertiary">Fecha de depósito:</span> {{ formatShortDate(report.returnVoucher.depositDate) }}</p>
+          @if (report.returnVoucher.amountReturned) {
+            <p><span class="text-tertiary">Monto devuelto:</span> <strong>S/ {{ report.returnVoucher.amountReturned | number:'1.2-2' }}</strong></p>
+          }
           @if (report.returnVoucher.bankOrigin) {
             <p><span class="text-tertiary">Banco origen:</span> {{ report.returnVoucher.bankOrigin }}</p>
           }
@@ -1012,16 +897,12 @@
         <p class="text-sm text-secondary mb-4">
           Tienes un saldo a devolver a la empresa de
           <strong class="text-error">S/ {{ saldoLibre | number:'1.2-2' }}</strong>.
-          Realiza el depósito a la cuenta de la empresa y adjunta el comprobante, o usa ese saldo para iniciar una nueva solicitud.
+          Realiza el depósito a la cuenta de la empresa y adjunta el comprobante.
         </p>
         <div class="flex flex-wrap gap-3">
           <button (click)="openReturnVoucherModal()"
             class="inline-flex items-center px-4 py-2 rounded-lg bg-error text-white font-semibold text-sm hover:bg-error">
             Adjuntar comprobante de devolución
-          </button>
-          <button (click)="openNuevaSolicitudConSaldo()"
-            class="inline-flex items-center px-4 py-2 rounded-lg bg-primary text-white font-semibold text-sm hover:bg-primary">
-            Usar saldo en nueva solicitud
           </button>
         </div>
       </div>
@@ -1064,7 +945,7 @@
               @if (expensesPage()) {
                 <span class="text-xs text-tertiary">{{ expensesPage()!.total }} comprobante(s)</span>
               }
-              @if (canApproveExpenseAsCoord && batchApproveCount > 0) {
+              @if (canBatchApproveAsCoord && batchApproveCount > 0) {
                 <button
                   type="button"
                   [disabled]="isBatchApproving()"
@@ -1091,7 +972,6 @@
               <option value="all">Todos los tipos</option>
               <option value="factura">Factura</option>
               <option value="planilla_movilidad">Planilla movilidad</option>
-              <option value="comprobante_caja">Comprobante de caja</option>
               <option value="otros_gastos">Otros gastos</option>
             </select>
             <select
@@ -1109,7 +989,7 @@
               [value]="expFilterSearch()"
               (input)="expFilterSearch.set($any($event.target).value)"
               (keyup.enter)="applyExpenseFilters()"
-              placeholder="Buscar concepto..."
+              placeholder="Buscar por RUC..."
               class="h-8 rounded-lg border border-divider bg-quaternary px-3 text-xs text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[140px]"
             />
             <button
@@ -1216,55 +1096,46 @@
                   <span class="truncate">{{ getExpenseProveedor(expense) }}</span>
                 }
               </div>
-              <!-- Row 3: concepto -->
-              <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConcepto(expense) }}</p>
-              <!-- Row 4: estado cont (+ coord en flujo normal) -->
+              <!-- Row 3: concepto (comentario del gasto, VD-64) -->
+              <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConceptoColumn(expense) }}</p>
+              <!-- Row 4: estado único (etapa que bloquea el flujo) -->
               @if (!report.isCajaChica) {
-              <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                <!-- Est. Cont.: "Revisado" en directa, "Aprobado/Rechazado" en normal -->
-                <div class="flex items-center gap-1">
-                  <span class="text-xs text-tertiary/70 font-medium">{{ report.isDirecta ? 'Rev.' : 'Cont.' }}</span>
-                  @switch (getExpenseApprovalCont(expense).status) {
-                    @case ('approved') {
-                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-success/10 text-success-ink">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                        {{ report.isDirecta ? 'Revisado' : 'Aprobado' }}
-                      </span>
-                    }
-                    @case ('rejected') {
-                      @if (!report.isDirecta) {
-                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-error/10 text-error">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-                        Rechazado
-                      </span>
-                      }
-                    }
-                    @default {
-                      <span class="inline-flex px-1.5 py-0.5 rounded text-xs font-semibold bg-warning/10 text-warning-ink">Pendiente</span>
+              @let mobileUnifiedStatus = getExpenseUnifiedStatus(expense);
+              <div class="mt-2">
+                @switch (mobileUnifiedStatus.phase) {
+                  @case ('approved') {
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-success/10 text-success-ink">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                      {{ mobileUnifiedStatus.label }}
+                    </span>
+                  }
+                  @case ('rejected') {
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-error/10 text-error"
+                      [title]="mobileUnifiedStatus.rejectionReason || ''">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                      {{ mobileUnifiedStatus.label }}
+                    </span>
+                  }
+                  @case ('pending_coord') {
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary">
+                      {{ mobileUnifiedStatus.approvedCount }}/{{ mobileUnifiedStatus.requiredLevels }} aprobadores
+                      @if (mobileUnifiedStatus.escalated) { · escalado }
+                    </span>
+                    @if (mobileUnifiedStatus.pendingApproverNames && mobileUnifiedStatus.pendingApproverNames !== '—') {
+                      <span class="ml-1 text-[11px] text-tertiary/70">{{ mobileUnifiedStatus.pendingApproverNames }}</span>
                     }
                   }
-                </div>
-                @if (!report.isDirecta) {
-                <div class="flex items-center gap-1">
-                  <span class="text-xs text-tertiary/70 font-medium">Coord.</span>
-                  @switch (getExpenseApprovalCoord(expense).status) {
-                    @case ('approved') {
-                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-success/10 text-success-ink">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                        Aprobado
-                      </span>
-                    }
-                    @case ('rejected') {
-                      <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-error/10 text-error">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-                        Rechazado
-                      </span>
-                    }
-                    @default {
-                      <span class="inline-flex px-1.5 py-0.5 rounded text-xs font-semibold bg-warning/10 text-warning-ink">Pendiente</span>
-                    }
+                  @case ('pending_cont') {
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-warning/10 text-warning-ink">
+                      {{ mobileUnifiedStatus.label }}
+                    </span>
                   }
-                </div>
+                  @case ('not_submitted') {
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-background text-tertiary"
+                      title="Este comprobante aún no tiene cadena de aprobadores asignada">
+                      {{ mobileUnifiedStatus.label }}
+                    </span>
+                  }
                 }
               </div>
               }
@@ -1297,12 +1168,6 @@
                     Excel
                   </button>
                 }
-                @if (expense['expenseType'] === 'comprobante_caja') {
-                  <button type="button" (click)="exportCashVoucher(expense)"
-                    class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-primary/30 bg-primary/10 text-primary hover:bg-primary/10 transition-colors touch-manipulation">
-                    PDF
-                  </button>
-                }
                 @if (canMutateExpense(expense)) {
                   <button type="button" (click)="goEditExpense(expense._id)"
                     class="inline-flex items-center justify-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-divider bg-quaternary text-secondary hover:bg-background active:scale-[0.98] transition-all touch-manipulation">
@@ -1324,34 +1189,35 @@
                     }
                   </button>
                 }
-                <!-- Approval actions (mobile, oculto en rendicion directa) -->
-                @if (!report.isDirecta && canApproveExpenseAsCoord && getExpenseApprovalCoord(expense).status !== 'approved') {
+                <!-- Approval actions (mobile) -->
+                @let mobileActionsStatus = getExpenseUnifiedStatus(expense);
+                @if (canApproveExpenseAsCoord(expense) && mobileActionsStatus.phase === 'pending_coord') {
                   <button type="button"
                     [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
                     (click)="approveExpenseByRole(expense._id, 'coord')"
-                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-primary/30 bg-primary/10 text-primary hover:bg-primary/10 disabled:opacity-50 touch-manipulation">
+                    class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-success/30 bg-success/10 text-success-ink hover:bg-success/10 disabled:opacity-50 touch-manipulation">
                     @if (approvingExpenseRoleId() === 'coord:' + expense._id) {
-                      <span class="w-3 h-3 border border-primary/30 border-t-primary rounded-full animate-spin"></span>
-                    } @else { Aprobar Coord. }
+                      <span class="w-4 h-4 border border-success/30 border-t-success-ink rounded-full animate-spin"></span>
+                    } @else { <app-icon name="circle-check" size="sm" /> Aprobar }
                   </button>
                   <button type="button" (click)="openRejectRoleModal(expense._id, 'coord')"
-                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-error/10 text-error hover:bg-error/10 touch-manipulation">
-                    Rechazar Coord.
+                    class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-error/10 text-error hover:bg-error/10 touch-manipulation">
+                    <app-icon name="circle-x" size="sm" /> Rechazar
                   </button>
                 }
-                @if (canApproveExpenseAsCont && getExpenseApprovalCont(expense).status !== 'approved') {
+                @if (canApproveExpenseAsCont && mobileActionsStatus.phase === 'pending_cont') {
                   <button type="button"
                     [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
                     (click)="approveExpenseByRole(expense._id, 'cont')"
-                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-success/30 bg-success/10 text-success-ink hover:bg-success/10 disabled:opacity-50 touch-manipulation">
+                    class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-success/30 bg-success/10 text-success-ink hover:bg-success/10 disabled:opacity-50 touch-manipulation">
                     @if (approvingExpenseRoleId() === 'cont:' + expense._id) {
-                      <span class="w-3 h-3 border border-success/30 border-t-success-ink rounded-full animate-spin"></span>
-                    } @else { {{ report.isDirecta ? 'Marcar revisado' : 'Aprobar Cont.' }} }
+                      <span class="w-4 h-4 border border-success/30 border-t-success-ink rounded-full animate-spin"></span>
+                    } @else { <app-icon name="circle-check" size="sm" /> {{ report.isDirecta ? 'Marcar revisado' : 'Aprobar (Contabilidad)' }} }
                   </button>
                   @if (!report.isDirecta) {
                   <button type="button" (click)="openRejectRoleModal(expense._id, 'cont')"
-                    class="inline-flex items-center gap-1 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-error/10 text-error hover:bg-error/10 touch-manipulation">
-                    Rechazar Cont.
+                    class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-error/10 text-error hover:bg-error/10 touch-manipulation">
+                    <app-icon name="circle-x" size="sm" /> Rechazar (Contabilidad)
                   </button>
                   }
                 }
@@ -1379,13 +1245,9 @@
                   <div class="px-3 py-2.5 bg-quaternary border-b border-amber-100 last:border-0">
                     <div class="flex items-start justify-between gap-2">
                       <div class="flex-1 min-w-0">
-                        <p class="text-xs font-medium text-secondary leading-snug">{{ row['concepto'] || '—' }}</p>
                         <p class="text-xs text-tertiary mt-0.5">{{ formatEmissionDate($any(row['fecha'])) }}
                           @if (row['gestion']) { <span class="text-tertiary/70"> · </span>{{ row['gestion'] }} }
                         </p>
-                        @if (row['clienteProveedor']) {
-                        <p class="text-xs text-tertiary/70 truncate mt-0.5">{{ row['clienteProveedor'] }}</p>
-                        }
                         @if (row['origen'] || row['destino']) {
                         <p class="text-xs text-tertiary/70 truncate mt-0.5">{{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}</p>
                         }
@@ -1416,12 +1278,9 @@
                   <th class="px-3 py-3 whitespace-nowrap">Categoria</th>
                   <th class="px-3 py-3 text-right whitespace-nowrap">Monto</th>
                   @if (!report.isCajaChica) {
-                  <th class="px-3 py-3 text-center whitespace-nowrap text-success-ink">{{ report.isDirecta ? 'Revisado Cont.' : 'Est. Cont.' }}</th>
+                  <th class="px-3 py-3 text-center whitespace-nowrap">Estado</th>
                   }
-                  @if (!report.isDirecta && !report.isCajaChica) {
-                  <th class="px-3 py-3 text-center whitespace-nowrap text-primary">Est. Coord.</th>
-                  }
-                  <th class="px-3 py-3 text-center whitespace-nowrap">Opciones</th>
+                  <th class="px-3 py-3 whitespace-nowrap">Opciones</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-divider bg-quaternary">
@@ -1455,9 +1314,9 @@
                   <td class="px-3 py-3 text-secondary max-w-[160px]">
                     <span class="block truncate" [title]="getExpenseProveedor(expense)">{{ getExpenseProveedor(expense) }}</span>
                   </td>
-                  <!-- Concepto -->
+                  <!-- Concepto (comentario del gasto, VD-64) -->
                   <td class="px-3 py-3 text-secondary max-w-[200px]">
-                    <span class="block truncate" [title]="getExpenseConcepto(expense)">{{ getExpenseConcepto(expense) }}</span>
+                    <span class="block truncate" [title]="getExpenseConceptoColumn(expense)">{{ getExpenseConceptoColumn(expense) }}</span>
                   </td>
                   <!-- Proyecto -->
                   <td class="px-3 py-3 text-secondary max-w-[140px]">
@@ -1494,97 +1353,44 @@
                       }
                     </div>
                   </td>
-                  <!-- Estado Contabilidad -->
+                  <!-- Estado (único, según la etapa que bloquea el flujo) -->
                   @if (!report.isCajaChica) {
                   <td class="px-3 py-3 text-center">
-                    <div class="flex flex-col items-center gap-1">
-                      @switch (getExpenseApprovalCont(expense).status) {
+                    @let unifiedStatus = getExpenseUnifiedStatus(expense);
+                    <div class="flex flex-col items-center gap-0.5">
+                      @switch (unifiedStatus.phase) {
                         @case ('approved') {
                           <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-success/10 text-success-ink whitespace-nowrap">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                            {{ report.isDirecta ? 'Revisado' : 'Aprobado' }}
+                            {{ unifiedStatus.label }}
                           </span>
                         }
                         @case ('rejected') {
-                          @if (!report.isDirecta) {
-                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-error/10 text-error whitespace-nowrap">
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-error/10 text-error whitespace-nowrap"
+                            [title]="unifiedStatus.rejectionReason || ''">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-                            Rechazado
-                          </span>
-                          }
-                        }
-                        @default {
-                          @if (canApproveExpenseAsCont) {
-                            <div class="flex items-center gap-0.5">
-                              <button type="button"
-                                [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
-                                (click)="approveExpenseByRole(expense._id, 'cont')"
-                                class="p-1.5 rounded-lg text-success-ink hover:bg-success/10 disabled:opacity-50 transition-colors"
-                                [title]="report.isDirecta ? 'Marcar como revisado' : 'Aprobar como Contabilidad'">
-                                @if (approvingExpenseRoleId() === 'cont:' + expense._id) {
-                                  <span class="inline-block w-4 h-4 border-2 border-success/30 border-t-success-ink rounded-full animate-spin"></span>
-                                } @else {
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                                }
-                              </button>
-                              @if (!report.isDirecta) {
-                              <button type="button"
-                                (click)="openRejectRoleModal(expense._id, 'cont')"
-                                class="p-1.5 rounded-lg text-error hover:bg-error/10 transition-colors"
-                                title="Rechazar como Contabilidad">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                              </button>
-                              }
-                            </div>
-                          } @else {
-                            <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-warning/10 text-warning-ink whitespace-nowrap">Pendiente</span>
-                          }
-                        }
-                      }
-                    </div>
-                  </td>
-                  }
-                  <!-- Estado Coordinador (oculto en rendicion directa y caja chica) -->
-                  @if (!report.isDirecta && !report.isCajaChica) {
-                  <td class="px-3 py-3 text-center">
-                    <div class="flex flex-col items-center gap-1">
-                      @switch (getExpenseApprovalCoord(expense).status) {
-                        @case ('approved') {
-                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-success/10 text-success-ink whitespace-nowrap">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                            Aprobado
+                            {{ unifiedStatus.label }}
                           </span>
                         }
-                        @case ('rejected') {
-                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-error/10 text-error whitespace-nowrap">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-                            Rechazado
+                        @case ('pending_coord') {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary whitespace-nowrap">
+                            {{ unifiedStatus.approvedCount }}/{{ unifiedStatus.requiredLevels }} aprobadores
+                            @if (unifiedStatus.escalated) { · escalado }
+                          </span>
+                          @if (unifiedStatus.pendingApproverNames && unifiedStatus.pendingApproverNames !== '—') {
+                            <span class="text-[10px] text-tertiary/70 max-w-[140px] truncate" [title]="unifiedStatus.pendingApproverNames">{{ unifiedStatus.pendingApproverNames }}</span>
+                          }
+                        }
+                        @case ('pending_cont') {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-warning/10 text-warning-ink whitespace-nowrap">
+                            {{ unifiedStatus.label }}
                           </span>
                         }
-                        @default {
-                          @if (canApproveExpenseAsCoord) {
-                            <div class="flex items-center gap-0.5">
-                              <button type="button"
-                                [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
-                                (click)="approveExpenseByRole(expense._id, 'coord')"
-                                class="p-1.5 rounded-lg text-primary hover:bg-primary/10 disabled:opacity-50 transition-colors"
-                                title="Aprobar como Coordinador">
-                                @if (approvingExpenseRoleId() === 'coord:' + expense._id) {
-                                  <span class="inline-block w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></span>
-                                } @else {
-                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                                }
-                              </button>
-                              <button type="button"
-                                (click)="openRejectRoleModal(expense._id, 'coord')"
-                                class="p-1.5 rounded-lg text-error hover:bg-error/10 transition-colors"
-                                title="Rechazar como Coordinador">
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-                              </button>
-                            </div>
-                          } @else {
-                            <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold bg-warning/10 text-warning-ink whitespace-nowrap">Pendiente</span>
-                          }
+                        @case ('not_submitted') {
+                          <span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-semibold bg-background text-tertiary whitespace-nowrap"
+                            title="Este comprobante aún no tiene cadena de aprobadores asignada">
+                            {{ unifiedStatus.label }}
+                          </span>
                         }
                       }
                     </div>
@@ -1592,7 +1398,61 @@
                   }
                   <!-- Opciones -->
                   <td class="px-3 py-3">
-                    <div class="flex items-center justify-center gap-0.5">
+                    @let opsUnifiedStatus = getExpenseUnifiedStatus(expense);
+                    <!-- VD-86: alineadas a la izquierda para que los iconos comunes
+                         (aprobar/rechazar/detalle) coincidan entre filas aunque cada
+                         comprobante tenga un set distinto (adjunto, PDF, descarga...). -->
+                    <div class="flex items-center justify-start gap-0.5">
+                      <!-- Aprobar/Rechazar por el aprobador de nivel (N1/N2/N3) -->
+                      @if (!report.isCajaChica && canApproveExpenseAsCoord(expense) && opsUnifiedStatus.phase === 'pending_coord') {
+                      <div class="relative group/coordok">
+                        <button type="button"
+                          [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
+                          (click)="approveExpenseByRole(expense._id, 'coord')"
+                          class="inline-flex items-center justify-center w-9 h-9 rounded-lg text-success-ink hover:bg-success/10 disabled:opacity-50 transition-colors">
+                          @if (approvingExpenseRoleId() === 'coord:' + expense._id) {
+                            <span class="inline-block w-5 h-5 border-2 border-success/30 border-t-success-ink rounded-full animate-spin"></span>
+                          } @else {
+                            <app-icon name="circle-check" size="md" />
+                          }
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/coordok:opacity-100 pointer-events-none transition-opacity z-10">Aprobar comprobante</div>
+                      </div>
+                      <div class="relative group/coordno">
+                        <button type="button"
+                          (click)="openRejectRoleModal(expense._id, 'coord')"
+                          class="inline-flex items-center justify-center w-9 h-9 rounded-lg text-error hover:bg-error/10 transition-colors">
+                          <app-icon name="circle-x" size="md" />
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/coordno:opacity-100 pointer-events-none transition-opacity z-10">Rechazar comprobante</div>
+                      </div>
+                      }
+                      <!-- Aprobar/Rechazar por Contabilidad (solo si la cadena de aprobadores ya se completó) -->
+                      @if (!report.isCajaChica && canApproveExpenseAsCont && opsUnifiedStatus.phase === 'pending_cont') {
+                      <div class="relative group/contok">
+                        <button type="button"
+                          [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
+                          (click)="approveExpenseByRole(expense._id, 'cont')"
+                          class="inline-flex items-center justify-center w-9 h-9 rounded-lg text-success-ink hover:bg-success/10 disabled:opacity-50 transition-colors">
+                          @if (approvingExpenseRoleId() === 'cont:' + expense._id) {
+                            <span class="inline-block w-5 h-5 border-2 border-success/30 border-t-success-ink rounded-full animate-spin"></span>
+                          } @else {
+                            <app-icon name="circle-check" size="md" />
+                          }
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/contok:opacity-100 pointer-events-none transition-opacity z-10">{{ report.isDirecta ? 'Marcar revisado' : 'Aprobar (Contabilidad)' }}</div>
+                      </div>
+                      @if (!report.isDirecta) {
+                      <div class="relative group/contno">
+                        <button type="button"
+                          (click)="openRejectRoleModal(expense._id, 'cont')"
+                          class="inline-flex items-center justify-center w-9 h-9 rounded-lg text-error hover:bg-error/10 transition-colors">
+                          <app-icon name="circle-x" size="md" />
+                        </button>
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/contno:opacity-100 pointer-events-none transition-opacity z-10">Rechazar (Contabilidad)</div>
+                      </div>
+                      }
+                      }
                       <!-- Detalle -->
                       <div class="relative group/det">
                         <button type="button" (click)="openExpenseDetail(expense)"
@@ -1665,18 +1525,6 @@
                         <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/pmob-xls:opacity-100 pointer-events-none transition-opacity z-10">Excel</div>
                       </div>
                       }
-                      <!-- PDF: comprobante de caja -->
-                      @if (expense['expenseType'] === 'comprobante_caja') {
-                      <div class="relative group/ccaja-pdf">
-                        <button type="button" (click)="exportCashVoucher(expense)"
-                          class="inline-flex items-center justify-center w-8 h-8 rounded-lg text-primary hover:bg-primary/10 transition-colors">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                          </svg>
-                        </button>
-                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/ccaja-pdf:opacity-100 pointer-events-none transition-opacity z-10">PDF</div>
-                      </div>
-                      }
                     </div>
                   </td>
                 </tr>
@@ -1688,9 +1536,7 @@
                         <thead class="text-left">
                           <tr class="text-tertiary">
                             <th class="px-2 py-1.5 font-medium whitespace-nowrap">Fecha</th>
-                            <th class="px-2 py-1.5 font-medium">Concepto</th>
                             <th class="px-2 py-1.5 font-medium hidden md:table-cell">Gestión</th>
-                            <th class="px-2 py-1.5 font-medium hidden lg:table-cell">Cliente / Prov.</th>
                             <th class="px-2 py-1.5 font-medium hidden xl:table-cell whitespace-nowrap">Origen → Destino</th>
                             <th class="px-2 py-1.5 font-medium text-right whitespace-nowrap">Total (S/)</th>
                           </tr>
@@ -1699,9 +1545,7 @@
                           @for (row of mobilityRows(expense); track trackMobilityRow($index, row)) {
                           <tr class="hover:bg-warning/10/60">
                             <td class="px-2 py-1.5 whitespace-nowrap text-tertiary">{{ formatEmissionDate($any(row['fecha'])) }}</td>
-                            <td class="px-2 py-1.5 text-secondary max-w-[180px] break-words">{{ row['concepto'] || '—' }}</td>
                             <td class="px-2 py-1.5 hidden md:table-cell text-tertiary">{{ row['gestion'] || '—' }}</td>
-                            <td class="px-2 py-1.5 hidden lg:table-cell text-tertiary max-w-[140px] break-words">{{ row['clienteProveedor'] || '—' }}</td>
                             <td class="px-2 py-1.5 hidden xl:table-cell text-tertiary whitespace-nowrap">{{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}</td>
                             <td class="px-2 py-1.5 text-right tabular-nums font-semibold text-secondary">{{ mobilityRowTotal(row) | number:'1.2-2' }}</td>
                           </tr>
@@ -1755,6 +1599,82 @@
         }
       </div>
 
+      <!-- ── TRAZABILIDAD DEL FLUJO (aprobaciones paso a paso, VD-31) ──────── -->
+      @if (flowSteps().length > 0) {
+      <div class="mt-6 bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6">
+        <h2 class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-5">Estado</h2>
+        <div>
+          @for (step of flowSteps(); track $index; let last = $last; let first = $first) {
+          @if (step.group && (first || step.group !== flowSteps()[$index - 1].group)) {
+            <p class="text-[11px] font-bold uppercase tracking-wider mb-2"
+               [class.mt-1]="first"
+               [class.mt-1.5]="!first"
+               [class.text-primary]="step.group === 'solicitud'"
+               [class.text-warning-ink]="step.group === 'rendicion'">
+              {{ step.group === 'solicitud' ? 'Solicitud de viático' : 'Rendición de comprobantes' }}
+            </p>
+          }
+          <div class="flex gap-3">
+            <!-- Ícono + línea vertical -->
+            <div class="flex flex-col items-center">
+              @if (step.state === 'completed') {
+                <div class="w-7 h-7 rounded-full bg-green-100 border-2 border-green-500 flex items-center justify-center shrink-0">
+                  <svg class="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </div>
+              } @else if (step.state === 'active') {
+                <div class="w-7 h-7 rounded-full bg-blue-50 border-2 border-blue-500 flex items-center justify-center shrink-0">
+                  <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
+                </div>
+              } @else if (step.state === 'rejected') {
+                <div class="w-7 h-7 rounded-full bg-red-100 border-2 border-red-500 flex items-center justify-center shrink-0">
+                  <svg class="w-3 h-3 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </div>
+              } @else {
+                <div class="w-7 h-7 rounded-full border-2 border-tertiary/20 flex items-center justify-center shrink-0">
+                  <div class="w-2 h-2 rounded-full bg-tertiary/20"></div>
+                </div>
+              }
+              @if (!last) {
+                <div class="w-0.5 flex-1 my-1 min-h-[16px]"
+                     [ngClass]="{
+                       'bg-green-300': step.state === 'completed',
+                       'bg-blue-300': step.state === 'active',
+                       'bg-red-200': step.state === 'rejected',
+                       'bg-tertiary/20': step.state === 'upcoming'
+                     }"></div>
+              }
+            </div>
+            <!-- Contenido del paso -->
+            <div class="flex-1 pt-0.5" [class.pb-4]="!last">
+              <p class="text-sm font-medium"
+                 [class.text-secondary]="step.state !== 'upcoming'"
+                 [class.text-tertiary]="step.state === 'upcoming'">
+                {{ step.label }}
+              </p>
+              @if (step.date) {
+                <p class="text-xs text-tertiary mt-0.5">{{ step.date }}</p>
+              }
+              @if (step.description) {
+                <p class="text-xs font-medium mt-1"
+                   [class.text-blue-600]="step.state === 'active'"
+                   [class.text-red-600]="step.state === 'rejected'">
+                  {{ step.description }}
+                </p>
+              }
+              @if (step.notes) {
+                <p class="text-xs text-tertiary italic mt-0.5">{{ step.notes }}</p>
+              }
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+      }
+
     } @else {
       <div class="text-center p-12 bg-quaternary rounded-xl shadow-sm border border-divider text-tertiary">
         Rendición no encontrada.
@@ -1787,7 +1707,7 @@
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 shrink-0">
         <path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
       </svg>
-      {{ report.status === 'rejected' ? 'Reenviar' : (report.isDirecta ? 'Enviar a Contabilidad' : 'Enviar') }}
+      {{ report.status === 'rejected' ? 'Reenviar' : 'Enviar' }}
     </button>
     @if (!canSubmitReport) {
     <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 text-xs text-warning-ink bg-warning/10 border border-amber-200 rounded-lg px-3 py-2 shadow-sm opacity-0 group-hover/submit:opacity-100 pointer-events-none transition-opacity duration-150 z-50">
@@ -1867,17 +1787,6 @@
           </button>
           }
 
-          @if (getExpenseTypeKey(exp) === 'comprobante_caja') {
-          <button type="button" (click)="exportCashVoucher(exp)"
-            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary transition-colors">
-            PDF comprobante
-          </button>
-          <button type="button" (click)="exportCashVoucherAffidavit(exp)"
-            class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-warning text-white hover:bg-warning transition-colors">
-            Declaración jurada
-          </button>
-          }
-
           @if (exp['expenseType'] === 'recibo_caja') {
           <button type="button" (click)="exportReceiptPdf(exp)"
             class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary transition-colors">
@@ -1932,6 +1841,34 @@
         </div>
       </section>
 
+      <!-- Cadena de aprobación por centro de costo -->
+      @if (getExpenseChainSteps(exp).length > 0) {
+      <section class="rounded-xl border border-divider p-4">
+        <h4 class="text-xs font-semibold text-tertiary uppercase tracking-wide mb-3">Cadena de aprobación (centro de costo)</h4>
+        <div class="space-y-1.5">
+          @for (step of getExpenseChainSteps(exp); track step.level) {
+          <div class="flex items-center justify-between gap-2 text-xs rounded-lg border px-2.5 py-1.5"
+            [ngClass]="{
+              'border-success/30 bg-success/10 text-success-ink': step.state === 'completado',
+              'border-amber-200 bg-warning/10 text-warning-ink': step.state === 'pendiente'
+            }">
+            <span class="font-semibold">
+              N{{ step.level }}
+              @if (step.escalatedFrom) { <span class="font-normal italic"> (escalado desde N{{ step.escalatedFrom }})</span> }
+            </span>
+            <span class="truncate max-w-[45%] text-right" [title]="step.approverNames">{{ step.approverNames }}</span>
+            <span class="font-medium shrink-0">
+              @switch (step.state) {
+                @case ('completado') { Aprobado }
+                @case ('pendiente') { Pendiente }
+              }
+            </span>
+          </div>
+          }
+        </div>
+      </section>
+      }
+
       @if (exp['rejectionReason']) {
       <div class="rounded-xl bg-error/10 border border-red-200 p-4 text-sm text-error">
         <span class="font-semibold">Motivo de rechazo: </span>
@@ -1967,9 +1904,7 @@
               <thead class="bg-background text-left text-tertiary">
                 <tr>
                   <th class="px-3 py-2 font-medium">Fecha</th>
-                  <th class="px-3 py-2 font-medium">Concepto</th>
                   <th class="px-3 py-2 font-medium text-right">Total</th>
-                  <th class="px-3 py-2 font-medium hidden lg:table-cell">Cliente / Prov.</th>
                   <th class="px-3 py-2 font-medium hidden xl:table-cell">Origen → Destino</th>
                   <th class="px-3 py-2 font-medium hidden xl:table-cell">Km</th>
                   <th class="px-3 py-2 font-medium hidden md:table-cell">Gestión</th>
@@ -1979,9 +1914,7 @@
                 @for (row of mobilityRows(exp); track trackMobilityRow($index, row)) {
                 <tr class="hover:bg-background/80">
                   <td class="px-3 py-2 whitespace-nowrap">{{ formatEmissionDate($any(row['fecha'])) }}</td>
-                  <td class="px-3 py-2 max-w-[200px] break-words">{{ row['concepto'] || '—' }}</td>
                   <td class="px-3 py-2 text-right tabular-nums font-medium">{{ mobilityRowTotal(row) | number:'1.2-2' }}</td>
-                  <td class="px-3 py-2 hidden lg:table-cell break-words">{{ row['clienteProveedor'] || '—' }}</td>
                   <td class="px-3 py-2 hidden xl:table-cell text-tertiary">
                     {{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}
                   </td>
@@ -1991,33 +1924,6 @@
                 }
               </tbody>
             </table>
-          </div>
-        </section>
-        }
-        @case ('comprobante_caja') {
-        <section class="rounded-xl border border-divider p-4 space-y-3">
-          <h4 class="text-xs font-semibold text-tertiary uppercase tracking-wide">Comprobante de caja</h4>
-          <div class="grid sm:grid-cols-2 gap-3 text-sm">
-            <div class="sm:col-span-2">
-              <p class="text-xs text-tertiary/70">Entregado a</p>
-              <p class="font-medium text-secondary">{{ cashVoucherText(exp, 'entregadoA') }}</p>
-            </div>
-            <div class="sm:col-span-2">
-              <p class="text-xs text-tertiary/70">Dirección</p>
-              <p class="font-medium text-secondary whitespace-pre-wrap break-words">{{ cashVoucherText(exp, 'direccion') }}</p>
-            </div>
-            <div class="sm:col-span-2">
-              <p class="text-xs text-tertiary/70">Por concepto de</p>
-              <p class="font-medium text-secondary whitespace-pre-wrap break-words">{{ cashVoucherText(exp, 'concepto') }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-tertiary/70">N° interno</p>
-              <p class="font-medium text-secondary">{{ exp['internalCode'] || '—' }}</p>
-            </div>
-            <div>
-              <p class="text-xs text-tertiary/70">Fecha emisión</p>
-              <p class="font-medium text-secondary">{{ emissionDateText(exp) }}</p>
-            </div>
           </div>
         </section>
         }
@@ -2038,6 +1944,45 @@
               <p class="font-medium text-secondary">{{ exp['declaracionJuradaFirmante'] || '—' }}</p>
             </div>
           </div>
+          <!-- DJ al extranjero: detalle diario declarado + PDF oficial -->
+          @if (isDeclaracionJuradaExteriorExpense(exp)) {
+          <div class="rounded-lg border border-divider overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-xs sm:text-sm">
+                <thead class="bg-background text-left text-tertiary">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">Fecha</th>
+                    <th class="px-3 py-2 font-medium text-right">Monto ({{ exp['declaracionJuradaMoneda'] || 'US$' }})</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-divider">
+                  @for (row of declaracionJuradaRows(exp); track $index) {
+                  <tr class="hover:bg-background/80">
+                    <td class="px-3 py-2 whitespace-nowrap">{{ formatEmissionDate($any(row['fecha'])) }}</td>
+                    <td class="px-3 py-2 text-right tabular-nums font-medium">{{ $any(row['monto']) | number:'1.2-2' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="grid sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <p class="text-xs text-tertiary/70">Destino</p>
+              <p class="font-medium text-secondary">
+                {{ exp['declaracionJuradaDestino'] || '—' }}{{ exp['declaracionJuradaPais'] ? ', ' + exp['declaracionJuradaPais'] : '' }}
+              </p>
+            </div>
+            <div>
+              <p class="text-xs text-tertiary/70">Ciudad de firma</p>
+              <p class="font-medium text-secondary">{{ exp['declaracionJuradaLugarFirma'] || '—' }}</p>
+            </div>
+          </div>
+          <button type="button" (click)="exportDeclaracionJuradaExterior(exp)"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white font-semibold text-sm hover:opacity-90">
+            Descargar declaración jurada (PDF)
+          </button>
+          }
         </section>
         }
         @default {
@@ -2152,13 +2097,6 @@
 </div>
 }
 
-<app-solicitud-viaticos-modal
-  [isOpen]="showAdvanceModal"
-  [expenseReportId]="id"
-  [initialProjectId]="reportProjectId"
-  (closed)="onSolicitudViaticosClosed($event)"
-/>
-
 <!-- Modal: Confirmación de envío de rendición -->
 @if(showSubmitModal && report) {
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="closeSubmitModal()">
@@ -2249,7 +2187,7 @@
         <div class="bg-quaternary border border-divider rounded-lg px-3 py-2">
           <div class="flex items-start justify-between gap-2">
             <span [ngClass]="{
-              'bg-primary/10 text-primary': expense['expenseType'] === 'factura' || !expense['expenseType'],
+              'bg-info/10 text-info-ink': expense['expenseType'] === 'factura' || !expense['expenseType'],
               'bg-warning/10 text-warning-ink': expense['expenseType'] === 'planilla_movilidad',
               'bg-ink-100 text-ink-700': expense['expenseType'] === 'otros_gastos'
             }" class="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 mt-0.5">
@@ -2349,7 +2287,6 @@
 </div>
 }
 
-<!-- Modal: Admin rejection reason -->
 @if(showAdminRejectModal()) {
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4" (click)="showAdminRejectModal.set(false)">
   <div class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
@@ -2420,19 +2357,7 @@
         </div>
         <div>
           <p class="font-semibold text-secondary text-sm">Otros Gastos</p>
-          <p class="text-xs text-tertiary">Ticket, recibos, DJ u otros</p>
-        </div>
-      </button>
-      <button type="button" (click)="selectExpenseType('comprobante_caja')"
-        class="flex items-center gap-4 p-4 rounded-xl border-2 border-divider hover:border-primary hover:bg-primary/5 transition-all text-left group">
-        <div class="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/10 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.25h6m-7.5 3h9A2.25 2.25 0 0 0 18.75 16.5v-9A2.25 2.25 0 0 0 16.5 5.25h-9A2.25 2.25 0 0 0 5.25 7.5v9A2.25 2.25 0 0 0 7.5 18.75Z" />
-          </svg>
-        </div>
-        <div>
-          <p class="font-semibold text-secondary text-sm">Comprobante de Caja</p>
-          <p class="text-xs text-tertiary">Formulario interno con correlativo</p>
+          <p class="text-xs text-tertiary">Alimentación, boleta, recibos, DJ u otros</p>
         </div>
       </button>
     </div>
@@ -2489,8 +2414,14 @@
   <div class="relative bg-quaternary rounded-2xl shadow-xl w-full max-w-md p-6"
        (click)="$event.stopPropagation()">
     <h3 class="text-lg font-bold text-secondary mb-2">
-      Rechazar como {{ pendingRejectRole() === 'coord' ? 'Coordinador' : 'Contabilidad' }}
+      {{ pendingRejectRole() === 'coord' ? 'Rechazar comprobante' : 'Rechazar (Contabilidad)' }}
     </h3>
+    @if (pendingRejectRole() === 'cont') {
+      <p class="text-sm text-warning-ink bg-warning/10 border border-amber-200 px-3 py-2 rounded-lg mb-3 leading-snug">
+        Al rechazar este comprobante, <strong>toda la rendición se devolverá al colaborador</strong> para corrección y se
+        <strong>reiniciarán las aprobaciones</strong> de los demás comprobantes.
+      </p>
+    }
     <p class="text-sm text-tertiary mb-4">Indica el motivo del rechazo.</p>
     <textarea
       class="w-full border border-tertiary/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
@@ -2789,16 +2720,6 @@
 </div>
 }
 
-  <!-- Modal: Editar solicitud de viaticos -->
-  @if (showEditAdvanceModal() && editingAdvance()) {
-  <app-solicitud-viaticos-modal
-    [isOpen]="showEditAdvanceModal()"
-    [expenseReportId]="id"
-    [advanceToResubmit]="editingAdvance()"
-    (closed)="onEditAdvanceClosed($event)"
-  ></app-solicitud-viaticos-modal>
-  }
-
   <!-- Modal: Cancelar solicitud de viaticos -->
   @if (showCancelAdvanceModal()) {
   <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showCancelAdvanceModal.set(false)">
@@ -2863,7 +2784,7 @@
       </div>
       <div class="px-6 py-4">
         <p class="text-sm text-tertiary mb-4">
-          La solicitud de rendicion <strong>{{ report?.title }}</strong> sera cancelada. Esta accion notificara al coordinador asignado.
+          La solicitud de rendicion <strong>{{ report?.title }}</strong> sera cancelada. Esta accion notificara a los aprobadores asignados.
         </p>
         <label class="block text-sm font-medium text-secondary mb-1">Motivo (opcional)</label>
         <textarea
@@ -2900,62 +2821,6 @@
     </div>
   </div>
   }
-
-<!-- Modal: Nueva rendición directa con saldo -->
-@if (showNuevaDirectaConSaldoModal()) {
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40" (click)="showNuevaDirectaConSaldoModal.set(false)">
-  <div class="bg-quaternary rounded-2xl shadow-2xl w-full max-w-sm" (click)="$event.stopPropagation()">
-    <div class="px-6 pt-6 pb-2 flex items-center gap-3">
-      <div class="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-primary">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-        </svg>
-      </div>
-      <div>
-        <h3 class="text-base font-semibold text-secondary">Nueva rendición directa</h3>
-        <p class="text-xs text-tertiary">Saldo disponible: S/ {{ saldoLibre | number:'1.2-2' }}</p>
-      </div>
-    </div>
-    <div class="px-6 py-4">
-      <p class="text-sm text-tertiary mb-4">
-        Se creará una nueva rendición directa usando el saldo de <strong>S/ {{ saldoLibre | number:'1.2-2' }}</strong> disponible en esta rendición.
-      </p>
-      <label class="block text-sm font-medium text-secondary mb-1">Gestión <span class="text-error">*</span></label>
-      <input
-        type="text"
-        [value]="nuevaDirectaGestion()"
-        (input)="nuevaDirectaGestion.set($any($event.target).value)"
-        class="w-full rounded-lg border border-tertiary/30 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400"
-        placeholder="Ej: Viaje a Arequipa - Julio 2026"
-        [disabled]="isCreatingDirectaConSaldo()"
-      />
-    </div>
-    <div class="px-6 pb-6 flex gap-3">
-      <button
-        type="button"
-        class="flex-1 py-2.5 border border-divider text-secondary rounded-xl text-sm font-medium hover:bg-background transition-colors"
-        [disabled]="isCreatingDirectaConSaldo()"
-        (click)="showNuevaDirectaConSaldoModal.set(false)"
-      >
-        Volver
-      </button>
-      <button
-        type="button"
-        class="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary disabled:opacity-50 transition-colors"
-        [disabled]="isCreatingDirectaConSaldo() || !nuevaDirectaGestion().trim()"
-        (click)="createNuevaDirectaConSaldo()"
-      >
-        @if (isCreatingDirectaConSaldo()) {
-          <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
-          Creando...
-        } @else {
-          Crear rendición
-        }
-      </button>
-    </div>
-  </div>
-</div>
-}
 
 <!-- Modal: Adjuntar comprobante de devolución de saldo (colaborador, rendición cerrada) -->
 @if (showReturnVoucherModal()) {
@@ -3012,6 +2877,13 @@
           class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
       </div>
       <div>
+        <label class="block text-xs font-medium text-secondary mb-1">Monto devuelto (S/) *</label>
+        <input type="number" min="0" step="0.01" [value]="returnVoucherAmount()"
+          (input)="returnVoucherAmount.set($any($event.target).value === '' ? null : +$any($event.target).value)"
+          placeholder="0.00"
+          class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+      </div>
+      <div>
         <label class="block text-xs font-medium text-secondary mb-1">Banco origen</label>
         <input type="text" [value]="returnVoucherBank()"
           (input)="returnVoucherBank.set($any($event.target).value)"
@@ -3033,7 +2905,7 @@
         Cancelar
       </button>
       <button type="button" (click)="submitReturnVoucher()"
-        [disabled]="isSubmittingReturnVoucher() || isUploadingReturnVoucher() || !returnVoucherUrl()"
+        [disabled]="isSubmittingReturnVoucher() || isUploadingReturnVoucher() || !returnVoucherUrl() || !returnVoucherAmount()"
         class="flex-1 py-2.5 bg-error text-white rounded-xl text-sm font-medium hover:bg-error disabled:opacity-50">
         @if (isSubmittingReturnVoucher()) {
           <span class="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin mr-1"></span>
@@ -3101,6 +2973,14 @@
         }
       </div>
       }
+      <div>
+        <label class="block text-xs font-medium text-secondary mb-1">Monto a reembolsar (S/) *</label>
+        <input type="number" min="0" step="0.01" inputmode="decimal"
+          [value]="adminReembolsoMonto()"
+          (input)="adminReembolsoMonto.set($any($event.target).value === '' ? null : +$any($event.target).value)"
+          placeholder="0.00"
+          class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-success/30" />
+      </div>
       <div>
         <label class="block text-xs font-medium text-secondary mb-1">Método de pago</label>
         <select [value]="adminReembolsoMethod()"

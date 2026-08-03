@@ -19,6 +19,11 @@ export class ResubmitViaticoDto {
   @Min(1)
   amount: number
 
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si no se envía. */
+  @IsString()
+  @IsOptional()
+  moneda?: string
+
   @IsString()
   @IsNotEmpty()
   place: string
@@ -49,20 +54,15 @@ export class ResubmitViaticoDto {
   @IsOptional()
   ordenTrabajoId?: string
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateAdvanceLineDto)
-  lines: CreateAdvanceLineDto[]
+  lines?: CreateAdvanceLineDto[]
 
   @IsString()
   @IsOptional()
   observations?: string
-
-  /** Saldos de la bolsa re-seleccionados al corregir (si el viático no tiene ya uno). */
-  @IsArray()
-  @IsMongoId({ each: true })
-  @IsOptional()
-  saldoIds?: string[]
 
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   @IsString()

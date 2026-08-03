@@ -7,7 +7,6 @@ import {
   ValidateNested,
   IsEmail,
   ValidateIf,
-  IsArray,
 } from 'class-validator'
 import { Type } from 'class-transformer'
 
@@ -50,13 +49,13 @@ export class CreateClientDto {
   @IsString()
   logo?: string
 
+  /** Cuenta de cargo para el archivo de pagos BBVA (cabecera). */
+  @IsOptional()
+  @IsString()
+  paymentAccount?: string
+
   @IsOptional()
   @ValidateNested()
   @Type(() => ClientLimitsDto)
   limits?: ClientLimitsDto
-
-  @IsOptional()
-  @IsArray()
-  @IsEmail({}, { each: true })
-  tesoreriaEmails?: string[]
 }

@@ -9,6 +9,8 @@ export interface ICompanyConfig {
   comercialName?: string;
   email?: string;
   phone?: string;
+  /** Cuenta de cargo para el archivo de pagos BBVA (cabecera). */
+  paymentAccount?: string;
   limits?: {
     movilidadDiario?: number | null;
   };
@@ -18,7 +20,6 @@ export interface ICompanyConfig {
     /** 0=Dom … 6=Sáb (default 1=Lunes). Solo aplica con frequency='semanal'. */
     notificationDay?: number;
   };
-  tesoreriaEmails?: string[];
   createdAt?: Date;
   updatedAt?: Date;
 }

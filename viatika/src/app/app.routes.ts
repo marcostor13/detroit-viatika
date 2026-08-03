@@ -150,14 +150,6 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('rendiciones')],
       },
       {
-        path: 'invoice-approval',
-        loadComponent: () =>
-          import('./modules/invoice-approval/invoice-approval.component').then(
-            (m) => m.InvoiceApprovalComponent
-          ),
-        canActivate: [authModuleGuard('invoice-approval')],
-      },
-      {
         path: 'configuracion',
         loadComponent: () =>
           import('./modules/configuracion/configuracion.component').then(
@@ -214,30 +206,6 @@ export const routes: Routes = [
         canActivate: [AuthAdmin2Guard],
       },
       {
-        path: 'perfiles-categoria',
-        loadComponent: () =>
-          import('./modules/perfiles-categoria/perfiles-categoria.component').then(
-            (m) => m.PerfilesCategoriaComponent
-          ),
-        canActivate: [AuthAdmin2Guard],
-      },
-      {
-        path: 'perfiles-categoria/nueva',
-        loadComponent: () =>
-          import(
-            './modules/perfiles-categoria/form/perfiles-categoria-form.component'
-          ).then((m) => m.PerfilesCategoriaFormComponent),
-        canActivate: [AuthAdmin2Guard],
-      },
-      {
-        path: 'perfiles-categoria/:id/editar',
-        loadComponent: () =>
-          import(
-            './modules/perfiles-categoria/form/perfiles-categoria-form.component'
-          ).then((m) => m.PerfilesCategoriaFormComponent),
-        canActivate: [AuthAdmin2Guard],
-      },
-      {
         path: 'mi-perfil',
         loadComponent: () =>
           import('./modules/mi-perfil/mi-perfil.component').then(
@@ -266,14 +234,6 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./modules/mis-rendiciones/mis-rendiciones.component').then(
             (m) => m.MisRendicionesComponent
-          ),
-        canActivate: [AuthColaboradorGuard],
-      },
-      {
-        path: 'saldo',
-        loadComponent: () =>
-          import('./modules/saldo/saldo.component').then(
-            (m) => m.SaldoComponent
           ),
         canActivate: [AuthColaboradorGuard],
       },
@@ -346,14 +306,6 @@ export const routes: Routes = [
         canActivate: [AuthTesoreroGuard],
       },
       {
-        path: 'tesoreria/rendicion-directa/nueva',
-        loadComponent: () =>
-          import('./modules/tesoreria/nueva-rendicion-directa-deposito/nueva-rendicion-directa-deposito.component').then(
-            (m) => m.NuevaRendicionDirectaDepositoComponent
-          ),
-        canActivate: [AuthTesoreroGuard],
-      },
-      {
         path: 'tesoreria/:id',
         loadComponent: () =>
           import('./modules/tesoreria/tesoreria-detalle/tesoreria-detalle.component').then(
@@ -414,6 +366,14 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./modules/categorias/categoria-form/categoria-form.component').then(
             (m) => m.CategoriaFormComponent
+          ),
+        canActivate: [AuthAdmin2Guard],
+      },
+      {
+        path: 'perfiles-categorias',
+        loadComponent: () =>
+          import('./modules/perfiles-categorias/perfiles-categorias.component').then(
+            (m) => m.PerfilesCategoriasComponent
           ),
         canActivate: [AuthAdmin2Guard],
       },

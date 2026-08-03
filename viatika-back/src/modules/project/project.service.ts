@@ -71,17 +71,25 @@ export class ProjectService {
       ln && typeof ln === 'object' && ln.name
         ? { _id: String(ln._id), name: ln.name, code: ln.code }
         : undefined
-    const pc: any = project.categoryGroupId
-    const categoryGroupId =
-      pc && typeof pc === 'object' && pc._id
-        ? String(pc._id)
-        : pc
-          ? String(pc)
+    const av: any = project.approverId
+    const approverId =
+      av && typeof av === 'object' && av._id
+        ? String(av._id)
+        : av
+          ? String(av)
           : undefined
-    const categoryGroup =
-      pc && typeof pc === 'object' && pc.name
-        ? { _id: String(pc._id), name: pc.name }
+    const approver =
+      av && typeof av === 'object' && av.name
+        ? { _id: String(av._id), name: av.name, email: av.email }
         : undefined
+    const approverLevels = (project.approverLevels ?? []).map(lvl => ({
+      level: lvl.level,
+      userIds: (lvl.userIds ?? []).map((u: any) =>
+        u && typeof u === 'object' && u._id
+          ? { _id: String(u._id), name: u.name, email: u.email }
+          : { _id: String(u) }
+      ),
+    }))
     return {
       _id: project._id,
       name: project.name,
@@ -91,10 +99,23 @@ export class ProjectService {
       clientName: project.clientName,
       lineaNegocioId,
       lineaNegocio,
-      categoryGroupId,
-      categoryGroup,
       committedAdvanceTotal: project.committedAdvanceTotal ?? 0,
+      approverId,
+      approver,
+      approverLevels,
     }
+  }
+
+  private toApproverLevelDocs(
+    approverLevels: { level: number; userIds: string[] }[] | undefined
+  ): { level: number; userIds: Types.ObjectId[] }[] | undefined {
+    if (!approverLevels) return undefined
+    return approverLevels
+      .filter(lvl => lvl.userIds?.length)
+      .map(lvl => ({
+        level: lvl.level,
+        userIds: lvl.userIds.map(id => new Types.ObjectId(id)),
+      }))
   }
 
   /** Delta positivo al aprobar; negativo al registrar pago (Fase 3). */
@@ -134,9 +155,10 @@ export class ProjectService {
     const lineaNegocioId = createProjectDto.lineaNegocioId?.trim()
       ? new Types.ObjectId(createProjectDto.lineaNegocioId.trim())
       : undefined
-    const categoryGroupId = createProjectDto.categoryGroupId?.trim()
-      ? new Types.ObjectId(createProjectDto.categoryGroupId.trim())
+    const approverId = createProjectDto.approverId?.trim()
+      ? new Types.ObjectId(createProjectDto.approverId.trim())
       : undefined
+    const approverLevels = this.toApproverLevelDocs(createProjectDto.approverLevels)
 
     let project: ProjectDocument
     try {
@@ -145,7 +167,8 @@ export class ProjectService {
         code,
         clientId,
         lineaNegocioId,
-        categoryGroupId,
+        approverId,
+        approverLevels,
       })
     } catch (error) {
       this.rethrowDuplicateCodeError(error, code)
@@ -161,7 +184,6 @@ export class ProjectService {
       limit?: number
       search?: string
       isActive?: boolean
-      categoryGroupIds?: string[]
     }
   ) {
     const clientIdObject = new Types.ObjectId(clientId)
@@ -169,12 +191,6 @@ export class ProjectService {
 
     if (opts?.isActive !== undefined) {
       filter.isActive = opts.isActive
-    }
-    // Filtro por perfiles de categoría (para colaboradores: solo sus centros de costo).
-    if (opts?.categoryGroupIds && opts.categoryGroupIds.length > 0) {
-      filter.categoryGroupId = {
-        $in: opts.categoryGroupIds.map(id => new Types.ObjectId(id)),
-      }
     }
     if (opts?.search) {
       const re = new RegExp(opts.search, 'i')
@@ -193,7 +209,8 @@ export class ProjectService {
         .limit(limit)
         .populate('clientId')
         .populate('lineaNegocioId', 'name code')
-        .populate('categoryGroupId', 'name')
+        .populate('approverId', 'name email')
+        .populate('approverLevels.userIds', 'name email')
         .exec(),
       this.projectModel.countDocuments(filter).exec(),
     ])
@@ -212,12 +229,39 @@ export class ProjectService {
       .findOne({ _id: new Types.ObjectId(id), clientId: clientIdObject })
       .populate('clientId')
       .populate('lineaNegocioId', 'name code')
-      .populate('categoryGroupId', 'name')
+      .populate('approverId', 'name email')
       .exec()
     if (!project) {
       throw new NotFoundException('Proyecto no encontrado')
     }
     return this.toResponse(project)
+  }
+
+  /**
+   * ¿Este usuario aparece como aprobador (cualquier nivel) en algún centro de
+   * costo de su empresa? Reemplaza el chequeo por rol "Coordinador" — la
+   * autorización real depende de estar en `approverLevels`, no del rol.
+   */
+  async isApproverForClient(userId: string, clientId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(clientId)) {
+      return false
+    }
+    const exists = await this.projectModel.exists({
+      clientId: new Types.ObjectId(clientId),
+      'approverLevels.userIds': new Types.ObjectId(userId),
+    })
+    return !!exists
+  }
+
+  /** Carga varios centros de costo por ID (usado al armar la cadena de aprobación). */
+  async findManyByIds(ids: string[], clientId: string): Promise<ProjectDocument[]> {
+    if (!ids.length) return []
+    const clientIdObject = new Types.ObjectId(clientId)
+    const objectIds = ids.map(id => new Types.ObjectId(id))
+    return this.projectModel
+      .find({ _id: { $in: objectIds }, clientId: clientIdObject })
+      .select('approverLevels')
+      .exec()
   }
 
   async update(
@@ -243,12 +287,18 @@ export class ProjectService {
         : null
     }
 
-    // Perfil de categoría: cadena vacía/null limpia la asignación; valor válido la actualiza.
-    if ('categoryGroupId' in updatePayload) {
-      const raw = (updatePayload.categoryGroupId ?? '').toString().trim()
-      ;(updatePayload as Record<string, unknown>).categoryGroupId = raw
+    // Aprobador del centro de costo: cadena vacía/null limpia la asignación.
+    if ('approverId' in updatePayload) {
+      const raw = (updatePayload.approverId ?? '').toString().trim()
+      ;(updatePayload as Record<string, unknown>).approverId = raw
         ? new Types.ObjectId(raw)
         : null
+    }
+
+    // Niveles de aprobación: reemplazo completo del arreglo cuando se envía.
+    if ('approverLevels' in updatePayload) {
+      ;(updatePayload as Record<string, unknown>).approverLevels =
+        this.toApproverLevelDocs(updatePayload.approverLevels) ?? []
     }
 
     if (updatePayload.code) {
@@ -281,6 +331,8 @@ export class ProjectService {
         )
         .populate('clientId')
         .populate('lineaNegocioId', 'name code')
+        .populate('approverId', 'name email')
+        .populate('approverLevels.userIds', 'name email')
         .exec()
     } catch (error) {
       this.rethrowDuplicateCodeError(

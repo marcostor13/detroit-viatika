@@ -9,6 +9,7 @@ import { UserStateService } from './user-state.service';
 export interface IBulkImportResult {
   created: number;
   errors: { row: number; reason: string }[];
+  warnings: { row: number; reason: string }[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -45,9 +46,9 @@ export class CategoriaService {
     name: string;
     description?: string;
     cuenta?: string;
+    cuentaDestino6x?: string;
     observaciones?: string;
     limit?: number | null;
-    perfilIds?: string[];
   }): Observable<ICategory> {
     return this.http.post<ICategory>(this.baseUrl, {
       ...dto,
@@ -59,10 +60,10 @@ export class CategoriaService {
     name?: string;
     description?: string;
     cuenta?: string;
+    cuentaDestino6x?: string;
     observaciones?: string;
     isActive?: boolean;
     limit?: number | null;
-    perfilIds?: string[];
   }): Observable<ICategory> {
     return this.http.patch<ICategory>(`${this.baseUrl}/${id}/${this.companyId}`, dto);
   }

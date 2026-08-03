@@ -29,10 +29,6 @@ export class AdvanceService {
     return user?._id || '';
   }
 
-  create(payload: ICreateAdvancePayload): Observable<IAdvance> {
-    return this.http.post<IAdvance>(this.url, payload);
-  }
-
   findMy(): Observable<IAdvance[]> {
     return this.http.get<IAdvance[]>(`${this.url}/my/${this.userId}/client/${this.clientId}`);
   }
@@ -105,17 +101,86 @@ export class AdvanceService {
     return this.http.get<IAdvance[]>(`${this.url}/pending-returns/client/${clientId}`);
   }
 
-  findForViaticosPage(filters: {
-    status?: string;
-    dateFrom?: string;
-    dateTo?: string;
-  } = {}): Observable<IAdvance[]> {
-    let params = '';
-    const parts: string[] = [];
-    if (filters.status) parts.push(`status=${encodeURIComponent(filters.status)}`);
-    if (filters.dateFrom) parts.push(`dateFrom=${encodeURIComponent(filters.dateFrom)}`);
-    if (filters.dateTo) parts.push(`dateTo=${encodeURIComponent(filters.dateTo)}`);
-    if (parts.length) params = '?' + parts.join('&');
-    return this.http.get<IAdvance[]>(`${this.url}/viaticos/list${params}`);
+  // ─── Pagos por lote BBVA (VD-7) ─────────────────────────────────────────────
+
+  /** Genera el archivo TXT de pagos masivos BBVA con todos los pendientes. */
+  generatePaymentsTxt(): Observable<IGeneratePaymentsTxt> {
+    return this.http.get<IGeneratePaymentsTxt>(
+      `${this.url}/payments/txt/client/${this.clientId}`
+    );
   }
+
+  /**
+   * PRUEBAS: simula el PDF de "Consulta de Pagos Masivos" de BBVA y concilia todos
+   * los pagos pendientes (los marca como pagados) para continuar el flujo.
+   */
+  simulateReconcile(): Observable<IReconcileResult> {
+    return this.http.post<IReconcileResult>(
+      `${this.url}/payments/simulate-reconcile/client/${this.clientId}`,
+      {}
+    );
+  }
+
+  /** Sube el PDF de "Consulta de Pagos Masivos" de BBVA y concilia los abonos. */
+  reconcilePayments(file: File): Observable<IReconcileResult> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<IReconcileResult>(
+      `${this.url}/payments/reconcile/client/${this.clientId}`,
+      form
+    );
+  }
+
+  /** Confirmación manual (fallback): marca como pagados los items indicados. */
+  confirmManualPayments(
+    items: Array<{ kind: PaymentKind; id: string }>,
+    meta: { operationNumber?: string; paymentDate?: string }
+  ): Observable<IConfirmManualResult> {
+    return this.http.post<IConfirmManualResult>(
+      `${this.url}/payments/confirm-manual/client/${this.clientId}`,
+      { items, ...meta }
+    );
+  }
+}
+
+export type PaymentKind = 'advance' | 'viatico' | 'reembolso';
+
+export interface IExcludedPayment {
+  kind: PaymentKind;
+  id: string;
+  beneficiaryName: string;
+  amount: number;
+  reason: string;
+}
+
+export interface IGeneratePaymentsTxt {
+  fileName: string;
+  fileBase64: string;
+  count: number;
+  totalSoles: number;
+  excluded: IExcludedPayment[];
+}
+
+export interface IReconcileResult {
+  operationNumber?: string;
+  executedAt?: string;
+  conciliados: Array<{
+    kind: PaymentKind;
+    id: string;
+    beneficiaryName: string;
+    documentNumber: string;
+    amount: number;
+  }>;
+  sinConciliar: Array<{
+    titular: string;
+    documentNumber: string;
+    amount: number;
+    reason: string;
+  }>;
+  noAbonados: Array<{ titular: string; documentNumber: string; situacion: string }>;
+}
+
+export interface IConfirmManualResult {
+  pagados: number;
+  errores: Array<{ id: string; reason: string }>;
 }

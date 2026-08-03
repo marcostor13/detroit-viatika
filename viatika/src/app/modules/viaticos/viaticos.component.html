@@ -158,12 +158,7 @@
                 <p class="text-[10px] text-tertiary/50 mt-1">Sol. {{ item.createdAt | date:'dd/MM/yyyy' }}</p>
               </td>
               <td class="px-4 py-3.5 text-right">
-                <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
-                @if (item.pendingBalanceAmount && item.pendingBalanceAmount > 0) {
-                  <div class="text-xs text-amber-600 mt-0.5 tabular-nums">
-                    Saldo S/ {{ item.pendingBalanceAmount | number:'1.2-2' }}
-                  </div>
-                }
+                <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
               </td>
               <td class="px-4 py-3.5 text-center">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" [class]="item.statusColor">
@@ -180,7 +175,7 @@
                     </svg>
                   </button>
                   @if (item.canApproveNow) {
-                    <button (click)="openApproveModal(item)" [disabled]="isActing()" [title]="'Aprobar (nivel ' + (item.approvalLevel + 1) + ' de ' + item.requiredLevels + ')'"
+                    <button (click)="openApproveModal(item)" [disabled]="isActing()" [title]="item.isContabilidadGate ? 'Aprobar (Contabilidad)' : ('Aprobar (nivel ' + (item.approvalLevel + 1) + ' de ' + item.requiredLevels + ')')"
                       class="p-2 rounded-lg text-tertiary hover:text-green-600 hover:bg-green-50 transition-colors disabled:opacity-50">
                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -224,7 +219,7 @@
             </div>
             <div class="flex items-center justify-between text-xs text-tertiary mb-3 pl-[52px]">
               <span>{{ item.dateRange }}</span>
-              <span class="text-base font-bold text-secondary tabular-nums">S/ {{ item.amount | number:'1.2-2' }}</span>
+              <span class="text-base font-bold text-secondary tabular-nums">{{ item.currencySymbol }} {{ item.amount | number:'1.2-2' }}</span>
             </div>
             <div class="flex items-center gap-1 pl-[52px]">
               <button (click)="openDetail(item)"
@@ -273,7 +268,11 @@
         <div>
           <h2 class="text-base font-bold text-secondary">Confirmar aprobación</h2>
           <p class="text-xs text-tertiary mt-0.5">
-            Nivel {{ (pendingApproveItem()?.approvalLevel ?? 0) + 1 }} de {{ pendingApproveItem()?.requiredLevels ?? 1 }}
+            @if (pendingApproveItem()?.isContabilidadGate) {
+              Aprobación final (Contabilidad)
+            } @else {
+              Nivel {{ (pendingApproveItem()?.approvalLevel ?? 0) + 1 }} de {{ pendingApproveItem()?.requiredLevels ?? 1 }}
+            }
           </p>
         </div>
       </div>
@@ -287,9 +286,13 @@
           <span class="text-tertiary">Destino</span>
           <span class="font-medium text-secondary">{{ pendingApproveItem()?.place || '—' }}</span>
         </div>
+        <div class="flex justify-between items-center text-sm">
+          <span class="text-tertiary">Fecha de solicitud</span>
+          <span class="font-medium text-secondary">{{ pendingApproveItem()?.createdAt | date:'dd/MM/yyyy' }}</span>
+        </div>
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
-          <span class="text-lg font-bold text-secondary tabular-nums">S/ {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ pendingApproveItem()?.currencySymbol }} {{ pendingApproveItem()?.amount | number:'1.2-2' }}</span>
         </div>
       </div>
 
@@ -329,7 +332,7 @@
         <div>
           <h2 class="text-base font-bold text-secondary">Rechazar solicitud</h2>
           <p class="text-xs text-tertiary mt-0.5">
-            {{ selectedItem()?.collaboratorName }} — S/ {{ selectedItem()?.amount | number:'1.2-2' }}
+            {{ selectedItem()?.collaboratorName }} — {{ selectedItem()?.currencySymbol }} {{ selectedItem()?.amount | number:'1.2-2' }}
           </p>
         </div>
       </div>

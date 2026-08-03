@@ -1,6 +1,5 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, Injector } from '@angular/core';
 import { Router, ActivatedRoute } from '@angular/router';
-import { Subscription } from 'rxjs';
 import {
   FormBuilder,
   FormGroup,
@@ -21,22 +20,22 @@ import { environment } from '../../../../environments/environment';
 import { CommonModule } from '@angular/common';
 import { IProject } from '../interfaces/project.interface';
 import { ICategory } from '../interfaces/category.interface';
-import { ICategoryGroup } from '../../categorias/interfaces/category-group.interface';
 import {
   InvoiceStatus,
   SunatValidationInfo,
   ExpenseType,
+  ICreateDeclaracionJuradaPayload,
+  IDeclaracionJuradaResponse,
 } from '../interfaces/invoices.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
-import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
+import { WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
-import { CategoryGroupService } from '../../../services/category-group.service';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo, otDepartamentoLabel } from '../../../interfaces/orden-trabajo.interface';
+import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 
 function findDepartamento(label: string): Departamento | undefined {
   return PERU_LOCATIONS.find(d => d.label === label);
@@ -47,7 +46,7 @@ declare const google: any;
 @Component({
   selector: 'app-add-invoice',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, WorkerSelectComponent, PlacesAutocompleteDirective],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, PlacesAutocompleteDirective],
   templateUrl: './add-invoice.component.html',
   styleUrl: './add-invoice.component.scss',
 })
@@ -64,21 +63,27 @@ export default class AddInvoiceComponent implements OnInit {
   private uploadService = inject(UploadService);
   private companyConfigService = inject(CompanyConfigService);
   private expenseService = inject(ExpenseService);
-  private categoryGroupService = inject(CategoryGroupService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
+  /** Para resolver el servicio de exportación en diferido (jsPDF/ExcelJS fuera del bundle inicial). */
+  private injector = inject(Injector);
 
   form!: FormGroup;
   id: string = this.route.snapshot.params['id'];
   categories: ICategory[] = [];
-  /** Perfiles de categoría (category-groups). Cada proyecto referencia uno y de él se derivan sus categorías. */
-  categoryGroups: ICategoryGroup[] = [];
+  categoriesLoaded = signal(false);
   proyects: IProject[] = [];
   /** Órdenes de Trabajo activas, requeridas en planilla de movilidad (formato ADF-FOR-005). */
   ordenesTrabajo: IOrdenTrabajo[] = [];
-  readonly departamentoLabel = otDepartamentoLabel;
   /** Trabajadores del cliente, para el selector de colaborador por fila de la planilla. */
   workers: WorkerOption[] = [];
   previewImage: SafeUrl | null = null;
+  /**
+   * URL cruda (blob:) de la vista previa. `previewImage` es un SafeUrl (objeto),
+   * que al abrirse con window.open se convierte en "[object Object]" y termina
+   * redirigiendo al login; aquí se guarda la URL real para "Ver en pantalla
+   * completa".
+   */
+  previewObjectUrl: string | null = null;
   selectedFile!: File;
   originalInvoice: any = null;
   sunatValidation: SunatValidationInfo | null = null;
@@ -87,15 +92,49 @@ export default class AddInvoiceComponent implements OnInit {
   isDirectaMode = false;
   /** True cuando la rendición asociada es directa (report.isDirecta), aunque no venga `mode=directa` en la URL. */
   isDirectaReport = signal<boolean>(false);
+  /** True cuando la rendición directa ya tiene una OT propia heredada (rendiciones creadas tras esta funcionalidad). */
+  directaOrdenTrabajoInherited = signal<boolean>(false);
+  /** True cuando la planilla de movilidad hereda la OT de la solicitud de viático (VD-28). */
+  viaticoOrdenTrabajoInherited = signal<boolean>(false);
   fromContabilidad = false;
 
   expenseType = signal<ExpenseType>('factura');
   /** Sub-tipo para otros_gastos: TK | BV | RC | DJ | OT */
-  otrosSubTipo = signal<string>('DJ');
+  otrosSubTipo = signal<string>('AL');
   /** Sub-tipos que llevan documento físico con RUC/serie/correlativo. */
   otrosSubTipoMuestraDocumento = computed(() =>
     ['TK', 'BV', 'RC'].includes(this.otrosSubTipo())
   );
+  /**
+   * Sub-tipos de Otros Gastos que exigen declaración jurada + firma digital
+   * (VD-91): AL (Alimentación sin documentación) y DJE (DJ al extranjero). DJ
+   * nacional se conserva por retrocompatibilidad de gastos ya creados.
+   */
+  otrosSubTipoRequiereDeclaracion = computed(() =>
+    ['AL', 'DJ', 'DJE'].includes(this.otrosSubTipo())
+  );
+
+  /**
+   * Opciones del selector "Tipo de documento" de Otros Gastos (VD-91). Las dos
+   * opcionales — RC (Recibos diversos) y DJE (DJ al extranjero) — se ocultan
+   * según la configuración por usuario (`permissions.otrosGastosOpcionales`);
+   * por defecto ambas están habilitadas.
+   */
+  get otrosSubTipoOpciones(): { code: string; label: string; hint?: string }[] {
+    const cfg = this.userStateService.getUser()?.permissions?.otrosGastosOpcionales;
+    const opciones: { code: string; label: string; hint?: string }[] = [
+      { code: 'AL', label: 'Alimentación sin documentación' },
+      { code: 'BV', label: 'Gastos con Boleta de venta', hint: 'RUC inscrito en RUS' },
+    ];
+    if (cfg?.recibosDiversos !== false) {
+      opciones.push({ code: 'RC', label: 'Recibos diversos', hint: 'trámites legales' });
+    }
+    if (cfg?.djExtranjero !== false) {
+      opciones.push({ code: 'DJE', label: 'DJ. Declaración jurada', hint: 'viajes al extranjero' });
+    }
+    opciones.push({ code: 'OT', label: 'Otros' });
+    return opciones;
+  }
   rendicionBudget = signal<number>(0);
   rendicionSpent = signal<number>(0);
   rendicionSettlementDiff = signal<number | null>(null);
@@ -119,11 +158,117 @@ export default class AddInvoiceComponent implements OnInit {
   isEditingOcrAmount = signal(false);
   editedOcrTotal = signal<number | null>(null);
 
-  // --- Escaneo OCR del comprobante de caja (autorellena el formulario) ---
-  isScanningVoucher = signal(false);
-  cashVoucherFileUrl: string | null = null;
-  cashVoucherFileName: string | null = null;
-  private cashVoucherMimeType: string | undefined;
+  // ─── Estado SUNAT del comprobante escaneado (VD-70) ───────────────
+  /** Resultado SUNAT del último escaneo/revalidación. Solo VALIDO_ACEPTADO habilita guardar. */
+  sunatStatus = signal<string | null>(null);
+  /** Objeto de validación SUNAT completo, para incrustarlo en el data al crear (VD-70 B). */
+  private sunatValidationResult: any = null;
+  /** Una factura solo puede guardarse si SUNAT la validó como aceptada. */
+  sunatIsValid = computed(() => this.sunatStatus() === 'VALIDO_ACEPTADO');
+
+  private readonly SUNAT_STATUS_MESSAGES: Record<string, string> = {
+    VALIDO_ACEPTADO: 'Factura válida y emitida a la empresa.',
+    VALIDO_NO_PERTENECE: 'El comprobante no fue emitido a esta empresa. Verifica el RUC emisor.',
+    NO_ENCONTRADO: 'Comprobante no encontrado en SUNAT.',
+    ERROR_SUNAT: 'Error en el servicio de SUNAT. Revisa los datos e intenta de nuevo.',
+    SUNAT_CONFIG_NOT_FOUND: 'No se encontró configuración SUNAT para esta empresa.',
+    PENDING: 'Pendiente de validación con SUNAT.',
+  };
+
+  /** Mensaje legible del estado SUNAT actual, para el panel post-OCR. */
+  sunatStatusMessage = computed(() => {
+    const s = this.sunatStatus();
+    if (!s) return 'Pendiente de validación con SUNAT.';
+    return this.SUNAT_STATUS_MESSAGES[s] ?? `Estado SUNAT: ${s}`;
+  });
+
+  private notifySunatStatus(status: string | null): void {
+    const msg = status
+      ? (this.SUNAT_STATUS_MESSAGES[status] ?? `Estado SUNAT: ${status}`)
+      : 'Pendiente de validación con SUNAT.';
+    this.notificationService.show(msg, status === 'VALIDO_ACEPTADO' ? 'success' : 'error');
+  }
+
+  /** Tipos de comprobante que SUNAT valida en el registro de gasto (VD-70). */
+  readonly TIPOS_COMPROBANTE = ['Factura', 'Boleta'];
+
+  /**
+   * Normaliza el tipo de comprobante que devuelve el OCR (texto libre, p. ej.
+   * "Boleta Electrónica") a uno de los valores canónicos del selector, para que
+   * SUNAT reciba el codComp correcto.
+   */
+  private normalizeTipoComprobante(raw?: string): string {
+    const t = (raw ?? '').trim().toLowerCase();
+    if (t.includes('boleta')) return 'Boleta';
+    return 'Factura';
+  }
+
+  /**
+   * Deriva el tipo del prefijo de la serie (VD-70): en los comprobantes
+   * electrónicos la serie empieza con F (Factura) o B (Boleta) — es más
+   * confiable que el texto del OCR. Series numéricas (físicos) u otras letras
+   * devuelven null (se conserva el tipo actual / OCR / elección manual).
+   */
+  private deriveTipoFromSerie(serie?: string): string | null {
+    const s = (serie ?? '').trim().toUpperCase();
+    if (s.startsWith('F')) return 'Factura';
+    if (s.startsWith('B')) return 'Boleta';
+    return null;
+  }
+
+  /** Reajusta el tipo cuando el usuario edita la serie en el panel post-OCR. */
+  onSerieChange(): void {
+    const derived = this.deriveTipoFromSerie(this.form.get('serie')?.value);
+    if (derived) this.form.get('tipoComprobante')?.setValue(derived);
+  }
+
+  /** Tipo de comprobante elegido en el formulario, para la validación SUNAT. */
+  private getSelectedTipoComprobante(): string {
+    return this.form.get('tipoComprobante')?.value || 'Factura';
+  }
+
+  /**
+   * VD-70: revalida la factura con SUNAT usando los datos (posiblemente editados)
+   * del panel post-OCR, sin salir del formulario. Actualiza `sunatStatus` para
+   * habilitar/bloquear el guardado.
+   */
+  revalidateSunat(): void {
+    const formValue = this.form.value;
+    if (!this.shouldValidateWithSunat(formValue)) {
+      this.notificationService.show(
+        'Completa RUC, serie, correlativo y fecha para validar con SUNAT.',
+        'error'
+      );
+      return;
+    }
+    this.isSunatValidating.set(true);
+    // VD-70 Parte B: el gasto aún no existe (se crea al confirmar), así que se
+    // valida stateless con los datos del formulario.
+    const validationData = {
+      rucEmisor: formValue.rucEmisor,
+      serie: formValue.serie,
+      correlativo: formValue.correlativo,
+      fechaEmision: this.formatDateForBackend(formValue.fechaEmision),
+      montoTotal: this.postOcrBaseInvoice?.total || this.ocrTotalAmount() || 0,
+      tipoComprobante: this.getSelectedTipoComprobante(),
+    };
+    this.invoiceService.validateSunatStateless(validationData).subscribe({
+      next: (response: any) => {
+        this.isSunatValidating.set(false);
+        this.sunatValidationResult = response ?? null;
+        this.sunatStatus.set(response?.status ?? null);
+        this.notifySunatStatus(response?.status ?? null);
+      },
+      error: () => {
+        this.isSunatValidating.set(false);
+        this.sunatStatus.set('ERROR_SUNAT');
+        this.notificationService.show(
+          'Error al validar con SUNAT. Revisa los datos e intenta nuevamente.',
+          'error'
+        );
+      },
+    });
+  }
 
   get ocrAmountWasEdited(): boolean {
     const edited = this.editedOcrTotal();
@@ -302,16 +447,19 @@ export default class AddInvoiceComponent implements OnInit {
     this.fromContabilidad = this.route.snapshot.queryParamMap.get('from') === 'contabilidad' || this.userStateService.isContabilidad();
     this.guardRendiciones();
     this.loadCategories();
-    this.loadCategoryGroups();
     this.loadProjects();
     this.loadOrdenesTrabajo();
     this.loadClientUsers();
-    // Al cambiar de proyecto, si la categoría elegida no pertenece a su perfil, se limpia.
-    this.form.get('proyectId')?.valueChanges.subscribe(() => {
-      const allowed = this.allowedCategoryIds();
-      const selected = this.form.get('categoryId')?.value;
-      if (allowed && selected && !allowed.has(String(selected))) {
-        this.form.get('categoryId')?.setValue('');
+    // Al cambiar de proyecto, la OT depende del centro de costo: si la elegida no pertenece al nuevo, se limpia.
+    this.form.get('proyectId')?.valueChanges.subscribe((pid) => {
+      const otId = this.form.get('ordenTrabajoId')?.value;
+      if (
+        otId &&
+        !this.ordenesTrabajo.some(
+          (ot) => ot._id === otId && this.otCostCenterId(ot) === (pid ?? '')
+        )
+      ) {
+        this.form.get('ordenTrabajoId')?.setValue('');
       }
     });
     this.route.queryParamMap.subscribe(params => {
@@ -425,26 +573,6 @@ export default class AddInvoiceComponent implements OnInit {
               receiptFecha: fecha,
               receiptMonto: res.total ?? 0,
             });
-          } else if (type === 'comprobante_caja') {
-            let voucherPayload: any = dataObj;
-            if (dataObj?.payload) {
-              try {
-                voucherPayload =
-                  typeof dataObj.payload === 'string'
-                    ? JSON.parse(dataObj.payload)
-                    : dataObj.payload;
-              } catch {
-                voucherPayload = {};
-              }
-            }
-            this.form.patchValue({
-              ...baseValues,
-              voucherEntregadoA: voucherPayload.entregadoA || '',
-              voucherDireccion: voucherPayload.direccion || '',
-              voucherConcepto: voucherPayload.concepto || '',
-              voucherFecha: fecha,
-              voucherMonto: res.total ?? voucherPayload.monto ?? 0,
-            });
           } else if (type === 'planilla_movilidad') {
             this.form.patchValue(baseValues);
             const rows: any[] = (res as any).mobilityRows || dataObj.rows || [];
@@ -458,7 +586,6 @@ export default class AddInvoiceComponent implements OnInit {
                 categoryId: [row.categoryId || '', rowRequired],
                 colaboradorEsTercero: [!!(row.colaboradorId && String(row.colaboradorId) !== this.currentUserId)],
                 colaboradorId: [row.colaboradorId && String(row.colaboradorId) !== this.currentUserId ? String(row.colaboradorId) : ''],
-                clienteProveedor: [row.clienteProveedor || '', Validators.required],
                 origen: [row.origen || '', Validators.required],
                 origenLat: [row.origenCoords?.lat ?? null],
                 origenLng: [row.origenCoords?.lng ?? null],
@@ -475,7 +602,6 @@ export default class AddInvoiceComponent implements OnInit {
                 gestion: [row.gestion || '', Validators.required],
               });
               this.mobilityRowsArray.push(group);
-              this.wireRowCategoryReset(group);
             }
           }
         },
@@ -503,10 +629,28 @@ export default class AddInvoiceComponent implements OnInit {
         if (report && report.projectId) {
           const pId = typeof report.projectId === 'string' ? report.projectId : (report.projectId as any)._id;
           this.form.patchValue({ proyectId: pId });
-          // En rendición directa el colaborador puede cambiar el proyecto por gasto
-          if (!isDirecta) {
-            this.form.get('proyectId')?.disable();
-          }
+          // El centro de costo lo fija la rendición (normal o directa): no se elige por comprobante.
+          this.form.get('proyectId')?.disable();
+        }
+        // Rendición directa: la OT (planilla de movilidad) se fija al crear la
+        // rendición y la heredan todos sus comprobantes; no se elige por comprobante.
+        // Rendiciones directas creadas antes de esta funcionalidad no tienen OT propia:
+        // en ese caso se sigue pidiendo por comprobante (ver directaOrdenTrabajoInherited).
+        const otRef = (report as any)?.directaOrdenTrabajoId;
+        if (isDirecta && otRef) {
+          const otId = typeof otRef === 'string' ? otRef : otRef._id;
+          this.form.patchValue({ ordenTrabajoId: otId });
+          this.form.get('ordenTrabajoId')?.disable();
+          this.directaOrdenTrabajoInherited.set(true);
+        }
+        // Viático: la OT se hereda de la solicitud del viático y la toman sus
+        // comprobantes de planilla de movilidad; no se elige por comprobante (VD-28).
+        const viaticoOtRef = (report as any)?.viaticoOrdenTrabajoId;
+        if (!isDirecta && (report as any)?.type === 'viatico' && viaticoOtRef) {
+          const otId = typeof viaticoOtRef === 'string' ? viaticoOtRef : viaticoOtRef._id;
+          this.form.patchValue({ ordenTrabajoId: otId });
+          this.form.get('ordenTrabajoId')?.disable();
+          this.viaticoOrdenTrabajoInherited.set(true);
         }
         // El flag directa puede llegar después de que el usuario ya agregó filas:
         // re-sincroniza validadores del proyecto (superior y por fila).
@@ -553,17 +697,11 @@ export default class AddInvoiceComponent implements OnInit {
     this.invoiceService.getCategories().subscribe({
       next: (categories) => {
         this.categories = categories;
+        this.categoriesLoaded.set(true);
+        this.applyMovilidadCategoryDefault();
+        this.autoSelectDjCategories();
       },
       error: (error) => {},
-    });
-  }
-
-  loadCategoryGroups() {
-    this.categoryGroupService.getAll().subscribe({
-      next: (groups) => {
-        this.categoryGroups = groups ?? [];
-      },
-      error: () => {},
     });
   }
 
@@ -651,53 +789,64 @@ export default class AddInvoiceComponent implements OnInit {
     projCtrl?.updateValueAndValidity({ emitEvent: false });
   }
 
-  /**
-   * IDs de categoría permitidas por el perfil (category-group) del proyecto `projId`,
-   * o `null` cuando no aplica filtro (sin proyecto, proyecto sin perfil, o perfil sin
-   * categorías) — en cuyo caso se muestran todas.
-   */
-  private allowedCategoryIdsFor(projId: string | null | undefined): Set<string> | null {
-    if (!projId) return null;
-    const project = this.proyects.find((p) => String(p._id) === String(projId));
-    const groupId = project?.categoryGroupId;
-    if (!groupId) return null;
-    const group = this.categoryGroups.find((g) => String(g._id) === String(groupId));
-    const ids = (group?.categoryIds ?? []).map(String);
-    if (!ids.length) return null;
-    return new Set(ids);
+  /** Categorías visibles en el selector superior: siempre todas las activas del cliente. */
+  get filteredCategories(): ICategory[] {
+    return this.categories;
   }
 
-  /** IDs de categoría permitidas por el perfil del proyecto del gasto (selector superior). */
-  private allowedCategoryIds(): Set<string> | null {
-    return this.allowedCategoryIdsFor(this.form.get('proyectId')?.value);
+  /** Categorías asignadas al colaborador cuyo nombre contiene "planilla de movilidad" (sin distinguir mayúsculas/minúsculas). */
+  get movilidadCategories(): ICategory[] {
+    return this.categories.filter((c) => (c.name || '').toLowerCase().includes('planilla de movilidad'));
   }
 
   /**
-   * Filtra `categories` por un set permitido, manteniendo visible la categoría ya
-   * seleccionada aunque no pertenezca al perfil (p. ej. al editar un gasto creado
-   * antes de asignar el perfil). Con `allowed === null` no aplica filtro.
+   * Se muestra el selector solo cuando hay más de una categoría de planilla de
+   * movilidad asignada. Aplica también a la rendición directa: aunque ahí el
+   * centro de costo y la OT se heredan de la rendición, la categoría no se
+   * puede deducir cuando el colaborador tiene dos (Servicios 91x y Comercial
+   * 92x llevan cuentas contables distintas), y antes el guardado moría con un
+   * "no tienes ninguna asignada" que decía justo lo contrario de lo que pasaba.
    */
-  private filterCategoriesByAllowed(allowed: Set<string> | null, selected: any): ICategory[] {
-    if (!allowed) return this.categories;
-    return this.categories.filter(
-      (c) => allowed.has(String(c._id)) || String(c._id) === String(selected)
+  get showMovilidadCategorySelect(): boolean {
+    return (
+      this.expenseType() === 'planilla_movilidad' &&
+      this.movilidadCategories.length > 1
     );
   }
 
-  /** Categorías visibles en el selector superior: filtradas por el perfil del proyecto del gasto. */
-  get filteredCategories(): ICategory[] {
-    return this.filterCategoriesByAllowed(this.allowedCategoryIds(), this.form.get('categoryId')?.value);
+  /**
+   * En planilla directa el bloque superior (centro de costo / OT / categoría)
+   * está oculto porque todo se hereda de la rendición. La categoría es la
+   * excepción: si hay que elegirla, o si no hay ninguna asignada, el bloque
+   * tiene que aparecer igual para mostrar el selector o el aviso.
+   */
+  get showMovilidadCategoryBlock(): boolean {
+    return (
+      this.showMovilidadCategorySelect ||
+      (this.categoriesLoaded() && this.movilidadCategories.length === 0)
+    );
   }
 
   /**
-   * Categorías visibles para una fila de la planilla (Rendiciones Directas): filtradas
-   * por el perfil del proyecto elegido en esa misma fila, de modo que la categoría
-   * siempre corresponda al proyecto seleccionado en la fila.
+   * Si el colaborador tiene una única categoría "Planilla de movilidad" asignada, se
+   * asigna internamente sin mostrar selector. Si tiene más de una, queda pendiente de
+   * elección (selector requerido). Si no tiene ninguna, no se completa (bloquea el guardado).
    */
+  private applyMovilidadCategoryDefault(): void {
+    if (this.expenseType() !== 'planilla_movilidad') return;
+    const catCtrl = this.form.get('categoryId');
+    if (!catCtrl || catCtrl.disabled) return;
+    const matches = this.movilidadCategories;
+    if (matches.length === 1) {
+      catCtrl.setValue(matches[0]._id);
+    }
+    catCtrl.setValidators(matches.length > 0 ? [Validators.required] : []);
+    catCtrl.updateValueAndValidity({ emitEvent: false });
+  }
+
+  /** Categorías visibles para una fila de la planilla (Rendiciones Directas). */
   getRowCategories(index: number): ICategory[] {
-    const row = this.mobilityRowsArray.at(index);
-    const allowed = this.allowedCategoryIdsFor(row?.get('proyectId')?.value);
-    return this.filterCategoriesByAllowed(allowed, row?.get('categoryId')?.value);
+    return this.categories;
   }
 
   lookupRazonSocial(ruc: string) {
@@ -728,6 +877,9 @@ export default class AddInvoiceComponent implements OnInit {
       rucEmisor: [''],
       serie: [''],
       correlativo: [''],
+      // Tipo de comprobante para la validación SUNAT (VD-70). El OCR puede
+      // detectarlo mal; se muestra editable en el panel post-OCR.
+      tipoComprobante: ['Factura'],
       comentario: [''],
       placaVehiculo: [''],
       // Otros gastos
@@ -735,6 +887,15 @@ export default class AddInvoiceComponent implements OnInit {
       description: [''],
       declaracionJurada: [false],
       declaracionJuradaFirmante: [''],
+      // Declaración Jurada al extranjero (DJE): datos del viaje + filas por rubro
+      djDestino: [''],
+      djPais: [''],
+      djLugarFirma: [''],
+      djMoneda: ['US$'],
+      djAlimentacionCategoryId: [''],
+      djMovilidadCategoryId: [''],
+      djAlimentacionRows: this.fb.array([]),
+      djMovilidadRows: this.fb.array([]),
       // Recibo de caja
       receiptRazonSocial: [''],
       receiptRuc: [''],
@@ -742,12 +903,6 @@ export default class AddInvoiceComponent implements OnInit {
       receiptConcepto: [''],
       receiptFecha: [''],
       receiptMonto: [null],
-      // Comprobante de caja
-      voucherEntregadoA: [''],
-      voucherDireccion: [''],
-      voucherConcepto: [''],
-      voucherFecha: [''],
-      voucherMonto: [null],
       // Planilla de movilidad
       mobilityRows: this.fb.array([]),
     });
@@ -757,11 +912,130 @@ export default class AddInvoiceComponent implements OnInit {
     return this.form.get('mobilityRows') as FormArray;
   }
 
+  // ─── Declaración Jurada al extranjero (DJE) ───────────────────────
+  /** Gastos creados por la última DJ guardada; habilita la descarga del PDF. */
+  savedDeclaracionJurada = signal<IDeclaracionJuradaResponse | null>(null);
+
+  /**
+   * Categoría detectada para cada rubro entre las asignadas al colaborador. Si
+   * hay exactamente una coincidencia se usa esa y el selector no se muestra;
+   * con 0 o 2+ (p. ej. Servicios 91x y Comercial 92x) se deja elegir a mano.
+   */
+  djAlimentacionAuto = signal<ICategory | null>(null);
+  djMovilidadAuto = signal<ICategory | null>(null);
+
+  /**
+   * Categorías del colaborador cuyo nombre corresponde al rubro. Se compara sin
+   * tildes: en Detroit la categoría está registrada como "Alimentacion".
+   */
+  djCategoriesFor(rubro: 'alimentacion' | 'movilidad'): ICategory[] {
+    const needle = rubro === 'alimentacion' ? 'alimentacion' : 'movilidad';
+    return this.categories.filter((c) => this.normalizeStr(c.name || '').includes(needle));
+  }
+
+  /**
+   * Autoselecciona las categorías de Alimentación y Movilidad por nombre. Es
+   * idempotente: se puede invocar tras cargar categorías o al cambiar de
+   * sub-tipo. Si el rubro no tiene una única coincidencia, limpia el control
+   * para que aparezca el selector manual de respaldo.
+   */
+  private autoSelectDjCategories(): void {
+    if (!this.isDj()) return;
+    const uniquePick = (rubro: 'alimentacion' | 'movilidad'): ICategory | null => {
+      const matches = this.djCategoriesFor(rubro);
+      return matches.length === 1 ? matches[0] : null;
+    };
+    const alimentacion = uniquePick('alimentacion');
+    const movilidad = uniquePick('movilidad');
+
+    this.djAlimentacionAuto.set(alimentacion);
+    this.djMovilidadAuto.set(movilidad);
+
+    const aliCtrl = this.form.get('djAlimentacionCategoryId');
+    const aliValue = alimentacion?._id ?? '';
+    if (aliCtrl && alimentacion) aliCtrl.setValue(aliValue);
+
+    const movCtrl = this.form.get('djMovilidadCategoryId');
+    const movValue = movilidad?._id ?? '';
+    if (movCtrl && movilidad) movCtrl.setValue(movValue);
+  }
+
+  /** Cambia el sub-tipo de "Otros gastos" y reevalúa lo que depende de él. */
+  selectOtrosSubTipo(code: string): void {
+    this.otrosSubTipo.set(code);
+    this.autoSelectDjCategories();
+    this.syncTopValidators();
+  }
+
+  /**
+   * DJE: la categoría no se elige en el selector superior (cada rubro tiene la
+   * suya), por lo que ese selector se oculta y deja de ser obligatorio.
+   * Solo aplica al crear: al editar, cada gasto ya es de un rubro concreto y se
+   * muestra como cualquier otro gasto (categoría + monto).
+   */
+  isDj(): boolean {
+    return (
+      !this.id &&
+      this.expenseType() === 'otros_gastos' &&
+      this.otrosSubTipo() === 'DJE'
+    );
+  }
+
+  get djAlimentacionRowsArray(): FormArray {
+    return this.form.get('djAlimentacionRows') as FormArray;
+  }
+
+  get djMovilidadRowsArray(): FormArray {
+    return this.form.get('djMovilidadRows') as FormArray;
+  }
+
+  private djRowsArray(rubro: 'alimentacion' | 'movilidad'): FormArray {
+    return rubro === 'alimentacion' ? this.djAlimentacionRowsArray : this.djMovilidadRowsArray;
+  }
+
+  addDjRow(rubro: 'alimentacion' | 'movilidad'): void {
+    this.djRowsArray(rubro).push(
+      this.fb.group({
+        fecha: ['', Validators.required],
+        monto: [null, [Validators.required, Validators.min(0.01)]],
+      })
+    );
+  }
+
+  removeDjRow(rubro: 'alimentacion' | 'movilidad', index: number): void {
+    this.djRowsArray(rubro).removeAt(index);
+  }
+
+  getDjRowsTotal(rubro: 'alimentacion' | 'movilidad'): number {
+    return this.djRowsArray(rubro).controls.reduce(
+      (sum, ctrl) => sum + (Number(ctrl.get('monto')?.value) || 0),
+      0
+    );
+  }
+
+  get djTotal(): number {
+    return this.getDjRowsTotal('alimentacion') + this.getDjRowsTotal('movilidad');
+  }
+
+  /** Categoría a usar en un rubro: la detectada o la elegida a mano. */
+  private djCategoryIdFor(rubro: 'alimentacion' | 'movilidad'): string {
+    const ctrl = rubro === 'alimentacion' ? 'djAlimentacionCategoryId' : 'djMovilidadCategoryId';
+    return String(this.form.get(ctrl)?.value || '').trim();
+  }
+
+  /** Un rubro está completo si no tiene filas, o si las tiene con categoría y filas válidas. */
+  private isDjSeccionValid(rubro: 'alimentacion' | 'movilidad'): boolean {
+    const rows = this.djRowsArray(rubro);
+    if (rows.length === 0) return true;
+    return rows.valid && !!this.djCategoryIdFor(rubro);
+  }
+
   setExpenseType(type: ExpenseType) {
     this.expenseType.set(type);
     // Limpiar archivo al cambiar de tipo para evitar adjuntos cruzados
     this.selectedFile = undefined as any;
     this.previewImage = null;
+    this.previewObjectUrl = null;
     if (type === 'factura') {
       this.form.get('file')?.setValidators([Validators.required]);
     } else {
@@ -786,44 +1060,77 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
+   * Rendiciones directas creadas antes de tener OT propia: no hay OT que heredar,
+   * así que se sigue pidiendo en el formulario del comprobante (fallback legado).
+   */
+  needsFallbackOt(): boolean {
+    return this.isDirectaPlanilla() && !this.directaOrdenTrabajoInherited();
+  }
+
+  /**
    * Sincroniza los validadores del selector superior. En planilla directa el proyecto
    * y la categoría viven en cada fila, por lo que ambos selectores superiores se ocultan
    * y dejan de ser obligatorios; en el resto de casos son requeridos.
    */
   private syncTopValidators(): void {
-    const optional = this.isDirectaPlanilla();
-    for (const name of ['proyectId', 'categoryId']) {
-      const ctrl = this.form.get(name);
-      if (!ctrl || ctrl.disabled) continue;
-      ctrl.setValidators(optional ? [] : [Validators.required]);
-      ctrl.updateValueAndValidity({ emitEvent: false });
+    // Proyecto: opcional solo en planilla directa (el centro de costo vive en la
+    // rendición). Requerido en el resto de casos.
+    const projCtrl = this.form.get('proyectId');
+    if (projCtrl && !projCtrl.disabled) {
+      projCtrl.setValidators(this.isDirectaPlanilla() ? [] : [Validators.required]);
+      projCtrl.updateValueAndValidity({ emitEvent: false });
+    }
+    // Categoría: en planilla de movilidad —directa incluida— se resuelve entre
+    // las categorías "Planilla de movilidad" asignadas al colaborador (ver
+    // applyMovilidadCategoryDefault). En la DJ al extranjero cada rubro lleva la
+    // suya. Requerida en el resto de tipos de gasto.
+    const catCtrl = this.form.get('categoryId');
+    if (catCtrl && !catCtrl.disabled) {
+      if (this.expenseType() === 'planilla_movilidad') {
+        this.applyMovilidadCategoryDefault();
+      } else if (this.isDj()) {
+        catCtrl.setValidators([]);
+        catCtrl.updateValueAndValidity({ emitEvent: false });
+      } else {
+        catCtrl.setValidators([Validators.required]);
+        catCtrl.updateValueAndValidity({ emitEvent: false });
+      }
     }
   }
 
-  /** Sincroniza validadores de proyecto y categoría (selector superior + por fila) según el contexto directa. */
+  /**
+   * Sincroniza validadores de categoría por fila según el contexto directa, y
+   * mantiene el `proyectId` de cada fila igual al de la rendición (el centro
+   * de costo ya no se elige por comprobante ni por fila).
+   */
   private syncMobilityRowValidators(): void {
     this.syncTopValidators();
-    const rowRequired = this.isDirectaContext();
+    const topProjectId = this.form.get('proyectId')?.value || '';
     for (const ctrl of this.mobilityRowsArray.controls) {
-      for (const name of ['proyectId', 'categoryId']) {
-        const c = ctrl.get(name);
-        if (!c) continue;
-        c.setValidators(rowRequired ? [Validators.required] : []);
-        c.updateValueAndValidity({ emitEvent: false });
+      // La categoría ya no se pide por fila en la planilla de movilidad (VD-28).
+      const categoryCtrl = ctrl.get('categoryId');
+      if (categoryCtrl) {
+        categoryCtrl.setValidators([]);
+        categoryCtrl.updateValueAndValidity({ emitEvent: false });
+      }
+      const proyectCtrl = ctrl.get('proyectId');
+      if (proyectCtrl && !proyectCtrl.value && topProjectId) {
+        proyectCtrl.setValue(topProjectId, { emitEvent: false });
       }
     }
   }
 
   addMobilityRow() {
-    const rowRequired = this.isDirectaContext() ? [Validators.required] : [];
+    const topProjectId = this.form.get('proyectId')?.value || '';
     const group = this.fb.group({
       fecha: ['', Validators.required],
       total: [null, [Validators.required, Validators.min(0)]],
-      proyectId: ['', rowRequired],
-      categoryId: ['', rowRequired],
+      proyectId: [topProjectId],
+      // Categoría y tercero ya no se piden en la planilla de movilidad (VD-28);
+      // se conservan los controles en su valor por defecto por compatibilidad.
+      categoryId: [''],
       colaboradorEsTercero: [false],
       colaboradorId: [''],
-      clienteProveedor: ['', Validators.required],
       origen: ['', Validators.required],
       origenLat: [null],
       origenLng: [null],
@@ -839,27 +1146,9 @@ export default class AddInvoiceComponent implements OnInit {
       distanciaKm: [null],
       gestion: ['', Validators.required],
     });
-    this.mobilityRowsArray.push(group);
-    this.wireRowCategoryReset(group);
-  }
-
-  /** Suscripciones por fila que limpian la categoría cuando cambia el proyecto de la fila. */
-  private rowCategorySubs = new WeakMap<FormGroup, Subscription>();
-
-  /**
-   * Al cambiar el proyecto de una fila, limpia su categoría si dejó de pertenecer al
-   * perfil del nuevo proyecto, para que la categoría corresponda siempre al proyecto
-   * seleccionado en esa fila (Rendiciones Directas).
-   */
-  private wireRowCategoryReset(group: FormGroup): void {
-    const sub = group.get('proyectId')!.valueChanges.subscribe((projId) => {
-      const allowed = this.allowedCategoryIdsFor(projId);
-      const selected = group.get('categoryId')?.value;
-      if (allowed && selected && !allowed.has(String(selected))) {
-        group.get('categoryId')?.setValue('');
-      }
-    });
-    this.rowCategorySubs.set(group, sub);
+    // VD-71: la fila nueva va al inicio. La numeración visible ("Fila N") es
+    // posicional (sale del $index), por lo que la nueva queda como "Fila 1".
+    this.mobilityRowsArray.insert(0, group);
   }
 
   onOrigenSelected(result: PlaceResult, index: number) {
@@ -1076,9 +1365,6 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   removeMobilityRow(index: number) {
-    const group = this.mobilityRowsArray.at(index) as FormGroup;
-    this.rowCategorySubs.get(group)?.unsubscribe();
-    this.rowCategorySubs.delete(group);
     this.mobilityRowsArray.removeAt(index);
   }
 
@@ -1159,11 +1445,16 @@ export default class AddInvoiceComponent implements OnInit {
     })();
     switch (this.expenseType()) {
       case 'planilla_movilidad': {
-        // En planilla directa la categoría vive en cada fila (cubierta por mobilityRowsArray.valid).
-        const categoryOk = this.isDirectaPlanilla() || this.form.get('categoryId')?.valid === true;
+        // La categoría se resuelve igual en viático y en directa: automática si
+        // el colaborador tiene una sola, elegida en el selector si tiene varias.
+        const catCtrl = this.form.get('categoryId');
+        const categoryOk = catCtrl?.disabled === true || catCtrl?.valid === true;
+        // El colaborador debe tener al menos una categoría de Planilla de movilidad asignada.
+        const movilidadCategoryOk = this.movilidadCategories.length > 0;
         return (
           proyectOk &&
           categoryOk &&
+          movilidadCategoryOk &&
           this.mobilityRowsArray.length > 0 &&
           this.mobilityRowsArray.valid &&
           !this.hasAnyMobilityLimitExceeded()
@@ -1171,7 +1462,20 @@ export default class AddInvoiceComponent implements OnInit {
       }
       case 'otros_gastos': {
         const sub = this.otrosSubTipo();
-        const isDJ = sub === 'DJ';
+        // DJE: el monto sale de las filas por rubro y el adjunto es opcional, así
+        // que valida contra sus propias secciones (al menos una con filas).
+        if (this.isDj()) {
+          return (
+            proyectOk &&
+            !!this.form.get('declaracionJurada')?.value &&
+            this.djTotal > 0 &&
+            this.isDjSeccionValid('alimentacion') &&
+            this.isDjSeccionValid('movilidad')
+          );
+        }
+        // VD-83/VD-91: DJE y AL (Alimentación sin documentación) validan igual
+        // que una DJ (checkbox de declaración jurada obligatorio al crear).
+        const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(sub);
         const isBV = sub === 'BV';
         const rucEmisorOk = !!(this.form.get('rucEmisor')?.value || '').toString().trim();
         const bvDocOk = !isBV || (
@@ -1184,11 +1488,11 @@ export default class AddInvoiceComponent implements OnInit {
         return (
           proyectOk &&
           this.form.get('categoryId')?.valid === true &&
-          // DJ requiere checkbox; otros sub-tipos no
-          (!!this.id || !isDJ || !!this.form.get('declaracionJurada')?.value) &&
+          // DJ/AL requieren checkbox de declaración jurada; otros sub-tipos no
+          (!!this.id || !requiereDeclaracion || !!this.form.get('declaracionJurada')?.value) &&
           (this.form.get('totalOtros')?.value > 0) &&
-          // El adjunto es obligatorio al crear (todos los sub-tipos)
-          (!!this.id || !!this.selectedFile) &&
+          // Adjunto obligatorio al crear, salvo AL (Alimentación sin documentación)
+          (!!this.id || sub === 'AL' || !!this.selectedFile) &&
           bvDocOk &&
           rucOk
         );
@@ -1201,14 +1505,6 @@ export default class AddInvoiceComponent implements OnInit {
           !!(this.form.get('receiptFecha')?.value || '').trim() &&
           !!(this.form.get('receiptConcepto')?.value || '').trim() &&
           (this.form.get('receiptMonto')?.value > 0)
-        );
-      case 'comprobante_caja':
-        return (
-          proyectOk &&
-          this.form.get('categoryId')?.valid === true &&
-          !!(this.form.get('voucherEntregadoA')?.value || '').trim() &&
-          !!(this.form.get('voucherConcepto')?.value || '').trim() &&
-          (this.form.get('voucherMonto')?.value > 0)
         );
       default:
         return this.form.valid;
@@ -1269,138 +1565,30 @@ export default class AddInvoiceComponent implements OnInit {
     });
   }
 
-  /**
-   * Comprobante de caja: al seleccionar un archivo (imagen/PDF) se sube a S3 y se
-   * escanea con OCR para autorellenar los campos del formulario. Los campos
-   * quedan editables y el archivo se guarda como documento del comprobante.
-   */
-  onCashVoucherFileSelected(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    if (!input.files || !input.files[0]) return;
-    const file = input.files[0];
-    this.selectedFile = file;
-    this.cashVoucherFileName = file.name;
-    this.cashVoucherMimeType = file.type;
-
-    this.isScanningVoucher.set(true);
-    const { downloadUrl$ } = this.uploadService.uploadFile(file, environment.storagePath);
-    downloadUrl$.subscribe({
-      next: (url) => {
-        this.cashVoucherFileUrl = url;
-        this.invoiceService
-          .scanCashVoucher({ url, mimeType: this.cashVoucherMimeType })
-          .subscribe({
-            next: (data) => {
-              this.isScanningVoucher.set(false);
-              this.applyCashVoucherScan(data);
-              this.notificationService.show(
-                'Datos extraidos del comprobante. Revisa y corrige si es necesario.',
-                'success'
-              );
-            },
-            error: (error) => {
-              // El archivo ya quedó subido; solo falló el OCR. Se permite carga manual.
-              this.isScanningVoucher.set(false);
-              this.notificationService.show(
-                'No se pudieron extraer los datos automaticamente. Completa los campos manualmente. ' +
-                  (error.error?.message || error.message || ''),
-                'warning'
-              );
-            },
-          });
-      },
-      error: (err) => {
-        this.isScanningVoucher.set(false);
-        this.cashVoucherFileUrl = null;
-        this.cashVoucherFileName = null;
-        this.notificationService.show('Error al subir el archivo: ' + err.message, 'error');
-      },
-    });
-  }
-
-  /** Vuelca los datos extraídos por OCR a los campos del comprobante de caja. */
-  private applyCashVoucherScan(data: {
-    entregadoA?: string;
-    fecha?: string;
-    direccion?: string;
-    concepto?: string;
-    monto?: number;
-  }): void {
-    const patch: any = {};
-    if (data.entregadoA) patch.voucherEntregadoA = data.entregadoA;
-    if (data.direccion) patch.voucherDireccion = data.direccion;
-    if (data.concepto) patch.voucherConcepto = data.concepto;
-    if (data.fecha) {
-      const iso = this.formatDateForInput(data.fecha);
-      if (iso) patch.voucherFecha = iso;
-    }
-    if (typeof data.monto === 'number' && data.monto > 0) patch.voucherMonto = data.monto;
-    this.form.patchValue(patch);
-  }
-
-  /** Quita el archivo escaneado del comprobante de caja. */
-  removeCashVoucherFile(): void {
-    this.selectedFile = null as any;
-    this.cashVoucherFileUrl = null;
-    this.cashVoucherFileName = null;
-    this.cashVoucherMimeType = undefined;
-  }
-
-  saveCashVoucher() {
-    const entregadoA = (this.form.get('voucherEntregadoA')?.value || '').trim();
-    const direccion = (this.form.get('voucherDireccion')?.value || '').trim();
-    const concepto = (this.form.get('voucherConcepto')?.value || '').trim();
-    const fecha = this.form.get('voucherFecha')?.value || '';
-    const monto = Number(this.form.get('voucherMonto')?.value || 0);
-    if (!entregadoA || !concepto || monto <= 0) {
-      this.notificationService.show(
-        'Completa los campos obligatorios del comprobante de caja',
-        'error'
-      );
-      return;
-    }
-
-    this.isLoading.set(true);
-    const payload = {
-      proyectId: this.form.get('proyectId')?.value,
-      categoryId: this.form.get('categoryId')?.value,
-      expenseReportId: this.rendicionId || undefined,
-      total: monto,
-      fechaEmision: fecha || undefined,
-      imageUrl: this.cashVoucherFileUrl || undefined,
-      data: JSON.stringify({
-        entregadoA,
-        direccion,
-        concepto,
-        monto,
-      }),
-    };
-    this.invoiceService.createCashVoucher(payload).subscribe({
-      next: (res) => {
-        this.isLoading.set(false);
-        this.notificationService.show('Comprobante de caja guardado correctamente', 'success');
-        this.notifyCategoryLimitWarning(res);
-        this.navigateAfterExpenseSave();
-      },
-      error: (error) => {
-        this.isLoading.set(false);
-        this.notificationService.show(
-          'Error al guardar comprobante: ' + (error.error?.message || error.message),
-          'error'
-        );
-      },
-    });
-  }
-
   saveMobilitySheet() {
     if (this.mobilityRowsArray.length === 0) {
       this.notificationService.show('Debes agregar al menos una fila', 'error');
       return;
     }
+    if (this.movilidadCategories.length === 0) {
+      this.notificationService.show(
+        'No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.',
+        'error'
+      );
+      return;
+    }
+    if (this.showMovilidadCategorySelect && !this.form.get('categoryId')?.value) {
+      this.notificationService.show(
+        'Tienes más de una categoría de Planilla de movilidad asignada. Elige cuál corresponde.',
+        'error'
+      );
+      return;
+    }
     const proyectCtrl = this.form.get('proyectId');
     const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
-    // En planilla directa proyecto y categoría viven en cada fila; el selector superior se omite.
-    const categoryOk = this.isDirectaPlanilla() || !!this.form.get('categoryId')?.valid;
+    // En planilla directa el proyecto vive en cada fila; el selector superior se omite.
+    const categoryCtrl = this.form.get('categoryId');
+    const categoryOk = !!(categoryCtrl?.disabled || categoryCtrl?.valid);
     // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de Costo.
     const otOk = !!this.form.get('ordenTrabajoId')?.value;
     if (!proyectOk || !categoryOk || !otOk) {
@@ -1409,11 +1597,11 @@ export default class AddInvoiceComponent implements OnInit {
     }
     if (this.isDirectaContext()) {
       const allRowsComplete = this.mobilityRowsArray.controls.every(
-        (c) => !!c.get('proyectId')?.value && !!c.get('categoryId')?.value
+        (c) => !!c.get('proyectId')?.value
       );
       if (!allRowsComplete) {
         this.mobilityRowsArray.markAllAsTouched();
-        this.notificationService.show('Selecciona el proyecto y la categoría de cada fila', 'error');
+        this.notificationService.show('Falta el proyecto de alguna fila', 'error');
         return;
       }
     }
@@ -1438,7 +1626,6 @@ export default class AddInvoiceComponent implements OnInit {
         ...(r.proyectId ? { proyectId: r.proyectId } : {}),
         ...(r.categoryId ? { categoryId: r.categoryId } : {}),
         ...this.resolveRowColaborador(r),
-        clienteProveedor: r.clienteProveedor,
         origen: r.origen,
         origenDepartamento: r.origenDepartamento,
         origenProvincia: r.origenProvincia,
@@ -1456,13 +1643,20 @@ export default class AddInvoiceComponent implements OnInit {
         ...(r.distanciaKm != null ? { distanciaKm: r.distanciaKm } : {}),
         gestion: r.gestion,
       }));
-      // En modo directa el proyecto y la categoría viven en cada fila; los del gasto se toman de la primera.
+      // En modo directa el proyecto y la categoría viven en cada fila (todas
+      // comparten el mismo, heredado del centro de costo de la rendición). Se
+      // toma el primero con valor, sin depender de la posición del array: desde
+      // VD-71 las filas nuevas se insertan al inicio.
       const expenseProjectId = this.isDirectaContext()
-        ? (rows[0]?.proyectId || '')
+        ? (rows.find((r: any) => r.proyectId)?.proyectId || '')
         : this.form.get('proyectId')?.value;
-      const expenseCategoryId = this.isDirectaContext()
-        ? (rows[0]?.categoryId || '')
-        : this.form.get('categoryId')?.value;
+      // La categoría sale del selector superior —resuelta sola o elegida—, tanto
+      // en viático como en directa. En directa se conserva la lectura por fila
+      // como respaldo para planillas viejas que aún la traigan (VD-28 dejó de
+      // pedirla por fila).
+      const expenseCategoryId =
+        this.form.get('categoryId')?.value ||
+        (this.isDirectaContext() ? rows.find((r: any) => r.categoryId)?.categoryId || '' : '');
       const payload = {
         proyectId: expenseProjectId,
         ordenTrabajoId: this.form.get('ordenTrabajoId')?.value,
@@ -1502,12 +1696,139 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
+  /**
+   * Declaración Jurada al extranjero (DJE): adjunto opcional y un gasto por
+   * rubro (Alimentación / Movilidad) con su detalle diario. Tras guardar no se
+   * navega: queda disponible la descarga del PDF firmado.
+   */
+  saveDeclaracionJurada(): void {
+    const proyectCtrl = this.form.get('proyectId');
+    const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
+    if (!proyectOk) {
+      this.notificationService.show('Completa los campos requeridos', 'error');
+      return;
+    }
+
+    const currentUser = this.userStateService.getUser();
+    if (!currentUser?.signature) {
+      this.notificationService.show(
+        'Debes registrar tu firma digital antes de enviar una Declaracion Jurada. Ve a Mi Firma en el menu.',
+        'error'
+      );
+      return;
+    }
+    if (!this.form.get('declaracionJurada')?.value) {
+      this.notificationService.show('Debes aceptar y firmar la declaración jurada', 'error');
+      return;
+    }
+
+    const alimentacionRows = this.djAlimentacionRowsArray.getRawValue() as { fecha: string; monto: number }[];
+    const movilidadRows = this.djMovilidadRowsArray.getRawValue() as { fecha: string; monto: number }[];
+    if (alimentacionRows.length === 0 && movilidadRows.length === 0) {
+      this.notificationService.show('Agrega al menos un gasto de Alimentación o Movilidad', 'error');
+      return;
+    }
+    if (!this.isDjSeccionValid('alimentacion') || !this.isDjSeccionValid('movilidad')) {
+      this.notificationService.show(
+        'Completa la categoría, la fecha y el monto de cada fila declarada',
+        'error'
+      );
+      return;
+    }
+
+    this.isLoading.set(true);
+
+    const proceed = (imageUrl?: string) => {
+      const payload: ICreateDeclaracionJuradaPayload = {
+        proyectId: this.form.get('proyectId')?.value,
+        expenseReportId: this.rendicionId || undefined,
+        moneda: (this.form.get('djMoneda')?.value || 'US$').toString().trim(),
+        destino: (this.form.get('djDestino')?.value || '').toString().trim() || undefined,
+        pais: (this.form.get('djPais')?.value || '').toString().trim() || undefined,
+        lugarFirma: (this.form.get('djLugarFirma')?.value || '').toString().trim() || undefined,
+        imageUrl,
+        ...(alimentacionRows.length
+          ? { alimentacion: { categoryId: this.djCategoryIdFor('alimentacion'), rows: alimentacionRows } }
+          : {}),
+        ...(movilidadRows.length
+          ? { movilidad: { categoryId: this.djCategoryIdFor('movilidad'), rows: movilidadRows } }
+          : {}),
+      };
+      this.invoiceService.createDeclaracionJurada(payload).subscribe({
+        next: (res) => {
+          this.isLoading.set(false);
+          this.savedDeclaracionJurada.set(res);
+          this.notificationService.show(
+            'Declaración jurada guardada correctamente. Ya puedes descargar el PDF.',
+            'success'
+          );
+        },
+        error: (error) => {
+          this.isLoading.set(false);
+          this.notificationService.show(
+            'Error al guardar la declaración jurada: ' + (error.error?.message || error.message),
+            'error'
+          );
+        },
+      });
+    };
+
+    if (this.selectedFile) {
+      const { downloadUrl$ } = this.uploadService.uploadFile(this.selectedFile, environment.storagePath);
+      downloadUrl$.subscribe({
+        next: (url) => proceed(url),
+        error: (err) => {
+          this.isLoading.set(false);
+          this.notificationService.show('Error al subir el adjunto: ' + err.message, 'error');
+        },
+      });
+    } else {
+      proceed();
+    }
+  }
+
+  /** Genera el PDF oficial de la DJ al extranjero con los datos del formulario. */
+  async downloadDeclaracionJuradaPdf(): Promise<void> {
+    try {
+      const currentUser = this.userStateService.getUser();
+      const { RendicionExportService } = await import('../../../services/rendicion-export.service');
+      const exportService = this.injector.get(RendicionExportService);
+      // Empresa: la del cliente del colaborador. La configuración global puede
+      // traer otra razón social (y sin RUC), y el documento es de la empresa que
+      // emplea a quien declara.
+      const client = currentUser?.client;
+      await exportService.exportDeclaracionJuradaExteriorToPdf({
+        fileBaseName: `declaracion-jurada-${new Date().toISOString().slice(0, 10)}`,
+        colaborador: currentUser?.name || '',
+        colaboradorDni: (currentUser as any)?.dni,
+        empresaNombre: client?.businessName || client?.comercialName,
+        empresaRuc: client?.businessId,
+        ciudadDestino: this.form.get('djDestino')?.value || undefined,
+        pais: this.form.get('djPais')?.value || undefined,
+        moneda: this.form.get('djMoneda')?.value || 'US$',
+        alimentacionRows: this.djAlimentacionRowsArray.getRawValue(),
+        movilidadRows: this.djMovilidadRowsArray.getRawValue(),
+        ciudadFirma: this.form.get('djLugarFirma')?.value || undefined,
+        fechaFirma: new Date().toISOString(),
+        signature: currentUser?.signature,
+      });
+    } catch (err: any) {
+      this.notificationService.show('Error al generar el PDF: ' + err.message, 'error');
+    }
+  }
+
   saveOtherExpense() {
+    // La DJ al extranjero tiene su propio flujo (un gasto por rubro).
+    if (this.isDj()) {
+      this.saveDeclaracionJurada();
+      return;
+    }
     const declaracionJurada = this.form.get('declaracionJurada')?.value;
     const total = this.form.get('totalOtros')?.value;
     const description = this.form.get('description')?.value;
     const subTipo = this.otrosSubTipo();
-    const isDJ = subTipo === 'DJ';
+    // AL (Alimentación sin documentación) y DJE requieren declaración jurada + firma (VD-91).
+    const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(subTipo);
 
     const proyectCtrl = this.form.get('proyectId');
     const proyectOk = !!(proyectCtrl?.disabled || proyectCtrl?.valid);
@@ -1517,8 +1838,8 @@ export default class AddInvoiceComponent implements OnInit {
     }
     const currentUser = this.userStateService.getUser();
 
-    // Solo DJ requiere firma y DJ checkbox
-    if (isDJ) {
+    // DJ/DJE y AL requieren firma digital + aceptación del checkbox
+    if (requiereDeclaracion) {
       if (!currentUser?.signature) {
         this.notificationService.show(
           'Debes registrar tu firma digital antes de enviar una Declaracion Jurada. Ve a Mi Firma en el menu.',
@@ -1532,14 +1853,14 @@ export default class AddInvoiceComponent implements OnInit {
       }
     }
 
-    const firmante = isDJ ? (currentUser?.name || '').trim() : '';
+    const firmante = requiereDeclaracion ? (currentUser?.name || '').trim() : '';
     if (!total || total <= 0) {
       this.notificationService.show('Ingresa un monto válido', 'error');
       return;
     }
 
-    // El adjunto es obligatorio para todos los sub-tipos de otros gastos
-    if (!this.selectedFile) {
+    // El adjunto es obligatorio salvo AL (Alimentación sin documentación)
+    if (subTipo !== 'AL' && !this.selectedFile) {
       this.notificationService.show('Debes adjuntar el comprobante', 'error');
       return;
     }
@@ -1565,8 +1886,8 @@ export default class AddInvoiceComponent implements OnInit {
         total,
         data: description,
         subTipo,
-        declaracionJurada: isDJ ? true : false,
-        declaracionJuradaFirmante: isDJ ? firmante : undefined,
+        declaracionJurada: requiereDeclaracion,
+        declaracionJuradaFirmante: requiereDeclaracion ? firmante : undefined,
         imageUrl,
         ...(serie ? { serie } : {}),
         ...(correlativo ? { correlativo } : {}),
@@ -1618,21 +1939,15 @@ export default class AddInvoiceComponent implements OnInit {
       case 'recibo_caja':
         this.saveCashReceipt();
         break;
-      case 'comprobante_caja':
-        this.saveCashVoucher();
-        break;
       default:
         if (!this.selectedFile) {
           this.notificationService.show('Debes seleccionar un archivo de factura', 'error');
           return;
         }
         this.isLoading.set(true);
-        const isPdf = this.isPdfFile(this.selectedFile);
-        if (isPdf) {
-          this.uploadPdfDirectly();
-        } else {
-          this.uploadFile();
-        }
+        // VD-70 Parte B: el botón "Subir factura" ahora solo escanea (OCR+SUNAT);
+        // el archivo se sube y el gasto se crea recién al confirmar.
+        this.scanInvoice();
     }
   }
 
@@ -1708,40 +2023,6 @@ export default class AddInvoiceComponent implements OnInit {
       payload.data = JSON.stringify(dataObj);
       payload.fechaEmision = formValue.receiptFecha;
       payload.total = Number(formValue.receiptMonto) || 0;
-    } else if (type === 'comprobante_caja') {
-      const monto = Number(formValue.voucherMonto) || 0;
-
-      let previousPayload: any = {};
-      if (previousData?.payload) {
-        try {
-          previousPayload =
-            typeof previousData.payload === 'string'
-              ? JSON.parse(previousData.payload)
-              : previousData.payload;
-        } catch {
-          previousPayload = {};
-        }
-      } else {
-        previousPayload = { ...previousData };
-        delete previousPayload.type;
-      }
-
-      const newPayload = {
-        ...previousPayload,
-        entregadoA: (formValue.voucherEntregadoA || '').trim(),
-        direccion: (formValue.voucherDireccion || '').trim(),
-        concepto: (formValue.voucherConcepto || '').trim(),
-        monto,
-      };
-
-      const dataObj = {
-        type: 'comprobante_caja',
-        payload: JSON.stringify(newPayload),
-      };
-      payload.data = JSON.stringify(dataObj);
-      payload.description = JSON.stringify(newPayload);
-      payload.fechaEmision = formValue.voucherFecha || undefined;
-      payload.total = monto;
     } else if (type === 'planilla_movilidad') {
       if (this.hasMobilityTerceroSinColaborador()) {
         this.mobilityRowsArray.markAllAsTouched();
@@ -1754,7 +2035,6 @@ export default class AddInvoiceComponent implements OnInit {
         ...(r.proyectId ? { proyectId: r.proyectId } : {}),
         ...(r.categoryId ? { categoryId: r.categoryId } : {}),
         ...this.resolveRowColaborador(r),
-        clienteProveedor: r.clienteProveedor,
         origen: r.origen,
         origenDepartamento: r.origenDepartamento,
         origenProvincia: r.origenProvincia,
@@ -1773,12 +2053,20 @@ export default class AddInvoiceComponent implements OnInit {
         gestion: r.gestion,
       }));
       payload.mobilityRows = rows;
-      // En modo directa el proyecto y la categoría del gasto se toman de la primera fila.
-      if (this.isDirectaContext() && rows[0]?.proyectId) {
-        payload.proyectId = rows[0].proyectId;
+      // En modo directa el proyecto y la categoría del gasto se toman de la fila
+      // que los tenga (todas comparten el mismo), sin depender de la posición:
+      // desde VD-71 las filas nuevas se insertan al inicio.
+      const directaProject = this.isDirectaContext()
+        ? rows.find((r: any) => r.proyectId)?.proyectId
+        : undefined;
+      const directaCategory = this.isDirectaContext()
+        ? rows.find((r: any) => r.categoryId)?.categoryId
+        : undefined;
+      if (directaProject) {
+        payload.proyectId = directaProject;
       }
-      if (this.isDirectaContext() && rows[0]?.categoryId) {
-        payload.categoryId = rows[0].categoryId;
+      if (directaCategory) {
+        payload.categoryId = directaCategory;
       }
     }
 
@@ -1809,44 +2097,21 @@ export default class AddInvoiceComponent implements OnInit {
       this.selectedFile = input.files[0];
       const isImage = this.selectedFile.type.startsWith('image/');
       if (isImage) {
-        this.previewImage = this.sanitizer.bypassSecurityTrustUrl(
-          URL.createObjectURL(this.selectedFile)
-        );
+        this.previewObjectUrl = URL.createObjectURL(this.selectedFile);
+        this.previewImage = this.sanitizer.bypassSecurityTrustUrl(this.previewObjectUrl);
       } else {
+        this.previewObjectUrl = null;
         this.previewImage = null;
       }
       this.form.patchValue({ file: this.selectedFile });
     }
   }
 
-  uploadFile() {
-    this.percentage.set(10);
-    const { uploadProgress$, downloadUrl$ } = this.uploadService.uploadFile(
-      this.selectedFile,
-      environment.storagePath
-    );
-    uploadProgress$.subscribe((progress) => {
-      if (progress === 0) {
-        progress = 10;
-      }
-      this.percentage.set(Math.round(progress));
-    });
-    downloadUrl$.subscribe({
-      next: (url) => {
-        this.form.patchValue({ file: url });
-        this.save();
-      },
-      error: (error) => {
-        this.isLoading.set(false);
-        this.notificationService.show(
-          'Error al subir el archivo: ' + error.message,
-          'error'
-        );
-      },
-    });
-  }
-
-  private uploadPdfDirectly() {
+  /**
+   * VD-70 Parte B: escanea el archivo (OCR + SUNAT) SIN subirlo a storage ni
+   * crear el gasto. Imagen y PDF van como multipart a sus endpoints de análisis.
+   */
+  private scanInvoice() {
     const formData = new FormData();
     formData.append('file', this.selectedFile);
     formData.append('proyectId', this.form.get('proyectId')?.value);
@@ -1855,142 +2120,87 @@ export default class AddInvoiceComponent implements OnInit {
     if (this.rendicionId) {
       formData.append('expenseReportId', this.rendicionId);
     }
-
     this.percentage.set(10);
-    this.invoiceService.analyzePdf(formData).subscribe({
-      next: (res) => {
-        this.isLoading.set(false);
-        if (res && res._id) {
-          let dataObj: any = {};
-          if (res.data) {
-            try {
-              dataObj = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-            } catch {}
-          }
-          if (dataObj?.rucEmisor || dataObj?.fechaEmision || dataObj?.serie || dataObj?.correlativo || dataObj?.comentario) {
-            this.form.patchValue({
-              rucEmisor: dataObj.rucEmisor || '',
-              fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
-              serie: dataObj.serie || '',
-              correlativo: dataObj.correlativo || '',
-              comentario: dataObj.comentario || '',
-              placaVehiculo: dataObj.placaVehiculo || '',
-            });
-            this.postOcrInvoiceId.set(res._id);
-            this.postOcrBaseInvoice = res;
-            this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
-            this.isEditingOcrAmount.set(false);
-            this.editedOcrTotal.set(null);
-            this.showPostOcrReview.set(true);
-            this.notificationService.show(
-              'Revisa y confirma los datos extraidos por OCR antes de guardar.',
-              'warning'
-            );
-          } else {
-            this.notificationService.show('Factura PDF analizada correctamente', 'success');
-            this.navigateAfterExpenseSave();
-          }
-        } else {
-          this.notificationService.show('Factura PDF analizada correctamente', 'success');
-          this.navigateAfterExpenseSave();
-        }
-      },
+    const scan$ = this.isPdfFile(this.selectedFile)
+      ? this.invoiceService.analyzePdf(formData)
+      : this.invoiceService.analyzeInvoice(formData);
+    scan$.subscribe({
+      next: (res) => this.handleScanResult(res),
       error: (error) => {
         this.isLoading.set(false);
+        this.notificationService.show(
+          'Error al analizar la factura: ' +
+            (error?.error?.message || error?.message || ''),
+          'error'
+        );
       },
     });
   }
 
-  save() {
-    if (this.form.valid) {
-      const payload = {
-        categoryId: this.form.get('categoryId')?.value,
-        proyectId: this.form.get('proyectId')?.value,
-        imageUrl: this.form.get('file')?.value,
-        status: 'pending' as InvoiceStatus,
-        expenseReportId: this.rendicionId
-      };
-
-      this.invoiceService.analyzeInvoice(payload).subscribe({
-        next: (res) => {
-          if (res && res._id) {
-            let dataObj: any = {};
-            if (res.data) {
-              try {
-                dataObj =
-                  typeof res.data === 'string'
-                    ? JSON.parse(res.data)
-                    : res.data;
-              } catch {}
-            }
-
-            if (
-              dataObj?.rucEmisor ||
-              dataObj?.fechaEmision ||
-              dataObj?.serie ||
-              dataObj?.correlativo ||
-              dataObj?.comentario
-            ) {
-              this.form.patchValue({
-                rucEmisor: dataObj.rucEmisor || '',
-                fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
-                serie: dataObj.serie || '',
-                correlativo: dataObj.correlativo || '',
-                comentario: dataObj.comentario || '',
-                placaVehiculo: dataObj.placaVehiculo || '',
-              });
-              this.postOcrInvoiceId.set(res._id);
-              this.postOcrBaseInvoice = res;
-              this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
-              this.isEditingOcrAmount.set(false);
-              this.editedOcrTotal.set(null);
-              this.showPostOcrReview.set(true);
-              this.isLoading.set(false);
-              this.notificationService.show(
-                'Revisa y confirma los datos extraidos por OCR antes de guardar.',
-                'warning'
-              );
-            } else {
-              this.isLoading.set(false);
-              this.notificationService.show(
-                'Factura subida correctamente',
-                'success'
-              );
-              this.notifyCategoryLimitWarning(res);
-              this.navigateAfterExpenseSave();
-            }
-          } else {
-            this.isLoading.set(false);
-            this.notificationService.show(
-              'Factura subida correctamente',
-              'success'
-            );
-            this.notifyCategoryLimitWarning(res);
-            this.navigateAfterExpenseSave();
-          }
-        },
-        error: (error) => {
-          this.isLoading.set(false);
-        },
+  /**
+   * Procesa la respuesta del escaneo (VD-70 Parte B): datos OCR + resultado
+   * SUNAT, sin gasto persistido. Puebla el panel post-OCR para revisar/editar y
+   * confirmar.
+   */
+  private handleScanResult(res: any) {
+    this.isLoading.set(false);
+    let dataObj: any = {};
+    if (res?.data) {
+      try {
+        dataObj = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+      } catch {}
+    }
+    if (
+      dataObj?.rucEmisor || dataObj?.fechaEmision || dataObj?.serie ||
+      dataObj?.correlativo || dataObj?.comentario
+    ) {
+      this.form.patchValue({
+        rucEmisor: dataObj.rucEmisor || '',
+        fechaEmision: this.formatDateForInput(dataObj.fechaEmision),
+        serie: dataObj.serie || '',
+        correlativo: dataObj.correlativo || '',
+        // El prefijo de la serie manda sobre el texto del OCR (más fiable).
+        tipoComprobante: this.deriveTipoFromSerie(dataObj.serie)
+          ?? this.normalizeTipoComprobante(dataObj.tipoComprobante),
+        comentario: dataObj.comentario || '',
+        placaVehiculo: dataObj.placaVehiculo || '',
       });
+      // El gasto aún no existe; se guardan los datos OCR para crearlo al confirmar.
+      this.postOcrBaseInvoice = { data: res.data, total: res.total, status: res.status };
+      this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
+      this.isEditingOcrAmount.set(false);
+      this.editedOcrTotal.set(null);
+      this.sunatValidationResult = dataObj?.sunatValidation ?? null;
+      this.sunatStatus.set(dataObj?.sunatValidation?.status ?? null);
+      this.showPostOcrReview.set(true);
+      this.notifySunatStatus(this.sunatStatus());
     } else {
-      this.isLoading.set(false);
       this.notificationService.show(
-        'Por favor complete todos los campos requeridos',
+        'No se pudieron extraer datos de la factura. Revisa el archivo e intenta de nuevo.',
         'error'
       );
     }
   }
 
+
   confirmPostOcrReview() {
-    const invoiceId = this.postOcrInvoiceId();
-    if (!invoiceId || !this.postOcrBaseInvoice) return;
+    if (!this.postOcrBaseInvoice || !this.selectedFile) return;
     const comentario = (this.form.get('comentario')?.value || '').trim();
     if (!comentario) {
       this.notificationService.show('El campo Comentario es obligatorio.', 'error');
       return;
     }
-    const formValue = this.form.value;
+    // VD-70: no se puede guardar una factura que SUNAT no validó como aceptada.
+    if (!this.sunatIsValid()) {
+      this.notificationService.show(
+        'La factura no fue validada por SUNAT. Corrige los datos y vuelve a validar antes de guardar.',
+        'error'
+      );
+      return;
+    }
+    // getRawValue para incluir controles deshabilitados (p. ej. proyectId fijado
+    // por la rendición).
+    const formValue = this.form.getRawValue();
     let baseData: any = {};
     try {
       baseData =
@@ -2011,40 +2221,57 @@ export default class AddInvoiceComponent implements OnInit {
       fechaEmision: this.formatDateForBackend(formValue.fechaEmision || ''),
       serie: formValue.serie || '',
       correlativo: formValue.correlativo || '',
+      // Tipo de comprobante corregido por el usuario (VD-70), no el del OCR.
+      tipoComprobante: formValue.tipoComprobante || 'Factura',
       comentario,
       placaVehiculo: (formValue.placaVehiculo || '').trim() || undefined,
+      // Validación SUNAT vigente (del escaneo o la última revalidación).
+      ...(this.sunatValidationResult ? { sunatValidation: this.sunatValidationResult } : {}),
       ...(razonSocialOcr !== undefined ? { razonSocial: razonSocialOcr } : {}),
       ...(this.ocrAmountWasEdited ? { amountEdited: true, originalOcrTotal: this.ocrTotalAmount() } : {}),
     };
-    const updatePayload = {
-      proyectId: this.postOcrBaseInvoice.proyectId,
-      categoryId: this.postOcrBaseInvoice.categoryId,
-      total: finalTotal,
-      data: JSON.stringify(dataObj),
-      fechaEmision: dataObj.fechaEmision,
-      status: this.postOcrBaseInvoice.status,
-      comentario,
-      placaVehiculo: dataObj.placaVehiculo,
-    };
 
+    // VD-70 Parte B: recién ahora (al confirmar) se sube el archivo y se crea el
+    // gasto. Si el usuario cancela antes, no queda nada.
     this.isLoading.set(true);
-    this.invoiceService.updateInvoice(invoiceId, updatePayload).subscribe({
-      next: () => {
-        if (this.shouldValidateWithSunat(formValue)) {
-          this.id = invoiceId;
-          this.originalInvoice = this.postOcrBaseInvoice;
-          this.validateWithSunatData(formValue);
-        } else {
-          this.isLoading.set(false);
-          this.notificationService.show('Factura guardada correctamente', 'success');
-          this.notifyCategoryLimitWarning(this.postOcrBaseInvoice);
-          this.navigateAfterExpenseSave();
-        }
+    const { downloadUrl$ } = this.uploadService.uploadFile(
+      this.selectedFile,
+      environment.storagePath
+    );
+    downloadUrl$.subscribe({
+      next: (url) => {
+        const payload = {
+          proyectId: formValue.proyectId,
+          categoryId: formValue.categoryId,
+          ordenTrabajoId: formValue.ordenTrabajoId || undefined,
+          total: finalTotal,
+          data: JSON.stringify(dataObj),
+          fechaEmision: dataObj.fechaEmision,
+          comentario,
+          placaVehiculo: dataObj.placaVehiculo,
+          imageUrl: url,
+          expenseReportId: this.rendicionId || undefined,
+        };
+        this.invoiceService.createInvoice(payload).subscribe({
+          next: (res) => {
+            this.isLoading.set(false);
+            this.notificationService.show('Factura guardada correctamente', 'success');
+            this.notifyCategoryLimitWarning(res);
+            this.navigateAfterExpenseSave();
+          },
+          error: (error) => {
+            this.isLoading.set(false);
+            this.notificationService.show(
+              'Error al guardar la factura: ' + (error.error?.message || error.message),
+              'error'
+            );
+          },
+        });
       },
       error: (error) => {
         this.isLoading.set(false);
         this.notificationService.show(
-          'Error al guardar datos OCR: ' + (error.error?.message || error.message),
+          'Error al subir el archivo: ' + (error?.message || ''),
           'error'
         );
       },
@@ -2052,8 +2279,8 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   openInvoice() {
-    if (this.previewImage) {
-      window.open(this.previewImage as string, '_blank');
+    if (this.previewObjectUrl) {
+      window.open(this.previewObjectUrl, '_blank', 'noopener,noreferrer');
     }
   }
 
@@ -2067,6 +2294,19 @@ export default class AddInvoiceComponent implements OnInit {
 
   get proyectId() {
     return this.form.get('proyectId');
+  }
+
+  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
+  private otCostCenterId(ot: IOrdenTrabajo): string {
+    const cc = ot.costCenterId;
+    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
+  }
+
+  /** OTs a mostrar: solo las del centro de costo (proyecto) elegido. */
+  get filteredOrdenesTrabajo(): IOrdenTrabajo[] {
+    const pid = this.form.get('proyectId')?.value;
+    if (!pid) return [];
+    return this.ordenesTrabajo.filter((ot) => this.otCostCenterId(ot) === pid);
   }
 
   get imageUrl() {
@@ -2085,14 +2325,14 @@ export default class AddInvoiceComponent implements OnInit {
     if (this.id) {
       if (this.isSunatValidating()) return 'Validando con SUNAT...';
       if (this.isLoading()) return 'Actualizando...';
-      return 'Actualizar factura';
+      // El formulario edita cualquier tipo de gasto, no solo facturas.
+      return 'Actualizar';
     }
     if (this.isLoading()) return 'Guardando...';
     switch (this.expenseType()) {
       case 'planilla_movilidad': return 'Guardar Planilla';
       case 'otros_gastos': return 'Guardar Gasto';
       case 'recibo_caja': return 'Guardar Recibo de Caja';
-      case 'comprobante_caja': return 'Guardar Comprobante de Caja';
       default: return 'Subir factura';
     }
   }

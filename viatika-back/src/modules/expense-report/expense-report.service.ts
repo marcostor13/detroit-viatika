@@ -37,17 +37,20 @@ import { UploadService } from '../upload/upload.service'
 import { ProjectService } from '../project/project.service'
 import { CategoryService } from '../category/category.service'
 import {
-  buildApproverChain,
-  canActOnChain,
-  advanceChain,
+  findActionableChainStep,
+  isChainFullyApproved,
+  plainChainStep,
+  buildSolicitudChain,
+  buildRendicionChain,
+  ChainStep,
+  ChainProject,
 } from '../advance/approval-chain.util'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
 import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
 import { CreateAdvanceLineDto } from '../advance/dto/create-advance.dto'
-import { SaldoService } from '../saldo/saldo.service'
-import { ClientService } from '../client/client.service'
 import { Logger } from '@nestjs/common'
+import { monedaSymbol, DEFAULT_MONEDA } from '../../common/moneda.constants'
 
 /** Contexto del usuario que solicita eliminar una solicitud. */
 export interface SolicitudDeleteActor {
@@ -73,9 +76,7 @@ export class ExpenseReportService implements OnModuleInit {
     private readonly advanceService: AdvanceService,
     private readonly uploadService: UploadService,
     private readonly projectService: ProjectService,
-    private readonly categoryService: CategoryService,
-    private readonly saldoService: SaldoService,
-    private readonly clientService: ClientService
+    private readonly categoryService: CategoryService
   ) { }
 
   async onModuleInit() {
@@ -95,75 +96,94 @@ export class ExpenseReportService implements OnModuleInit {
     } catch (e) {
       this.logger.warn(`Index create skipped: ${(e as Error).message}`)
     }
-    await this.migrateViaticoApprovalChains()
+    await this.migrateAssignedCoordinatorIds()
   }
 
   /**
-   * Migración única e idempotente de solicitudes de viático en vuelo al nuevo
-   * modelo de cadena de aprobadores (ver AdvanceService.migrateApprovalChains,
-   * misma lógica aplicada a ExpenseReport type='viatico').
+   * Backfill único e idempotente: asigna `assignedCoordinatorId` a las rendiciones
+   * que no lo tengan, resolviendo el aprobador del centro de costo (`Project.approverId`)
+   * de su `projectId`. Si la rendición no tiene centro de costo o este no tiene
+   * aprobador configurado, cae al dato legacy `User.coordinatorId` del dueño como
+   * último recurso, solo para no dejar historicos huérfanos. Tras esta migración,
+   * el resto del código ya no necesita leer el campo legacy.
    */
-  private async migrateViaticoApprovalChains() {
-    const pendingL2 = await this.expenseReportModel
-      .find({ type: 'viatico', status: 'pending_l2' })
-      .select('_id userId')
+  private async migrateAssignedCoordinatorIds() {
+    const pending = await this.expenseReportModel
+      .find({
+        type: { $ne: 'viatico' },
+        assignedCoordinatorId: { $exists: false },
+      })
+      .select('_id projectId userId clientId')
+      .lean()
       .exec()
-    for (const r of pendingL2) {
-      const profile = await this.userService.findTransactionalProfile(
-        r.userId.toString()
-      )
-      const legacyCoordId = profile?.coordinatorId
-      if (!legacyCoordId) continue
-      await this.expenseReportModel.updateOne(
-        { _id: (r as any)._id },
-        {
-          $set: {
-            status: 'pending_l1',
-            viaticoApproverChain: [legacyCoordId],
-            viaticoRequiredLevels: 1,
-            viaticoApprovalLevel: 0,
-          },
-        }
-      )
-    }
-    if (pendingL2.length > 0) {
-      this.logger.log(
-        `Migrados ${pendingL2.length} viático(s) de pending_l2 a la nueva cadena de aprobadores`
-      )
+    if (pending.length === 0) return
+
+    const projectIdsByClient = new Map<string, Set<string>>()
+    for (const r of pending) {
+      if (!r.projectId) continue
+      const clientKey = String(r.clientId)
+      if (!projectIdsByClient.has(clientKey)) {
+        projectIdsByClient.set(clientKey, new Set())
+      }
+      projectIdsByClient.get(clientKey)!.add(String(r.projectId))
     }
 
-    const orphanedPendingL1 = await this.expenseReportModel
-      .find({
-        type: 'viatico',
-        status: 'pending_l1',
-        $or: [
-          { viaticoApproverChain: { $exists: false } },
-          { viaticoApproverChain: { $size: 0 } },
-        ],
-      })
-      .select('_id userId')
-      .exec()
-    for (const r of orphanedPendingL1) {
-      const profile = await this.userService.findTransactionalProfile(
-        r.userId.toString()
+    const approverByProjectId = new Map<string, Types.ObjectId>()
+    for (const [clientKey, projectIdSet] of projectIdsByClient) {
+      const projects = await this.projectService.findManyByIds(
+        [...projectIdSet],
+        clientKey
       )
-      const legacyCoordId = profile?.coordinatorId
-      if (!legacyCoordId) continue
-      await this.expenseReportModel.updateOne(
-        { _id: (r as any)._id },
-        {
-          $set: {
-            viaticoApproverChain: [legacyCoordId],
-            viaticoRequiredLevels: 1,
-          },
+      for (const p of projects) {
+        if (p.approverId) {
+          approverByProjectId.set(String((p as any)._id), p.approverId)
         }
-      )
+      }
     }
-    if (orphanedPendingL1.length > 0) {
+
+    let migrated = 0
+    for (const r of pending) {
+      let assignedCoordinatorId = r.projectId
+        ? approverByProjectId.get(String(r.projectId))
+        : undefined
+
+      if (!assignedCoordinatorId) {
+        const profile = await this.userService.findTransactionalProfile(
+          String(r.userId)
+        )
+        assignedCoordinatorId = profile?.coordinatorId
+      }
+
+      if (!assignedCoordinatorId) continue
+
+      await this.expenseReportModel.updateOne(
+        { _id: r._id },
+        { $set: { assignedCoordinatorId } }
+      )
+      migrated++
+    }
+
+    if (migrated > 0) {
       this.logger.log(
-        `Backfill de viaticoApproverChain en ${orphanedPendingL1.length} viático(s) pending_l1`
+        `Backfill: asignado assignedCoordinatorId a ${migrated} rendición(es) desde centro de costo / legacy`
       )
     }
+  }
+
+  /**
+   * Resuelve el coordinador responsable de un centro de costo (`Project.approverId`)
+   * para snapshotearlo en `assignedCoordinatorId` al crear/editar una rendición.
+   */
+  private async resolveAssignedCoordinatorId(
+    projectId: string | undefined,
+    clientId: string
+  ): Promise<Types.ObjectId | undefined> {
+    if (!projectId) return undefined
+    const projects = await this.projectService.findManyByIds(
+      [projectId],
+      clientId
+    )
+    return projects[0]?.approverId
   }
 
   private validatePaymentReceipt(
@@ -215,6 +235,27 @@ export class ExpenseReportService implements OnModuleInit {
   private async computeReportBudgetDisplay(report: any): Promise<number> {
     if (!report?._id) return Number(report?.budget) || 0
     const reportId = String(report._id)
+
+    // Rendición directa: no usa anticipo ni presupuesto, por lo que budget=0 y
+    // advances=0 hacían que los correos (incluida la notificación a Tesorería)
+    // mostraran "S/ 0.00" (VD-52). El monto relevante es el total gastado = suma
+    // de los gastos no-rechazados.
+    if (report.isDirecta === true) {
+      const directa = await this.expenseReportModel
+        .findById(reportId)
+        .populate('expenseIds', 'total status')
+        .exec()
+      const exps = (directa?.expenseIds ?? []) as any[]
+      const gastado = exps.reduce(
+        (s: number, e: any) =>
+          String(e?.status || '').toLowerCase() === 'rejected'
+            ? s
+            : s + (Number(e?.total) || 0),
+        0
+      )
+      return gastado > 0 ? gastado : Number(report.budget) || 0
+    }
+
     const rawAdvanceIds: string[] = (
       Array.isArray(report.advanceIds) ? report.advanceIds : []
     ).map((x: any) =>
@@ -297,6 +338,20 @@ export class ExpenseReportService implements OnModuleInit {
         'Existen comprobantes rechazados. Corrígelos antes de aprobar la rendición.'
       )
     }
+
+    // Regla 1.4 (decisión "esperar a que todos completen"): la rendición solo
+    // pasa a Contabilidad cuando TODOS sus comprobantes completaron su propia
+    // cadena N1/N2/[N2 sel] — no se permite avance parcial.
+    const hasPendingChain = expenses.some((e: any) => {
+      const required = e?.requiredLevels ?? e?.approverChain?.length ?? 0
+      const level = e?.approvalLevel ?? 0
+      return level < required
+    })
+    if (hasPendingChain) {
+      throw new BadRequestException(
+        'Existen comprobantes que aún no completaron su cadena de aprobación.'
+      )
+    }
   }
 
   /**
@@ -333,18 +388,10 @@ export class ExpenseReportService implements OnModuleInit {
       ? await this.generateDirectaCodigo(createExpenseReportDto.clientId)
       : undefined
 
-    // Saldos de la bolsa seleccionados (rendición directa financiada con saldo).
-    const saldoIds = Array.isArray(createExpenseReportDto.saldoIds)
-      ? createExpenseReportDto.saldoIds
-      : []
-    const hasSaldos = saldoIds.length > 0
-    const saldoBudget = hasSaldos
-      ? await this.saldoService.sumAmounts(
-        saldoIds,
-        createExpenseReportDto.userId,
-        createExpenseReportDto.clientId
-      )
-      : 0
+    const assignedCoordinatorId = await this.resolveAssignedCoordinatorId(
+      createExpenseReportDto.projectId,
+      createExpenseReportDto.clientId
+    )
 
     const report = new this.expenseReportModel({
       ...createExpenseReportDto,
@@ -356,22 +403,11 @@ export class ExpenseReportService implements OnModuleInit {
       projectId: createExpenseReportDto.projectId
         ? new Types.ObjectId(createExpenseReportDto.projectId)
         : undefined,
-      pendingBalanceFromReportId:
-        createExpenseReportDto.pendingBalanceFromReportId
-          ? new Types.ObjectId(
-            createExpenseReportDto.pendingBalanceFromReportId
-          )
-          : undefined,
-      // Presupuesto: si se financia con saldos de la bolsa = suma de saldos;
-      // si hereda saldo pendiente = monto heredado; caso normal = budget recibido.
-      budget: hasSaldos
-        ? saldoBudget
-        : createExpenseReportDto.pendingBalanceFromReportId
-          ? (createExpenseReportDto.pendingBalanceAmount ?? 0)
-          : (createExpenseReportDto.budget ?? 0),
-      saldoIds: hasSaldos
-        ? saldoIds.map(id => new Types.ObjectId(id))
+      directaOrdenTrabajoId: createExpenseReportDto.ordenTrabajoId
+        ? new Types.ObjectId(createExpenseReportDto.ordenTrabajoId)
         : undefined,
+      assignedCoordinatorId,
+      budget: createExpenseReportDto.budget ?? 0,
       // Caja chica y rendición directa: siempre open desde el inicio
       status:
         isDirecta || isCajaChica
@@ -382,52 +418,6 @@ export class ExpenseReportService implements OnModuleInit {
       expenseIds: [],
     })
     const savedReport = await report.save()
-
-    // Consumir (completo) los saldos de la bolsa que financian esta rendición directa.
-    if (hasSaldos) {
-      await this.saldoService.consume(saldoIds, {
-        userId: createExpenseReportDto.userId,
-        clientId: createExpenseReportDto.clientId,
-        context: 'rendicion_directa',
-        reportId: String(savedReport._id),
-      })
-
-      // Las rendiciones que originaron los remanentes consumidos quedan resueltas
-      // ("saldo trasladado a esta nueva rendición") → se muestran como cerradas.
-      const sourceReportIds =
-        await this.saldoService.getSourceReportIds(saldoIds)
-      for (const srcId of sourceReportIds) {
-        await this.expenseReportModel
-          .findByIdAndUpdate(srcId, {
-            pendingBalanceUsedInRendicionId: savedReport._id,
-          })
-          .exec()
-      }
-    }
-
-    // Si se creó desde saldo de otra rendición directa, marcar la rendición fuente
-    if (createExpenseReportDto.pendingBalanceFromReportId) {
-      await this.expenseReportModel
-        .findByIdAndUpdate(createExpenseReportDto.pendingBalanceFromReportId, {
-          pendingBalanceUsedInRendicionId: savedReport._id,
-        })
-        .exec()
-
-      // Si la rendición fuente había dejado su sobrante en la bolsa, consumirlo: el
-      // dinero se trasladó al presupuesto de esta nueva rendición. Evita el doble
-      // conteo (el saldo seguía mostrándose como disponible).
-      try {
-        await this.saldoService.removeRemnantBySourceReport(
-          createExpenseReportDto.pendingBalanceFromReportId,
-          String(savedReport._id)
-        )
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        this.logger.error(
-          `Consumir remanente de bolsa al heredar saldo de ${createExpenseReportDto.pendingBalanceFromReportId}: ${msg}`
-        )
-      }
-    }
 
     console.log(
       `[ExpenseReportService] Created report: ${savedReport._id}. isCollaborator: ${isCollaborator}, isDirecta: ${isDirecta}`
@@ -472,6 +462,12 @@ export class ExpenseReportService implements OnModuleInit {
     createdBy: string,
     clientId: string
   ) {
+    if (dto.metodoPago !== 'efectivo' && !dto.receiptUrl) {
+      throw new BadRequestException(
+        'Debe adjuntar el comprobante de depósito (o marcar el método de pago como efectivo).'
+      )
+    }
+
     const report = await this.create(
       {
         isDirecta: true,
@@ -479,6 +475,8 @@ export class ExpenseReportService implements OnModuleInit {
         clientId,
         gestion: dto.gestion,
         budget: dto.amount,
+        projectId: dto.projectId,
+        ordenTrabajoId: dto.ordenTrabajoId,
       } as CreateExpenseReportDto,
       createdBy,
       false // no es flujo de colaborador → no notifica admins
@@ -486,6 +484,7 @@ export class ExpenseReportService implements OnModuleInit {
 
     report.directaDeposit = {
       amount: dto.amount,
+      metodoPago: dto.metodoPago ?? 'deposito',
       scannedAmount: dto.scannedAmount,
       receiptUrl: dto.receiptUrl,
       receiptFileName: dto.receiptFileName,
@@ -561,12 +560,17 @@ export class ExpenseReportService implements OnModuleInit {
   }): Promise<ExpenseReportDocument> {
     const title =
       advance.description?.trim() || advance.place?.trim() || 'Viático'
+    const assignedCoordinatorId = await this.resolveAssignedCoordinatorId(
+      advance.projectId?.toString(),
+      advance.clientId.toString()
+    )
     const report = new this.expenseReportModel({
       title,
       userId: advance.userId,
       clientId: advance.clientId,
       createdBy: advance.userId,
       projectId: advance.projectId ?? undefined,
+      assignedCoordinatorId,
       location: advance.place ?? undefined,
       budget: advance.amount,
       startDate: advance.startDate ?? undefined,
@@ -589,25 +593,64 @@ export class ExpenseReportService implements OnModuleInit {
       // Nombre de la categoría de cada línea de viático, para mostrar el detalle
       // por categoría al aprobar (la list no traía categoryId poblado).
       .populate('viaticoLines.categoryId', 'name')
+      // Orden de Trabajo imputada, para mostrarla en el detalle de la solicitud.
+      .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
+      .populate('directaOrdenTrabajoId', 'nombre costCenterId')
+      // Estado de la cadena por comprobante (regla 1.4) — para mostrar progreso
+      // agregado de rendición directa (ya no tiene cadena a nivel de reporte).
+      // `total` también poblado: reportExpensesTotal() lo necesita y antes de
+      // este populate expenseIds llegaban sin poblar (siempre devolvía 0).
+      .populate('expenseIds', 'total status approvalLevel requiredLevels contabilidadStatus')
       .sort({ createdAt: -1 })
       .exec()
   }
 
+  /**
+   * Rendiciones a cargo de un Coordinador. Combina mecanismos, cada uno con
+   * su propio snapshot:
+   * - Rendición normal: `assignedCoordinatorId`, tomado al crear/editar la
+   *   rendición (ver `resolveAssignedCoordinatorId`).
+   * - Viático: `viaticoApproverChain`, la cadena por centro de costo tomada
+   *   al solicitar el viático (ver `buildSolicitudChain`/`buildSolicitudCostCenterChain`).
+   * - Rendición por comprobante (directa, normal o viático ya en fase de
+   *   rendición): ya no tiene cadena a nivel de reporte — se resuelve por
+   *   comprobante (`Expense.approverChain`, ver `buildRendicionChain`); se
+   *   incluye cualquier reporte que tenga al menos un comprobante con este
+   *   aprobador en su cadena, SIN importar el estado del reporte. Como la
+   *   cadena del comprobante se construye al SUBIRLO (regla 1.9), el aprobador
+   *   ve la rendición apenas se carga el primer comprobante, aunque el
+   *   colaborador todavía no la haya enviado (`open`).
+   * Ninguno usa la relación en vivo usuario→coordinador ni el aprobador actual
+   * del centro de costo, así que si este cambia, las solicitudes ya creadas
+   * conservan a su coordinador original.
+   */
   async findAllByCoordinator(coordinatorId: string, clientId: string) {
-    const userIds = await this.userService.findUserIdsByCoordinator(
-      coordinatorId,
-      clientId
-    )
+    const coordinatorObjectId = new Types.ObjectId(coordinatorId)
+    const chainReportIds = await this.expenseModel
+      .find({ 'approverChain.approverIds': coordinatorObjectId })
+      .distinct('expenseReportId')
+      .exec()
     return await this.expenseReportModel
       .find({
-        userId: { $in: userIds },
         clientId: new Types.ObjectId(clientId),
         isCajaChica: { $ne: true },
+        $or: [
+          { assignedCoordinatorId: coordinatorObjectId },
+          { type: 'viatico', 'viaticoApproverChain.approverIds': coordinatorObjectId },
+          { _id: { $in: chainReportIds } },
+        ],
       })
       .populate('userId', 'name email signature bankAccount')
       .populate('createdBy', 'name email')
       // Nombre de categoría por línea de viático (para el detalle al aprobar).
       .populate('viaticoLines.categoryId', 'name')
+      // Centro de costo (código/nombre) y Orden de Trabajo, para el detalle de la solicitud.
+      .populate('projectId', 'code name')
+      .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
+      .populate('directaOrdenTrabajoId', 'nombre costCenterId')
+      // Comprobantes: total (monto de la rendición directa) y datos/archivo para
+      // mostrar las facturas en el modal de aprobación del jefe inmediato. VD-25.
+      .populate('expenseIds', 'total data file expenseType')
       .sort({ createdAt: -1 })
       .exec()
   }
@@ -619,11 +662,12 @@ export class ExpenseReportService implements OnModuleInit {
         clientId: new Types.ObjectId(clientId),
         isCajaChica: { $ne: true },
       })
-      .populate('expenseIds', 'total approvalCoord approvalCont')
+      .populate('expenseIds', 'total approvalLevel requiredLevels contabilidadStatus')
       .populate('createdBy', 'name email')
       .populate('viaticoLines.categoryId', 'name')
       .populate('projectId', 'code name')
-      .populate('viaticoOrdenTrabajoId', 'codigo departamento')
+      .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
+      .populate('directaOrdenTrabajoId', 'nombre costCenterId')
       .sort({ createdAt: -1 })
       .lean()
       .exec()
@@ -652,7 +696,7 @@ export class ExpenseReportService implements OnModuleInit {
       })
       .populate(
         'expenseIds',
-        'total expenseType fechaEmision proveedor approvalCoord approvalCont'
+        'total expenseType fechaEmision proveedor approvalLevel requiredLevels contabilidadStatus'
       )
       .sort({ createdAt: -1 })
       .lean()
@@ -689,9 +733,7 @@ export class ExpenseReportService implements OnModuleInit {
    */
   private withDeletionApprovalFlag(report: any) {
     const hasApprovedExpense = (report.expenseIds ?? []).some(
-      (e: any) =>
-        e?.approvalCoord?.status === 'approved' ||
-        e?.approvalCont?.status === 'approved'
+      (e: any) => (e?.approvalLevel ?? 0) > 0 || e?.contabilidadStatus === 'approved'
     )
     // `createdByOther`: la solicitud la creó alguien distinto del dueño (ej.
     // Contabilidad creó una rendición directa para el colaborador). En ese caso
@@ -699,10 +741,7 @@ export class ExpenseReportService implements OnModuleInit {
     const createdById = String(report.createdBy?._id ?? report.createdBy ?? '')
     const ownerId = String(report.userId?._id ?? report.userId ?? '')
     const createdByOther = !!createdById && !!ownerId && createdById !== ownerId
-    // `inheritedBalance`: la rendición directa se creó con saldo heredado de otra.
-    // El dueño no puede eliminarla (rompería la cadena del saldo); solo Contabilidad.
-    const inheritedBalance = !!report.pendingBalanceFromReportId
-    return { ...report, hasApprovedExpense, createdByOther, inheritedBalance }
+    return { ...report, hasApprovedExpense, createdByOther }
   }
 
   async findAllCajaChicaAvailable(clientId: string) {
@@ -755,39 +794,14 @@ export class ExpenseReportService implements OnModuleInit {
     const filter: Record<string, unknown> = { _id: { $in: ids } }
     const and: Record<string, unknown>[] = []
     if (opts.type && opts.type !== 'all') {
-      filter['expenseType'] =
-        opts.type === 'comprobante_caja'
-          ? { $in: ['comprobante_caja', 'recibo_caja'] }
-          : opts.type
+      filter['expenseType'] = opts.type
     }
     if (opts.status && opts.status !== 'all') {
-      // El filtro se basa en la aprobación dual (approvalCont / approvalCoord),
-      // que es lo que la UI muestra como badge. Si un comprobante legacy no
-      // tiene aprobación dual, la UI lo muestra como "Pendiente" por defecto,
-      // por lo que el campo legacy `status` se ignora aquí para mantener
-      // coherencia visual.
-      if (opts.status === 'approved') {
-        filter['approvalCont.status'] = 'approved'
-        filter['approvalCoord.status'] = 'approved'
-      } else if (opts.status === 'rejected') {
-        and.push({
-          $or: [
-            { 'approvalCont.status': 'rejected' },
-            { 'approvalCoord.status': 'rejected' },
-          ],
-        })
-      } else if (opts.status === 'pending') {
-        filter['$nor'] = [
-          {
-            'approvalCont.status': 'approved',
-            'approvalCoord.status': 'approved',
-          },
-          { 'approvalCont.status': 'rejected' },
-          { 'approvalCoord.status': 'rejected' },
-        ]
-      } else {
-        filter['status'] = opts.status
-      }
+      // `status` en Expense refleja siempre computeCombinedStatus(cadena, contabilidad)
+      // desde cada mutación (approve/reject por documento, batch, resubmit), así
+      // que el filtro puede leerlo directo — ya no hace falta reconstruirlo desde
+      // los campos de aprobación dual (retirados, ver Expense.approverChain).
+      filter['status'] = opts.status
     }
     if (opts.search?.trim()) {
       // El "concepto" se guarda en distintos campos según el tipo de
@@ -814,6 +828,10 @@ export class ExpenseReportService implements OnModuleInit {
       .find(filter)
       .populate('categoryId', 'name')
       .populate('proyectId', 'name code')
+      // Nombres de los aprobadores de cada paso de la cadena (regla 1.4) para
+      // mostrarlos en la columna Estado en vez del ObjectId crudo, que no es
+      // legible para el usuario.
+      .populate('approverChain.approverIds', 'name email')
       .exec()
 
     const sorted = (all as unknown as Record<string, unknown>[]).sort(
@@ -892,36 +910,59 @@ export class ExpenseReportService implements OnModuleInit {
   async findOne(id: string) {
     const report = await this.expenseReportModel
       .findById(id)
-      .populate('userId', 'name email signature bankAccount dni')
+      .populate('userId', 'name email signature bankAccount dni area')
       .populate({
         path: 'expenseIds',
         populate: [
-          { path: 'categoryId', select: 'name' },
+          { path: 'categoryId', select: 'name cuenta' },
           { path: 'proyectId', select: 'name' },
+          // OT y su centro de costo por gasto (columnas OT / C.COSTO del formato
+          // ADF-FOR-004). costCenterId se popula anidado para obtener el nombre.
+          {
+            path: 'ordenTrabajoId',
+            select: 'nombre costCenterId',
+            populate: { path: 'costCenterId', select: 'code name' },
+          },
+          // Aprobadores N1/N2 esperados por comprobante (regla 1.4) y quién
+          // aprobó por Contabilidad — para mostrar nombres reales (no roles
+          // genéricos) en la sección Estado de la RENDICIÓN.
+          { path: 'approverChain.approverIds', select: 'name email' },
+          { path: 'contabilidadApprovedBy', select: 'name email' },
         ],
       })
       .populate('createdBy', 'name email')
-      .populate('approvedBy', 'name email')
+      // Firma incluida para el recuadro V°B° JEFE INMEDIATO del formato ADF-FOR-004
+      // (fallback cuando no hubo coordinador).
+      .populate('approvedBy', 'name email signature')
+      // Coordinador snapshot de la rendición (regla 1.4, rendición normal/directa
+      // sin cadena por comprobante): nombre para mostrarlo en la sección Estado.
+      .populate('assignedCoordinatorId', 'name email')
+      // Coordinador que aprobó: se incluye su firma/DNI para el PDF de la planilla
+      // de movilidad (firma del colaborador y del coordinador, VD-33).
+      .populate('coordinatorApprovedBy', 'name email signature dni')
+      // Contabilidad que dio la aprobación final: nombre y firma para la trazabilidad
+      // y el recuadro V°B° FINANZAS (VD-31).
+      .populate('contabilidadApprovedBy', 'name email signature')
+      // Contabilidad que aprobó la SOLICITUD del viático (regla 1.3) — distinto de
+      // contabilidadApprovedBy, que es de la RENDICIÓN (regla 1.4, posterior al pago).
+      .populate('viaticoSolicitudContabilidadApprovedBy', 'name email')
       .populate('projectId', 'name')
-      .populate('viaticoOrdenTrabajoId', 'codigo departamento descripcion')
-      .populate('viaticoApproverChain', 'name email')
       .populate({
-        path: 'saldoIds',
-        select: 'type amount concepto deposit sourceReportId createdAt',
-        populate: { path: 'sourceReportId', select: 'codigo title gestion' },
+        path: 'viaticoOrdenTrabajoId',
+        select: 'nombre costCenterId',
+        populate: { path: 'costCenterId', select: 'code name' },
       })
+      .populate({
+        path: 'directaOrdenTrabajoId',
+        select: 'nombre costCenterId',
+        populate: { path: 'costCenterId', select: 'code name' },
+      })
+      .populate('viaticoApproverChain.approverIds', 'name email')
       .exec()
 
     if (!report) {
       throw new NotFoundException(`Expense report with ID ${id} not found`)
     }
-    // Auto-sanado (lazy, idempotente): directa financiada con bolsa ya aprobada cuyo
-    // sobrante aún no se reflejó en la bolsa (aprobadas antes de esta funcionalidad).
-    // Se corrige sola al abrir el detalle, una rendición a la vez, sin barrido global.
-    await this.ensureDirectaBolsaRemnant(id, report).catch(() => undefined)
-    // Auto-sanado (lazy): si el remanente de esta rendición ya fue consumido por otra
-    // pero la fuente no quedó marcada como "trasladada", se corrige al abrirla.
-    await this.ensureSourceMarkedIfRemnantConsumed(id, report).catch(() => undefined)
     const normalized = this.normalizeReportExpenseDates(report)
       // Flag derivado para el front: si la caja chica fue finalizada, el
       // colaborador ya no puede subir gastos (botón "Añadir Gasto" oculto).
@@ -931,20 +972,6 @@ export class ExpenseReportService implements OnModuleInit {
         (normalized as unknown as { isCajaChica?: boolean }).isCajaChica === true
           ? await this.isLockedByFinalizedCajaChica(id)
           : false
-    // Código de la rendición de origen del saldo heredado, para mostrar en el detalle
-    // y el reporte "de qué rendición proviene el saldo" (en vez de un genérico).
-    const fromId = (report as unknown as { pendingBalanceFromReportId?: unknown })
-      .pendingBalanceFromReportId
-    if (fromId) {
-      const src = await this.expenseReportModel
-        .findById(String(fromId))
-        .select('codigo')
-        .lean()
-        .exec()
-        ; (
-          normalized as unknown as { pendingBalanceFromCodigo?: string }
-        ).pendingBalanceFromCodigo = (src as { codigo?: string } | null)?.codigo
-    }
     return normalized
   }
 
@@ -968,11 +995,105 @@ export class ExpenseReportService implements OnModuleInit {
     return pojo as unknown as ExpenseReportDocument
   }
 
+  /**
+   * Notifica a Contabilidad que una rendición quedó lista para su aprobación
+   * final (coordinador/cadena de centro de costo ya completada), y al
+   * colaborador que ya pasó ese paso. Compartido entre la rendición normal
+   * (coordinador único, desde `update()`) y la rendición directa (cadena del
+   * jefe inmediato, desde `approveDirecta`).
+   */
+  private async notifyAccountingReportPendingApproval(
+    id: string,
+    fullyUpdatedReport: any
+  ): Promise<void> {
+    try {
+      const clientId = String(fullyUpdatedReport.clientId)
+      const ownerRef = fullyUpdatedReport.userId as any
+      const ownerId = ownerRef?._id ? String(ownerRef._id) : String(ownerRef)
+      const collaboratorName =
+        (typeof ownerRef === 'object' && ownerRef?.name) || 'Colaborador'
+      const reportTitle = fullyUpdatedReport.title
+      const budgetFormatted = (
+        await this.computeReportBudgetDisplay(fullyUpdatedReport)
+      ).toFixed(2)
+      const expenseCount = fullyUpdatedReport.expenseIds?.length ?? 0
+      const platformUrl = this.emailService.buildAppUrl(
+        `/mis-rendiciones/${id}/detalle`
+      )
+
+      const ownerProfile =
+        await this.userService.findTransactionalProfile(ownerId)
+      const ownerCoordinatorId =
+        ownerProfile?.coordinatorId?.toString?.() || ''
+      const ownerEmailLower =
+        typeof ownerRef === 'object' && ownerRef?.email
+          ? String(ownerRef.email).trim().toLowerCase()
+          : ''
+
+      const accountingUsersRaw =
+        await this.userService.findAccountingRecipientsWithIds(clientId)
+      const accountingUsers = accountingUsersRaw.filter(
+        u =>
+          u._id !== ownerId &&
+          u._id !== ownerCoordinatorId &&
+          (ownerEmailLower
+            ? u.email?.trim().toLowerCase() !== ownerEmailLower
+            : true)
+      )
+      for (const u of accountingUsers) {
+        await this.notificationsService.create({
+          userId: u._id,
+          title: 'Rendición aprobada por Coordinador',
+          message: `La rendición "${reportTitle}" fue aprobada por el coordinador y está lista para tu aprobación final.`,
+          type: 'info',
+          actionUrl: `/mis-rendiciones/${id}/detalle`,
+        })
+
+        try {
+          const accountingEmailEnabled =
+            await this.userService.isEmailEnabled(u._id)
+          if (accountingEmailEnabled) {
+            await this.emailService.sendRendicionPendienteContabilidad(
+              u.email,
+              {
+                clientId,
+                recipientName: u.name,
+                collaboratorName,
+                reportTitle,
+                budgetFormatted,
+                expenseCount,
+                platformUrl,
+              }
+            )
+          }
+        } catch (mailErr) {
+          console.error(
+            `[pending_accounting] Error correo contabilidad ${u.email}:`,
+            mailErr
+          )
+        }
+      }
+
+      await this.notificationsService.create({
+        userId: ownerId,
+        title: 'Tu rendición fue aprobada por el Coordinador',
+        message: `Tu rendición "${reportTitle}" fue aprobada por el coordinador. Contabilidad realizará la revisión final.`,
+        type: 'success',
+        actionUrl: `/mis-rendiciones/${id}/detalle`,
+      })
+    } catch (error) {
+      console.error(
+        'Error enviando notificaciones a contabilidad (pending_accounting)',
+        error
+      )
+    }
+  }
+
   async update(id: string, updateExpenseReportDto: UpdateExpenseReportDto) {
     const dto = updateExpenseReportDto
     const existing = await this.expenseReportModel
       .findById(id)
-      .select('status isDirecta type')
+      .select('status isDirecta type clientId projectId userId expenseIds')
       .lean()
       .exec()
     if (!existing) {
@@ -1053,10 +1174,25 @@ export class ExpenseReportService implements OnModuleInit {
     if (dto.description !== undefined) $set.description = dto.description
     if (dto.budget !== undefined) $set.budget = dto.budget
 
-    // Rendición directa: al enviar (submitted), auto-transicionar a pending_accounting
+    // Al enviar (o reenviar tras rechazo) una rendición — normal, directa, de
+    // caja chica, o la RENDICIÓN de comprobantes de un viático ya pagado — se
+    // (re)construye la cadena de aprobación por documento (regla 1.4) de cada
+    // uno de sus comprobantes — ver `buildExpenseChains`. La SOLICITUD del
+    // viático (createViatico/resubmitViatico, regla 1.3) tiene su propio flujo
+    // y no pasa por aquí; pero una vez pagado y enviado a rendición, sus
+    // comprobantes necesitan la misma cadena N1/N2 que cualquier otra.
     if (dto.status !== undefined) {
-      if (dto.status === 'submitted' && isDirecta) {
-        $set.status = 'pending_accounting'
+      if (dto.status === 'submitted') {
+        const ownerId = (existing as any).userId?.toString()
+        const reportClientId = (existing as any).clientId?.toString()
+        if (ownerId && reportClientId) {
+          await this.buildExpenseChains(
+            ((existing as any).expenseIds ?? []) as Types.ObjectId[],
+            ownerId,
+            reportClientId
+          )
+        }
+        $set.status = 'submitted'
       } else {
         $set.status = dto.status
       }
@@ -1066,6 +1202,14 @@ export class ExpenseReportService implements OnModuleInit {
       $set.clientId = new Types.ObjectId(dto.clientId)
     if (dto.projectId !== undefined) {
       $set.projectId = dto.projectId ? new Types.ObjectId(dto.projectId) : null
+      // El centro de costo cambió: se re-snapshotea su coordinador. Si se limpia
+      // el centro de costo, también se limpia el coordinador asignado.
+      $set.assignedCoordinatorId = dto.projectId
+        ? (await this.resolveAssignedCoordinatorId(
+          dto.projectId,
+          String((existing as any).clientId)
+        )) ?? null
+        : null
     }
     if (dto.expenseIds !== undefined && Array.isArray(dto.expenseIds)) {
       $set.expenseIds = dto.expenseIds.map(eId => new Types.ObjectId(eId))
@@ -1144,89 +1288,9 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     // Coordinador aprueba la rendición normal (→ pending_accounting): notificar a contabilidad + colaborador
-    // No aplica a rendiciones directas (ellas llegan aquí desde submitted automáticamente)
+    // No aplica a rendiciones directas (para directa se llama desde approveDirecta al completar su cadena)
     if (dto.status === 'pending_accounting' && !isDirecta) {
-      try {
-        const clientId = String(fullyUpdatedReport.clientId)
-        const ownerRef = fullyUpdatedReport.userId as any
-        const ownerId = ownerRef?._id ? String(ownerRef._id) : String(ownerRef)
-        const collaboratorName =
-          (typeof ownerRef === 'object' && ownerRef?.name) || 'Colaborador'
-        const reportTitle = fullyUpdatedReport.title
-        const budgetFormatted = (
-          await this.computeReportBudgetDisplay(fullyUpdatedReport)
-        ).toFixed(2)
-        const expenseCount = fullyUpdatedReport.expenseIds?.length ?? 0
-        const platformUrl = this.emailService.buildAppUrl(
-          `/mis-rendiciones/${id}/detalle`
-        )
-
-        const ownerProfile =
-          await this.userService.findTransactionalProfile(ownerId)
-        const ownerCoordinatorId =
-          ownerProfile?.coordinatorId?.toString?.() || ''
-        const ownerEmailLower =
-          typeof ownerRef === 'object' && ownerRef?.email
-            ? String(ownerRef.email).trim().toLowerCase()
-            : ''
-
-        const accountingUsersRaw =
-          await this.userService.findAccountingRecipientsWithIds(clientId)
-        const accountingUsers = accountingUsersRaw.filter(
-          u =>
-            u._id !== ownerId &&
-            u._id !== ownerCoordinatorId &&
-            (ownerEmailLower
-              ? u.email?.trim().toLowerCase() !== ownerEmailLower
-              : true)
-        )
-        for (const u of accountingUsers) {
-          await this.notificationsService.create({
-            userId: u._id,
-            title: 'Rendición aprobada por Coordinador',
-            message: `La rendición "${reportTitle}" fue aprobada por el coordinador y está lista para tu aprobación final.`,
-            type: 'info',
-            actionUrl: `/mis-rendiciones/${id}/detalle`,
-          })
-
-          try {
-            const accountingEmailEnabled =
-              await this.userService.isEmailEnabled(u._id)
-            if (accountingEmailEnabled) {
-              await this.emailService.sendRendicionPendienteContabilidad(
-                u.email,
-                {
-                  clientId,
-                  recipientName: u.name,
-                  collaboratorName,
-                  reportTitle,
-                  budgetFormatted,
-                  expenseCount,
-                  platformUrl,
-                }
-              )
-            }
-          } catch (mailErr) {
-            console.error(
-              `[pending_accounting] Error correo contabilidad ${u.email}:`,
-              mailErr
-            )
-          }
-        }
-
-        await this.notificationsService.create({
-          userId: ownerId,
-          title: 'Tu rendición fue aprobada por el Coordinador',
-          message: `Tu rendición "${reportTitle}" fue aprobada por el coordinador. Contabilidad realizará la revisión final.`,
-          type: 'success',
-          actionUrl: `/mis-rendiciones/${id}/detalle`,
-        })
-      } catch (error) {
-        console.error(
-          'Error enviando notificaciones a contabilidad (pending_accounting)',
-          error
-        )
-      }
+      await this.notifyAccountingReportPendingApproval(id, fullyUpdatedReport)
     }
 
     // Contabilidad aprueba la rendición (→ approved): notificar colaborador
@@ -1235,9 +1299,6 @@ export class ExpenseReportService implements OnModuleInit {
       console.log(`[APROBACIÓN RENDICIÓN] Entrando al bloque approved para rendición ${id}`)
       const owner = fullyUpdatedReport.userId as any
       const ownerId = owner?._id ? String(owner._id) : String(owner)
-
-      // Directa financiada con la bolsa: el sobrante regresa a la bolsa del colaborador.
-      await this.settleDirectaFinanciadaConBolsa(id, fullyUpdatedReport, ownerId)
 
       const reportTitle = fullyUpdatedReport.title
       const budgetDisplay =
@@ -1322,9 +1383,10 @@ export class ExpenseReportService implements OnModuleInit {
       // Enviar correo a tesorería con datos de pago al colaborador.
       try {
         const clientIdStr = String(fullyUpdatedReport.clientId)
-        console.log(`[TESORESRÍA RENDICIÓN] Buscando emails para clientId=${clientIdStr}`)
-        const tesoreriaEmails = await this.clientService.getTesoreriaEmails(clientIdStr)
-        console.log(`[TESORERÍA RENDICIÓN] Emails configurados: ${JSON.stringify(tesoreriaEmails)}`)
+        console.log(`[TESORESRÍA RENDICIÓN] Buscando usuarios de tesorería para clientId=${clientIdStr}`)
+        const tesoreriaRecipients = await this.userService.findTesoreriaNotifyRecipients(clientIdStr)
+        const tesoreriaEmails = tesoreriaRecipients.map(r => r.email)
+        console.log(`[TESORERÍA RENDICIÓN] Emails de tesorería: ${JSON.stringify(tesoreriaEmails)}`)
         if (tesoreriaEmails.length > 0) {
           const bank = (typeof owner === 'object' && owner?.bankAccount) || null
           const hasBankAccount = !!(bank?.accountNumber)
@@ -1482,42 +1544,17 @@ export class ExpenseReportService implements OnModuleInit {
         const ownerEmailKey = ownerEmail?.trim().toLowerCase() || ''
 
         if (isDirecta) {
-          // Rendición directa: salta coordinador. Va directo a Contabilidad.
+          // Rendición directa: la cadena de aprobación ya no es a nivel de
+          // reporte — cada comprobante tiene la suya (ver `buildExpenseChains`).
+          // TODO(7.7): notificar a los approverIds del paso pendiente de cada
+          // comprobante recién construido, igual que `notifyViaticoCoordinator`.
           await this.notificationsService.create({
             userId: ownerId2,
-            title: 'Rendición enviada a Contabilidad',
-            message: `Tu rendición "${fullyUpdatedReport.title}" fue enviada directamente a contabilidad para su revisión.`,
+            title: 'Rendición enviada para aprobación',
+            message: `Tu rendición "${fullyUpdatedReport.title}" fue enviada y está pendiente de aprobación por centro de costo.`,
             type: 'info',
             actionUrl: `/mis-rendiciones/${id}/detalle`,
           })
-
-          const sentEmails = new Set<string>()
-          if (ownerEmailKey) sentEmails.add(ownerEmailKey)
-
-          const accountingRecipients =
-            await this.userService.findContabilidadRecipients(clientId)
-          for (const r of accountingRecipients) {
-            const key = r.email.trim().toLowerCase()
-            if (sentEmails.has(key)) continue
-            sentEmails.add(key)
-            await this.emailService.sendRendicionSubmitted(r.email, {
-              recipientName: r.name,
-              ...emailData,
-            })
-          }
-
-          const accountingUsers =
-            await this.userService.findAccountingRecipientsWithIds(clientId)
-          for (const u of accountingUsers) {
-            if (u._id === ownerId2) continue
-            await this.notificationsService.create({
-              userId: u._id,
-              title: 'Nueva Rendición para Revisar',
-              message: `${creatorName} ha enviado la rendición directa "${fullyUpdatedReport.title}" para tu revisión.`,
-              type: 'warning',
-              actionUrl: `/mis-rendiciones/${id}/detalle`,
-            })
-          }
         } else {
           // Flujo normal: admins in-app + coordinador (in-app + correo) + contabilidad.
           const admins = await this.userService.findAdminsByClient(clientId)
@@ -1725,6 +1762,164 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Evalúa si `actor` puede eliminar `report` (mismas reglas documentadas en
+   * `remove()`), sin lanzar excepción ni mutar nada. La usan tanto `remove()`
+   * (que sí lanza `ForbiddenException` si `!allowed`) como `getDeletionPreview()`
+   * (solo lectura, para la advertencia previa a confirmar en el front).
+   */
+  private async evaluateDeleteAuthorization(
+    report: any,
+    expenses: {
+      approvalLevel?: number
+      contabilidadStatus?: string
+    }[],
+    actor: SolicitudDeleteActor
+  ): Promise<{
+    allowed: boolean
+    reason?: string
+    linkedAdvances: { _id: Types.ObjectId; status: string; amount: number }[]
+    hasApprovedAdvance: boolean
+  }> {
+    const role = actor?.role ?? ''
+    const isSuperAdmin = role === ROLES.SUPER_ADMIN
+    const isContabilidad = role === ROLES.CONTABILIDAD
+    const isColaborador = role === ROLES.COLABORADOR
+
+    // "Aprobado por alguien" = aprobación a nivel comprobante O a nivel reporte.
+    const reportLevelApproved =
+      !!report.coordinatorApprovedBy || !!report.contabilidadApprovedBy
+    const anyExpenseApproved = expenses.some(
+      e => (e.approvalLevel ?? 0) > 0 || e.contabilidadStatus === 'approved'
+    )
+
+    // Condiciones que restringen el borrado a solo Contabilidad/Superadmin (el
+    // colaborador/coordinador dueño ya no puede eliminar).
+    let restricted = reportLevelApproved || anyExpenseApproved
+    let restrictedMsg =
+      'Esta solicitud ya tiene una aprobación; solo Contabilidad puede eliminarla.'
+
+    // Rendición directa creada por Contabilidad para el colaborador/coordinador
+    // (createdBy distinto del dueño): solo Contabilidad puede eliminarla.
+    if (!restricted && report.isDirecta) {
+      const createdById = String(report.createdBy ?? '')
+      const ownerId = String(report.userId ?? '')
+      if (createdById && ownerId && createdById !== ownerId) {
+        restricted = true
+        restrictedMsg =
+          'Esta rendición directa fue creada por Contabilidad; solo Contabilidad puede eliminarla.'
+      }
+    }
+
+    // Caja chica ya incluida (jalada) por Contabilidad en un reporte —borrador o
+    // finalizado—: solo Contabilidad puede eliminarla.
+    if (!restricted && report.isCajaChica) {
+      if (await this.isReferencedByCajaChica(String(report._id))) {
+        restricted = true
+        restrictedMsg =
+          'Esta caja chica ya fue incluida por Contabilidad en un reporte; solo Contabilidad puede eliminarla.'
+      }
+    }
+
+    // Rendición de viáticos: si su anticipo vinculado ya fue aprobado/pagado (el
+    // coordinador aprobó y/o contabilidad pagó), la rendición representa dinero ya
+    // desembolsado y NO puede eliminarse por la app —ni el colaborador ni
+    // Contabilidad—. Solo Superadmin (escape técnico). Estas rendiciones se
+    // auto-crean al registrar el pago del anticipo.
+    let linkedAdvances: { _id: Types.ObjectId; status: string; amount: number }[] = []
+    let hasApprovedAdvance = false
+    if (!report.isDirecta && !report.isCajaChica) {
+      const rawAdvanceIds: string[] = (
+        Array.isArray(report.advanceIds) ? report.advanceIds : []
+      ).map((x: any) => (x && typeof x === 'object' && '_id' in x ? String(x._id) : String(x)))
+      linkedAdvances = (await this.advanceService.findByExpenseReportId(
+        String(report._id),
+        rawAdvanceIds
+      )) as unknown as { _id: Types.ObjectId; status: string; amount: number }[]
+      hasApprovedAdvance = linkedAdvances.some((a: any) =>
+        ['approved', 'partially_paid', 'paid', 'settled'].includes(a.status)
+      )
+      if (hasApprovedAdvance && !isSuperAdmin) {
+        return {
+          allowed: false,
+          reason:
+            'El anticipo de esta rendición ya fue aprobado/pagado; la rendición no puede eliminarse.',
+          linkedAdvances,
+          hasApprovedAdvance,
+        }
+      }
+    }
+
+    if (restricted) {
+      if (!isContabilidad && !isSuperAdmin) {
+        return { allowed: false, reason: restrictedMsg, linkedAdvances, hasApprovedAdvance }
+      }
+    } else if (isColaborador) {
+      // Estados iniciales: el colaborador solo puede eliminar las suyas.
+      const ownerId = String(report.createdBy ?? report.userId ?? '')
+      if (ownerId !== String(actor.userId)) {
+        return {
+          allowed: false,
+          reason: 'Solo puedes eliminar tus propias solicitudes.',
+          linkedAdvances,
+          hasApprovedAdvance,
+        }
+      }
+    }
+
+    return { allowed: true, linkedAdvances, hasApprovedAdvance }
+  }
+
+  /**
+   * Vista previa de lo que se eliminaría (y si el actor puede hacerlo), sin
+   * borrar nada. La usa el front para mostrar la advertencia antes de confirmar.
+   */
+  async getDeletionPreview(id: string, actor: SolicitudDeleteActor) {
+    const report = await this.expenseReportModel.findById(id).lean().exec()
+    if (!report)
+      throw new NotFoundException(`Expense report with ID ${id} not found`)
+
+    const expenseIds = report.expenseIds ?? []
+    const expenses = expenseIds.length
+      ? await this.expenseModel
+        .find({ _id: { $in: expenseIds } })
+        .select('_id total file expenseType approvalLevel contabilidadStatus')
+        .lean()
+        .exec()
+      : []
+
+    const authResult = await this.evaluateDeleteAuthorization(
+      report,
+      expenses,
+      actor
+    )
+    const expensesTotal = expenses.reduce(
+      (sum, e: any) => sum + (Number(e.total) || 0),
+      0
+    )
+    const filesCount = expenses.filter((e: any) => !!e.file).length
+    const cajaChicaReferenced = report.isCajaChica
+      ? await this.isReferencedByCajaChica(id)
+      : false
+
+    return {
+      allowed: authResult.allowed,
+      reason: authResult.reason,
+      type: report.type,
+      isDirecta: !!report.isDirecta,
+      isCajaChica: !!report.isCajaChica,
+      budget: report.budget,
+      expensesCount: expenses.length,
+      expensesTotal,
+      filesCount,
+      linkedAdvances: authResult.linkedAdvances.map((a: any) => ({
+        amount: a.amount,
+        status: a.status,
+      })),
+      cajaChicaReferenced,
+    }
+  }
+
+  /**
    * Elimina una solicitud (rendición directa / caja chica) completa, con cascada
    * de comprobantes y sus archivos. La autorización depende del estado de aprobación:
    *  - Sin comprobantes o con comprobantes pero ninguno aprobado:
@@ -1737,101 +1932,25 @@ export class ExpenseReportService implements OnModuleInit {
     if (!report)
       throw new NotFoundException(`Expense report with ID ${id} not found`)
 
-    const role = actor?.role ?? ''
-    const isSuperAdmin = role === ROLES.SUPER_ADMIN
-    const isContabilidad = role === ROLES.CONTABILIDAD
-    const isColaborador = role === ROLES.COLABORADOR
-
     // Carga los comprobantes adjuntos para evaluar el estado de aprobación.
     const expenseIds = report.expenseIds ?? []
     const expenses = expenseIds.length
       ? await this.expenseModel
         .find({ _id: { $in: expenseIds } })
-        .select('_id file approvalCoord approvalCont')
+        .select('_id file approvalLevel contabilidadStatus')
         .lean()
         .exec()
       : []
 
-    // "Aprobado por alguien" = aprobación a nivel comprobante O a nivel reporte.
-    const reportLevelApproved =
-      !!report.coordinatorApprovedBy || !!report.contabilidadApprovedBy
-    const anyExpenseApproved = expenses.some(
-      e =>
-        e.approvalCoord?.status === 'approved' ||
-        e.approvalCont?.status === 'approved'
+    const authResult = await this.evaluateDeleteAuthorization(
+      report,
+      expenses,
+      actor
     )
-
-    // Condiciones que restringen el borrado a solo Contabilidad/Superadmin (el
-    // colaborador/coordinador dueño ya no puede eliminar).
-    let restricted = reportLevelApproved || anyExpenseApproved
-    let restrictedMsg =
-      'Esta solicitud ya tiene una aprobación; solo Contabilidad puede eliminarla.'
-
-    // Rendición directa creada por Contabilidad para el colaborador/coordinador
-    // (createdBy distinto del dueño), o creada con saldo heredado de otra
-    // rendición (borrarla rompería la cadena del saldo): solo Contabilidad.
-    if (!restricted && report.isDirecta) {
-      const createdById = String(report.createdBy ?? '')
-      const ownerId = String(report.userId ?? '')
-      if (createdById && ownerId && createdById !== ownerId) {
-        restricted = true
-        restrictedMsg =
-          'Esta rendición directa fue creada por Contabilidad; solo Contabilidad puede eliminarla.'
-      } else if (report.pendingBalanceFromReportId && expenses.length > 0) {
-        // Saldo heredado CON gastos ya cargados: borrarla rompería la cadena del
-        // saldo, solo Contabilidad. Si aún NO se subió ningún gasto, el dueño
-        // puede eliminarla: el borrado restaura el saldo a la bolsa
-        // (restoreByConsumer) y libera la rendición de origen
-        // (unmarkPendingBalanceUsed), volviendo todo al estado anterior.
-        restricted = true
-        restrictedMsg =
-          'Esta rendición directa se creó con saldo heredado de otra rendición; solo Contabilidad puede eliminarla.'
-      }
+    if (!authResult.allowed) {
+      throw new ForbiddenException(authResult.reason)
     }
-
-    // Caja chica ya incluida (jalada) por Contabilidad en un reporte —borrador o
-    // finalizado—: solo Contabilidad puede eliminarla.
-    if (!restricted && report.isCajaChica) {
-      if (await this.isReferencedByCajaChica(id)) {
-        restricted = true
-        restrictedMsg =
-          'Esta caja chica ya fue incluida por Contabilidad en un reporte; solo Contabilidad puede eliminarla.'
-      }
-    }
-
-    // Rendición de viáticos: si su anticipo vinculado ya fue aprobado/pagado (el
-    // coordinador aprobó y/o contabilidad pagó), la rendición representa dinero ya
-    // desembolsado y NO puede eliminarse por la app —ni el colaborador ni
-    // Contabilidad—. Solo Superadmin (escape técnico). Estas rendiciones se
-    // auto-crean al registrar el pago del anticipo.
-    if (!report.isDirecta && !report.isCajaChica) {
-      const rawAdvanceIds: string[] = (
-        Array.isArray(report.advanceIds) ? report.advanceIds : []
-      ).map((x: any) => (x && typeof x === 'object' && '_id' in x ? String(x._id) : String(x)))
-      const linked = await this.advanceService.findByExpenseReportId(id, rawAdvanceIds)
-      const hasApprovedAdvance = linked.some((a: any) =>
-        ['approved', 'partially_paid', 'paid', 'settled'].includes(a.status)
-      )
-      if (hasApprovedAdvance && !isSuperAdmin) {
-        throw new ForbiddenException(
-          'El anticipo de esta rendición ya fue aprobado/pagado; la rendición no puede eliminarse.'
-        )
-      }
-    }
-
-    if (restricted) {
-      if (!isContabilidad && !isSuperAdmin) {
-        throw new ForbiddenException(restrictedMsg)
-      }
-    } else if (isColaborador) {
-      // Estados iniciales: el colaborador solo puede eliminar las suyas.
-      const ownerId = String(report.createdBy ?? report.userId ?? '')
-      if (ownerId !== String(actor.userId)) {
-        throw new ForbiddenException(
-          'Solo puedes eliminar tus propias solicitudes.'
-        )
-      }
-    }
+    const linkedAdvances = authResult.linkedAdvances
 
     // Cascada: elimina los comprobantes adjuntos y sus archivos en S3.
     if (expenses.length > 0) {
@@ -1841,24 +1960,58 @@ export class ExpenseReportService implements OnModuleInit {
       await this.expenseModel.deleteMany({ _id: { $in: expenseIds } }).exec()
     }
 
-    // Devolver a la bolsa los saldos que esta rendición había consumido (si los
-    // hubo), para que el colaborador no los pierda al eliminarla. Si devolvió un
-    // "vuelto" (saldo > total), se neutraliza primero para no contarlo dos veces.
-    try {
-      await this.saldoService.removeViaticoChangeByReport(id)
-      await this.saldoService.restoreByConsumer({ reportId: id })
-      // Saldo heredado: libera la rendición de origen para que su saldo vuelva a estar
-      // disponible (en el caso típico no dejó remanente en la bolsa que restaurar).
-      if (report.pendingBalanceFromReportId) {
-        await this.unmarkPendingBalanceUsed(String(report.pendingBalanceFromReportId), id)
+    // Anticipos vinculados: nunca se borran (registro financiero), solo se
+    // desvinculan de la rendición eliminada para no dejar una FK colgando. Si
+    // aún no habían sido pagados, vuelven a aparecer como huérfanos y siguen
+    // su flujo normal de aprobación/pago.
+    let advancesUnlinked = 0
+    if (linkedAdvances.length > 0) {
+      try {
+        advancesUnlinked = await this.advanceService.detachFromDeletedReport(
+          linkedAdvances.map(a => a._id)
+        )
+      } catch (err: unknown) {
+        this.logger.error(
+          `Desvincular anticipos al eliminar ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
       }
-    } catch (err: unknown) {
-      this.logger.error(
-        `Revertir saldos al eliminar ${id}: ${err instanceof Error ? err.message : String(err)}`
-      )
     }
+
+    // Caja chica: si esta rendición ya había sido incluida (jalada) por
+    // Contabilidad en algún reporte de caja chica —borrador o finalizado—,
+    // quita la referencia para no dejarla apuntando a un documento eliminado.
+    // `totalAmount` es denormalizado y se recalcula solo en la próxima lectura
+    // (ver CajaChicaReportService.findAllByClient/findOne).
+    let cajaChicaReportsUpdated = 0
+    if (report.isCajaChica) {
+      try {
+        const pulled = await this.cajaChicaReportModel
+          .updateMany(
+            { 'selectedReports.expenseReportId': new Types.ObjectId(id) },
+            {
+              $pull: {
+                selectedReports: { expenseReportId: new Types.ObjectId(id) },
+              },
+            }
+          )
+          .exec()
+        cajaChicaReportsUpdated = pulled.modifiedCount ?? 0
+      } catch (err: unknown) {
+        this.logger.error(
+          `Limpiar referencias de caja chica al eliminar ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+
     await this.expenseReportModel.findByIdAndDelete(id).exec()
-    return report
+    return {
+      ...report,
+      deletionSummary: {
+        expensesDeleted: expenses.length,
+        advancesUnlinked,
+        cajaChicaReportsUpdated,
+      },
+    }
   }
 
   /**
@@ -2123,7 +2276,7 @@ export class ExpenseReportService implements OnModuleInit {
     const reports = await this.expenseReportModel
       .find(query)
       .select(
-        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds pendingBalanceFromReportId pendingBalanceAmount saldoIds pendingBalanceUsedInRendicionId pendingBalanceUsedInAdvanceId returnVoucher'
+        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher'
       )
       .populate('userId', 'name email')
       .populate({
@@ -2152,20 +2305,8 @@ export class ExpenseReportService implements OnModuleInit {
         (s, e) => s + (Number(e?.total) || 0),
         0
       )
-      // Rendición directa creada desde el saldo de otra (saldo heredado): no tiene
-      // `directaDeposit`, pero su presupuesto disponible es el saldo trasladado.
-      const hasInheritedBalance =
-        !!r.pendingBalanceFromReportId &&
-        Number(r.pendingBalanceAmount ?? 0) > 0
-      // Rendición directa financiada con saldos de la bolsa: su presupuesto disponible
-      // es el `budget` (suma de los saldos consumidos).
-      const hasSaldoFinancing =
-        Array.isArray(r.saldoIds) && r.saldoIds.length > 0
-      const deposited = Number(
-        r.directaDeposit?.amount ?? r.pendingBalanceAmount ?? r.budget ?? 0
-      )
-      const hasFunds =
-        !!r.directaDeposit || hasInheritedBalance || hasSaldoFinancing
+      const deposited = Number(r.directaDeposit?.amount ?? r.budget ?? 0)
+      const hasFunds = !!r.directaDeposit
       return {
         _id: String(r._id),
         codigo: r.codigo ?? null,
@@ -2173,12 +2314,8 @@ export class ExpenseReportService implements OnModuleInit {
         title: r.title ?? null,
         motivo: r.motivo ?? null,
         status: r.status ?? null,
-        // Cerrada (a efectos de label): saldo trasladado a otra rendición/anticipo o devuelto.
-        effectivelyClosed:
-          r.status === 'closed' ||
-          !!r.pendingBalanceUsedInRendicionId ||
-          !!r.pendingBalanceUsedInAdvanceId ||
-          !!r.returnVoucher,
+        // Cerrada (a efectos de label): devuelta con comprobante.
+        effectivelyClosed: r.status === 'closed' || !!r.returnVoucher,
         createdAt: r.createdAt,
         hasDeposit: hasFunds,
         deposited,
@@ -2195,28 +2332,52 @@ export class ExpenseReportService implements OnModuleInit {
   async addExpenseToReport(reportId: string, expenseId: string) {
     const existing = await this.expenseReportModel
       .findById(reportId)
-      .select('status')
+      .select('status userId clientId expenseIds')
       .lean()
       .exec()
 
     const updateOp: Record<string, unknown> = {
       $push: { expenseIds: new Types.ObjectId(expenseId) },
     }
-    if ((existing as any)?.status === 'rejected') {
+    const wasRejected = (existing as any)?.status === 'rejected'
+    if (wasRejected) {
       updateOp.$set = { status: 'submitted' }
       updateOp.$unset = { rejectionReason: '', rejectedByRole: '' }
     }
 
-    return await this.expenseReportModel
+    const updated = await this.expenseReportModel
       .findByIdAndUpdate(reportId, updateOp, { new: true })
       .exec()
+
+    const ownerId = (existing as any)?.userId?.toString()
+    const reportClientId = (existing as any)?.clientId?.toString()
+    const wasSubmitted = (existing as any)?.status === 'submitted'
+    if (ownerId && reportClientId) {
+      if (wasRejected) {
+        // Rendición rechazada y corregida: se (re)construye la cadena de
+        // TODOS sus comprobantes (mismo criterio que un reenvío normal desde
+        // `update()`) — el revisor vuelve a validar todo desde cero.
+        const expenseIds = [
+          ...((existing as any)?.expenseIds ?? []),
+          new Types.ObjectId(expenseId),
+        ] as Types.ObjectId[]
+        await this.buildExpenseChains(expenseIds, ownerId, reportClientId, { force: true })
+      } else if (wasSubmitted) {
+        // Rendición ya enviada y en curso de aprobación: solo se construye la
+        // cadena del comprobante NUEVO — no se toca la de los existentes, que
+        // pueden tener aprobaciones N1/N2 ya en curso.
+        await this.buildExpenseChains([new Types.ObjectId(expenseId)], ownerId, reportClientId)
+      }
+    }
+
+    return updated
   }
 
   /** Cambia silenciosamente el estado de una rendición rechazada a enviada, sin notificaciones. */
   async resubmitSilent(reportId: string): Promise<void> {
     const existing = await this.expenseReportModel
       .findById(reportId)
-      .select('status')
+      .select('status userId clientId expenseIds')
       .lean()
       .exec()
     if (!existing || (existing as any).status !== 'rejected') return
@@ -2226,6 +2387,19 @@ export class ExpenseReportService implements OnModuleInit {
         $unset: { rejectionReason: '', rejectedByRole: '' },
       })
       .exec()
+    // Igual que en `update()`: al reenviar se (re)construye la cadena de cada
+    // comprobante — sin esto, comprobantes de la rendición reabierta quedaban
+    // con `approverChain` sin (re)construir, o con el de un envío anterior.
+    const ownerId = (existing as any).userId?.toString()
+    const reportClientId = (existing as any).clientId?.toString()
+    if (ownerId && reportClientId) {
+      await this.buildExpenseChains(
+        ((existing as any).expenseIds ?? []) as Types.ObjectId[],
+        ownerId,
+        reportClientId,
+        { force: true }
+      )
+    }
   }
 
   async removeExpenseFromReport(
@@ -2249,48 +2423,6 @@ export class ExpenseReportService implements OnModuleInit {
       .exec()
   }
 
-  async markPendingBalanceUsed(reportId: string, advanceId: string) {
-    return await this.expenseReportModel
-      .findByIdAndUpdate(
-        reportId,
-        {
-          $set: {
-            pendingBalanceUsedInAdvanceId: new Types.ObjectId(advanceId),
-          },
-        },
-        { new: true }
-      )
-      .exec()
-  }
-
-  /**
-   * Revierte la marca de "saldo trasladado" en la rendición de origen cuando el
-   * documento que heredó su saldo (viático/anticipo) se rechaza, cancela o elimina, de
-   * modo que ese saldo vuelva a estar disponible para reutilizarse. Solo actúa si la
-   * marca apunta a ese mismo documento consumidor (no pisa un traslado posterior).
-   */
-  async unmarkPendingBalanceUsed(sourceReportId: string, consumerId: string) {
-    const consumer = new Types.ObjectId(consumerId)
-    return await this.expenseReportModel
-      .findOneAndUpdate(
-        {
-          _id: new Types.ObjectId(sourceReportId),
-          $or: [
-            { pendingBalanceUsedInAdvanceId: consumer },
-            { pendingBalanceUsedInRendicionId: consumer },
-          ],
-        },
-        {
-          $unset: {
-            pendingBalanceUsedInAdvanceId: '',
-            pendingBalanceUsedInRendicionId: '',
-          },
-        },
-        { new: true }
-      )
-      .exec()
-  }
-
   async updateSettlement(reportId: string, settlement: any) {
     return await this.expenseReportModel
       .findByIdAndUpdate(reportId, { $set: { settlement } }, { new: true })
@@ -2299,145 +2431,10 @@ export class ExpenseReportService implements OnModuleInit {
 
   /**
    * Fondos entregados al colaborador en una rendición directa: depósito de
-   * contabilidad, saldo heredado de otra rendición, o financiamiento con la bolsa
-   * de saldos (`saldoIds` → presupuesto). Base para calcular devolución vs reembolso.
+   * contabilidad. Base para calcular devolución vs reembolso.
    */
   private directaFundsGiven(report: any): number {
-    const deposit = Number(report?.directaDeposit?.amount ?? 0)
-    if (deposit > 0) return deposit
-    const inherited = Number(report?.pendingBalanceAmount ?? 0)
-    if (report?.pendingBalanceFromReportId && inherited > 0) return inherited
-    if (Array.isArray(report?.saldoIds) && report.saldoIds.length > 0) {
-      return Number(report?.budget ?? 0)
-    }
-    return 0
-  }
-
-  /**
-   * Al aprobar una rendición directa financiada con la bolsa de saldos, el
-   * sobrante (presupuesto − gastado) regresa automáticamente a la bolsa del
-   * colaborador como saldo remanente (`rendicion_directa`). Si luego decide
-   * devolverlo a contabilidad, ese remanente se descuenta. Idempotente por rendición.
-   */
-  private async settleDirectaFinanciadaConBolsa(
-    reportId: string,
-    report: any,
-    ownerId: string
-  ): Promise<void> {
-    // El sobrante regresa a la bolsa cuando los fondos venían del propio colaborador:
-    // saldos de la bolsa (saldoIds) o saldo heredado de otra rendición
-    // (pendingBalanceFromReportId). Las directas con depósito de contabilidad
-    // mantienen su flujo de devolución y no entran aquí.
-    const hasBolsa = Array.isArray(report?.saldoIds) && report.saldoIds.length > 0
-    const hasInherited =
-      !!report?.pendingBalanceFromReportId &&
-      Number(report?.pendingBalanceAmount ?? 0) > 0
-    if (!report?.isDirecta || (!hasBolsa && !hasInherited)) {
-      return
-    }
-    // El sobrante no debe (re)publicarse en la bolsa si ya tuvo otro destino:
-    // - trasladado a otra rendición/anticipo (pendingBalanceUsedIn*): ya está
-    //   representado como presupuesto de la rendición destino.
-    // - devuelto a contabilidad (returnVoucher): el dinero regresó a la empresa,
-    //   no puede seguir en la bolsa del colaborador.
-    // En ambos casos, evita el doble conteo.
-    if (
-      report?.pendingBalanceUsedInRendicionId ||
-      report?.pendingBalanceUsedInAdvanceId ||
-      report?.returnVoucher
-    ) {
-      return
-    }
-    const budget = Number(report?.budget ?? 0)
-    const populated = await this.expenseReportModel
-      .findById(reportId)
-      .populate('expenseIds', 'total')
-      .lean()
-      .exec()
-    const gastado = (((populated as any)?.expenseIds as any[]) ?? []).reduce(
-      (s, e) => s + (Number(e?.total) || 0),
-      0
-    )
-    const difference = budget - gastado
-    if (Math.abs(difference) >= 0.01) {
-      await this.updateSettlement(reportId, {
-        advanceTotal: budget,
-        expenseTotal: gastado,
-        difference,
-        type: difference > 0 ? 'devolucion' : 'reembolso',
-        settledAt: new Date(),
-        // El sobrante quedó disponible en la bolsa (no exige comprobante para cerrar).
-        toBolsa: difference > 0,
-      })
-    }
-    if (difference > 0.01) {
-      try {
-        await this.saldoService.createFromRemnant({
-          userId: ownerId,
-          clientId: report.clientId,
-          projectId: report?.projectId ?? null,
-          sourceReportId: reportId,
-          amount: difference,
-          type: 'rendicion_directa',
-        })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        this.logger.error(`Remanente directa-bolsa ${reportId}: ${msg}`)
-      }
-    }
-  }
-
-  /**
-   * Garantiza (perezosamente, al abrir el detalle) que una directa financiada con
-   * bolsa ya aprobada con sobrante tenga su remanente en la bolsa. Solo actúa si aún
-   * no fue liquidada (`!settlement`) y hay sobrante; idempotente y no bloqueante.
-   */
-  private async ensureDirectaBolsaRemnant(
-    reportId: string,
-    report: any
-  ): Promise<void> {
-    const status = report?.status
-    const hasBolsa = Array.isArray(report?.saldoIds) && report.saldoIds.length > 0
-    const hasInherited =
-      !!report?.pendingBalanceFromReportId &&
-      Number(report?.pendingBalanceAmount ?? 0) > 0
-    if (
-      !report?.isDirecta ||
-      (!hasBolsa && !hasInherited) ||
-      (status !== 'approved' && status !== 'closed') ||
-      report?.settlement
-    ) {
-      return
-    }
-    const budget = Number(report?.budget ?? 0)
-    const gastado = ((report?.expenseIds as any[]) ?? []).reduce(
-      (s, e) => s + (Number(e?.total) || 0),
-      0
-    )
-    if (budget - gastado <= 0.01) return
-    const owner = report.userId
-    const ownerId = owner?._id ? String(owner._id) : String(owner)
-    await this.settleDirectaFinanciadaConBolsa(reportId, report, ownerId)
-  }
-
-  /**
-   * Si el remanente que originó esta rendición directa ya fue consumido por otra
-   * (financiándola con la bolsa) pero la fuente no quedó marcada como "trasladada",
-   * la marca al abrir el detalle. Idempotente y no bloqueante.
-   */
-  private async ensureSourceMarkedIfRemnantConsumed(
-    reportId: string,
-    report: any
-  ): Promise<void> {
-    if (!report?.isDirecta || report?.pendingBalanceUsedInRendicionId) return
-    const consumer = await this.saldoService.findRemnantConsumer(reportId)
-    if (!consumer) return
-    await this.expenseReportModel
-      .findByIdAndUpdate(reportId, {
-        pendingBalanceUsedInRendicionId: new Types.ObjectId(consumer),
-      })
-      .exec()
-    report.pendingBalanceUsedInRendicionId = new Types.ObjectId(consumer)
+    return Number(report?.directaDeposit?.amount ?? 0)
   }
 
   async setApprovedBy(reportId: string, userId: string) {
@@ -2525,21 +2522,108 @@ export class ExpenseReportService implements OnModuleInit {
     })
   }
 
-  async findPendingReimbursementsByClient(clientId: string) {
-    return this.expenseReportModel
+  /**
+   * Viáticos (rendiciones tipo viatico) aprobados y pendientes de pago, para el
+   * lote de pagos BBVA. Devuelve el saldo por pagar y los datos bancarios (de la
+   * solicitud si existen, si no del perfil del colaborador). VD-7.
+   */
+  async findBatchPayableViaticos(clientId: string) {
+    const rows = await this.expenseReportModel
       .find({
         clientId: new Types.ObjectId(clientId),
+        type: 'viatico',
+        status: { $in: ['viatico_approved', 'partially_paid'] },
+      })
+      .populate('userId', 'name email dni documentType bankAccount')
+      .lean()
+      .exec()
+
+    return rows
+      .map((r: any) => {
+        const remaining =
+          Number(r.viaticoAmount ?? 0) - Number(r.viaticoPaidAmount ?? 0)
+        return {
+          reportId: String(r._id),
+          user: r.userId,
+          remaining: Math.round(remaining * 100) / 100,
+          bankName: r.viaticoBankName ?? r.userId?.bankAccount?.bankName ?? '',
+          accountNumber:
+            r.viaticoAccountNumber ?? r.userId?.bankAccount?.accountNumber ?? '',
+          cci: r.viaticoCci ?? r.userId?.bankAccount?.cci ?? '',
+        }
+      })
+      .filter(x => x.remaining > 0.009)
+  }
+
+  async findPendingReimbursementsByClient(clientId: string) {
+    const cid = new Types.ObjectId(clientId)
+    const noPayment = [
+      { reimbursementPaymentInfo: { $exists: false } },
+      { reimbursementPaymentInfo: null },
+    ]
+
+    // 1. Reportes con reembolso ya liquidado (settlement persistido).
+    const settled = await this.expenseReportModel
+      .find({
+        clientId: cid,
         status: 'approved',
         'settlement.type': 'reembolso',
-        $or: [
-          { reimbursementPaymentInfo: { $exists: false } },
-          { reimbursementPaymentInfo: null },
-        ],
+        $or: noPayment,
       })
-      .populate('userId', 'name email bankAccount')
+      .populate('userId', 'name email bankAccount dni documentType')
       .sort({ updatedAt: -1 })
       .lean()
       .exec()
+
+    // 2. Rendiciones directas aprobadas SIN settlement de reembolso persistido
+    //    (p. ej. aprobadas antes de VD-26). Se calcula el saldo a favor del
+    //    colaborador desde los gastos (todo gasto no rechazado, menos el depósito
+    //    si lo hubiera) y, si es positivo, se adjunta un settlement calculado para
+    //    que Tesorería pueda registrar el pago. Al confirmar, el backend recomputa
+    //    y persiste el settlement real (registerReimbursementPayment). VD-37.
+    const directas = await this.expenseReportModel
+      .find({
+        clientId: cid,
+        isDirecta: true,
+        status: 'approved',
+        'settlement.type': { $ne: 'reembolso' },
+        $or: noPayment,
+      })
+      .populate('userId', 'name email bankAccount dni documentType')
+      .populate('expenseIds', 'total status')
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec()
+
+    const computedDirectas = directas
+      .map(r => {
+        const deposit = Number((r as any).directaDeposit?.amount ?? 0)
+        const gastado = (((r as any).expenseIds as any[]) || []).reduce(
+          (s: number, e: any) => {
+            const st = String(e?.status || '').toLowerCase()
+            return st === 'rejected' ? s : s + (Number(e?.total) || 0)
+          },
+          0
+        )
+        return { r, deposit, gastado, difference: deposit - gastado }
+      })
+      // difference < 0 ⇒ el colaborador gastó más de lo depositado ⇒ reembolso.
+      .filter(x => x.difference < -0.01)
+      .map(({ r, deposit, gastado, difference }) => ({
+        ...r,
+        settlement: {
+          advanceTotal: deposit,
+          expenseTotal: gastado,
+          difference,
+          type: 'reembolso' as const,
+        },
+      }))
+
+    return [...settled, ...computedDirectas].sort((a, b) =>
+      String((b as any).updatedAt ?? '').localeCompare(
+        String((a as any).updatedAt ?? '')
+      )
+    )
   }
 
   async findMyDocuments(userId: string, clientId: string) {
@@ -2632,21 +2716,24 @@ export class ExpenseReportService implements OnModuleInit {
     dto: RegisterReimbursementPaymentDto,
     userRole: string,
     userPermissions?: { canApproveL2?: boolean },
-    tenantCtx?: { requestClientId: string; isSuperAdmin: boolean }
+    tenantCtx?: { requestClientId: string; isSuperAdmin: boolean },
+    opts?: { bypassReceipt?: boolean }
   ) {
     // El reembolso lo registra Tesorería (Contabilidad/SuperAdmin o delegado
     // con L2). El Coordinador queda excluido aunque tenga canApproveL2 o el
     // RolesGuard lo aliase a Administrador: por rol no participa en el pago.
     const canPay =
       userRole !== ROLES.COORDINADOR &&
-      (userRole === ROLES.SUPER_ADMIN || userPermissions?.canApproveL2 === true)
+      (userRole === ROLES.SUPER_ADMIN ||
+        userRole === ROLES.TESORERIA ||
+        userPermissions?.canApproveL2 === true)
     if (!canPay) {
       throw new ForbiddenException(
         'No tienes permiso para registrar pagos de reembolso.'
       )
     }
 
-    if (dto.method !== 'efectivo' && !dto.paymentReceiptUrl) {
+    if (!opts?.bypassReceipt && dto.method !== 'efectivo' && !dto.paymentReceiptUrl) {
       throw new BadRequestException(
         'El comprobante es obligatorio para pagos por transferencia o cheque.'
       )
@@ -2857,19 +2944,28 @@ export class ExpenseReportService implements OnModuleInit {
   async findOneWithAdvances(id: string) {
     const report = await this.expenseReportModel
       .findById(id)
-      .populate('userId', 'name email signature bankAccount dni')
+      .populate('userId', 'name email signature bankAccount dni area')
       .populate({
         path: 'expenseIds',
         populate: [
-          { path: 'categoryId', select: 'name' },
+          { path: 'categoryId', select: 'name cuenta' },
           { path: 'proyectId', select: 'name' },
+          {
+            path: 'ordenTrabajoId',
+            select: 'nombre costCenterId',
+            populate: { path: 'costCenterId', select: 'code name' },
+          },
         ],
       })
       .populate('advanceIds')
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('projectId', 'name')
-      .populate('viaticoOrdenTrabajoId', 'codigo departamento descripcion')
+      .populate({
+        path: 'viaticoOrdenTrabajoId',
+        select: 'nombre costCenterId',
+        populate: { path: 'costCenterId', select: 'code name' },
+      })
       .exec()
     if (!report)
       throw new NotFoundException(`Expense report with ID ${id} not found`)
@@ -3187,15 +3283,6 @@ export class ExpenseReportService implements OnModuleInit {
     await this.expenseReportModel
       .findByIdAndUpdate(id, { $set: { returnVoucher: voucher } })
       .exec()
-
-    // Si el sobrante había quedado en la bolsa (directa financiada con saldo) y el
-    // colaborador decide devolverlo a contabilidad, se descuenta de la bolsa.
-    try {
-      await this.saldoService.removeRemnantBySourceReport(id)
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.logger.error(`Descontar remanente al devolver ${id}: ${msg}`)
-    }
 
     const amountFormatted = Math.abs(
       Number(notifySettlement.difference ?? 0)
@@ -3562,6 +3649,11 @@ export class ExpenseReportService implements OnModuleInit {
     return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
+  /** Símbolo de moneda ('S/' / '$') a partir del código SUNAT guardado en el viático. */
+  private viaticoMoneySymbol(moneda?: string): string {
+    return monedaSymbol(moneda)
+  }
+
   private viaticoEscapeHtml(value: string): string {
     return String(value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -3603,7 +3695,7 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   private async validateViaticoLines(
-    dto: { place: string; startDate: string; endDate: string; projectId: string; lines: CreateAdvanceLineDto[]; observations?: string; amount: number },
+    dto: { place: string; startDate: string; endDate: string; projectId: string; lines?: CreateAdvanceLineDto[]; observations?: string; amount: number },
     clientId: string
   ) {
     const start = this.viaticoStartOfDay(new Date(dto.startDate))
@@ -3617,9 +3709,13 @@ export class ExpenseReportService implements OnModuleInit {
 
     await this.projectService.findOne(dto.projectId, clientId)
 
+    // El monto requerido lo ingresa directamente el colaborador; ya no se arma a
+    // partir de un detalle por categoría. `lines` solo se procesa si viene (datos
+    // legados o clientes antiguos en caché) y en ese caso valida contra `amount`.
     const lineDocs: { categoryId: Types.ObjectId; detalle?: string; importe: number; peopleCount: number; glpPerDay: number; days: number; lineTotal: number }[] = []
+    const lines = dto.lines ?? []
     let sum = 0
-    for (const line of dto.lines) {
+    for (const line of lines) {
       const cat = await this.categoryService.findOne(line.categoryId, clientId)
       if (!cat.isActive) throw new BadRequestException(`La categoría "${cat.name}" está inactiva.`)
       const expected = this.computeViaticoLineTotal(line)
@@ -3631,9 +3727,17 @@ export class ExpenseReportService implements OnModuleInit {
       lineDocs.push({ categoryId: new Types.ObjectId(line.categoryId), detalle: det?.length ? det : undefined, importe: line.importe, peopleCount: line.peopleCount, glpPerDay: line.glpPerDay, days: line.days, lineTotal: line.lineTotal })
     }
 
-    const roundedSum = Math.round(sum * 100) / 100
-    if (Math.abs(roundedSum - dto.amount) > 0.02) {
-      throw new BadRequestException(`El monto total (S/ ${dto.amount}) debe coincidir con la suma de líneas (S/ ${roundedSum}).`)
+    let roundedSum: number
+    if (lines.length > 0) {
+      roundedSum = Math.round(sum * 100) / 100
+      if (Math.abs(roundedSum - dto.amount) > 0.02) {
+        throw new BadRequestException(`El monto total (S/ ${dto.amount}) debe coincidir con la suma de líneas (S/ ${roundedSum}).`)
+      }
+    } else {
+      if (!Number.isFinite(dto.amount) || dto.amount <= 0) {
+        throw new BadRequestException('Indique el monto requerido.')
+      }
+      roundedSum = Math.round(dto.amount * 100) / 100
     }
 
     const startFmt = this.emailService.formatDateDDMMYYYY(dto.startDate as any)
@@ -3645,14 +3749,153 @@ export class ExpenseReportService implements OnModuleInit {
     return { lineDocs, roundedSum, description }
   }
 
+  /**
+   * Arma la cadena de aprobadores de la SOLICITUD de viático (regla 1.3):
+   * N2(seleccionado) si el centro está asignado al colaborador; N2(principal)
+   * → N2(seleccionado) si no lo está.
+   */
+  private async buildSolicitudCostCenterChain(
+    profile: { projectIds?: string[]; primaryProjectId?: string },
+    selectedProjectId: string,
+    creatorId: string,
+    clientId: string
+  ): Promise<ChainStep[]> {
+    const assignedProjectIds = profile.projectIds ?? []
+    const idsToLoad = [...new Set([...assignedProjectIds, selectedProjectId])]
+    const projects = await this.projectService.findManyByIds(idsToLoad, clientId)
+    const projectById = new Map<string, ChainProject>(
+      projects.map(p => [String(p._id), p as unknown as ChainProject])
+    )
+    return buildSolicitudChain({
+      assignedProjectIds,
+      primaryProjectId: profile.primaryProjectId,
+      selectedProjectId,
+      creatorId,
+      projectById,
+    })
+  }
+
+  /**
+   * Construye la cadena de aprobación por documento (regla 1.4) de los
+   * comprobantes indicados que **todavía no tengan una** (`approverChain ===
+   * undefined`). No se usa ya únicamente al enviar la rendición completa: se
+   * llama sobre todo al registrar CADA comprobante (ver
+   * `buildChainForNewExpense`), para que N1/N2/[N2 sel] puedan empezar a
+   * aprobar desde el momento en que se sube, sin esperar a que el colaborador
+   * termine de cargar todo y haga clic en "Enviar". Que no toque comprobantes
+   * que YA tienen cadena es deliberado: evita pisar aprobaciones en curso si
+   * esta función se vuelve a llamar más tarde (p. ej. al enviar la rendición,
+   * como red de seguridad para comprobantes legados sin cadena). Tampoco toca
+   * comprobantes ya rechazados — su reapertura resetea la cadena aparte (ver
+   * `ExpenseService.updateExpense`, rama de corrección de rechazo).
+   *
+   * `opts.force` reconstruye la cadena aunque ya exista una — solo lo usan
+   * `addExpenseToReport` (rama `wasRejected`) y `resubmitSilent`: cuando se
+   * rechaza la RENDICIÓN completa (no un comprobante individual) y el
+   * colaborador corrige y reenvía, el revisor debe volver a validar todo
+   * desde cero, así que cualquier aprobación N1/N2 previa se descarta.
+   */
+  private async buildExpenseChains(
+    expenseIds: Types.ObjectId[],
+    ownerUserId: string,
+    clientId: string,
+    opts: { force?: boolean } = {}
+  ): Promise<void> {
+    if (expenseIds.length === 0) return
+    const profile = await this.userService.findTransactionalProfile(ownerUserId)
+    const assignedProjectIds = profile?.projectIds ?? []
+    const primaryProjectId = profile?.primaryProjectId
+
+    const expenses = await this.expenseModel
+      .find({ _id: { $in: expenseIds } })
+      .select('proyectId status approverChain')
+      .exec()
+
+    const projectIdsToLoad = [
+      ...new Set(
+        [...assignedProjectIds, ...expenses.map(e => e.proyectId?.toString())].filter(
+          (x): x is string => !!x
+        )
+      ),
+    ]
+    const projects = await this.projectService.findManyByIds(projectIdsToLoad, clientId)
+    const projectById = new Map<string, ChainProject>(
+      projects.map(p => [String(p._id), p as unknown as ChainProject])
+    )
+
+    for (const expense of expenses) {
+      if (expense.status === 'rejected') continue
+      if (expense.approverChain !== undefined && !opts.force) continue
+      const selectedProjectId = expense.proyectId?.toString()
+      if (!selectedProjectId) continue
+      const chain = buildRendicionChain({
+        assignedProjectIds,
+        primaryProjectId,
+        selectedProjectId,
+        creatorId: ownerUserId,
+        projectById,
+      })
+      expense.approverChain = chain
+      expense.requiredLevels = chain.length
+      expense.approvalLevel = 0
+      await expense.save()
+      // Aprobación en paralelo: TODOS los pasos son accionables desde que se
+      // construye la cadena (no solo el primero) — se notifica a los
+      // aprobadores de cada uno.
+      for (const step of chain) {
+        void this.notifyExpensePendingApprovers(expense, step)
+      }
+    }
+  }
+
+  /**
+   * Construye la cadena de aprobación de UN comprobante recién creado —
+   * público, lo llama `ExpenseService` justo después de guardarlo. Aprobación
+   * en paralelo desde el momento del registro: N1/N2/[N2 sel] pueden empezar
+   * a aprobar de inmediato, sin esperar a que se envíe la rendición completa.
+   */
+  async buildChainForNewExpense(
+    expenseId: string,
+    ownerUserId: string,
+    clientId: string
+  ): Promise<void> {
+    if (!ownerUserId || !clientId) return
+    await this.buildExpenseChains([new Types.ObjectId(expenseId)], ownerUserId, clientId)
+  }
+
+  /**
+   * Notifica (in-app) a los approverIds de un paso de un comprobante que les
+   * toca revisarlo. Se llama por cada paso pendiente al construir la cadena
+   * (aprobación en paralelo: todos son accionables desde el envío).
+   */
+  async notifyExpensePendingApprovers(
+    expense: { _id: unknown; total?: number; expenseReportId?: unknown },
+    step: ChainStep
+  ): Promise<void> {
+    const expenseId = String((expense as any)._id)
+    for (const approverId of step.approverIds) {
+      try {
+        await this.notificationsService.create({
+          userId: approverId.toString(),
+          title: 'Comprobante pendiente de tu aprobación',
+          message: `Un comprobante de S/ ${Number((expense as any).total ?? 0).toFixed(2)} está pendiente de tu revisión (nivel ${step.level}).`,
+          type: 'info',
+          actionUrl: `/mis-rendiciones/${(expense as any).expenseReportId?.toString() ?? ''}/detalle`,
+          metadata: { expenseId, event: 'expense_pending_coord' },
+        })
+      } catch (err: unknown) {
+        this.logger.error(`Notif comprobante pendiente ${expenseId}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
   async createViatico(dto: CreateViaticoExpenseReportDto, userId: string, clientId: string): Promise<ExpenseReportDocument> {
     const profile = await this.userService.findTransactionalProfile(userId)
     if (!profile?.signature?.trim()) {
       throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de solicitar viáticos.')
     }
 
-    const pendingAmt = Number(dto.pendingBalanceAmount ?? 0)
-    const chain = buildApproverChain(profile.approverIds)
+    const chain = await this.buildSolicitudCostCenterChain(profile, dto.projectId, userId, clientId)
 
     // `dto.amount` es el costo del viático (suma de líneas). El saldo heredado NO se
     // suma al anticipo: prefinancia ese costo igual que un saldo de la bolsa.
@@ -3661,6 +3904,12 @@ export class ExpenseReportService implements OnModuleInit {
       clientId
     )
 
+    // Regla 1.6: si todos los niveles del centro de costo quedaron omitidos
+    // (vacíos, o el creador era el único aprobador sin nivel superior), la
+    // cadena queda vacía — la solicitud pasa directo al gate de Contabilidad
+    // en vez de quedar en pending_l1 sin nadie que pueda avanzarla.
+    const initialStatus = chain.length === 0 ? 'pending_contabilidad' : 'pending_l1'
+
     const report = await this.expenseReportModel.create({
       type: 'viatico',
       userId: new Types.ObjectId(userId),
@@ -3668,10 +3917,11 @@ export class ExpenseReportService implements OnModuleInit {
       createdBy: new Types.ObjectId(userId),
       projectId: new Types.ObjectId(dto.projectId),
       description,
-      status: 'pending_l1',
+      status: initialStatus,
       expenseIds: [],
       budget: roundedSum,
       viaticoAmount: roundedSum,
+      viaticoMoneda: dto.moneda?.trim() || DEFAULT_MONEDA,
       viaticoApproverChain: chain,
       viaticoRequiredLevels: chain.length,
       viaticoApprovalLevel: 0,
@@ -3689,192 +3939,87 @@ export class ExpenseReportService implements OnModuleInit {
       ...(dto.accountNumber?.trim() && { viaticoAccountNumber: dto.accountNumber.trim() }),
       ...(dto.cci?.trim() && { viaticoCci: dto.cci.trim() }),
       ...(dto.ordenTrabajoId && { viaticoOrdenTrabajoId: new Types.ObjectId(dto.ordenTrabajoId) }),
-      ...(pendingAmt > 0 && dto.pendingBalanceFromReportId && {
-        pendingBalanceFromReportId: new Types.ObjectId(dto.pendingBalanceFromReportId),
-        pendingBalanceAmount: pendingAmt,
-      }),
     })
 
-    // Financiamiento con saldo heredado de otra rendición (mismo centro de costo).
-    if (pendingAmt > 0 && dto.pendingBalanceFromReportId) {
-      await this.applyViaticoPendingFinancing(report, {
-        userId,
-        clientId,
-        projectId: dto.projectId,
-        pendingAmt,
-        fromReportId: dto.pendingBalanceFromReportId,
-      })
-      await report.save()
+    if (initialStatus === 'pending_contabilidad') {
+      void this.notifyContabilidadPendingApproval(report as ExpenseReportDocument)
+    } else {
+      void this.notifyViaticoCoordinator(report as ExpenseReportDocument, userId, clientId)
     }
-
-    // Financiamiento con saldos de la bolsa (mismo centro de costo).
-    const saldoIds = Array.isArray(dto.saldoIds) ? dto.saldoIds : []
-    if (saldoIds.length > 0) {
-      await this.applyViaticoSaldoFinancing(report, saldoIds, {
-        userId,
-        clientId,
-        projectId: dto.projectId,
-      })
-      await report.save()
-    }
-
-    void this.notifyViaticoCoordinator(report as ExpenseReportDocument, userId, clientId)
 
     return this.findOne(String((report as any)._id)) as Promise<ExpenseReportDocument>
   }
 
   /**
-   * Financia un viático con saldos de la bolsa (mismo centro de costo). El saldo
-   * prefinancia el anticipo: se registra como ya pagado (`viaticoPaidAmount`), de modo
-   * que contabilidad solo deposite la diferencia (viaticoAmount − saldo aplicado).
-   *
-   * El saldo nunca paga más que el total del viático: si el saldo seleccionado SUPERA
-   * el total, solo se usa lo necesario y el sobrante ("vuelto") vuelve de inmediato a
-   * la bolsa como saldo disponible del mismo centro de costo. En ese caso contabilidad
-   * no deposita nada. `consume` valida dueño, disponibilidad y centro de costo. No
-   * persiste el documento (lo hace quien llama).
-   */
-  private async applyViaticoSaldoFinancing(
-    report: ExpenseReportDocument,
-    saldoIds: string[],
-    opts: { userId: string; clientId: string; projectId: string }
-  ): Promise<void> {
-    const reportId = String((report as any)._id)
-    const saldoTotal = await this.saldoService.consume(saldoIds, {
-      userId: opts.userId,
-      clientId: opts.clientId,
-      context: 'viatico',
-      projectId: opts.projectId,
-      reportId,
-    })
-    report.saldoIds = saldoIds.map(sid => new Types.ObjectId(sid))
-
-    const viaticoAmount = Number(report.viaticoAmount ?? 0)
-    // El saldo nunca cubre más que el total del viático.
-    report.viaticoPaidAmount = Math.round(Math.min(saldoTotal, viaticoAmount) * 100) / 100
-
-    // Sobrante: el saldo seleccionado superó el total → vuelve ya mismo a la bolsa.
-    const excess = Math.round((saldoTotal - viaticoAmount) * 100) / 100
-    if (excess > 0.01) {
-      await this.saldoService.createViaticoChange({
-        userId: opts.userId,
-        clientId: opts.clientId,
-        projectId: opts.projectId,
-        changeFromReportId: reportId,
-        amount: excess,
-      })
-    }
-  }
-
-  /**
-   * Financia un viático con el saldo heredado (`pendingBalance`) de otra rendición del
-   * mismo centro de costo. Funciona igual que el financiamiento con saldos de la bolsa:
-   * el saldo prefinancia el costo (`viaticoPaidAmount`), de modo que contabilidad solo
-   * deposite la diferencia (viaticoAmount − saldo aplicado). Si el saldo heredado SUPERA
-   * el costo del viático, solo se usa lo necesario y el sobrante vuelve de inmediato a la
-   * bolsa como saldo disponible del mismo centro de costo (contabilidad no deposita nada).
-   * Marca la rendición de origen como trasladada y consume su remanente en la bolsa (si
-   * lo dejó) para evitar el doble conteo del mismo dinero. No persiste el documento.
-   */
-  private async applyViaticoPendingFinancing(
-    report: ExpenseReportDocument,
-    opts: {
-      userId: string
-      clientId: string
-      projectId: string
-      pendingAmt: number
-      fromReportId: string
-    }
-  ): Promise<void> {
-    const reportId = String((report as any)._id)
-    const viaticoAmount = Number(report.viaticoAmount ?? 0)
-
-    // El saldo heredado nunca cubre más que el costo del viático.
-    report.viaticoPaidAmount =
-      Math.round(Math.min(opts.pendingAmt, viaticoAmount) * 100) / 100
-
-    // Marca la rendición de origen como "saldo trasladado" y consume el remanente que
-    // hubiera dejado en la bolsa, para que ese dinero no se cuente dos veces.
-    await this.markPendingBalanceUsed(opts.fromReportId, reportId)
-    try {
-      await this.saldoService.removeRemnantBySourceReport(opts.fromReportId, reportId)
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.logger.error(
-        `Consumir remanente de bolsa al heredar saldo de ${opts.fromReportId}: ${msg}`
-      )
-    }
-
-    // Sobrante: el saldo heredado superó el costo → vuelve ya mismo a la bolsa.
-    const excess = Math.round((opts.pendingAmt - viaticoAmount) * 100) / 100
-    if (excess > 0.01) {
-      await this.saldoService.createViaticoChange({
-        userId: opts.userId,
-        clientId: opts.clientId,
-        projectId: opts.projectId,
-        changeFromReportId: reportId,
-        amount: excess,
-      })
-    }
-  }
-
-  /**
-   * Notifica al aprobador que le corresponde actuar ahora
-   * (viaticoApproverChain[viaticoApprovalLevel]). Se llama tanto al crear la
-   * solicitud (nivel 0) como al avanzar de nivel tras cada aprobación intermedia.
+   * Notifica a los aprobadores de TODOS los pasos aún pendientes de
+   * `viaticoApproverChain` (aprobación en paralelo entre niveles: N1/N2/N3
+   * son accionables desde el envío, sin importar el orden). Se llama tanto al
+   * crear la solicitud como tras cada aprobación intermedia, para reforzar el
+   * aviso a quienes todavía no actuaron.
    */
   private async notifyViaticoCoordinator(report: ExpenseReportDocument, collaboratorUserId: string, clientId: string): Promise<void> {
     const reportId = String((report as any)._id)
     const collaborator = await this.userService.findEmailNameClient(collaboratorUserId)
-    const coordId = report.viaticoApproverChain?.[report.viaticoApprovalLevel ?? 0]
-    if (!coordId) {
-      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { status: 'skipped', sentAt: new Date(), errorMessage: 'Sin coordinador asignado' } } })
-      return
-    }
-    const coordinator = await this.userService.findEmailNameClient(coordId.toString())
-    if (!coordinator || !collaborator) {
-      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Coordinador o colaborador no encontrado' } } })
-      return
-    }
-    if (coordinator.clientId && collaborator.clientId && coordinator.clientId.toString() !== collaborator.clientId.toString()) {
-      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Coordinador de distinta empresa' } } })
+    const pendingSteps = (report.viaticoApproverChain ?? []).filter(s => !s.approved)
+    const approverIds = [
+      ...new Map(
+        pendingSteps.flatMap(s => s.approverIds).map(id => [id.toString(), id])
+      ).values(),
+    ]
+    if (approverIds.length === 0) {
+      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { status: 'skipped', sentAt: new Date(), errorMessage: 'Sin aprobador asignado en este paso' } } })
       return
     }
 
-    try {
-      await this.notificationsService.create({ userId: coordId.toString(), title: 'Nueva solicitud de viáticos pendiente', message: `${collaborator.name} solicitó viáticos — S/ ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
-    } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
+    // Cualquiera de los aprobadores de cualquier paso pendiente puede actuar — se notifica a todos.
+    for (const coordId of approverIds) {
+      const coordinator = await this.userService.findEmailNameClient(coordId.toString())
+      if (!coordinator || !collaborator) {
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Coordinador o colaborador no encontrado' } } })
+        continue
+      }
+      if (coordinator.clientId && collaborator.clientId && coordinator.clientId.toString() !== collaborator.clientId.toString()) {
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Coordinador de distinta empresa' } } })
+        continue
+      }
 
-    const coordEmailEnabled = await this.userService.isEmailEnabled(coordId.toString())
-    if (!coordEmailEnabled) {
-      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Notificaciones por correo deshabilitadas' } } })
-      return
-    }
+      try {
+        await this.notificationsService.create({ userId: coordId.toString(), title: 'Nueva solicitud de viáticos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
+      } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
 
-    try {
-      const project = await this.projectService.findOne(report.projectId!.toString(), clientId)
-      const projectLabel = `[${project.code} - ${project.name}]`
-      const startStr = report.viaticoStartDate instanceof Date ? report.viaticoStartDate.toISOString().slice(0, 10) : String(report.viaticoStartDate ?? '').slice(0, 10)
-      const endStr = report.viaticoEndDate instanceof Date ? report.viaticoEndDate.toISOString().slice(0, 10) : String(report.viaticoEndDate ?? '').slice(0, 10)
-      await this.emailService.sendViaticoSolicitudToCoordinator(coordinator.email, {
-        clientId, coordinatorName: coordinator.name, collaboratorName: collaborator.name,
-        place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
-        totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
-        projectLabel, platformUrl: this.emailService.buildAppUrl('/viaticos'),
-      })
-      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'sent', sentAt: new Date() } } })
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      this.logger.error(`Correo coordinador viático ${reportId}: ${msg}`)
-      await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'failed', sentAt: new Date(), errorMessage: msg } } })
+      const coordEmailEnabled = await this.userService.isEmailEnabled(coordId.toString())
+      if (!coordEmailEnabled) {
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Notificaciones por correo deshabilitadas' } } })
+        continue
+      }
+
+      try {
+        const project = await this.projectService.findOne(report.projectId!.toString(), clientId)
+        const projectLabel = `[${project.code} - ${project.name}]`
+        const startStr = report.viaticoStartDate instanceof Date ? report.viaticoStartDate.toISOString().slice(0, 10) : String(report.viaticoStartDate ?? '').slice(0, 10)
+        const endStr = report.viaticoEndDate instanceof Date ? report.viaticoEndDate.toISOString().slice(0, 10) : String(report.viaticoEndDate ?? '').slice(0, 10)
+        await this.emailService.sendViaticoSolicitudToCoordinator(coordinator.email, {
+          clientId, coordinatorName: coordinator.name, collaboratorName: collaborator.name,
+          place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
+          totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
+          currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
+          projectLabel, platformUrl: this.emailService.buildAppUrl('/viaticos'),
+        })
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'sent', sentAt: new Date() } } })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.logger.error(`Correo coordinador viático ${reportId}: ${msg}`)
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'failed', sentAt: new Date(), errorMessage: msg } } })
+      }
     }
   }
 
   /**
-   * Aprueba el nivel actual de la cadena de aprobadores del viático. Solo puede
-   * actuar el aprobador correspondiente al turno (viaticoApproverChain[viaticoApprovalLevel])
-   * o Superadministrador (llave maestra). Cuando el aprobador es el último de la
-   * cadena, la solicitud queda `viatico_approved`; si no, avanza al siguiente aprobador.
+   * Aprueba UN paso de la cadena de aprobadores del viático (regla 1.3).
+   * Aprobación en paralelo entre niveles: cualquier aprobador de cualquier
+   * paso aún pendiente puede actuar, sin importar el orden, o
+   * Superadministrador (llave maestra). Cuando TODOS los pasos quedan
+   * aprobados, la solicitud pasa a la espera de Contabilidad.
    */
   async approveViatico(id: string, opts: { approvedBy: string; notes?: string }, actorId: string, actorRole: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
@@ -3883,31 +4028,88 @@ export class ExpenseReportService implements OnModuleInit {
     if (report.status !== 'pending_l1') throw new BadRequestException(`El viático no está pendiente de aprobación (estado actual: ${report.status})`)
 
     const chain = report.viaticoApproverChain ?? []
-    const approvalLevel = report.viaticoApprovalLevel ?? 0
-    if (!canActOnChain({ chain, approvalLevel, actorId, actorRole })) {
+    const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+    if (stepIndex === -1) {
       throw new ForbiddenException('No te corresponde aprobar esta solicitud en este momento')
     }
 
-    ;(report.viaticoApprovalHistory ?? []).push({ level: approvalLevel + 1, approvedBy: opts.approvedBy, action: 'approved', notes: opts.notes, date: new Date() })
-
-    const { approvalLevel: nextLevel, isComplete } = advanceChain({ approvalLevel, requiredLevels: report.viaticoRequiredLevels ?? chain.length })
+    const step = chain[stepIndex]
+    const approvalLevel = report.viaticoApprovalLevel ?? 0
+    ;(report.viaticoApprovalHistory ?? []).push({ level: step.level, approvedBy: opts.approvedBy, action: 'approved', notes: opts.notes, date: new Date() })
+    chain[stepIndex] = {
+      ...plainChainStep(step),
+      approved: true,
+      approvedBy: new Types.ObjectId(actorId),
+      approvedAt: new Date(),
+    }
+    report.viaticoApproverChain = chain
+    const nextLevel = approvalLevel + 1
+    const isComplete = isChainFullyApproved(chain)
     report.viaticoApprovalLevel = nextLevel
 
-    let autoOpenedBySaldo = false
     if (isComplete) {
-      report.status = 'viatico_approved'
+      // Todos los aprobadores de centro de costo terminaron: siempre pasa por el
+      // gate de Contabilidad antes de quedar lista para pago (aplica incluso si
+      // el viático quedó 100% cubierto por saldo, sin desembolso real).
+      report.status = 'pending_contabilidad'
       await report.save()
-      autoOpenedBySaldo = await this.onViaticoFullyApproved(report as ExpenseReportDocument)
+      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos en aprobación final', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada por los centros de costo y está pendiente de la aprobación final de Contabilidad.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
+      await this.notifyContabilidadPendingApproval(report as ExpenseReportDocument)
     } else {
       await report.save()
-      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos en revisión', message: `Tu solicitud por S/ ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada en el nivel ${nextLevel} de ${report.viaticoRequiredLevels ?? chain.length} y está pendiente del siguiente aprobador.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
+      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos en revisión', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada por uno de sus aprobadores (${nextLevel} de ${report.viaticoRequiredLevels ?? chain.length}) y está pendiente de los demás niveles.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
       this.notifyViaticoCoordinator(report as ExpenseReportDocument, report.userId.toString(), report.clientId.toString()).catch(() => {})
     }
 
-    // Si quedó cubierto 100% con saldo (status 'open'), onViaticoFullyApproved ya
-    // notificó al colaborador; evitamos el mensaje genérico de "pago en proceso".
-    if (isComplete && !autoOpenedBySaldo) {
-      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos aprobada', message: `Tu solicitud por S/ ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada. El pago está siendo procesado.`, type: 'success', actionUrl: '/mis-rendiciones' }).catch(() => {})
+    return this.findOne(id) as Promise<ExpenseReportDocument>
+  }
+
+  /** Notifica a Contabilidad que un viático terminó su cadena de centro de costo y espera su aprobación final. */
+  private async notifyContabilidadPendingApproval(report: ExpenseReportDocument): Promise<void> {
+    try {
+      const recipients = await this.userService.findViaticoAccountingNotifyRecipients(report.clientId.toString())
+      const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
+      for (const r of recipients) {
+        await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
+          clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '',
+          emailTitle: 'Solicitud de viáticos pendiente de tu aprobación',
+          detailBody: `<p>Viático por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoEscapeHtml(this.viaticoFormatMoney(report.viaticoAmount ?? 0))} de ${this.viaticoEscapeHtml(collaborator?.name ?? '')} fue aprobado por los centros de costo correspondientes. Requiere tu aprobación final antes de quedar lista para pago.</p>`,
+          projectLabel: '', platformUrl: this.emailService.buildAppUrl('/viaticos'),
+        }).catch(() => {})
+      }
+    } catch (err: unknown) {
+      this.logger.error(`Notificación Contabilidad pendiente viático ${(report as any)._id}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  /**
+   * Gate final: Contabilidad aprueba una solicitud de viático que ya completó
+   * su cadena de aprobadores de centro de costo. Solo entonces se registra el
+   * compromiso presupuestal y se notifica a Tesorería para el pago.
+   */
+  async approveViaticoContabilidad(id: string, opts: { approvedBy: string; notes?: string }, actorId: string, actorRole: string): Promise<ExpenseReportDocument> {
+    const report = await this.expenseReportModel.findById(id)
+    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (report.status !== 'pending_contabilidad') throw new BadRequestException(`El viático no está pendiente de la aprobación de Contabilidad (estado actual: ${report.status})`)
+    if (actorRole !== ROLES.CONTABILIDAD && actorRole !== ROLES.SUPER_ADMIN) {
+      throw new ForbiddenException('Solo Contabilidad puede aprobar este paso.')
+    }
+
+    const chainLevels = report.viaticoRequiredLevels ?? report.viaticoApproverChain?.length ?? 0
+    ;(report.viaticoApprovalHistory ?? []).push({ level: chainLevels + 1, approvedBy: opts.approvedBy, action: 'approved', notes: opts.notes, date: new Date() })
+    // Campos propios de la SOLICITUD — no usar contabilidadApprovedAt/By: esos
+    // pertenecen a la aprobación de la RENDICIÓN de comprobantes (regla 1.4,
+    // posterior al pago) y se pisarían entre sí.
+    report.viaticoSolicitudContabilidadApprovedAt = new Date()
+    report.viaticoSolicitudContabilidadApprovedBy = new Types.ObjectId(actorId)
+    report.status = 'viatico_approved'
+    await report.save()
+
+    const autoOpenedBySaldo = await this.onViaticoFullyApproved(report as ExpenseReportDocument)
+
+    if (!autoOpenedBySaldo) {
+      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos aprobada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada. El pago está siendo procesado.`, type: 'success', actionUrl: '/mis-rendiciones' }).catch(() => {})
     }
 
     return this.findOne(id) as Promise<ExpenseReportDocument>
@@ -3915,29 +4117,6 @@ export class ExpenseReportService implements OnModuleInit {
 
   /** Devuelve `true` si el viático quedó cubierto 100% con saldo y se abrió sin pago. */
   private async onViaticoFullyApproved(report: ExpenseReportDocument): Promise<boolean> {
-    // Viático cubierto 100% con saldo de la bolsa: no hay desembolso de contabilidad
-    // (la diferencia es 0). No pasa por tesorería: se abre directamente para que el
-    // colaborador registre sus gastos, igual que tras un pago totalmente liquidado.
-    const fullyFundedBySaldo =
-      Array.isArray(report.saldoIds) &&
-      report.saldoIds.length > 0 &&
-      Number(report.viaticoPaidAmount ?? 0) >= Number(report.viaticoAmount ?? 0) - 0.01
-    if (fullyFundedBySaldo) {
-      await this.expenseReportModel.updateOne(
-        { _id: (report as any)._id },
-        { $set: { status: 'open' } }
-      )
-      report.status = 'open'
-      this.notificationsService.create({
-        userId: report.userId.toString(),
-        title: 'Viático aprobado y cubierto con tu saldo',
-        message: `Tu viático por S/ ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobado y quedó cubierto con tu saldo. Contabilidad no realiza ningún depósito. Ya puedes registrar tus gastos.`,
-        type: 'success',
-        actionUrl: `/mis-rendiciones/${String((report as any)._id)}/detalle`,
-      }).catch(() => {})
-      return true
-    }
-
     if (report.projectId && !report.viaticoBudgetCommitmentRecorded) {
       try {
         await this.projectService.adjustCommittedAdvanceTotal(report.projectId.toString(), report.clientId.toString(), report.viaticoAmount ?? 0)
@@ -3950,7 +4129,7 @@ export class ExpenseReportService implements OnModuleInit {
       for (const r of recipients) {
         await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
           clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '', emailTitle: 'Solicitud de viáticos aprobada',
-          detailBody: `<p>Viático por S/ ${this.viaticoEscapeHtml(this.viaticoFormatMoney(report.viaticoAmount ?? 0))} de ${this.viaticoEscapeHtml(collaborator?.name ?? '')} aprobado y listo para pago.</p>`,
+          detailBody: `<p>Viático por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoEscapeHtml(this.viaticoFormatMoney(report.viaticoAmount ?? 0))} de ${this.viaticoEscapeHtml(collaborator?.name ?? '')} aprobado y listo para pago.</p>`,
           projectLabel: '', platformUrl: this.emailService.buildAppUrl('/tesoreria'),
         }).catch(() => {})
       }
@@ -3960,9 +4139,10 @@ export class ExpenseReportService implements OnModuleInit {
     try {
       const reportId = String((report as any)._id)
       const clientIdStr = report.clientId.toString()
-      console.log(`[TESORERÍA VIÁTICO] Buscando emails para clientId=${clientIdStr}, reportId=${reportId}`)
-      const tesoreriaEmails = await this.clientService.getTesoreriaEmails(clientIdStr)
-      console.log(`[TESORERÍA VIÁTICO] Emails configurados: ${JSON.stringify(tesoreriaEmails)}`)
+      console.log(`[TESORERÍA VIÁTICO] Buscando usuarios de tesorería para clientId=${clientIdStr}, reportId=${reportId}`)
+      const tesoreriaRecipients = await this.userService.findTesoreriaNotifyRecipients(clientIdStr)
+      const tesoreriaEmails = tesoreriaRecipients.map(r => r.email)
+      console.log(`[TESORERÍA VIÁTICO] Emails de tesorería: ${JSON.stringify(tesoreriaEmails)}`)
       if (tesoreriaEmails.length > 0) {
         const collab = await this.userService.findOne(report.userId.toString())
         // Prefer bank data from the solicitud itself; fall back to user profile.
@@ -3991,6 +4171,7 @@ export class ExpenseReportService implements OnModuleInit {
             collaboratorName: collab?.name ?? 'Colaborador',
             collaboratorDni: collab?.dni,
             budgetFormatted: Number(report.viaticoAmount ?? 0).toFixed(2),
+            currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
             projectLabel,
             hasBankAccount,
             bankName: bank?.bankName || undefined,
@@ -4013,24 +4194,39 @@ export class ExpenseReportService implements OnModuleInit {
     const report = await this.expenseReportModel.findById(id)
     if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
     if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
-    if (report.status !== 'pending_l1') throw new BadRequestException(`No se puede rechazar en estado "${report.status}"`)
+    if (!['pending_l1', 'pending_contabilidad'].includes(report.status)) {
+      throw new BadRequestException(`No se puede rechazar en estado "${report.status}"`)
+    }
 
-    const chain = report.viaticoApproverChain ?? []
-    const approvalLevel = report.viaticoApprovalLevel ?? 0
-    if (!canActOnChain({ chain, approvalLevel, actorId, actorRole })) {
-      throw new ForbiddenException('No tienes permiso para rechazar esta solicitud')
+    let rejectedByRole: 'centro_costo' | 'contabilidad'
+    let rejectedAtLevel = (report.viaticoApprovalLevel ?? 0) + 1
+    if (report.status === 'pending_contabilidad') {
+      if (actorRole !== ROLES.CONTABILIDAD && actorRole !== ROLES.SUPER_ADMIN) {
+        throw new ForbiddenException('No tienes permiso para rechazar esta solicitud')
+      }
+      rejectedByRole = 'contabilidad'
+    } else {
+      // Aprobación en paralelo: cualquier aprobador de un paso aún pendiente
+      // puede rechazar la solicitud completa — no solo "el turno actual".
+      const chain = report.viaticoApproverChain ?? []
+      const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+      if (stepIndex === -1) {
+        throw new ForbiddenException('No tienes permiso para rechazar esta solicitud')
+      }
+      rejectedAtLevel = chain[stepIndex].level
+      rejectedByRole = 'centro_costo'
     }
 
     if ((opts.rejectionReason?.trim() ?? '').length < 10) throw new BadRequestException('El motivo de rechazo debe tener al menos 10 caracteres.')
 
-    ;(report.viaticoApprovalHistory ?? []).push({ level: approvalLevel + 1, approvedBy: opts.rejectedBy, action: 'rejected', notes: opts.rejectionReason, date: new Date() })
+    ;(report.viaticoApprovalHistory ?? []).push({ level: rejectedAtLevel, approvedBy: opts.rejectedBy, action: 'rejected', notes: opts.rejectionReason, date: new Date() })
     report.status = 'rejected'
     report.viaticoRejectedBy = opts.rejectedBy
     report.viaticoRejectionReason = opts.rejectionReason
-    await this.revertViaticoSaldoFinancing(report)
+    report.viaticoRejectedByRole = rejectedByRole
     await report.save()
 
-    this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos rechazada', message: `Tu solicitud por S/ ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: '/mis-rendiciones' }).catch(() => {})
+    this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos rechazada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: '/mis-rendiciones' }).catch(() => {})
 
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email && await this.userService.isEmailEnabled(report.userId.toString())) {
@@ -4044,6 +4240,13 @@ export class ExpenseReportService implements OnModuleInit {
 
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
+
+  /**
+   * @removed approveDirecta/rejectDirecta/notifyDirectaCoordinator — la
+   * aprobación de rendición directa ya no vive a nivel de reporte: usa la
+   * misma cadena por comprobante que la rendición normal (ver
+   * `buildExpenseChains` y `ExpenseService.approveByCoord/rejectByCoord`).
+   */
 
   async resubmitViatico(id: string, dto: ResubmitViaticoDto, actingUserId: string, clientId: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
@@ -4061,9 +4264,10 @@ export class ExpenseReportService implements OnModuleInit {
       clientId
     )
 
-    // La cadena de aprobadores se recalcula desde el perfil actual del colaborador
-    // (puede haber cambiado desde la solicitud original).
-    const chain = buildApproverChain(profile.approverIds)
+    // La cadena de aprobadores se recalcula desde el centro de costo elegido y
+    // los centros de costo asignados actuales del colaborador (pueden haber
+    // cambiado desde la solicitud original).
+    const chain = await this.buildSolicitudCostCenterChain(profile, dto.projectId, actingUserId, clientId)
 
     const wasEditing = report.status === 'pending_l1'
     report.viaticoPlace = dto.place.trim()
@@ -4081,41 +4285,11 @@ export class ExpenseReportService implements OnModuleInit {
       ? new Types.ObjectId(dto.ordenTrabajoId)
       : undefined
     report.viaticoAmount = roundedSum
+    if (dto.moneda?.trim()) report.viaticoMoneda = dto.moneda.trim()
     report.budget = roundedSum
-    // Re-aplicar saldo de la bolsa si la corrección lo selecciona y el viático no
-    // tiene ya uno aplicado (caso típico: fue rechazado y su saldo se devolvió a la
-    // bolsa). Si ya tenía saldo (edición antes de aprobación), se conserva intacto.
-    const alreadyHasSaldo =
-      Array.isArray(report.saldoIds) && report.saldoIds.length > 0
-    const reselectedSaldos = Array.isArray(dto.saldoIds) ? dto.saldoIds : []
-    if (!alreadyHasSaldo && reselectedSaldos.length > 0) {
-      await this.applyViaticoSaldoFinancing(report, reselectedSaldos, {
-        userId: actingUserId,
-        clientId,
-        projectId: dto.projectId,
-      })
-    }
-    // Re-financia el saldo heredado: el costo pudo cambiar en la corrección, así que se
-    // recalcula cuánto prefinancia (viaticoPaidAmount) y el sobrante que vuelve a la
-    // bolsa. Se neutraliza primero el vuelto anterior para no contarlo dos veces.
-    const pendingAmt = Number(report.pendingBalanceAmount ?? 0)
-    if (pendingAmt > 0 && report.pendingBalanceFromReportId) {
-      await this.saldoService.removeViaticoChangeByReport(id)
-      report.viaticoPaidAmount =
-        Math.round(Math.min(pendingAmt, roundedSum) * 100) / 100
-      const excess = Math.round((pendingAmt - roundedSum) * 100) / 100
-      if (excess > 0.01) {
-        await this.saldoService.createViaticoChange({
-          userId: actingUserId,
-          clientId,
-          projectId: dto.projectId,
-          changeFromReportId: id,
-          amount: excess,
-        })
-      }
-    }
     report.description = description
-    report.status = 'pending_l1'
+    // Regla 1.6: cadena vacía (todos los niveles omitidos) va directo a Contabilidad.
+    report.status = chain.length === 0 ? 'pending_contabilidad' : 'pending_l1'
     report.viaticoApprovalLevel = 0
     report.viaticoApproverChain = chain
     report.viaticoRequiredLevels = chain.length
@@ -4126,12 +4300,16 @@ export class ExpenseReportService implements OnModuleInit {
     ;(report.viaticoApprovalHistory ?? []).push({ level: 0, approvedBy: actingUserId, action: 'resubmitted', notes: wasEditing ? 'Solicitud editada antes de aprobación' : 'Solicitud corregida y reenviada tras rechazo', date: new Date() })
     await report.save()
 
-    void this.notifyViaticoCoordinator(report as ExpenseReportDocument, actingUserId, clientId)
+    if (report.status === 'pending_contabilidad') {
+      void this.notifyContabilidadPendingApproval(report as ExpenseReportDocument)
+    } else {
+      void this.notifyViaticoCoordinator(report as ExpenseReportDocument, actingUserId, clientId)
+    }
 
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
 
-  async registerViaticoPayment(id: string, dto: PayViaticoDto, userRole: string, userPermissions?: any): Promise<ExpenseReportDocument> {
+  async registerViaticoPayment(id: string, dto: PayViaticoDto, userRole: string, userPermissions?: any, opts?: { bypassReceipt?: boolean }): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
     if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
     if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
@@ -4143,10 +4321,10 @@ export class ExpenseReportService implements OnModuleInit {
       throw new BadRequestException(`Solo se puede registrar pago de viáticos aprobados (estado actual: ${report.status})`)
     }
 
-    const canPay = [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD].includes(userRole as ROLES) || userPermissions?.canApproveL2 === true
+    const canPay = [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA].includes(userRole as ROLES) || userPermissions?.canApproveL2 === true
     if (!canPay) throw new ForbiddenException('No tienes permiso para registrar pagos')
 
-    if (dto.method !== 'efectivo' && !dto.paymentReceiptUrl) throw new BadRequestException('El comprobante es obligatorio para pagos por transferencia o cheque.')
+    if (!opts?.bypassReceipt && dto.method !== 'efectivo' && !dto.paymentReceiptUrl) throw new BadRequestException('El comprobante es obligatorio para pagos por transferencia o cheque.')
     if (dto.paymentReceiptUrl) {
       const v = this.isValidViaticoReceipt(dto.paymentReceiptMimeType, dto.paymentReceiptFileName, dto.paymentReceiptSizeBytes)
       if (!v.ok) throw new BadRequestException(v.reason)
@@ -4214,12 +4392,14 @@ export class ExpenseReportService implements OnModuleInit {
     const coordinator = coordinatorId ? await this.userService.findEmailNameClient(coordinatorId) : null
     const coordEmailEnabled = coordinatorId ? await this.userService.isEmailEnabled(coordinatorId) : false
 
+    const viaticoSym = this.viaticoMoneySymbol(report.viaticoMoneda)
     const paymentEmailData = {
       clientId: report.clientId.toString(),
       collaboratorName: collaborator?.name ?? 'Colaborador',
       coordinatorName: coordinator?.name,
       projectLabel,
       amountFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
+      currencySymbol: viaticoSym,
       transferDate: new Date(dto.transferDate).toISOString().slice(0, 10),
       reference: dto.reference ?? '—',
       paymentMethod: dto.method,
@@ -4230,9 +4410,9 @@ export class ExpenseReportService implements OnModuleInit {
 
     const fullyPaidMsg = fullyPaid
       ? (inPrePaymentPhase
-          ? `Se registró el pago de tu viático por S/ ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
-          : `Se registró el pago restante de tu viático por S/ ${this.viaticoFormatMoney(paymentAmount)} (total pagado S/ ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
-      : `Se registró un pago parcial de tu viático por S/ ${this.viaticoFormatMoney(paymentAmount)} (total pagado S/ ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de S/ ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
+          ? `Se registró el pago de tu viático por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
+          : `Se registró el pago restante de tu viático por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
+      : `Se registró un pago parcial de tu viático por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
 
     this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de viático registrado' : 'Pago parcial de viático registrado', message: fullyPaidMsg, type: 'success', actionUrl: `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
 
@@ -4254,7 +4434,7 @@ export class ExpenseReportService implements OnModuleInit {
       this.notificationsService.create({
         userId: coordinatorId,
         title: fullyPaid ? 'Pago de viático registrado' : 'Pago parcial de viático registrado',
-        message: `Se registró el pago del viático de ${collaborator?.name ?? 'un colaborador'} por S/ ${this.viaticoFormatMoney(paymentAmount)}.`,
+        message: `Se registró el pago del viático de ${collaborator?.name ?? 'un colaborador'} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}.`,
         type: 'info',
         actionUrl: `/mis-rendiciones/${reportId}/detalle`,
       }).catch(() => {})
@@ -4270,55 +4450,26 @@ export class ExpenseReportService implements OnModuleInit {
     if (report.userId.toString() !== userId) throw new ForbiddenException('Solo el colaborador solicitante puede cancelar esta solicitud.')
     if (report.status !== 'pending_l1') throw new BadRequestException('Solo se puede cancelar una solicitud en estado pendiente de aprobación.')
     report.status = 'cancelled'
-    await this.revertViaticoSaldoFinancing(report)
     await report.save()
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
 
-  /**
-   * Devuelve a la bolsa los saldos que prefinanciaban un viático que ya no
-   * continuará (rechazado/cancelado) y limpia su financiamiento, evitando que el
-   * colaborador pierda ese saldo. Reject/cancel ocurren antes del pago de
-   * contabilidad, por lo que tras restaurar viaticoPaidAmount queda en 0.
-   *
-   * Si al crear se devolvió un "vuelto" a la bolsa (saldo seleccionado > total), se
-   * neutraliza primero para no contarlo dos veces al restaurar los saldos originales.
-   */
-  private async revertViaticoSaldoFinancing(
-    report: ExpenseReportDocument
-  ): Promise<void> {
-    try {
-      const reportId = String((report as any)._id)
-      // Neutraliza el vuelto antes de restaurar los saldos completos (evita doble conteo).
-      await this.saldoService.removeViaticoChangeByReport(reportId)
-      const restored = await this.saldoService.restoreByConsumer({ reportId })
-      if (restored > 0) {
-        report.viaticoPaidAmount = 0
-        report.saldoIds = undefined
-      }
-      // Saldo heredado de otra rendición: libera la fuente (su saldo vuelve a estar
-      // disponible) y resetea el prefinanciamiento. En el caso típico la fuente no dejó
-      // remanente en la bolsa, así que `restored` es 0 y hay que limpiarlo explícitamente.
-      if (report.pendingBalanceFromReportId) {
-        await this.unmarkPendingBalanceUsed(
-          String(report.pendingBalanceFromReportId),
-          reportId
-        )
-        report.viaticoPaidAmount = 0
-      }
-    } catch (err: unknown) {
-      this.logger.error(
-        `Revertir saldo viático ${(report as any)._id}: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-  }
 
   async findViaticos(opts: { requesterId: string; requesterRole: string; requesterPermissions?: any; clientId: string; status?: string; dateFrom?: string; dateTo?: string }) {
     const isAdmin = [ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD].includes(opts.requesterRole as ROLES)
-    const isApprover = !isAdmin && opts.requesterRole === ROLES.COORDINADOR
+    // El rol "Coordinador" casi nunca se asigna literalmente: en la práctica un
+    // aprobador es un Colaborador asignado como N1/N2 en algún centro de costo.
+    // Sin este chequeo, cualquier aprobador-Colaborador caía en el filtro por
+    // userId (solo sus propias solicitudes) y nunca veía las que debía aprobar.
+    const isApprover =
+      !isAdmin &&
+      (opts.requesterRole === ROLES.COORDINADOR ||
+        (await this.projectService.isApproverForClient(opts.requesterId, opts.clientId)))
     const filter: Record<string, unknown> = { type: 'viatico', clientId: new Types.ObjectId(opts.clientId) }
 
-    if (isApprover) filter['viaticoApproverChain'] = new Types.ObjectId(opts.requesterId)
+    // `viaticoApproverChain` es un array de pasos (`{ approverIds: ObjectId[] }`),
+    // no un array de ObjectId — hay que filtrar por el subcampo.
+    if (isApprover) filter['viaticoApproverChain.approverIds'] = new Types.ObjectId(opts.requesterId)
     else if (!isAdmin) filter['userId'] = new Types.ObjectId(opts.requesterId)
 
     if (opts.status && opts.status !== 'all') filter['status'] = opts.status
@@ -4332,8 +4483,8 @@ export class ExpenseReportService implements OnModuleInit {
     return this.expenseReportModel.find(filter)
       .populate('userId', 'name email bankAccount dni')
       .populate('projectId', 'code name')
-      .populate('viaticoOrdenTrabajoId', 'codigo departamento')
-      .populate('viaticoApproverChain', 'name email')
+      .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
+      .populate('viaticoApproverChain.approverIds', 'name email')
       .sort({ viaticoStartDate: -1, createdAt: -1 })
       .exec()
   }
@@ -4346,7 +4497,7 @@ export class ExpenseReportService implements OnModuleInit {
     })
       .populate('userId', 'name email')
       .populate('projectId', 'code name')
-      .populate('viaticoOrdenTrabajoId', 'codigo departamento')
+      .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
       .sort({ createdAt: -1 })
       .exec()
   }
@@ -4367,6 +4518,7 @@ export class ExpenseReportService implements OnModuleInit {
       this.emailService.sendDevolucionPendiente(collaborator.email, {
         clientId: report.clientId.toString(), recipientName: collaborator.name,
         amountDue: this.viaticoFormatMoney(report.settlement.difference),
+        currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
         dueDate: this.emailService.formatDateDDMMYYYY(dueDate), advanceId: id,
       }).catch(() => {})
     }
@@ -4435,24 +4587,6 @@ export class ExpenseReportService implements OnModuleInit {
       Math.abs(difference) < 0.01 ? 'equilibrado' : difference > 0 ? 'devolucion' : 'reembolso'
 
     await this.updateSettlement(reportId, { advanceTotal, expenseTotal, difference, type, settledAt: new Date() })
-
-    // Remanente positivo (devolución): el saldo no gastado queda disponible para
-    // el colaborador en su bolsa de "Saldo" (tipo `rendicion`, con su centro de costo).
-    if (type === 'devolucion' && difference > 0.01) {
-      try {
-        await this.saldoService.createFromRemnant({
-          userId: report.userId,
-          clientId: report.clientId,
-          projectId: report.projectId ?? null,
-          sourceReportId: reportId,
-          amount: difference,
-          type: 'rendicion',
-        })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        this.logger.error(`Crear saldo remanente viático ${reportId}: ${msg}`)
-      }
-    }
 
     // Auto-cierre inmediato cuando el viático queda equilibrado.
     // fromClose=true indica que esta llamada viene desde close() — evita recursión.

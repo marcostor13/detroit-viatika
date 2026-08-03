@@ -53,6 +53,18 @@
 
     <!-- Opciones -->
     <ul class="flex-1 overflow-y-auto py-1">
+      @if (allowEmpty()) {
+      <li>
+        <button
+          type="button"
+          (click)="clear()"
+          class="w-full text-left px-3.5 py-2 text-sm text-gray-500 hover:bg-gray-50"
+          [ngClass]="{ 'bg-gray-50': !selectedId() }"
+        >
+          {{ emptyLabel() }}
+        </button>
+      </li>
+      }
       @for (w of filteredWorkers(); track w._id) {
       <li>
         <button

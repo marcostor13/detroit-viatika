@@ -133,6 +133,8 @@ export interface IAdvance {
   observations?: string;
   coordinatorNotification?: ICoordinatorNotification;
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
+  moneda?: string;
   description: string;
   status: AdvanceStatus;
   approvalLevel: number;
@@ -149,10 +151,6 @@ export interface IAdvance {
   /** Reenvíos tras rechazo (Fase 3). */
   solicitudVersion?: number;
   budgetCommitmentRecorded?: boolean;
-  /** Rendición de origen cuando este anticipo incorpora un saldo pendiente de otra rendición. */
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
   requestBankName?: string;
   requestAccountNumber?: string;
   requestCci?: string;
@@ -176,19 +174,11 @@ export interface IAdvanceStats {
   totalApprovedAmount: number;
 }
 
-export interface IAdvanceLinePayload {
-  categoryId: string;
-  detalle?: string;
-  importe: number;
-  peopleCount: number;
-  glpPerDay: number;
-  days: number;
-  lineTotal: number;
-}
-
-/** Legacy: solo amount + description. Fase 2: lugar, fechas, proyecto, líneas y total coherente. */
+/** Legacy: solo amount + description. Fase 2: lugar, fechas, proyecto y monto requerido. */
 export interface ICreateAdvancePayload {
   amount: number;
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  moneda?: string;
   description: string;
   expenseReportId?: string;
   place?: string;
@@ -197,11 +187,7 @@ export interface ICreateAdvancePayload {
   startDate?: string;
   endDate?: string;
   projectId?: string;
-  lines?: IAdvanceLinePayload[];
   observations?: string;
-  pendingBalanceFromReportId?: string;
-  pendingBalanceAmount?: number;
-  additionalAmount?: number;
   bankName?: string;
   accountNumber?: string;
   cci?: string;

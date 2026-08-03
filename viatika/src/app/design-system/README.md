@@ -37,7 +37,7 @@ Implementa `ControlValueAccessor` (funciona con `[(value)]`, `formControlName` o
 ### `app-form-field`
 Wrapper de label + error/help para **cualquier control que no sea `app-input`**: `<select>`, checkbox, radio, date picker, `app-project-select`, `app-worker-select`. El control proyectado debe enlazar `fieldId` y `describedBy()` él mismo:
 ```html
-<app-form-field #field label="Proyecto" [error]="projectError" required>
+<app-form-field #field label="Proyecto" [error]="projectError" [required]="true">
   <app-project-select
     [id]="field.fieldId"
     [attr.aria-describedby]="field.describedBy()"

@@ -49,6 +49,8 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/sunat-config/',
     '/config',
     '/logo',
+    '/accounting-config',
+    '/accounting-config/',
     '/api/client',
     '/dashboard',
     '/expense-report',
@@ -60,11 +62,10 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/notifications/',
     '/bulk-import',
     '/caja-chica-report',
-    '/saldo',
-    '/saldo/',
     '/accounting-entries',
     '/upload',
     '/upload/',
+    '/am-i-approver',
   ];
 
   const isExcludedEndpoint = excludedEndpoints.some(

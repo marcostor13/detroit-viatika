@@ -19,6 +19,11 @@ export class CreateViaticoExpenseReportDto {
   @Min(1)
   amount: number
 
+  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si no se envía. */
+  @IsString()
+  @IsOptional()
+  moneda?: string
+
   @IsString()
   @IsNotEmpty()
   place: string
@@ -49,34 +54,15 @@ export class CreateViaticoExpenseReportDto {
   @IsOptional()
   ordenTrabajoId?: string
 
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateAdvanceLineDto)
-  lines: CreateAdvanceLineDto[]
+  lines?: CreateAdvanceLineDto[]
 
   @IsString()
   @IsOptional()
   observations?: string
-
-  @IsMongoId()
-  @IsOptional()
-  pendingBalanceFromReportId?: string
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  pendingBalanceAmount?: number
-
-  @IsNumber()
-  @Min(0)
-  @IsOptional()
-  additionalAmount?: number
-
-  /** Saldos de la bolsa (mismo centro de costo) que prefinancian el viático. */
-  @IsArray()
-  @IsMongoId({ each: true })
-  @IsOptional()
-  saldoIds?: string[]
 
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   @IsString()

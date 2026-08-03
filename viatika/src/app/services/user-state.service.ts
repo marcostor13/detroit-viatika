@@ -1,7 +1,7 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { tap, map, catchError } from 'rxjs/operators';
+import { tap, map, catchError, retry } from 'rxjs/operators';
 import { IUserResponse } from '../interfaces/user.interface';
 import { USER_LOCALSTORAGE_KEY } from '../constants/user-localstorage.constant';
 import { environment } from '../../environments/environment';
@@ -14,6 +14,8 @@ const HUB_USER_KEY = 'hub_user_data';
 })
 export class UserStateService {
   private _user = signal<IUserResponse | null>(null);
+  /** null = aún no se consultó. Se llena vía refreshApproverStatus(). */
+  private _isApprover = signal<boolean | null>(null);
   private http = inject(HttpClient);
 
   constructor() {
@@ -37,6 +39,7 @@ export class UserStateService {
         }
       }
       this._user.set(parsedUser);
+      this.refreshApproverStatus().subscribe();
     }
   }
 
@@ -67,6 +70,7 @@ export class UserStateService {
     if (user.access_token) {
       localStorage.setItem('token', user.access_token);
     }
+    this.refreshApproverStatus().subscribe();
   }
 
   /** Save hub token for Contabilidad "go back to hub" */
@@ -105,6 +109,9 @@ export class UserStateService {
 
   clearUser() {
     this._user.set(null);
+    // Volver a "aún no consultado" para no arrastrar el estado de aprobador del
+    // usuario anterior a la siguiente sesión de esta misma pestaña.
+    this._isApprover.set(null);
     localStorage.removeItem(USER_LOCALSTORAGE_KEY);
     localStorage.removeItem('token');
     localStorage.removeItem(HUB_TOKEN_KEY);
@@ -137,6 +144,43 @@ export class UserStateService {
     this.clearUser();
   }
 
+  /**
+   * Consulta si el usuario actual es aprobador (cualquier nivel) de algún
+   * centro de costo — reemplaza isCoordinador() como gate de UI: la
+   * autorización real depende de estar en approverLevels, no del rol.
+   * Llamar tras login y al rehidratar sesión desde localStorage; se cachea
+   * en un signal para que los guards/componentes la lean en sync.
+   */
+  refreshApproverStatus(): Observable<boolean> {
+    const token = this.getToken();
+    if (!token) {
+      // Sin token no podemos determinarlo. Solo caemos a false si nunca se
+      // resolvió; si ya sabíamos que era aprobador, no degradamos el menú.
+      if (this._isApprover() === null) this._isApprover.set(false);
+      return of(this._isApprover() === true);
+    }
+    return this.http.get<{ isApprover: boolean }>(`${environment.api}/project/me/am-i-approver`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).pipe(
+      // Reintenta fallos transitorios (backend reiniciándose, cortes de red).
+      // Sin esto, un solo error dejaba el menú sin "Rendiciones" hasta relogin.
+      retry({ count: 2, delay: 600 }),
+      map((res) => !!res?.isApprover),
+      tap((isApprover) => this._isApprover.set(isApprover)),
+      catchError(() => {
+        // Tras agotar reintentos preservamos el último valor conocido en lugar
+        // de marcar "no aprobador"; solo caemos a false si nunca se resolvió.
+        if (this._isApprover() === null) this._isApprover.set(false);
+        return of(this._isApprover() === true);
+      }),
+    );
+  }
+
+  /** Cacheado por refreshApproverStatus(); false hasta que se resuelva la primera consulta. */
+  isApprover(): boolean {
+    return this._isApprover() === true;
+  }
+
   isAuthenticated() {
     return !!(this._user() && this.getToken());
   }
@@ -156,6 +200,7 @@ export class UserStateService {
   isSuperAdmin() { return this.getRole() === 'Superadministrador'; }
   isContabilidad() { return this.getRole() === 'Contabilidad'; }
   isCoordinador() { return this.getRole() === 'Coordinador'; }
+  isTesoreria() { return this.getRole() === 'Tesoreria'; }
 
   isAnyAdmin() {
     return this.isAdmin() || this.isSuperAdmin() || this.isContabilidad();
@@ -172,18 +217,37 @@ export class UserStateService {
     return perms.modules?.includes(module) ?? false;
   }
 
+  /**
+   * Igual que `hasModulePermission` pero SIN el bypass de rol para
+   * Contabilidad/Admin: comprueba de verdad los módulos asignados al usuario.
+   * Solo el Superadministrador ve todo. Se usa para que el menú de Contabilidad
+   * respete los permisos por-usuario (VD-77) sin alterar los guards de ruta ni
+   * otras vistas que dependen del bypass de `hasModulePermission`.
+   */
+  hasModuleStrict(module: string): boolean {
+    if (this.isSuperAdmin()) return true;
+    return this.getPermissions().modules?.includes(module) ?? false;
+  }
+
   canApproveL1(): boolean {
     if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
     return this.getPermissions().canApproveL1 === true;
   }
 
   canApproveL2(): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin() || this.isTesoreria()) return true;
     return this.getPermissions().canApproveL2 === true;
   }
 
+  /**
+   * Acceso al módulo de Pagos (Tesorería). Contabilidad y Administrador NO
+   * tienen bypass: si se les quita el módulo "Pagos" en sus permisos, dejan de
+   * ver el botón de pago en Rendiciones y el guard les cierra /tesoreria.
+   * Mismo criterio que `hasModuleStrict` (VD-77) — solo Superadministrador y el
+   * rol Tesorería (cuya función es exclusivamente pagar) pasan siempre.
+   */
   canAccessTesoreria(): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin() || this.isTesoreria()) return true;
     const perms = this.getPermissions();
     return perms.modules?.includes('tesoreria') ?? false;
   }

@@ -24,7 +24,7 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
           [class.text-primary]="activeTab() === 'rendiciones'"
           [class.text-gray-500]="activeTab() !== 'rendiciones'"
         >
-          Rendiciones
+          Viáticos
         </button>
         <button
           (click)="setTab('directas')"
@@ -34,7 +34,7 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
           [class.text-primary]="activeTab() === 'directas'"
           [class.text-gray-500]="activeTab() !== 'directas'"
         >
-          Directas
+          Rendiciones Directas
         </button>
         <button
           (click)="setTab('caja-chica')"

@@ -1,4 +1,25 @@
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator'
+import {
+  ArrayNotEmpty,
+  IsBoolean,
+  IsInt,
+  IsMongoId,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator'
+import { Type } from 'class-transformer'
+
+export class ApproverLevelDto {
+  @IsInt()
+  @Min(1)
+  level: number
+
+  @IsMongoId({ each: true })
+  @ArrayNotEmpty()
+  userIds: string[]
+}
 
 export class CreateProjectDto {
   @IsString()
@@ -25,10 +46,6 @@ export class CreateProjectDto {
   @IsOptional()
   lineaNegocioId?: string
 
-  @IsString()
-  @IsOptional()
-  categoryGroupId?: string
-
   // --- Mapeo contable (asientos Contanet) ---
   @IsString()
   @IsOptional()
@@ -53,4 +70,15 @@ export class CreateProjectDto {
   @IsBoolean()
   @IsOptional()
   esAdministrativo?: boolean
+
+  /** @deprecated usar approverLevels (nivel 2). */
+  @IsMongoId()
+  @IsOptional()
+  approverId?: string
+
+  /** Aprobadores por nivel explícito (N1, N2, N3…) de este centro de costo. */
+  @ValidateNested({ each: true })
+  @Type(() => ApproverLevelDto)
+  @IsOptional()
+  approverLevels?: ApproverLevelDto[]
 }

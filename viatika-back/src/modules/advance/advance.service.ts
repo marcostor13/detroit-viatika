@@ -31,10 +31,9 @@ import { ROLES } from '../auth/enums/roles.enum'
 import { ProjectService } from '../project/project.service'
 import { CategoryService } from '../category/category.service'
 import { UserService } from '../user/user.service'
-import { UserPermissions } from '../user/schemas/user.schema'
 import { EmailService } from '../email/email.service'
 import { NotificationsService } from '../notifications/notifications.service'
-import { SaldoService } from '../saldo/saldo.service'
+import { monedaSymbol, DEFAULT_MONEDA } from '../../common/moneda.constants'
 
 @Injectable()
 export class AdvanceService implements OnModuleInit {
@@ -49,8 +48,7 @@ export class AdvanceService implements OnModuleInit {
     private readonly categoryService: CategoryService,
     private readonly userService: UserService,
     private readonly emailService: EmailService,
-    private readonly notificationsService: NotificationsService,
-    private readonly saldoService: SaldoService
+    private readonly notificationsService: NotificationsService
   ) {}
 
   async onModuleInit() {
@@ -120,41 +118,6 @@ export class AdvanceService implements OnModuleInit {
     }
   }
 
-  async create(dto: CreateAdvanceDto): Promise<Advance> {
-    if (!dto.clientId) throw new BadRequestException('clientId es requerido')
-    if (!dto.userId) throw new BadRequestException('userId es requerido')
-
-    if (this.isViaticoSolicitudPartial(dto)) {
-      throw new BadRequestException(
-        'Solicitud de viáticos incompleta: lugar, fecha inicio, fecha fin, centro de costo y al menos una línea de detalle son obligatorios.'
-      )
-    }
-
-    const advance = this.isViaticoSolicitud(dto)
-      ? await this.createViaticoSolicitud(dto)
-      : await this.createSimpleAdvance(dto)
-
-    // Solicitud financiada con saldos de la bolsa (mismo centro de costo, consumo completo).
-    const saldoIds = Array.isArray(dto.saldoIds) ? dto.saldoIds : []
-    if (saldoIds.length > 0) {
-      const advId = (advance as any)._id.toString()
-      await this.saldoService.consume(saldoIds, {
-        userId: dto.userId!,
-        clientId: dto.clientId!,
-        context: 'viatico',
-        projectId: dto.projectId,
-        advanceId: advId,
-      })
-      await this.advanceModel
-        .findByIdAndUpdate(advId, {
-          saldoIds: saldoIds.map(id => new Types.ObjectId(id)),
-        })
-        .exec()
-    }
-
-    return advance
-  }
-
   /**
    * Total fila (regla cliente):
    * - Si GLP/día > 0: importe × GLP/día × días
@@ -217,14 +180,9 @@ export class AdvanceService implements OnModuleInit {
     })
   }
 
-  private isViaticoSolicitud(dto: CreateAdvanceDto): boolean {
-    return !!(
-      dto.place?.trim() &&
-      dto.startDate &&
-      dto.endDate &&
-      dto.projectId &&
-      dto.lines?.length
-    )
+  /** Símbolo de moneda ('S/' / '$') a partir del código SUNAT guardado en el anticipo/viático. */
+  private moneySymbol(moneda?: string): string {
+    return monedaSymbol(moneda)
   }
 
   /** Fecha inicio del viaje es hoy o mañana (zona horaria del servidor). */
@@ -268,70 +226,6 @@ export class AdvanceService implements OnModuleInit {
     return { ok: true }
   }
 
-  private isViaticoSolicitudPartial(dto: CreateAdvanceDto): boolean {
-    const any =
-      !!dto.place?.trim() ||
-      !!dto.startDate ||
-      !!dto.endDate ||
-      !!dto.projectId ||
-      (dto.lines?.length ?? 0) > 0
-    if (!any) return false
-    return !this.isViaticoSolicitud(dto)
-  }
-
-  private async createSimpleAdvance(dto: CreateAdvanceDto): Promise<Advance> {
-    const hasPendingBalance =
-      dto.pendingBalanceAmount !== undefined &&
-      dto.additionalAmount !== undefined
-
-    const amount = hasPendingBalance
-      ? Number(dto.pendingBalanceAmount) + Number(dto.additionalAmount)
-      : dto.amount
-
-    const profile = await this.userService.findTransactionalProfile(
-      dto.userId!
-    )
-    const chain = buildApproverChain(profile?.approverIds)
-
-    const advance = await this.advanceModel.create({
-      userId: new Types.ObjectId(dto.userId),
-      clientId: new Types.ObjectId(dto.clientId),
-      approverChain: chain,
-      expenseReportId: dto.expenseReportId
-        ? new Types.ObjectId(dto.expenseReportId)
-        : undefined,
-      amount,
-      description: dto.description,
-      status: 'pending_l1',
-      approvalLevel: 0,
-      requiredLevels: chain.length,
-      approvalHistory: [],
-      ...(hasPendingBalance && {
-        pendingBalanceFromReportId: dto.pendingBalanceFromReportId
-          ? new Types.ObjectId(dto.pendingBalanceFromReportId)
-          : undefined,
-        pendingBalanceAmount: Number(dto.pendingBalanceAmount),
-        additionalAmount: Number(dto.additionalAmount),
-      }),
-    })
-
-    if (dto.expenseReportId) {
-      await this.expenseReportService.addAdvanceToReport(
-        dto.expenseReportId,
-        (advance as any)._id.toString()
-      )
-    }
-
-    if (hasPendingBalance && dto.pendingBalanceFromReportId) {
-      await this.expenseReportService.markPendingBalanceUsed(
-        dto.pendingBalanceFromReportId,
-        (advance as any)._id.toString()
-      )
-    }
-
-    return advance
-  }
-
   /** Validación compartida: nueva solicitud y reenvío tras rechazo (Fase 3). */
   private async validateViaticoBusinessRulesAndLines(
     dto: {
@@ -339,7 +233,7 @@ export class AdvanceService implements OnModuleInit {
       startDate: string
       endDate: string
       projectId: string
-      lines: CreateAdvanceLineDto[]
+      lines?: CreateAdvanceLineDto[]
       observations?: string
       amount: number
     },
@@ -382,8 +276,12 @@ export class AdvanceService implements OnModuleInit {
       lineTotal: number
     }[] = []
 
+    // El monto requerido lo ingresa directamente el colaborador; ya no se arma a
+    // partir de un detalle por categoría. `lines` solo se procesa si viene (datos
+    // legados o clientes antiguos en caché) y en ese caso valida contra `amount`.
+    const lines = dto.lines ?? []
     let sum = 0
-    for (const line of dto.lines) {
+    for (const line of lines) {
       const cat = await this.categoryService.findOne(line.categoryId, clientId)
       if (!cat.isActive) {
         throw new BadRequestException(
@@ -410,11 +308,19 @@ export class AdvanceService implements OnModuleInit {
       })
     }
 
-    const roundedSum = Math.round(sum * 100) / 100
-    if (Math.abs(roundedSum - dto.amount) > 0.02) {
-      throw new BadRequestException(
-        `El monto total (S/ ${dto.amount}) debe coincidir con la suma de líneas (S/ ${roundedSum}).`
-      )
+    let roundedSum: number
+    if (lines.length > 0) {
+      roundedSum = Math.round(sum * 100) / 100
+      if (Math.abs(roundedSum - dto.amount) > 0.02) {
+        throw new BadRequestException(
+          `El monto total (S/ ${dto.amount}) debe coincidir con la suma de líneas (S/ ${roundedSum}).`
+        )
+      }
+    } else {
+      if (!Number.isFinite(dto.amount) || dto.amount <= 0) {
+        throw new BadRequestException('Indique el monto requerido.')
+      }
+      roundedSum = Math.round(dto.amount * 100) / 100
     }
 
     const startFmt = this.emailService.formatDateDDMMYYYY(dto.startDate)
@@ -425,104 +331,6 @@ export class AdvanceService implements OnModuleInit {
       : metaDesc
 
     return { lineDocs, roundedSum, description }
-  }
-
-  private async createViaticoSolicitud(
-    dto: CreateAdvanceDto
-  ): Promise<Advance> {
-    const profile = await this.userService.findTransactionalProfile(dto.userId!)
-    if (!profile?.signature?.trim()) {
-      throw new ForbiddenException(
-        'Debe registrar su firma digital en el perfil antes de solicitar viáticos.'
-      )
-    }
-
-    const pendingAmt = Number(dto.pendingBalanceAmount ?? 0)
-    const linesOnlyAmount = Math.round((dto.amount - pendingAmt) * 100) / 100
-
-    const { lineDocs, roundedSum, description } =
-      await this.validateViaticoBusinessRulesAndLines(
-        {
-          place: dto.place!,
-          startDate: dto.startDate!,
-          endDate: dto.endDate!,
-          projectId: dto.projectId!,
-          lines: dto.lines!,
-          observations: dto.observations,
-          amount: linesOnlyAmount,
-        },
-        dto.clientId!
-      )
-
-    const totalAmount = Math.round((roundedSum + pendingAmt) * 100) / 100
-    const chain = buildApproverChain(profile.approverIds)
-
-    const advance = await this.advanceModel.create({
-      userId: new Types.ObjectId(dto.userId),
-      clientId: new Types.ObjectId(dto.clientId),
-      approverChain: chain,
-      expenseReportId: dto.expenseReportId
-        ? new Types.ObjectId(dto.expenseReportId)
-        : undefined,
-      projectId: new Types.ObjectId(dto.projectId!),
-      place: dto.place!.trim(),
-      ...(dto.lat != null && { lat: dto.lat }),
-      ...(dto.lng != null && { lng: dto.lng }),
-      startDate: new Date(dto.startDate!),
-      endDate: new Date(dto.endDate!),
-      lines: lineDocs,
-      observations: dto.observations?.trim(),
-      amount: totalAmount,
-      description,
-      status: 'pending_l1',
-      approvalLevel: 0,
-      requiredLevels: chain.length,
-      approvalHistory: [],
-      solicitudVersion: 1,
-      budgetCommitmentRecorded: false,
-      ...(pendingAmt > 0 &&
-        dto.pendingBalanceFromReportId && {
-          pendingBalanceFromReportId: new Types.ObjectId(
-            dto.pendingBalanceFromReportId
-          ),
-          pendingBalanceAmount: pendingAmt,
-          additionalAmount: roundedSum,
-        }),
-      ...(dto.bankName?.trim() && { requestBankName: dto.bankName.trim() }),
-      ...(dto.accountNumber?.trim() && { requestAccountNumber: dto.accountNumber.trim() }),
-      ...(dto.cci?.trim() && { requestCci: dto.cci.trim() }),
-    })
-
-    if (dto.expenseReportId) {
-      await this.expenseReportService.addAdvanceToReport(
-        dto.expenseReportId,
-        (advance as any)._id.toString()
-      )
-    }
-
-    if (pendingAmt > 0 && dto.pendingBalanceFromReportId) {
-      await this.expenseReportService.markPendingBalanceUsed(
-        dto.pendingBalanceFromReportId,
-        (advance as any)._id.toString()
-      )
-    }
-
-    void this.notifyCoordinatorViatico(
-      advance as AdvanceDocument,
-      dto.userId!,
-      dto.clientId!
-    )
-
-    const refreshed = await this.advanceModel
-      .findById((advance as any)._id)
-      .populate('projectId')
-      .populate({
-        path: 'lines.categoryId',
-        select: 'name key limit isActive',
-      })
-      .exec()
-
-    return refreshed as Advance
   }
 
   /**
@@ -633,7 +441,7 @@ export class AdvanceService implements OnModuleInit {
       await this.notificationsService.create({
         userId: coordId.toString(),
         title: 'Nueva solicitud de viáticos pendiente',
-        message: `${collaborator.name} solicitó viáticos para ${projectLabel} — S/ ${totalFormatted}. Ingresa a Tesorería para revisar.`,
+        message: `${collaborator.name} solicitó viáticos para ${projectLabel} — ${this.moneySymbol(advance.moneda)} ${totalFormatted}. Ingresa a Tesorería para revisar.`,
         type: 'info',
         actionUrl: '/tesoreria',
         metadata: {
@@ -672,6 +480,7 @@ export class AdvanceService implements OnModuleInit {
           startDate: startStr,
           endDate: endStr,
           totalFormatted,
+          currencySymbol: this.moneySymbol(advance.moneda),
           projectLabel,
           platformUrl,
         }
@@ -687,25 +496,6 @@ export class AdvanceService implements OnModuleInit {
         manualResendUrl,
       })
     }
-  }
-
-  async resendCoordinatorNotification(
-    advanceId: string,
-    clientId: string
-  ): Promise<Advance> {
-    const advance = await this.findOne(advanceId)
-    if (!advance.clientId || advance.clientId.toString() !== clientId) {
-      throw new ForbiddenException(
-        'No tiene permisos para reenviar esta notificación.'
-      )
-    }
-
-    await this.notifyCoordinatorViatico(
-      advance as AdvanceDocument,
-      advance.userId.toString(),
-      clientId
-    )
-    return this.findOne(advanceId)
   }
 
   private async notifyCollaboratorViaticoRejected(
@@ -799,7 +589,7 @@ export class AdvanceService implements OnModuleInit {
     }
     const breakdownItems: string[] = []
     for (const [catName, total] of categoryTotals) {
-      const lineText = `${catName}: S/ ${this.formatViaticoMoney(total)}`
+      const lineText = `${catName}: ${this.moneySymbol(advance.moneda)} ${this.formatViaticoMoney(total)}`
       breakdownItems.push(
         `<li style="margin:6px 0;">${this.escapeHtmlForEmail(lineText)}</li>`
       )
@@ -810,7 +600,7 @@ export class AdvanceService implements OnModuleInit {
         : `<p style="margin:8px 0 16px;color:#64748b;font-size:13px;">${this.escapeHtmlForEmail('(sin líneas)')}</p>`
 
     const apprDate = `${this.emailService.formatDateDDMMYYYY(approvedAt)} ${String(approvedAt.getHours()).padStart(2, '0')}:${String(approvedAt.getMinutes()).padStart(2, '0')}`
-    const amountStr = `S/ ${this.formatViaticoMoney(advance.amount)}`
+    const amountStr = `${this.moneySymbol(advance.moneda)} ${this.formatViaticoMoney(advance.amount)}`
     const compromiso = `${amountStr} registrados en compromiso del centro de costo (hasta registro de pago en tesorería).`
 
     const tableOpen =
@@ -1043,7 +833,7 @@ export class AdvanceService implements OnModuleInit {
     const breakdownItems: string[] = []
     for (const [catName, total] of categoryTotals) {
       breakdownItems.push(
-        `<li style="margin:6px 0;">${this.escapeHtmlForEmail(`${catName}: S/ ${this.formatViaticoMoney(total)}`)}</li>`
+        `<li style="margin:6px 0;">${this.escapeHtmlForEmail(`${catName}: ${this.moneySymbol(advance.moneda)} ${this.formatViaticoMoney(total)}`)}</li>`
       )
     }
     const breakdownHtml =
@@ -1052,7 +842,7 @@ export class AdvanceService implements OnModuleInit {
         : `<p style="margin:8px 0 16px;color:#64748b;font-size:13px;">${this.escapeHtmlForEmail('(sin líneas)')}</p>`
 
     const apprDate = `${this.emailService.formatDateDDMMYYYY(approvedAt)} ${String(approvedAt.getHours()).padStart(2, '0')}:${String(approvedAt.getMinutes()).padStart(2, '0')}`
-    const amountStr = `S/ ${this.formatViaticoMoney(advance.amount)}`
+    const amountStr = `${this.moneySymbol(advance.moneda)} ${this.formatViaticoMoney(advance.amount)}`
 
     const tableOpen =
       '<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">'
@@ -1323,6 +1113,7 @@ export class AdvanceService implements OnModuleInit {
       coordinatorName: coordinator?.name,
       projectLabel,
       amountFormatted: this.formatViaticoMoney(advance.amount),
+      currencySymbol: this.moneySymbol(advance.moneda),
       transferDate,
       reference: advance.paymentInfo?.reference || '—',
       paymentMethod: advance.paymentInfo?.method || 'transferencia_bancaria',
@@ -1358,6 +1149,38 @@ export class AdvanceService implements OnModuleInit {
       .exec()
   }
 
+  /**
+   * Anticipos (solicitud de fondos) aprobados y pendientes de pago, para el lote
+   * de pagos BBVA. Devuelve el saldo por pagar y los datos bancarios (de la
+   * solicitud si los trae, si no del perfil del colaborador). VD-7.
+   */
+  async findBatchPayableAdvances(clientId: string) {
+    const rows = await this.advanceModel
+      .find({
+        clientId: new Types.ObjectId(clientId),
+        status: { $in: ['approved', 'partially_paid'] },
+      })
+      .populate('userId', 'name email dni documentType bankAccount')
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec()
+
+    return rows
+      .map((a: any) => {
+        const remaining = Number(a.amount ?? 0) - Number(a.paidAmount ?? 0)
+        return {
+          advanceId: String(a._id),
+          user: a.userId,
+          remaining: Math.round(remaining * 100) / 100,
+          bankName: a.requestBankName ?? a.userId?.bankAccount?.bankName ?? '',
+          accountNumber:
+            a.requestAccountNumber ?? a.userId?.bankAccount?.accountNumber ?? '',
+          cci: a.requestCci ?? a.userId?.bankAccount?.cci ?? '',
+        }
+      })
+      .filter(x => x.remaining > 0.009)
+  }
+
   /** Advances sin ExpenseReport vinculado (modelo legado sin fase de gastos iniciada). */
   async findOrphaned(
     clientId: string,
@@ -1367,10 +1190,14 @@ export class AdvanceService implements OnModuleInit {
       clientId: new Types.ObjectId(clientId),
       expenseReportId: { $exists: false },
     }
-    // Un coordinador solo debe ver los anticipos huérfanos de los colaboradores
-    // que tiene asignados — mismo criterio que las rendiciones
+    // Un coordinador (rol Coordinador, o Colaborador con permiso de aprobador
+    // asignado vía costCenter) solo debe ver los anticipos huérfanos de los
+    // colaboradores que tiene asignados — mismo criterio que las rendiciones
     // (findAllByCoordinator). Sin esto, veía los de todo el cliente.
-    if (actor?.role === ROLES.COORDINADOR) {
+    if (
+      actor?.userId &&
+      (actor.role === ROLES.COORDINADOR || actor.role === ROLES.COLABORADOR)
+    ) {
       const userIds = await this.userService.findUserIdsByApprover(
         actor.userId,
         clientId
@@ -1382,60 +1209,6 @@ export class AdvanceService implements OnModuleInit {
       .populate('userId', 'name email')
       .populate('projectId', 'code name')
       .sort({ createdAt: -1 })
-      .exec()
-  }
-
-  async findForViaticosPage(opts: {
-    requesterId: string
-    requesterRole: string
-    requesterPermissions?: Partial<UserPermissions>
-    clientId: string
-    status?: string
-    dateFrom?: string
-    dateTo?: string
-  }) {
-    const isAdminRole = [
-      ROLES.ADMIN,
-      ROLES.SUPER_ADMIN,
-      ROLES.CONTABILIDAD,
-    ].includes(opts.requesterRole as ROLES)
-    // Aprobador real: rol Coordinador (único rol elegible como aprobador de cadena).
-    const isApprover = !isAdminRole && opts.requesterRole === ROLES.COORDINADOR
-
-    const filter: Record<string, unknown> = {
-      clientId: new Types.ObjectId(opts.clientId),
-    }
-
-    if (isApprover) {
-      // Coordinador: ve las solicitudes donde forma parte de la cadena de aprobadores.
-      filter['approverChain'] = new Types.ObjectId(opts.requesterId)
-    } else if (!isAdminRole) {
-      // Colaborador (con módulo «viaticos» pero sin permiso de aprobar):
-      // solo ve sus propios viáticos, a modo informativo.
-      filter['userId'] = new Types.ObjectId(opts.requesterId)
-    }
-
-    if (opts.status && opts.status !== 'all') {
-      filter['status'] = opts.status
-    }
-
-    if (opts.dateFrom || opts.dateTo) {
-      const dateFilter: Record<string, Date> = {}
-      if (opts.dateFrom) dateFilter['$gte'] = new Date(opts.dateFrom)
-      if (opts.dateTo) {
-        const to = new Date(opts.dateTo)
-        to.setHours(23, 59, 59, 999)
-        dateFilter['$lte'] = to
-      }
-      filter['createdAt'] = dateFilter
-    }
-
-    return this.advanceModel
-      .find(filter)
-      .populate('userId', 'name email bankAccount dni')
-      .populate('projectId', 'code name')
-      .populate('approverChain', 'name email')
-      .sort({ startDate: -1, createdAt: -1 })
       .exec()
   }
 
@@ -1563,7 +1336,7 @@ export class AdvanceService implements OnModuleInit {
         .create({
           userId: saved.userId.toString(),
           title: 'Solicitud de viáticos aprobada',
-          message: `Tu solicitud de viáticos por S/ ${this.formatViaticoMoney(saved.amount)} fue aprobada. El pago está siendo procesado.`,
+          message: `Tu solicitud de viáticos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue aprobada. El pago está siendo procesado.`,
           type: 'success',
           actionUrl: '/mis-rendiciones',
         })
@@ -1573,7 +1346,7 @@ export class AdvanceService implements OnModuleInit {
         .create({
           userId: saved.userId.toString(),
           title: 'Solicitud de viáticos en revisión',
-          message: `Tu solicitud de viáticos por S/ ${this.formatViaticoMoney(saved.amount)} fue aprobada en el nivel ${saved.approvalLevel} de ${saved.requiredLevels} y está pendiente del siguiente aprobador.`,
+          message: `Tu solicitud de viáticos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue aprobada en el nivel ${saved.approvalLevel} de ${saved.requiredLevels} y está pendiente del siguiente aprobador.`,
           type: 'info',
           actionUrl: '/mis-rendiciones',
         })
@@ -1625,15 +1398,6 @@ export class AdvanceService implements OnModuleInit {
     advance.rejectedBy = dto.rejectedBy
     advance.rejectionReason = dto.rejectionReason
 
-    // Devolver a la bolsa los saldos que financiaban este viático rechazado.
-    try {
-      await this.saldoService.restoreByConsumer({ advanceId: id })
-    } catch (err: unknown) {
-      this.logger.error(
-        `Revertir saldos al rechazar advance ${id}: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-
     const saved = await advance.save()
     this.notifyCollaboratorViaticoRejected(
       saved as AdvanceDocument,
@@ -1646,7 +1410,7 @@ export class AdvanceService implements OnModuleInit {
       .create({
         userId: saved.userId.toString(),
         title: 'Solicitud de viáticos rechazada',
-        message: `Tu solicitud de viáticos por S/ ${this.formatViaticoMoney(saved.amount)} fue rechazada. Motivo: ${dto.rejectionReason}`,
+        message: `Tu solicitud de viáticos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue rechazada. Motivo: ${dto.rejectionReason}`,
         type: 'error',
         actionUrl: '/mis-rendiciones',
       })
@@ -1658,7 +1422,8 @@ export class AdvanceService implements OnModuleInit {
     id: string,
     dto: PayAdvanceDto,
     userRole: string,
-    userPermissions?: any
+    userPermissions?: any,
+    opts?: { bypassReceipt?: boolean }
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
     if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
@@ -1699,14 +1464,17 @@ export class AdvanceService implements OnModuleInit {
     }
 
     const canPay =
-      [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD].includes(userRole as ROLES) ||
-      userPermissions?.canApproveL2 === true
+      [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA].includes(
+        userRole as ROLES
+      ) || userPermissions?.canApproveL2 === true
     if (!canPay)
       throw new ForbiddenException('No tienes permiso para registrar pagos')
 
     // El comprobante es obligatorio salvo cuando el pago es en efectivo. Si se
     // adjunta uno (en cualquier método), se valida formato/tamaño.
-    if (dto.method !== 'efectivo' && !dto.paymentReceiptUrl) {
+    // En pagos por lote BBVA (bypassReceipt) el respaldo es el archivo/PDF del
+    // banco, no un comprobante por transacción.
+    if (!opts?.bypassReceipt && dto.method !== 'efectivo' && !dto.paymentReceiptUrl) {
       throw new BadRequestException(
         'El comprobante es obligatorio para pagos por transferencia o cheque.'
       )
@@ -1823,9 +1591,10 @@ export class AdvanceService implements OnModuleInit {
       ? `/mis-rendiciones/${reportId}/detalle`
       : '/mis-rendiciones'
     const fullyPaid = saved.status === 'paid'
+    const sym = this.moneySymbol(saved.moneda)
     const message = fullyPaid
-      ? `Se registró el pago de tu viático por S/ ${this.formatViaticoMoney(paymentAmount)} (total pagado S/ ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)}). Ya puedes registrar tus gastos.`
-      : `Se registró un pago parcial de tu viático por S/ ${this.formatViaticoMoney(paymentAmount)} (total pagado S/ ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)} de S/ ${this.formatViaticoMoney(saved.amount)}). Ya puedes registrar tus gastos.`
+      ? `Se registró el pago de tu viático por ${sym} ${this.formatViaticoMoney(paymentAmount)} (total pagado ${sym} ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)}). Ya puedes registrar tus gastos.`
+      : `Se registró un pago parcial de tu viático por ${sym} ${this.formatViaticoMoney(paymentAmount)} (total pagado ${sym} ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)} de ${sym} ${this.formatViaticoMoney(saved.amount)}). Ya puedes registrar tus gastos.`
     this.notificationsService
       .create({
         userId: saved.userId.toString(),
@@ -1851,6 +1620,30 @@ export class AdvanceService implements OnModuleInit {
         ? { $or: [{ _id: { $in: idList } }, { expenseReportId: oid }] }
         : { expenseReportId: oid }
     return this.advanceModel.find(query).exec() as Promise<AdvanceDocument[]>
+  }
+
+  /**
+   * Invocado desde `ExpenseReportService.remove()` al eliminar una rendición de
+   * viático (no vuelve a llamar a `expenseReportService.remove`, evita
+   * recursión). Los anticipos vinculados NUNCA se borran aquí —representan
+   * dinero solicitado o ya desembolsado, es un registro financiero que debe
+   * conservarse—; solo se les quita la referencia a la rendición eliminada
+   * (`expenseReportId`) para no dejar una FK colgando. Si el anticipo aún no
+   * había sido pagado, vuelve a aparecer como "huérfano" (`findOrphaned`) y
+   * sigue su flujo de aprobación/pago normal; si ya fue pagado/liquidado,
+   * queda visible como historial sin rendición asociada.
+   */
+  async detachFromDeletedReport(
+    advanceIds: (Types.ObjectId | string)[]
+  ): Promise<number> {
+    if (!advanceIds.length) return 0
+    const oids = advanceIds.map(id =>
+      id instanceof Types.ObjectId ? id : new Types.ObjectId(String(id))
+    )
+    const res = await this.advanceModel
+      .updateMany({ _id: { $in: oids } }, { $unset: { expenseReportId: 1 } })
+      .exec()
+    return res.modifiedCount ?? 0
   }
 
   /**
@@ -1920,13 +1713,15 @@ export class AdvanceService implements OnModuleInit {
     // (el saldo no gastado lo devuelve el colaborador/coordinador).
     const depositTotal = Number((report as any).directaDeposit?.amount ?? 0)
     const hasDeposit = depositTotal > 0
+    const isDirecta = !!(report as any).isDirecta
 
     const expenses = (report.expenseIds as any[]) || []
     const expenseTotal = expenses.reduce((sum, e) => {
-      // En una rendición directa con depósito todo gasto registrado (no rechazado)
-      // cuenta como gastado; en viáticos solo cuentan los gastos aprobados.
+      // En una rendición directa todo gasto registrado (no rechazado) cuenta como
+      // gastado —lo pagó el colaborador o el depósito de Contabilidad—; en viáticos
+      // solo cuentan los gastos aprobados.
       const status = String(e?.status || '').toLowerCase()
-      if (hasDeposit) {
+      if (hasDeposit || isDirecta) {
         if (status === 'rejected') return sum
       } else if (status !== 'approved') {
         return sum
@@ -1941,12 +1736,19 @@ export class AdvanceService implements OnModuleInit {
     const settledAdvances = advances.filter(a => a.status === 'settled')
     const approvedAdvances = advances.filter(a => a.status === 'approved')
 
+    // Rendición directa iniciada por el colaborador: no tiene depósito ni anticipo
+    // (paga de su bolsillo), por lo que el total gastado es un reembolso a su favor.
+    // Sin este caso la liquidación retornaría sin settlement y Tesorería nunca vería
+    // el reembolso pendiente (VD-26).
+    const directaWithoutFunding = isDirecta && !hasDeposit && expenseTotal > 0
+
     if (
       paidAdvances.length === 0 &&
       partiallyPaidAdvances.length === 0 &&
       settledAdvances.length === 0 &&
       approvedAdvances.length === 0 &&
-      depositTotal <= 0
+      depositTotal <= 0 &&
+      !directaWithoutFunding
     ) {
       return
     }
@@ -2008,25 +1810,6 @@ export class AdvanceService implements OnModuleInit {
     }
 
     await this.expenseReportService.updateSettlement(reportId, reportSettlement)
-
-    // Remanente positivo (devolución): el saldo no gastado queda disponible para
-    // el colaborador en su bolsa de "Saldo" (idempotente por sourceReportId).
-    if (type === 'devolucion' && difference > 0.01) {
-      try {
-        const ownerId = (report.userId as any)?._id ?? report.userId
-        await this.saldoService.createFromRemnant({
-          userId: ownerId,
-          clientId: report.clientId,
-          projectId: (report as any).projectId ?? null,
-          sourceReportId: reportId,
-          amount: difference,
-          type: (report as any).isDirecta ? 'rendicion_directa' : 'rendicion',
-        })
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        this.logger.error(`Crear saldo remanente ${reportId}: ${msg}`)
-      }
-    }
 
     const doc = report as any
     const alreadyNotified = !!doc.reimbursementAccountingNotifiedAt
@@ -2138,6 +1921,7 @@ export class AdvanceService implements OnModuleInit {
           clientId: advance.clientId?.toString(),
           recipientName: collaborator.name,
           amountDue: this.formatViaticoMoney(advance.settlement.difference),
+          currencySymbol: this.moneySymbol(advance.moneda),
           dueDate: this.emailService.formatDateDDMMYYYY(dueDate),
           advanceId: id,
         })
@@ -2237,6 +2021,7 @@ export class AdvanceService implements OnModuleInit {
         clientId: advance.clientId?.toString(),
         recipientName: collaborator.name,
         amountDue: this.formatViaticoMoney(rr.amountDue),
+        currencySymbol: this.moneySymbol(advance.moneda),
         rejectionReason,
         advanceId: id,
       }).catch((err: any) =>
@@ -2350,6 +2135,7 @@ export class AdvanceService implements OnModuleInit {
     advance.lines = lineDocs
     advance.observations = dto.observations?.trim()
     advance.amount = roundedSum
+    if (dto.moneda?.trim()) advance.moneda = dto.moneda.trim()
     advance.description = description
     advance.status = 'pending_l1'
     advance.approvalLevel = 0
@@ -2480,14 +2266,6 @@ export class AdvanceService implements OnModuleInit {
       }
     }
 
-    // Devolver a la bolsa los saldos que este viático había consumido (si los hubo).
-    try {
-      await this.saldoService.restoreByConsumer({ advanceId: id })
-    } catch (err: unknown) {
-      this.logger.error(
-        `Revertir saldos al eliminar advance ${id}: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
     await this.advanceModel.findByIdAndDelete(id).exec()
     return advance
   }
@@ -2541,7 +2319,7 @@ export class AdvanceService implements OnModuleInit {
       `Lugar: ${advance.place ?? '—'}`,
       `Fechas: ${startStr} al ${endStr}`,
       `Proyecto: ${projectLabel}`,
-      `Monto total: S/ ${totalFormatted}`,
+      `Monto total: ${this.moneySymbol(advance.moneda)} ${totalFormatted}`,
     ].join('\n')
 
     const platformUrl = this.emailService.buildAppUrl('/tesoreria')
@@ -2550,7 +2328,7 @@ export class AdvanceService implements OnModuleInit {
       .create({
         userId: coordId.toString(),
         title: 'Solicitud de viáticos cancelada',
-        message: `${collaborator.name} canceló su solicitud de viáticos para ${projectLabel} — S/ ${totalFormatted}.`,
+        message: `${collaborator.name} canceló su solicitud de viáticos para ${projectLabel} — ${this.moneySymbol(advance.moneda)} ${totalFormatted}.`,
         type: 'warning',
         actionUrl: '/viaticos',
       })

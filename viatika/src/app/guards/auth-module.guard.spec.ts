@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
+import { of } from 'rxjs';
 import { authModuleGuard } from './auth-module.guard';
 import { UserStateService } from '../services/user-state.service';
 
@@ -10,8 +11,10 @@ describe('authModuleGuard', () => {
   beforeEach(() => {
     userState = jasmine.createSpyObj('UserStateService', [
       'isAuthenticated', 'hasModulePermission',
-      'isColaborador', 'isAdmin', 'isContabilidad', 'isCoordinador',
+      'isColaborador', 'isAdmin', 'isContabilidad', 'isTesoreria', 'refreshApproverStatus',
     ]);
+    userState.isTesoreria.and.returnValue(false);
+    userState.refreshApproverStatus.and.returnValue(of(false));
     router = jasmine.createSpyObj('Router', ['createUrlTree']);
     router.createUrlTree.and.callFake((commands: string[]) => ({ commands } as any));
 
@@ -43,8 +46,9 @@ describe('authModuleGuard', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.hasModulePermission.and.returnValue(false);
     userState.isColaborador.and.returnValue(true);
-    run('tesoreria');
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/inicio']);
+    run('tesoreria').subscribe((result: any) => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/inicio']);
+    });
   });
 
   it('redirects admin to /admin-users when no permission', () => {
@@ -52,8 +56,9 @@ describe('authModuleGuard', () => {
     userState.hasModulePermission.and.returnValue(false);
     userState.isColaborador.and.returnValue(false);
     userState.isAdmin.and.returnValue(true);
-    run('tesoreria');
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/admin-users']);
+    run('tesoreria').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/admin-users']);
+    });
   });
 
   it('redirects contabilidad to /tesoreria when no permission', () => {
@@ -62,19 +67,49 @@ describe('authModuleGuard', () => {
     userState.isColaborador.and.returnValue(false);
     userState.isAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(true);
-    run('tesoreria');
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/tesoreria']);
+    run('tesoreria').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/tesoreria']);
+    });
   });
 
-  it('redirects coordinador to /viaticos when no permission', () => {
+  it('allows tesoreria into /rendiciones without the module permission (VD-66)', () => {
+    userState.isAuthenticated.and.returnValue(true);
+    userState.hasModulePermission.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(true);
+    expect(run('rendiciones')).toBeTrue();
+  });
+
+  it('does NOT let tesoreria into other modules via the rendiciones shortcut', () => {
+    userState.isAuthenticated.and.returnValue(true);
+    userState.hasModulePermission.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(true);
+    userState.isColaborador.and.returnValue(false);
+    userState.isAdmin.and.returnValue(false);
+    userState.isContabilidad.and.returnValue(false);
+    run('tesoreria').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/clients-admin']);
+    });
+  });
+
+  it('allows an approver into /rendiciones without the module permission', () => {
+    userState.isAuthenticated.and.returnValue(true);
+    userState.hasModulePermission.and.returnValue(false);
+    userState.refreshApproverStatus.and.returnValue(of(true));
+    run('rendiciones').subscribe((result: any) => {
+      expect(result).toBeTrue();
+    });
+  });
+
+  it('redirects an approver to /rendiciones when no permission for another module', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.hasModulePermission.and.returnValue(false);
     userState.isColaborador.and.returnValue(false);
     userState.isAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
-    userState.isCoordinador.and.returnValue(true);
-    run('tesoreria');
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/viaticos']);
+    userState.refreshApproverStatus.and.returnValue(of(true));
+    run('tesoreria').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/rendiciones']);
+    });
   });
 
   it('redirects to /clients-admin as fallback', () => {
@@ -83,8 +118,9 @@ describe('authModuleGuard', () => {
     userState.isColaborador.and.returnValue(false);
     userState.isAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
-    userState.isCoordinador.and.returnValue(false);
-    run('tesoreria');
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/clients-admin']);
+    userState.refreshApproverStatus.and.returnValue(of(false));
+    run('tesoreria').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/clients-admin']);
+    });
   });
 });
