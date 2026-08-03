@@ -1,6 +1,6 @@
 # Plan de despliegue: monorepo en Coolify (develop + producción)
 
-**Estado: ejecutado hasta el punto donde bloquea la infraestructura de Coolify. Ver sección 0.**
+**Estado: las 4 apps están desplegadas y responden en sus dominios con TLS. Ver sección 0.**
 
 | | Antes | Después |
 |---|---|---|
@@ -25,22 +25,23 @@
 - **Cloudflare DNS**: 4 registros A creados (DNS-only, sin proxy) apuntando a `161.132.166.142`. Zona `tecdidata.com` (id `11e92a4b421ed48ec43f0354eff0f312`). No se tocaron los registros existentes (`api.viatika...`, `app.viatika...`, `tema.viatika...` → apuntan a otro servidor/Netlify, fuera de este alcance).
 - `COOLIFY_TOKEN_DEVELOP` (el de `.env.deploy`) es inválido (401). Se usó `COOLIFY_TOKEN_PRODUCTION` para todo, dado que solo hay un team/proyecto en esta instancia.
 
-### Bloqueado — requiere que arregles el servidor
-Los 2 intentos de deploy (`viatika-backend-develop`) fallaron con:
-```
-Deployment failed: ssh: connect to host host.docker.internal port 22: Operation timed out
-```
-El servidor "localhost" registrado en Coolify (el mismo host donde corre Coolify) no es alcanzable por SSH desde el contenedor de Coolify — confirmado con `POST /api/v1/servers/{uuid}/validate` (`is_reachable` pasó de `true` cacheado a `false` en vivo). Esto bloquea el deploy de las 4 apps por igual; no es un problema de configuración de la app.
+### Resuelto — SSH de Coolify
+El bloqueo de SSH (`ssh: connect to host host.docker.internal port 22: Operation timed out`) que impedía cualquier deploy ya no está presente: `POST /api/v1/servers/{uuid}/validate` confirma `is_reachable: true` y un deploy real de prueba completó el ciclo build+run. No quedó registro de qué lo arregló (probablemente se resolvió del lado de la VPS entre la sesión anterior y esta); si vuelve a aparecer, revisar `sshd` y `~/.ssh/authorized_keys` del usuario `root` en la VPS.
 
-**Para desbloquear**: en la VPS (161.132.166.142), verificar que `sshd` esté corriendo, que la clave pública de Coolify esté en `~/.ssh/authorized_keys` del usuario `root` (o el usuario configurado), y que el puerto 22 sea alcanzable desde el contenedor de Coolify hacia `host.docker.internal`. En Coolify: Servers → localhost → botón "Validate server" para reintentar el chequeo.
+### Bugs reales encontrados y arreglados (no eran infraestructura)
+Una vez destrabado el SSH, las 4 apps seguían sin funcionar por dos bugs de código/repo, no de Coolify:
 
-### Pendiente después de desbloquear
-1. Disparar deploy de las 4 apps (manual desde Coolify o con `git push` una vez el workflow esté probado) y confirmar que build+healthcheck pasan.
-2. Verificar TLS (Let's Encrypt) emitido en los 4 dominios.
-3. Probar login, subida de comprobantes (S3), notificaciones por email en develop y producción.
-4. Apagar Netlify (sección 5).
-5. Archivar `detroit-viatika-back` en GitHub (Settings → Danger Zone → Archive).
-6. Opcional: pedir a Coolify un `COOLIFY_TOKEN_DEVELOP` válido si se quiere aislar accesos por equipo/entorno más adelante.
+1. **Backend crasheaba en loop de reinicio** (`restarting:unknown` en Coolify): `AccountingEntriesService` tiraba `Error: DEEPSEEK_API_KEY no configurada` en el constructor, y `AccountingEntriesModule` se importa eagerly en `AppModule` — tumbaba toda la app en cada boot, en develop y en main. El código ya tenía un fallback try/catch ("deducible" por defecto si la IA falla) que nunca se alcanzaba porque el crash ocurría antes. Fix: `openai` pasa a ser `OpenAI | null`, se loguea un warning si falta la key en vez de tirar, y el call site cae al fallback existente. Commits `6d82f31` (develop) y `e146eb8` (main, aplicado directo por ser historias de git independientes — ver nota abajo).
+2. **`frontend-main` no compilaba**: a `main` nunca le llegaron `viatika/Dockerfile`, `viatika/nginx.conf` ni `viatika/.dockerignore` — solo existían en `develop`. Error: `failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory`. Fix: copiados a `main` (commit `8c86b8e`), idénticos a los de `develop`.
+
+**Nota importante**: `main` y `develop` son historiales de git **independientes** (dos monorepos fusionados por separado durante la migración), no ramas relacionadas — `git merge-base --is-ancestor` confirma que divergen desde la raíz. Un `git merge develop main` traería *todo* lo no liberado de develop a producción. Cualquier fix que aplique a ambas ramas debe aplicarse como cambio puntual en cada una (cherry-pick manual del diff, no merge), como se hizo acá.
+
+### Pendiente
+1. Probar login, subida de comprobantes (S3), notificaciones por email en develop y producción.
+2. Apagar Netlify (sección 5).
+3. Archivar `detroit-viatika-back` en GitHub (Settings → Danger Zone → Archive).
+4. Opcional: pedir a Coolify un `COOLIFY_TOKEN_DEVELOP` válido si se quiere aislar accesos por equipo/entorno más adelante.
+5. Opcional: documentar `DEEPSEEK_API_KEY` en `viatika-back/.env.example` (u otra variable equivalente) para que quede claro que es opcional y qué feature depende de ella.
 
 ---
 
@@ -53,7 +54,7 @@ El servidor "localhost" registrado en Coolify (el mismo host donde corre Coolify
 
 ⚠️ **Nota puerto backend**: `viatika-back/Dockerfile` expone 3040; ya se seteó `PORT=3040` como variable de entorno en las 2 apps backend para que coincida.
 
-⚠️ **Nota build args frontend**: el flag `inject_build_args_to_dockerfile` no existe en esta versión de Coolify (4.1.2) — devolvió 422. El Dockerfile del frontend ya declara los `ARG` necesarios; si tras el primer build exitoso `API_URL`/`GOOGLE_MAPS_API_KEY` no llegan al bundle (revisar `environment.prod.ts` generado o el bundle servido), avisar para ajustar la estrategia (por ejemplo, pasar los valores como `docker_compose_custom_build_command` o via `dockerfile` inline).
+✅ **Build args frontend confirmados**: pese al 422 de `inject_build_args_to_dockerfile`, Coolify pasa `API_URL`/`GOOGLE_MAPS_API_KEY` correctamente como `--build-arg` (verificado grepeando el bundle servido en ambos dominios: apunta a `tecdidata.com`, no al dominio viejo `apiviatika.marcostorresalarcon.com` que es el fallback silencioso de `scripts/set-env.js` cuando `API_URL` no está seteada).
 
 ---
 
@@ -72,9 +73,9 @@ El servidor "localhost" registrado en Coolify (el mismo host donde corre Coolify
 - [x] 4 apps creadas en Coolify con config correcta.
 - [x] Secrets de GitHub Actions cargados.
 - [x] DNS de Cloudflare apuntando a Coolify.
-- [ ] SSH del servidor Coolify funcionando (bloqueado, ver sección 0).
-- [ ] Las 4 apps responden en sus dominios con TLS válido.
-- [ ] Push a `develop` solo con cambios en `viatika-back/**` → solo corre `deploy-backend-develop.yml` (probar una vez el deploy inicial funcione).
+- [x] SSH del servidor Coolify funcionando.
+- [x] Las 4 apps responden en sus dominios con TLS válido.
+- [x] Push a `develop` con cambios en `viatika-back/**` disparó solo `deploy-backend-develop.yml` (confirmado en este ciclo).
 - [ ] Login, subida de comprobantes (S3) y notificaciones por email funcionan en ambos entornos.
 - [ ] Netlify decomisionado.
 - [ ] `detroit-viatika-back` archivado en GitHub.
