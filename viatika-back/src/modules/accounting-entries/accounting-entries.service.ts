@@ -55,7 +55,7 @@ const SERIES_NO_DEDUCIBLE = new Set(['0001', '0003', '0008'])
 @Injectable()
 export class AccountingEntriesService {
   private readonly logger = new Logger(AccountingEntriesService.name)
-  private readonly openai: OpenAI
+  private readonly openai: OpenAI | null
   private readonly aiModel = 'deepseek-chat'
 
   constructor(
@@ -78,8 +78,14 @@ export class AccountingEntriesService {
     private configService: ConfigService
   ) {
     const apiKey = this.configService.get<string>('DEEPSEEK_API_KEY')
-    if (!apiKey) throw new Error('DEEPSEEK_API_KEY no configurada')
-    this.openai = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
+    if (apiKey) {
+      this.openai = new OpenAI({ apiKey, baseURL: 'https://api.deepseek.com' })
+    } else {
+      this.logger.warn(
+        'DEEPSEEK_API_KEY no configurada — clasificación de deducibilidad por IA deshabilitada, se usará el valor por defecto (deducible).'
+      )
+      this.openai = null
+    }
 
     for (const tipo of ['compra', 'aplicacion', 'reembolso'] as AsientoTipo[]) {
       const p = resolveTemplatePath(tipo)
@@ -801,6 +807,7 @@ export class AccountingEntriesService {
       contexts.map(() => ({ deducible: true }))
 
     try {
+      if (!this.openai) throw new Error('DEEPSEEK_API_KEY no configurada')
       const completion = await this.openai.chat.completions.create(
         {
           model: this.aiModel,
