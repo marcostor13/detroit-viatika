@@ -14,6 +14,10 @@ import { IProject } from '../../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { CardComponent } from '../../../design-system/card/card.component';
+import {
+  ApproverLevelsComponent,
+  ApproverLevelValue,
+} from '../../../design-system/approver-levels/approver-levels.component';
 
 interface ModuleOption {
   key: string;
@@ -24,7 +28,13 @@ interface ModuleOption {
 @Component({
   selector: 'app-user-permissions',
   standalone: true,
-  imports: [CommonModule, ButtonComponent, IconComponent, CardComponent],
+  imports: [
+    CommonModule,
+    ButtonComponent,
+    IconComponent,
+    CardComponent,
+    ApproverLevelsComponent,
+  ],
   templateUrl: './user-permissions.component.html',
   styleUrls: ['./user-permissions.component.scss'],
 })
@@ -48,6 +58,8 @@ export class UserPermissionsComponent implements OnInit {
   categoriesLoading = signal(false);
   /** Catálogo de centros de costo de la empresa. */
   allProjects = signal<IProject[]>([]);
+  /** Candidatos a aprobador del colaborador: cualquier usuario activo de la empresa. */
+  approverCandidates = signal<IUserResponse[]>([]);
 
   readonly availableModules: ModuleOption[] = [
     { key: 'colaboradores', label: 'Colaboradores', description: 'Gestionar usuarios y permisos de la empresa' },
@@ -70,6 +82,7 @@ export class UserPermissionsComponent implements OnInit {
     projectIds: [],
     primaryProjectId: undefined,
     otrosGastosOpcionales: { recibosDiversos: true, djExtranjero: true },
+    approverLevels: [],
   };
 
   ngOnInit(): void {
@@ -77,6 +90,14 @@ export class UserPermissionsComponent implements OnInit {
     this.loadCategoryData();
     this.loadCategoryProfiles();
     this.loadProjects();
+    this.loadApproverCandidates();
+  }
+
+  loadApproverCandidates() {
+    this.adminUsersService.getUsers().subscribe({
+      next: (users) => this.approverCandidates.set((users ?? []).filter((u) => u.isActive)),
+      error: () => this.approverCandidates.set([]),
+    });
   }
 
   loadCategoryProfiles() {
@@ -101,6 +122,12 @@ export class UserPermissionsComponent implements OnInit {
             recibosDiversos: user.permissions?.otrosGastosOpcionales?.recibosDiversos !== false,
             djExtranjero: user.permissions?.otrosGastosOpcionales?.djExtranjero !== false,
           },
+          approverLevels: (user.permissions?.approverLevels ?? []).map((l) => ({
+            level: l.level,
+            userIds: (l.userIds ?? []).map((u) =>
+              typeof u === 'string' ? u : (u as { _id: string })._id
+            ),
+          })),
         };
       },
       error: () => this.notification.show('Error al cargar el usuario', 'error'),
@@ -188,6 +215,28 @@ export class UserPermissionsComponent implements OnInit {
 
   projectLabel(p: IProject): string {
     return p.code ? `${p.code} — ${p.name}` : p.name;
+  }
+
+  // --- Aprobadores del colaborador (regla 1.10) ---
+
+  get approverLevels(): ApproverLevelValue[] {
+    return this.permissions.approverLevels ?? [];
+  }
+
+  onApproverLevelsChange(levels: ApproverLevelValue[]) {
+    this.permissions.approverLevels = levels;
+  }
+
+  /** El colaborador no puede ser su propio aprobador (el backend también lo rechaza). */
+  get selfExcludedIds(): string[] {
+    return this.id ? [this.id] : [];
+  }
+
+  /** Nombre del centro de costo principal, para explicar el fallback en la UI. */
+  get primaryProjectLabel(): string {
+    const id = this.effectivePrimaryProjectId;
+    const p = this.allProjects().find((x) => String(x._id) === id);
+    return p ? this.projectLabel(p) : '';
   }
 
   loadCategoryData() {

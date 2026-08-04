@@ -103,6 +103,36 @@
       }
     </app-card>
 
+    <!-- Aprobadores del colaborador (regla 1.10) -->
+    <app-card [hover]="false" class="mb-6">
+      <h2 class="text-base font-semibold text-secondary mb-1">Aprobadores del Colaborador</h2>
+      <p class="text-sm text-tertiary mb-5">
+        Quién aprueba lo que este colaborador solicita o rinde, por nivel. Cada nivel puede tener varios
+        aprobadores: cualquiera de ellos completa ese paso y <strong>todos reciben la notificación</strong>.
+        La <strong>rendición</strong> pasa por el Nivel 1 y el Nivel 2; la <strong>solicitud de viático</strong>
+        pasa solo por el Nivel 2. Los niveles superiores solo intervienen cuando el propio colaborador figura
+        como aprobador de un nivel y el paso escala.
+      </p>
+      <p class="text-sm text-tertiary mb-5">
+        Si el gasto se imputa a un centro de costo que <strong>no</strong> está asignado al colaborador, se
+        agrega al final el aprobador de Nivel 2 de ese centro de costo.
+        @if (approverLevels.length === 0) {
+          <br />
+          <span class="text-warning-ink">
+            Sin niveles configurados aquí se usan los aprobadores del centro de costo principal{{ primaryProjectLabel ? ' (' + primaryProjectLabel + ')' : '' }}, como hasta ahora.
+          </span>
+        }
+      </p>
+
+      <app-approver-levels
+        [levels]="approverLevels"
+        [candidates]="approverCandidates()"
+        [excludedUserIds]="selfExcludedIds"
+        emptyText="Sin aprobadores propios. Se usarán los del centro de costo principal."
+        (levelsChange)="onApproverLevelsChange($event)"
+      />
+    </app-card>
+
     <!-- Categorías permitidas -->
     <app-card [hover]="false" class="mb-6">
       <div class="flex items-start justify-between gap-3 mb-1">

@@ -70,6 +70,33 @@ secuencial**: solo se habilita cuando **todos** los niveles anteriores ya aproba
 importar el orden en que lo hicieron. Ver el diagrama en
 [DiagramaCadenaAprobacion.md §2.5](./DiagramaCadenaAprobacion.md#25-aprobación-en-paralelo-entre-niveles).
 
+### 1.10 Los aprobadores del COLABORADOR sustituyen a los de su centro de costo
+Cada colaborador puede tener sus propios niveles de aprobación (N1, N2, N3…) en sus
+permisos (`User.permissions.approverLevels`), con **varios aprobadores por nivel**
+(cualquiera completa el paso; **todos** reciben la notificación).
+
+Cuando el colaborador tiene al menos un nivel con aprobadores configurado, esos niveles
+**sustituyen** a los del centro de costo que le corresponde por su propio perfil:
+
+| Flujo | Centro seleccionado ASIGNADO | Centro seleccionado NO asignado |
+|---|---|---|
+| SOLICITUD (1.3) | `N2(colaborador)` → Contabilidad | `N2(colaborador)` → `N2(centro seleccionado)` |
+| RENDICIÓN (1.4) | `N1(colab)` → `N2(colab)` → Contabilidad | `N1(colab)` → `N2(colab)` → `N2(centro sel)` → Contabilidad |
+
+- El paso del **centro seleccionado no asignado** no cambia: sigue saliendo del centro de
+  costo, y se mantiene al final de la cadena.
+- **Fallback**: si el colaborador no tiene ningún nivel con aprobadores, la cadena se arma
+  con los niveles del centro de costo, exactamente como antes de esta regla. La migración
+  es opt-in por usuario; nada cambia hasta que un administrador configure sus niveles.
+- Los niveles que entran son los mismos que antes: la SOLICITUD usa solo el N2 y la
+  RENDICIÓN usa N1 y N2. Un N3 propio solo interviene por escalamiento (regla 1.5).
+- Las reglas 1.5 (escalamiento por auto-aprobación), 1.6 (slots explícitos, omisión sin
+  renumerar) y 1.8 (aprobación en paralelo) aplican igual sobre los niveles del
+  colaborador: solo cambia de dónde salen los niveles, no cómo se resuelven.
+- Cada paso persiste su origen en `ChainStep.source` (`'user'` | `'project'`). Los pasos
+  anteriores a esta regla no lo traen y se interpretan como `'project'`.
+- El colaborador no puede ser su propio aprobador: se rechaza al guardar los permisos.
+
 ### 1.9 La cadena del comprobante se construye al SUBIRLO, no al enviar la rendición
 Un comprobante (`Expense`) recibe su cadena de aprobación (regla 1.4: N1/N2/[N2
 seleccionado]) en el momento en que se **registra**, no cuando el colaborador hace clic
@@ -94,6 +121,18 @@ snapshot de migración, ya no es la fuente de verdad.
 UI: `viatika/src/app/modules/centros-de-costo/form/centros-de-costo-form.component.ts` —
 permite agregar/quitar aprobadores por nivel y agregar/quitar niveles completos.
 
+### 2.2b Aprobadores propios del colaborador (regla 1.10)
+`User.permissions.approverLevels: ApproverLevel[]` — misma forma que
+`Project.approverLevels` (tipo compartido en
+`viatika-back/src/common/types/approver-level.ts`). Se valida al guardar los permisos
+(`UserService.validateApproverLevels`): aprobadores activos de la misma empresa, sin
+niveles repetidos, sin auto-asignación; los niveles sin aprobadores se descartan. NO viaja
+en el JWT (`AuthService.tokenPermissions` lo excluye) — solo lo lee el motor de cadena
+vía `findTransactionalProfile`.
+
+UI: `viatika/src/app/modules/admin-users/user-permissions/` usando
+`design-system/approver-levels/`, el mismo editor que el formulario de centros de costo.
+
 ### 2.2 Asignación de centros de costo al colaborador
 `User.permissions.projectIds: string[]` + `User.permissions.primaryProjectId?: string`
 (`viatika-back/src/modules/user/schemas/user.schema.ts`). Si no hay `primaryProjectId`
@@ -105,8 +144,12 @@ UI: `viatika/src/app/modules/admin-users/user-permissions/user-permissions.compo
 
 ### 2.3 Motor de enrutamiento de aprobaciones
 `viatika-back/src/modules/advance/approval-chain.util.ts`:
-- `resolveApprovalStep()` — resuelve un nivel por identidad para un centro de costo;
-  aplica la omisión de slots vacíos (1.6) y el escalamiento por auto-aprobación (1.5).
+- `resolveStepFromSource()` — resuelve un nivel por identidad sobre una **fuente**
+  (`ChainApproverSource`: centro de costo o colaborador, regla 1.10); aplica la omisión de
+  slots vacíos (1.6) y el escalamiento por auto-aprobación (1.5).
+- `resolveApprovalStep()` — envoltorio del anterior para una fuente de tipo centro de costo.
+- `ownerOrProjectSource()` — elige la fuente según la regla 1.10: el colaborador si tiene
+  niveles propios configurados, el centro de costo si no.
 - `buildSolicitudChain()` — regla 1.3 (SOLICITUD, N2 principal/seleccionado).
 - `buildRendicionChain()` — regla 1.4 (RENDICIÓN, N1/N2 principal + N2 seleccionado).
 - `findActionableChainStep()` / `isChainFullyApproved()` — motor de aprobación **en
@@ -185,6 +228,7 @@ que sigue pendiente.
 | 1.7 | Caja chica requiere aprobación por niveles | ❌ Falta | `caja-chica-report` sigue en `draft \| finalized`, sin cadena. |
 | 1.8 | Aprobación en paralelo entre niveles, Contabilidad al final | ✅ Implementado | `findActionableChainStep()` / `isChainFullyApproved()`. |
 | 1.9 | Cadena del comprobante se construye al subirlo, no al enviar la rendición | ✅ Implementado | `ExpenseReportService.buildChainForNewExpense()`, llamado desde `ExpenseService` en sus 5 puntos de creación. |
+| 1.10 | Aprobadores propios del colaborador sustituyen a los del centro principal | ✅ Implementado | `User.permissions.approverLevels` + `ownerOrProjectSource()`/`resolveStepFromSource()`; UI en `user-permissions.component.html` con `app-approver-levels`. |
 
 **Leyenda:** ✅ Implementado · ⚠️ Parcial · ❌ Falta
 

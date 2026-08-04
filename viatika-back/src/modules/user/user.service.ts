@@ -12,6 +12,7 @@ import { RoleService } from '../role/role.service'
 import { RoleDocument } from '../role/entities/role.entity'
 import * as bcrypt from 'bcryptjs'
 import { CreateUserDto } from './dto/create-user.dto'
+import { ApproverLevel } from '../../common/types/approver-level'
 
 export interface IUser {
   email: string
@@ -101,6 +102,65 @@ export class UserService {
       )
     }
     return approverIds.map(id => new Types.ObjectId(id))
+  }
+
+  /**
+   * Valida y normaliza los niveles de aprobación propios de un colaborador
+   * (regla 1.10). A diferencia de `validateApproverChain` (cadena plana
+   * legacy) NO se exige el rol Coordinador: se admite cualquier usuario activo
+   * de la misma empresa, igual que en los niveles de un centro de costo.
+   * Los niveles sin aprobadores se descartan (regla 1.6: un nivel vacío
+   * simplemente no existe).
+   */
+  private async validateApproverLevels(
+    levels: { level: number; userIds: string[] }[],
+    clientId: string | null,
+    ownerUserId: string
+  ): Promise<ApproverLevel[]> {
+    const normalized = levels
+      .map(l => ({ level: l.level, userIds: [...new Set((l.userIds ?? []).map(String))] }))
+      .filter(l => l.userIds.length > 0)
+    if (normalized.length === 0) return []
+
+    const seen = new Set<number>()
+    for (const l of normalized) {
+      if (!Number.isInteger(l.level) || l.level < 1) {
+        throw new BadRequestException(
+          `Nivel de aprobación inválido: ${l.level}. Debe ser un número entero mayor o igual a 1.`
+        )
+      }
+      if (seen.has(l.level)) {
+        throw new BadRequestException(`El nivel ${l.level} está repetido.`)
+      }
+      seen.add(l.level)
+      if (l.userIds.includes(ownerUserId)) {
+        throw new BadRequestException(
+          `El colaborador no puede ser su propio aprobador (nivel ${l.level}).`
+        )
+      }
+    }
+
+    const allIds = [...new Set(normalized.flatMap(l => l.userIds))]
+    const found = await this.userModel
+      .find({
+        _id: { $in: allIds.map(id => new Types.ObjectId(id)) },
+        clientId: clientId ? new Types.ObjectId(clientId) : null,
+        isActive: { $ne: false },
+      })
+      .select('_id')
+      .exec()
+    const foundIds = new Set(found.map(u => u._id.toString()))
+    const missing = allIds.filter(id => !foundIds.has(id))
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        'Todos los aprobadores deben ser usuarios activos de la misma empresa'
+      )
+    }
+
+    return normalized.map(l => ({
+      level: l.level,
+      userIds: l.userIds.map(id => new Types.ObjectId(id)),
+    }))
   }
 
   async findAllWithClient(): Promise<IUserResponse[]> {
@@ -427,6 +487,22 @@ export class UserService {
       }
     }
 
+    if (updateUserDto.permissions?.approverLevels !== undefined) {
+      let clientIdForLevels: string | null = updateUserDto.clientId ?? null
+      if (!clientIdForLevels) {
+        const existing = await this.userModel.findById(id).select('clientId').exec()
+        clientIdForLevels = existing?.clientId?.toString() ?? null
+      }
+      updateData.permissions = {
+        ...updateUserDto.permissions,
+        approverLevels: await this.validateApproverLevels(
+          updateUserDto.permissions.approverLevels,
+          clientIdForLevels,
+          id
+        ),
+      }
+    }
+
     if (updateData.roleId) {
       updateData.roleId = new Types.ObjectId(updateData.roleId)
     }
@@ -479,11 +555,13 @@ export class UserService {
     approverIds?: Types.ObjectId[]
     projectIds?: string[]
     primaryProjectId?: string
+    /** Niveles propios del colaborador (regla 1.10). */
+    approverLevels?: ApproverLevel[]
   } | null> {
     const u = await this.userModel
       .findById(userId)
       .select(
-        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId'
+        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId permissions.approverLevels'
       )
       .exec()
     if (!u) return null
@@ -493,6 +571,7 @@ export class UserService {
       approverIds: u.approverIds,
       projectIds: u.permissions?.projectIds ?? [],
       primaryProjectId: u.permissions?.primaryProjectId,
+      approverLevels: u.permissions?.approverLevels,
     }
   }
 

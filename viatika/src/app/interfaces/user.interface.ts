@@ -86,6 +86,19 @@ export interface IUserPermissions {
     recibosDiversos: boolean;
     djExtranjero: boolean;
   };
+  /**
+   * Aprobadores propios del colaborador por nivel (N1, N2, N3…), regla 1.10.
+   * Cuando hay al menos un nivel con aprobadores, estos sustituyen a los del
+   * centro de costo principal al armar la cadena de solicitudes y rendiciones.
+   * Vacío/ausente = se usan los del centro de costo, como antes.
+   */
+  approverLevels?: IApproverLevel[];
+}
+
+/** Nivel de aprobación con sus aprobadores. Cualquiera de ellos completa el paso. */
+export interface IApproverLevel {
+  level: number;
+  userIds: string[];
 }
 
 export interface IUserResponse {
