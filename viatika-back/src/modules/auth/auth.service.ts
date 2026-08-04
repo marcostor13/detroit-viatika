@@ -37,6 +37,23 @@ export class AuthService {
     return null
   }
 
+  /**
+   * Permisos que viajan en el JWT. `approverLevels` (regla 1.10) se excluye a
+   * propósito: no se usa para autorizar nada en el cliente, solo lo consume el
+   * motor de cadena leyéndolo de la base, y engordaría el token sin motivo.
+   */
+  private tokenPermissions(permissions: any) {
+    const base = permissions || {
+      modules: [],
+      canApproveL1: false,
+      canApproveL2: false,
+      categoryIds: [],
+    }
+    const plain = typeof base?.toObject === 'function' ? base.toObject() : base
+    const { approverLevels: _approverLevels, ...rest } = plain
+    return rest
+  }
+
   async login(email: string, password: string) {
     const allUsers = await this.userService.findAllByEmail(email)
     if (!allUsers.length)
@@ -64,12 +81,7 @@ export class AuthService {
         userId: (contabilidadUser._id as any).toString(),
         roles: [(contabilidadUser.role as any)?.name],
         clientId: '',
-        permissions: contabilidadUser.permissions || {
-          modules: [],
-          canApproveL1: false,
-          canApproveL2: false,
-          categoryIds: [],
-        },
+        permissions: this.tokenPermissions(contabilidadUser.permissions),
         mustChangePassword: !!contabilidadUser.mustChangePassword,
         isHubToken: true,
       }
@@ -101,12 +113,7 @@ export class AuthService {
         userId: (adminUser._id as any).toString(),
         roles: [ROLES.ADMIN],
         clientId: '',
-        permissions: adminUser.permissions || {
-          modules: [],
-          canApproveL1: false,
-          canApproveL2: false,
-          categoryIds: [],
-        },
+        permissions: this.tokenPermissions(adminUser.permissions),
         mustChangePassword: !!adminUser.mustChangePassword,
         isHubToken: true,
       }
@@ -224,12 +231,7 @@ export class AuthService {
       userId: (user._id as any).toString(),
       roles: [(user.role as any)?.name],
       clientId,
-      permissions: user.permissions || {
-        modules: [],
-        canApproveL1: false,
-        canApproveL2: false,
-        categoryIds: [],
-      },
+      permissions: this.tokenPermissions(user.permissions),
       mustChangePassword,
     }
     const { password: _, ...userData } = user as any

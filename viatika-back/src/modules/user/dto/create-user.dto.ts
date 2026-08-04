@@ -10,6 +10,7 @@ import {
   IsEnum,
 } from 'class-validator'
 import { Type } from 'class-transformer'
+import { ApproverLevelDto } from './update-user.dto'
 
 class CreateBankAccountDto {
   @IsString()
@@ -41,6 +42,13 @@ class CreatePermissionsDto {
   @IsBoolean()
   @IsOptional()
   canApproveL2?: boolean
+
+  /** Aprobadores propios del colaborador por nivel (regla 1.10). */
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ApproverLevelDto)
+  @IsOptional()
+  approverLevels?: ApproverLevelDto[]
 }
 
 export class CreateUserDto {

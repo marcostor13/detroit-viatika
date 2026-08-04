@@ -10,7 +10,7 @@ import {
 import { CreateExpenseDto } from './dto/create-expense.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
-import { findActionableChainStep, isChainFullyApproved, plainChainStep, ChainStep } from '../advance/approval-chain.util'
+import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
 import { InjectModel } from '@nestjs/mongoose'
@@ -2649,8 +2649,8 @@ export class ExpenseService {
         userId: String(expense.createdBy),
         title: 'Comprobante revisado por Coordinador',
         message: isComplete
-          ? 'Tu comprobante fue aprobado por los aprobadores de centro de costo.'
-          : `Tu comprobante fue aprobado por uno de sus aprobadores de centro de costo (nivel ${step.level}). Falta la aprobación de los demás niveles pendientes.`,
+          ? 'Tu comprobante fue aprobado por todos sus aprobadores.'
+          : `Tu comprobante fue aprobado por ${describeChainStep(step)}. Falta la aprobación de los demás niveles pendientes.`,
         type: 'info',
         actionUrl: `/mis-rendiciones/${this.expenseReportIdString(expense)}/detalle`,
       })

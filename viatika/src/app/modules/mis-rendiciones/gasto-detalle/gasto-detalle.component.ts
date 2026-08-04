@@ -390,11 +390,23 @@ emissionDateText(exp: Record<string, unknown>): string {
       .join(' / ');
   }
 
+  /**
+   * Origen del paso (regla 1.10): los aprobadores propios del colaborador o los
+   * del centro de costo del comprobante. Los pasos creados antes de la regla
+   * 1.10 no traen `source` y se muestran como del centro de costo.
+   */
+  private chainStepOrigin(step: Record<string, unknown> | undefined): string {
+    return step?.['source'] === 'user'
+      ? 'Aprobador del colaborador'
+      : 'Aprobador del centro de costo';
+  }
+
   /** Cadena de niveles del comprobante, con estado y aprobador(es) de cada paso. Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
   chainSteps(exp: Record<string, unknown>): Array<{
     level: number;
     state: 'completado' | 'pendiente';
     approverNames: string;
+    origin: string;
     escalatedFrom?: number;
     approvedBy?: string;
     date?: string;
@@ -408,6 +420,7 @@ emissionDateText(exp: Record<string, unknown>): string {
         level: step.level,
         state,
         approverNames: this.chainStepApproverNames(step),
+        origin: this.chainStepOrigin(step),
         escalatedFrom: step.escalatedFrom,
         approvedBy: entry?.approvedBy,
         date: entry?.date,

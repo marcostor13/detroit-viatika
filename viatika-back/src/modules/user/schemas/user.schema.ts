@@ -1,5 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, Types } from 'mongoose'
+import {
+  ApproverLevel,
+  approverLevelSchemaDefinition,
+} from '../../../common/types/approver-level'
 
 export interface BankAccount {
   bankName: string
@@ -25,6 +29,14 @@ export interface UserPermissions {
   projectIds: string[]
   /** Centro de costo principal explícito. Debe estar contenido en `projectIds`. */
   primaryProjectId?: string
+  /**
+   * Aprobadores propios del colaborador por nivel explícito (N1, N2, N3…) —
+   * regla 1.10. Cuando hay al menos un nivel con aprobadores, ESTOS sustituyen
+   * a los del centro de costo principal al armar la cadena de la solicitud y
+   * de la rendición (ver `approval-chain.util.ts`). Si está vacío, la cadena
+   * se arma con los niveles del centro de costo, como antes de la regla 1.10.
+   */
+  approverLevels?: ApproverLevel[]
 }
 
 export interface UserDocument extends Document {
@@ -124,6 +136,7 @@ export class User {
       categoryIds: { type: [String], default: [] },
       projectIds: { type: [String], default: [] },
       primaryProjectId: { type: String, required: false },
+      approverLevels: { type: [approverLevelSchemaDefinition], default: undefined },
       _id: false,
     },
     default: () => ({
