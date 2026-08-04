@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { InjectModel } from '@nestjs/mongoose'
-import { Model } from 'mongoose'
+import { Model, Types } from 'mongoose'
 import { createHash } from 'crypto'
 import OpenAI from 'openai'
 import { ExpenseReport } from '../expense-report/entities/expense-report.entity'
@@ -13,6 +13,7 @@ import { Category } from '../category/entities/category.entity'
 import { ExchangeRateService } from '../exchange-rate/exchange-rate.service'
 import { AccountingConfigService } from '../accounting-config/accounting-config.service'
 import { AccountingConfigDocument } from '../accounting-config/entities/accounting-config.entity'
+import { DEFAULT_MONEDA } from '../../common/moneda.constants'
 import {
   CONTANET_COLUMNS,
   ContanetLine,
@@ -379,6 +380,58 @@ export class AccountingEntriesService {
     return rateMap.get(iso) ?? (Number(config.tipoCambio) || 1)
   }
 
+  /**
+   * Resuelve, para un comprobante con moneda propia, el código de moneda
+   * Contanet y el factor para llevar sus montos ORIGINALES (que están en la
+   * moneda del comprobante) a la moneda de registro: `monto * fxFactor`.
+   *
+   * Si el comprobante ya está en la moneda base, `fxFactor = 1` y todo se
+   * comporta igual que antes de la migración multimoneda.
+   */
+  private resolveComprobanteCurrency(
+    config: AccountingConfigDocument,
+    doc: { moneda?: string; montoBase?: number; tipoCambio?: number },
+    originalTotal: number,
+    dayTc: number
+  ): {
+    isForeign: boolean
+    fxFactor: number
+    mdaOrigen: string
+    cambioMoneda: number
+  } {
+    const monedaBase = config.monedaBase || DEFAULT_MONEDA
+    const moneda = doc.moneda || monedaBase
+    const isForeign = moneda !== monedaBase
+    const fxFactor =
+      isForeign && originalTotal > 0 && doc.montoBase != null
+        ? doc.montoBase / originalTotal
+        : 1
+    const codigoContanet = (config.supportedCurrencies || []).find(
+      c => c.code === moneda
+    )?.contanetCode
+    return {
+      isForeign,
+      fxFactor,
+      mdaOrigen: codigoContanet || config.monedaOrigen,
+      cambioMoneda: isForeign ? Number(doc.tipoCambio) || dayTc : dayTc,
+    }
+  }
+
+  /**
+   * ME de una línea con moneda propia: si el comprobante es extranjero, el
+   * "monto en moneda extranjera" ES el monto original (no se re-divide, para
+   * que cuadre al céntimo con el documento); si está en la moneda base, se
+   * conserva el cálculo nocional de siempre.
+   */
+  private toMEForComprobante(
+    originalAmount: number,
+    isForeign: boolean,
+    dayTc: number
+  ): number {
+    if (isForeign) return this.round2(originalAmount)
+    return this.toME(originalAmount, dayTc)
+  }
+
   private async buildLinesForTipo(
     tipo: AsientoTipo,
     ctx: {
@@ -411,6 +464,18 @@ export class AccountingEntriesService {
   }
 
   /** Mapa categoryId → categoría (para resolver cuentas 9X/6X). */
+  /**
+   * `clientId` se guarda como ObjectId, pero el path del schema resuelve a
+   * `Mixed` (por declararse con `Types.ObjectId` y no `Schema.Types.ObjectId`),
+   * así que Mongoose NO castea el string y el filtro no casaría nunca: el mapa
+   * saldría vacío y el asiento perdería la línea 9X sin dar error.
+   */
+  private clientIdFilter(clientId: string): any {
+    return Types.ObjectId.isValid(clientId)
+      ? { $in: [clientId, new Types.ObjectId(clientId)] }
+      : clientId
+  }
+
   private async buildCategoryMap(
     expenses: any[],
     clientId: string
@@ -422,7 +487,10 @@ export class AccountingEntriesService {
     const categories = (
       ids.size
         ? await this.categoryModel
-            .find({ _id: { $in: Array.from(ids) }, clientId })
+            .find({
+              _id: { $in: Array.from(ids) },
+              clientId: this.clientIdFilter(clientId),
+            })
             .lean()
             .exec()
         : []
@@ -452,7 +520,10 @@ export class AccountingEntriesService {
     const projects = (
       ids.size
         ? await this.projectModel
-            .find({ _id: { $in: Array.from(ids) }, clientId })
+            .find({
+              _id: { $in: Array.from(ids) },
+              clientId: this.clientIdFilter(clientId),
+            })
             .lean()
             .exec()
         : []
@@ -918,8 +989,23 @@ export class AccountingEntriesService {
       const data = this.parseData(expense)
       const det = expense.comprobanteDetallado ?? {}
       const date = this.asientoDate(expense, report)
-      const tc = this.tcFor(date, rateMap, config)
+      const dayTc = this.tcFor(date, rateMap, config)
       const num = (v: unknown) => (typeof v === 'number' ? v : Number(v) || 0)
+      // Moneda del comprobante: los montos calculados abajo están en ella, y
+      // `fxFactor` los lleva a la moneda de registro. `tc` es lo que se escribe
+      // en la columna "Cambio Moneda".
+      const fx = this.resolveComprobanteCurrency(
+        config,
+        expense,
+        num(expense.total),
+        dayTc
+      )
+      const tc = fx.cambioMoneda
+      /** Monto original → moneda de registro. */
+      const reg = (monto: number) => this.round2(monto * fx.fxFactor)
+      /** Monto original → columna de moneda extranjera. */
+      const me = (monto: number) =>
+        this.toMEForComprobante(monto, fx.isForeign, dayTc)
 
       // Tipo de documento Contanet (codigos.md). Solo la factura (01) otorga
       // crédito fiscal; boletas/tickets/planillas/recibos van íntegros al gasto.
@@ -1005,11 +1091,12 @@ export class AccountingEntriesService {
               tc,
               periodDate,
               {
+                mdaOrigen: fx.mdaOrigen,
                 nroCuenta: cuenta9x,
                 ...docFields,
                 identTipAfecto: p.condicion === 'afecto' ? 'S' : 'N',
-                montoDebe: this.round2(p.monto),
-                montoDebeME: this.toME(p.monto, tc),
+                montoDebe: reg(p.monto),
+                montoDebeME: me(p.monto),
               }
             )
           )
@@ -1028,12 +1115,13 @@ export class AccountingEntriesService {
             tc,
             periodDate,
             {
+              mdaOrigen: fx.mdaOrigen,
               nroCuenta: cuenta40,
               codTipDoc,
               nroSerie: serie,
               nroDoc,
-              montoDebe: igv,
-              montoDebeME: this.toME(igv, tc),
+              montoDebe: reg(igv),
+              montoDebeME: me(igv),
             }
           )
         )
@@ -1049,12 +1137,13 @@ export class AccountingEntriesService {
           tc,
           periodDate,
           {
+            mdaOrigen: fx.mdaOrigen,
             nroCuenta: config.cuenta42,
             codTipDoc,
             nroSerie: serie,
             nroDoc,
-            montoHaber: total,
-            montoHaberME: this.toME(total, tc),
+            montoHaber: reg(total),
+            montoHaberME: me(total),
             esProvision: 1,
             codTipDocIdentProv: ruc ? '06' : '',
             nroDocProv: ruc,
@@ -1075,9 +1164,10 @@ export class AccountingEntriesService {
             tc,
             periodDate,
             {
+              mdaOrigen: fx.mdaOrigen,
               nroCuenta: cuenta6xCat,
-              montoDebe: this.round2(p.monto),
-              montoDebeME: this.toME(p.monto, tc),
+              montoDebe: reg(p.monto),
+              montoDebeME: me(p.monto),
               esDestino: 1,
             }
           )
@@ -1091,9 +1181,10 @@ export class AccountingEntriesService {
             tc,
             periodDate,
             {
+              mdaOrigen: fx.mdaOrigen,
               nroCuenta: config.cuenta79,
-              montoHaber: this.round2(p.monto),
-              montoHaberME: this.toME(p.monto, tc),
+              montoHaber: reg(p.monto),
+              montoHaberME: me(p.monto),
               esDestino: 1,
             }
           )

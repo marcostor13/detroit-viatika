@@ -529,7 +529,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Gastado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</p>
         </div>
         <!-- Saldo disponible -->
         <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
@@ -557,7 +557,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Gastado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</p>
         </div>
       </div>
       } @else {
@@ -610,7 +610,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Gastado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</p>
         </div>
 
         <!-- Remaining balance -->
@@ -1064,7 +1064,12 @@
                   <span class="text-xs text-tertiary truncate">{{ getExpenseDate(expense) }}</span>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
-                  <p class="text-sm font-semibold text-secondary tabular-nums">S/ {{ expense.total | number:'1.2-2' }}</p>
+                  <p class="text-sm font-semibold text-secondary tabular-nums">
+                    {{ currencySymbol }} {{ expenseAmountInReportCurrency(expense) | number:'1.2-2' }}
+                    @if (isExpenseForeign(expense)) {
+                    <span class="block text-[11px] font-normal text-tertiary">{{ expenseOriginalText(expense) }}</span>
+                    }
+                  </p>
                   @if (getExpenseAmountEdited(expense)) {
                   <div class="relative">
                     <button type="button"
@@ -1329,7 +1334,12 @@
                   <!-- Monto -->
                   <td class="px-3 py-3 text-right whitespace-nowrap font-medium tabular-nums">
                     <div class="flex items-center justify-end gap-1">
-                      S/ {{ expense.total | number:'1.2-2' }}
+                      <span>
+                        {{ currencySymbol }} {{ expenseAmountInReportCurrency(expense) | number:'1.2-2' }}
+                        @if (isExpenseForeign(expense)) {
+                        <span class="block text-[11px] font-normal text-tertiary">{{ expenseOriginalText(expense) }}</span>
+                        }
+                      </span>
                       @if (getExpenseAmountEdited(expense)) {
                       <div class="relative">
                         <button type="button"
@@ -2158,7 +2168,7 @@
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Total gastado</span>
           <span class="font-semibold" [class.text-error]="!report.isDirecta && totalGastado > totalAnticipado" [class.text-secondary]="report.isDirecta || totalGastado <= totalAnticipado">
-            S/ {{ totalGastado | number:'1.2-2' }}
+            {{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}
           </span>
         </div>
         @if (!report.isDirecta) {
@@ -2255,7 +2265,7 @@
       </div>
       <div class="flex justify-between gap-4">
         <span class="text-tertiary">Total gastado</span>
-        <span class="font-semibold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</span>
+        <span class="font-semibold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</span>
       </div>
       <div class="flex justify-between gap-4">
         <span class="text-tertiary">Comprobantes</span>

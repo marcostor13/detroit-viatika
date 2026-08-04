@@ -3,6 +3,7 @@ import { Document, Types } from 'mongoose'
 import { ApprovalEntry } from '../../advance/entities/advance.entity'
 import { ChainStep } from '../../advance/approval-chain.util'
 import { chainStepSchemaDefinition } from '../../expense-report/entities/expense-report.entity'
+import { DEFAULT_MONEDA } from '../../../common/moneda.constants'
 
 export type ExpenseStatus =
   | 'pending'
@@ -122,6 +123,22 @@ export interface ExpenseDocument extends Document {
   mobilityRows?: MobilityRow[]
   declaracionJurada?: boolean
   declaracionJuradaFirmante?: string
+  /** Moneda ISO en que se emitió el comprobante. `total` está en ESTA moneda. */
+  moneda?: string
+  /** `total` convertido a la moneda base de la empresa. Congelado al registrar. */
+  montoBase?: number
+  /** TC moneda→base usado para `montoBase`. No se recalcula nunca. */
+  tipoCambio?: number
+  /** Fecha (YYYY-MM-DD) de la tasa aplicada, para poder auditarla. */
+  tcFecha?: string
+  /** Moneda de la rendición a la que pertenece, cuando difiere de la propia. */
+  monedaReporte?: string
+  /** TC moneda→moneda del reporte. */
+  tcReporte?: number
+  /** `total` expresado en la moneda de la rendición. */
+  montoReporte?: number
+  /** Agrupa los gastos de una misma DJ (un gasto por rubro). */
+  declaracionJuradaGroupId?: string
   reviewHistory?: ExpenseReviewHistory[]
   internalCode?: string
   comentario?: string
@@ -349,9 +366,37 @@ export class Expense {
   @Prop({ type: String, required: false })
   contabilidadRejectionReason?: string
 
-  /** Sub-tipo para 'otros_gastos': TK (Ticket), RC (Recibos diversos), DJ (Declaración Jurada), OT (Otros) */
+  /** Sub-tipo para 'otros_gastos': TK (Ticket), RC (Recibos diversos), DJ (Declaración Jurada), DJE (DJ al exterior), OT (Otros) */
   @Prop({ type: String, required: false })
   subTipo?: string
+
+  // --- Multimoneda ---
+  // Regla: `total` está en la moneda del comprobante (`moneda`). La conversión
+  // a la moneda base se congela al registrar y no se recalcula, para que una
+  // liquidación ya cerrada no se mueva si el TC cambia después.
+  @Prop({ type: String, default: DEFAULT_MONEDA })
+  moneda?: string
+
+  @Prop({ type: Number, required: false })
+  montoBase?: number
+
+  @Prop({ type: Number, required: false })
+  tipoCambio?: number
+
+  @Prop({ type: String, required: false })
+  tcFecha?: string
+
+  @Prop({ type: String, required: false })
+  monedaReporte?: string
+
+  @Prop({ type: Number, required: false })
+  tcReporte?: number
+
+  @Prop({ type: Number, required: false })
+  montoReporte?: number
+
+  @Prop({ type: String, required: false, index: true })
+  declaracionJuradaGroupId?: string
 
   // --- Desglose contable (asientos Contanet) ---
   @Prop({ type: Number, required: false })

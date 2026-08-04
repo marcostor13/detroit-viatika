@@ -15,6 +15,7 @@ import { ProjectService } from '../project/project.service'
 import { CategoryService } from '../category/category.service'
 import { ROLES } from '../auth/enums/roles.enum'
 import { ChainStep } from '../advance/approval-chain.util'
+import { CurrencyService } from '../exchange-rate/currency.service'
 
 const mockAdvanceService = {
   liquidateExpenseReport: jest.fn().mockResolvedValue(undefined),
@@ -102,6 +103,18 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
         { provide: UploadService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
       ],
     }).compile()
 
@@ -390,6 +403,18 @@ describe('ExpenseReportService — Fase 8 (cierre definitivo)', () => {
         { provide: UploadService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
       ],
     }).compile()
 
@@ -748,6 +773,18 @@ describe('ExpenseReportService — Fase 6 (reembolso: tenant y registro)', () =>
         { provide: UploadService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
       ],
     }).compile()
 
@@ -924,6 +961,18 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
         { provide: UploadService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
       ],
     }).compile()
 
@@ -1072,6 +1121,18 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
         { provide: UploadService, useValue: {} },
         { provide: ProjectService, useValue: mockProjectServiceLocal },
         { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
       ],
     }).compile()
 

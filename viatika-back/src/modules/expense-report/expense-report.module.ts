@@ -20,6 +20,7 @@ import { UploadModule } from '../upload/upload.module'
 import { ProjectModule } from '../project/project.module'
 import { CategoryModule } from '../category/category.module'
 import { ClientModule } from '../client/client.module'
+import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module'
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ClientModule } from '../client/client.module'
     CategoryModule,
     ClientModule,
     forwardRef(() => AdvanceModule),
+    ExchangeRateModule,
   ],
   controllers: [ExpenseReportController],
   providers: [ExpenseReportService],

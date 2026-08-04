@@ -25,7 +25,7 @@ export interface IChainStep {
 
 export interface ICreateViaticoPayload {
   amount: number;
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  /** Moneda ISO ('PEN' / 'USD'). Default 'PEN' si se omite. */
   moneda?: string;
   place: string;
   lat?: number;
@@ -44,7 +44,7 @@ export interface ICreateViaticoPayload {
 
 export interface IResubmitViaticoPayload {
   amount: number;
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si se omite. */
+  /** Moneda ISO ('PEN' / 'USD'). Default 'PEN' si se omite. */
   moneda?: string;
   place: string;
   lat?: number;
@@ -160,7 +160,7 @@ export interface IExpenseReport {
   assignedCoordinatorId?: { _id: string; name: string; email?: string } | string;
   // ─── Viático fields (type='viatico') ──────────────────────────────────────
   viaticoAmount?: number;
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01'. */
+  /** Moneda ISO ('PEN' / 'USD'). Default 'PEN'. */
   viaticoMoneda?: string;
   viaticoPlace?: string;
   viaticoStartDate?: string;

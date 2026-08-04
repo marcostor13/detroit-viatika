@@ -22,6 +22,11 @@ function makeConfig(): any {
     fuenteCajaBancos: 'CB',
     monedaOrigen: '01',
     monedaRegistro: '01',
+    monedaBase: 'PEN',
+    supportedCurrencies: [
+      { code: 'PEN', symbol: 'S/', contanetCode: '01', decimals: 2, approvalThresholdL1: 500 },
+      { code: 'USD', symbol: '$', contanetCode: '02', decimals: 2, approvalThresholdL1: 150 },
+    ],
     identificadorCtrMda: 'A',
     conceptoFec: '1',
     area: '010101',
@@ -431,5 +436,92 @@ describe('Export Contanet — cabeceras (replica sheet1)', () => {
   it('los datos empiezan en la fila 9 (índice 8)', () => {
     expect(aoa[8][D]).toBe(1)
     expect(aoa[8][D + 1]).toBe(1)
+  })
+})
+
+/**
+ * DJ al exterior: el gasto se declaró en dólares y se guardó convertido a soles.
+ * La columna ME debe devolver el importe firmado, no una reconversión con la
+ * tasa del día (que daría una diferencia de centavos contra el documento).
+ */
+describe('AccountingEntriesService — gasto declarado en moneda extranjera', () => {
+  const service = newService()
+  const config = makeConfig()
+
+  const categoryMap = new Map<string, any>([
+    ['cat1', { _id: 'cat1', cuenta: '91.3.1.410', cuentaDestino6x: '63.1.4.100' }],
+  ])
+  const projectMap = new Map<string, any>([
+    ['p1', { _id: 'p1', code: 'CC-01', centroCosto: 'SC', subCentroCosto: '62747', area: '010101' }],
+  ])
+
+  // 150 USD declarados, convertidos a 560 soles (100 a 3.70 + 50 a 3.80).
+  const djExpense = {
+    _id: 'dj1',
+    proyectId: 'p1',
+    categoryId: 'cat1',
+    total: 150,
+    moneda: 'USD',
+    montoBase: 560,
+    tipoCambio: 3.7333,
+    expenseType: 'otros_gastos',
+    subTipo: 'DJE',
+    comentario: 'Declaración jurada al exterior',
+    data: JSON.stringify({ type: 'otros_gastos', subTipo: 'DJE' }),
+  }
+
+  // La tasa del día (3.5) es distinta a la de la DJ: si se usara esa, el ME
+  // saldría 160 en vez de los 150 declarados.
+  const rateMap = new Map<string, number>([['2026-07-02', TC]])
+  let lines: ContanetLine[]
+
+  beforeAll(async () => {
+    lines = await (service as any).buildCompraLines({
+      report: { createdAt: new Date('2026-07-02') },
+      config,
+      expenses: [djExpense],
+      projectMap,
+      categoryMap,
+      periodDate: new Date('2026-07-01'),
+      rateMap,
+      cargosMap: new Map(),
+    })
+  })
+
+  it('usa el tipo de cambio del comprobante, no el del día', () => {
+    expect(lines.every(l => l.cambioMoneda === 3.7333)).toBe(true)
+  })
+
+  it('la cuenta 42 registra 560 soles y su ME son los 150 USD declarados', () => {
+    const l42 = lines.find(l => l.nroCuenta === '42.1.2.100')!
+    expect(l42.montoHaber).toBe(560)
+    expect(Number(l42.montoHaberME)).toBeCloseTo(150, 2)
+  })
+
+  it('declara la moneda del comprobante en el asiento (contanetCode 02)', () => {
+    expect(lines.every(l => l.mdaOrigen === '02')).toBe(true)
+  })
+
+  it('sigue cuadrando en soles', () => {
+    expect(sum(lines, 'montoDebe')).toBe(sum(lines, 'montoHaber'))
+    expect(service.validateCuadre(lines)).toHaveLength(0)
+  })
+
+  it('un gasto en soles conserva la tasa del día', async () => {
+    const penLines: ContanetLine[] = await (service as any).buildCompraLines({
+      report: { createdAt: new Date('2026-07-02') },
+      config,
+      expenses: [{ ...djExpense, _id: 'pen1', total: 560, moneda: 'PEN', montoBase: undefined, tipoCambio: undefined }],
+      projectMap,
+      categoryMap,
+      periodDate: new Date('2026-07-01'),
+      rateMap,
+      cargosMap: new Map(),
+    })
+    expect(penLines.every(l => l.cambioMoneda === TC)).toBe(true)
+    expect(penLines.every(l => l.mdaOrigen === '01')).toBe(true)
+    // Sin conversión: el importe de registro sigue siendo el propio total.
+    const l42 = penLines.find(l => l.nroCuenta === '42.1.2.100')!
+    expect(l42.montoHaber).toBe(560)
   })
 })

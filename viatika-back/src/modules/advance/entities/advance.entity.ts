@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, Types } from 'mongoose'
+import { DEFAULT_MONEDA } from '../../../common/moneda.constants'
 
 export type AdvanceStatus =
   | 'draft'
@@ -168,8 +169,14 @@ export interface AdvanceDocument extends Document {
   requestBankName?: string
   requestAccountNumber?: string
   requestCci?: string
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
+  /** Moneda ISO del documento ('PEN' / 'USD'). Default 'PEN'. */
   moneda?: string
+  /** `amount` convertido a la moneda base, congelado al crear. */
+  montoBase?: number
+  /** TC moneda→base usado para `montoBase` (1 si moneda === base). */
+  tipoCambio?: number
+  /** Fecha (YYYY-MM-DD) del TC aplicado. */
+  tcFecha?: string
 }
 
 /**
@@ -257,9 +264,18 @@ export class Advance {
   @Prop({ required: true, min: 0 })
   amount: number
 
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
-  @Prop({ type: String, default: '01' })
+  /** Moneda ISO del documento ('PEN' / 'USD'). Default 'PEN'. */
+  @Prop({ type: String, default: DEFAULT_MONEDA })
   moneda?: string
+
+  @Prop({ type: Number, required: false })
+  montoBase?: number
+
+  @Prop({ type: Number, required: false })
+  tipoCambio?: number
+
+  @Prop({ type: String, required: false })
+  tcFecha?: string
 
   @Prop({ required: true })
   description: string

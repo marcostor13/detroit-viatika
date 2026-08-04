@@ -26,6 +26,7 @@ import {
   ADVANCE_STATUS_COLORS,
 } from '../../interfaces/advance.interface';
 import { monedaSymbol } from '../../constants/moneda';
+import { expenseAmountBase } from '../../constants/moneda';
 
 type UnifiedViaticoItem = {
   _id: string;
@@ -224,7 +225,7 @@ export class MisRendicionesComponent implements OnInit {
   get loosePendingTotal(): number {
     return this.directaExpenses()
       .filter(e => !e.expenseReportId)
-      .reduce((sum, e) => sum + (Number(e.total) || 0), 0);
+      .reduce((sum, e) => sum + expenseAmountBase(e), 0);
   }
 
   submitDirectas(): void {
@@ -360,7 +361,7 @@ export class MisRendicionesComponent implements OnInit {
   }
 
   get directaTotalMonto(): number {
-    return this.directaExpenses().reduce((sum, e) => sum + (Number(e.total) || 0), 0);
+    return this.directaExpenses().reduce((sum, e) => sum + expenseAmountBase(e), 0);
   }
 
   goToDirectaReport(e: any): void {

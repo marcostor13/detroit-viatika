@@ -89,7 +89,7 @@ export interface RendicionExportData {
   startDate?: string;
   endDate?: string;
   items?: RendicionExportBudgetItemRow[];
-  /** Código de moneda SUNAT del viático vinculado ('01' soles, '02' dólares). Default '01'. */
+  /** Moneda ISO del viático vinculado ('PEN' / 'USD'). Default 'PEN'. */
   moneda?: string;
   signature?: string;
   approvedByName?: string;

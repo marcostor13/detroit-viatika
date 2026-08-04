@@ -9,6 +9,7 @@ import { CajaChicaReportExportService, CajaChicaExportRow } from '../../../servi
 import { ICajaChicaReport, ISelectedReport } from '../../../interfaces/caja-chica-report.interface';
 import { IExpenseReport } from '../../../interfaces/expense-report.interface';
 import { formatFechaEmisionDdMmYyyy, resolveExpenseFechaEmision } from '../../../utils/fecha-emision.util';
+import { expenseAmountBase } from '../../../constants/moneda';
 
 @Component({
   selector: 'app-rendicion-caja-chica-detalle',
@@ -250,7 +251,7 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
   }
 
   expenseSubtotal(expenses: any[]): number {
-    return (expenses ?? []).reduce((s: number, e: any) => s + (Number(e.total) || 0), 0);
+    return (expenses ?? []).reduce((s: number, e: any) => s + expenseAmountBase(e), 0);
   }
 
   private parseInvData(inv: any): Record<string, any> {

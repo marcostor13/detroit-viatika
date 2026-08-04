@@ -51,6 +51,8 @@ import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
 import { CreateAdvanceLineDto } from '../advance/dto/create-advance.dto'
 import { Logger } from '@nestjs/common'
 import { monedaSymbol, DEFAULT_MONEDA } from '../../common/moneda.constants'
+import { CurrencyService } from '../exchange-rate/currency.service'
+import { normalizeMoneda } from '../../common/moneda.constants'
 
 /** Contexto del usuario que solicita eliminar una solicitud. */
 export interface SolicitudDeleteActor {
@@ -76,7 +78,8 @@ export class ExpenseReportService implements OnModuleInit {
     private readonly advanceService: AdvanceService,
     private readonly uploadService: UploadService,
     private readonly projectService: ProjectService,
-    private readonly categoryService: CategoryService
+    private readonly categoryService: CategoryService,
+    private readonly currencyService: CurrencyService
   ) { }
 
   async onModuleInit() {
@@ -243,14 +246,14 @@ export class ExpenseReportService implements OnModuleInit {
     if (report.isDirecta === true) {
       const directa = await this.expenseReportModel
         .findById(reportId)
-        .populate('expenseIds', 'total status')
+        .populate('expenseIds', 'total status montoBase moneda montoReporte monedaReporte')
         .exec()
       const exps = (directa?.expenseIds ?? []) as any[]
       const gastado = exps.reduce(
         (s: number, e: any) =>
           String(e?.status || '').toLowerCase() === 'rejected'
             ? s
-            : s + (Number(e?.total) || 0),
+            : s + this.expenseSettlementAmountBase(e),
         0
       )
       return gastado > 0 ? gastado : Number(report.budget) || 0
@@ -527,7 +530,7 @@ export class ExpenseReportService implements OnModuleInit {
         directaDeposit: { $exists: true, $ne: null },
       })
       .populate('userId', 'name email')
-      .populate('expenseIds', 'total')
+      .populate('expenseIds', 'total montoBase moneda montoReporte monedaReporte')
       .sort({ createdAt: -1 })
       .lean()
       .exec()
@@ -535,7 +538,7 @@ export class ExpenseReportService implements OnModuleInit {
     return reports.map(r => {
       const expenses = (r.expenseIds as any[]) || []
       const totalGastado = expenses.reduce(
-        (sum, e) => sum + (Number(e?.total) || 0),
+        (sum, e) => sum + this.expenseSettlementAmountBase(e),
         0
       )
       const deposited = Number(r.directaDeposit?.amount ?? r.budget ?? 0)
@@ -600,7 +603,7 @@ export class ExpenseReportService implements OnModuleInit {
       // agregado de rendición directa (ya no tiene cadena a nivel de reporte).
       // `total` también poblado: reportExpensesTotal() lo necesita y antes de
       // este populate expenseIds llegaban sin poblar (siempre devolvía 0).
-      .populate('expenseIds', 'total status approvalLevel requiredLevels contabilidadStatus')
+      .populate('expenseIds', 'total status approvalLevel requiredLevels contabilidadStatus montoBase moneda montoReporte monedaReporte')
       .sort({ createdAt: -1 })
       .exec()
   }
@@ -650,7 +653,7 @@ export class ExpenseReportService implements OnModuleInit {
       .populate('directaOrdenTrabajoId', 'nombre costCenterId')
       // Comprobantes: total (monto de la rendición directa) y datos/archivo para
       // mostrar las facturas en el modal de aprobación del jefe inmediato. VD-25.
-      .populate('expenseIds', 'total data file expenseType')
+      .populate('expenseIds', 'total data file expenseType montoBase moneda montoReporte monedaReporte')
       .sort({ createdAt: -1 })
       .exec()
   }
@@ -662,7 +665,7 @@ export class ExpenseReportService implements OnModuleInit {
         clientId: new Types.ObjectId(clientId),
         isCajaChica: { $ne: true },
       })
-      .populate('expenseIds', 'total approvalLevel requiredLevels contabilidadStatus')
+      .populate('expenseIds', 'total approvalLevel requiredLevels contabilidadStatus montoBase moneda montoReporte monedaReporte')
       .populate('createdBy', 'name email')
       .populate('viaticoLines.categoryId', 'name')
       .populate('projectId', 'code name')
@@ -696,7 +699,7 @@ export class ExpenseReportService implements OnModuleInit {
       })
       .populate(
         'expenseIds',
-        'total expenseType fechaEmision proveedor approvalLevel requiredLevels contabilidadStatus'
+        'total expenseType fechaEmision proveedor approvalLevel requiredLevels contabilidadStatus montoBase moneda montoReporte monedaReporte'
       )
       .sort({ createdAt: -1 })
       .lean()
@@ -904,6 +907,30 @@ export class ExpenseReportService implements OnModuleInit {
       throw new ForbiddenException(
         'La caja chica de esta rendición fue finalizada por Contabilidad. No se pueden agregar ni modificar más gastos.'
       )
+    }
+  }
+
+  /**
+   * Moneda y TC congelado de una rendición. Lectura liviana: la usa el alta de
+   * gastos para expresar cada comprobante en la moneda del viático sin cargar
+   * el reporte completo con sus populates.
+   */
+  async findCurrencyMeta(reportId: string): Promise<{
+    moneda?: string
+    tipoCambio?: number
+    tcFecha?: string
+  } | null> {
+    if (!Types.ObjectId.isValid(reportId)) return null
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('viaticoMoneda tipoCambio tcFecha')
+      .lean<{ viaticoMoneda?: string; tipoCambio?: number; tcFecha?: string }>()
+      .exec()
+    if (!report) return null
+    return {
+      moneda: report.viaticoMoneda,
+      tipoCambio: report.tipoCambio,
+      tcFecha: report.tcFecha,
     }
   }
 
@@ -1498,14 +1525,15 @@ export class ExpenseReportService implements OnModuleInit {
           ? fullyUpdatedReport.expenseIds
           : []
         const expenseTotal = expenseDocs.reduce(
-          (s: number, e: any) => s + (Number(e?.total) || 0),
+          (s: number, e: any) => s + this.expenseSettlementAmountBase(e),
           0
         )
         const expenseTotalFormatted = expenseTotal.toFixed(2)
         const expenseItems = expenseDocs.map((e: any) => ({
           categoryName: e?.categoryId?.name || 'Gasto',
           description: e?.description || '',
-          totalFormatted: (Number(e?.total) || 0).toFixed(2),
+          // En moneda base, para que las líneas sumen el total del correo.
+          totalFormatted: this.expenseSettlementAmountBase(e).toFixed(2),
         }))
         const platformUrl = this.emailService.buildAppUrl(
           `/mis-rendiciones/${id}/detalle`
@@ -1893,7 +1921,7 @@ export class ExpenseReportService implements OnModuleInit {
       actor
     )
     const expensesTotal = expenses.reduce(
-      (sum, e: any) => sum + (Number(e.total) || 0),
+      (sum, e: any) => sum + this.expenseSettlementAmountBase(e),
       0
     )
     const filesCount = expenses.filter((e: any) => !!e.file).length
@@ -2284,7 +2312,7 @@ export class ExpenseReportService implements OnModuleInit {
         select: 'name email roleId',
         populate: { path: 'roleId', select: 'name' },
       })
-      .populate('expenseIds', 'total')
+      .populate('expenseIds', 'total montoBase moneda montoReporte monedaReporte')
       .sort({ createdAt: -1 })
       .lean()
       .exec()
@@ -2302,7 +2330,7 @@ export class ExpenseReportService implements OnModuleInit {
       }
       const expenses = (r.expenseIds as any[]) || []
       const totalGastado = expenses.reduce(
-        (s, e) => s + (Number(e?.total) || 0),
+        (s, e) => s + this.expenseSettlementAmountBase(e),
         0
       )
       const deposited = Number(r.directaDeposit?.amount ?? r.budget ?? 0)
@@ -2423,6 +2451,54 @@ export class ExpenseReportService implements OnModuleInit {
       .exec()
   }
 
+  /**
+   * Equivalente en moneda base de un gasto. `montoBase` se congela al crear el
+   * comprobante (TC de su fecha de emisión); si el documento es previo al
+   * multimoneda, `montoBase` no existe y `total` ya estaba asumido en base.
+   *
+   * Sumar `total` a secas mezclaría monedas: una factura en dólares entraría
+   * en la liquidación como si fueran soles.
+   */
+  private expenseSettlementAmountBase(e: any): number {
+    return Number(e?.montoBase ?? e?.total) || 0
+  }
+
+  /**
+   * Equivalente en moneda base de lo realmente pagado de un anticipo. Reaplica
+   * el TC congelado sobre `paidAmount ?? amount` en vez de usar `montoBase`
+   * (que se congeló sobre el monto solicitado), porque el pago real puede
+   * diferir de lo pedido.
+   */
+  private advanceSettlementAmountBase(a: any): number {
+    if (a?.status === 'approved') return 0
+    const raw = Number(a?.paidAmount ?? a?.amount) || 0
+    return Math.round(raw * this.advanceRate(a) * 100) / 100
+  }
+
+  /**
+   * TC congelado de un anticipo. La colección `advances` es legado (ya no se
+   * crean: los viáticos viven como ExpenseReport), así que un documento en
+   * moneda extranjera sin TC es un dato corrupto, no un caso previsto: se
+   * registra en el log en vez de valorarlo 1 a 1 en silencio.
+   */
+  private advanceRate(a: any): number {
+    const rate = Number(a?.tipoCambio)
+    if (rate > 0) return rate
+    const moneda = a?.moneda || DEFAULT_MONEDA
+    if (moneda !== DEFAULT_MONEDA) {
+      this.logger.error(
+        `Anticipo ${a?._id} en ${moneda} sin tipo de cambio congelado: se valora 1 a 1 y la liquidación quedará mal. Revisar el documento.`
+      )
+    }
+    return 1
+  }
+
+  /** Equivalente en base de un importe propio del reporte (budget, viaticoPaidAmount…). */
+  private reportSettlementAmountBase(report: any, amount: number): number {
+    const rate = Number(report?.tipoCambio) || 1
+    return Math.round((Number(amount) || 0) * rate * 100) / 100
+  }
+
   async updateSettlement(reportId: string, settlement: any) {
     return await this.expenseReportModel
       .findByIdAndUpdate(reportId, { $set: { settlement } }, { new: true })
@@ -2434,7 +2510,12 @@ export class ExpenseReportService implements OnModuleInit {
    * contabilidad. Base para calcular devolución vs reembolso.
    */
   private directaFundsGiven(report: any): number {
-    return Number(report?.directaDeposit?.amount ?? 0)
+    // El depósito está en la moneda del reporte; se compara contra gastos ya
+    // llevados a moneda base, así que hay que convertirlo igual.
+    return this.reportSettlementAmountBase(
+      report,
+      Number(report?.directaDeposit?.amount ?? 0)
+    )
   }
 
   async setApprovedBy(reportId: string, userId: string) {
@@ -2546,6 +2627,9 @@ export class ExpenseReportService implements OnModuleInit {
           reportId: String(r._id),
           user: r.userId,
           remaining: Math.round(remaining * 100) / 100,
+          // El importe queda en la moneda del viático: el archivo del banco
+          // declara una sola moneda por planilla.
+          moneda: r.viaticoMoneda,
           bankName: r.viaticoBankName ?? r.userId?.bankAccount?.bankName ?? '',
           accountNumber:
             r.viaticoAccountNumber ?? r.userId?.bankAccount?.accountNumber ?? '',
@@ -2590,18 +2674,21 @@ export class ExpenseReportService implements OnModuleInit {
         $or: noPayment,
       })
       .populate('userId', 'name email bankAccount dni documentType')
-      .populate('expenseIds', 'total status')
+      .populate('expenseIds', 'total status montoBase moneda montoReporte monedaReporte')
       .sort({ updatedAt: -1 })
       .lean()
       .exec()
 
     const computedDirectas = directas
       .map(r => {
-        const deposit = Number((r as any).directaDeposit?.amount ?? 0)
+        const deposit = this.reportSettlementAmountBase(
+          r,
+          Number((r as any).directaDeposit?.amount ?? 0)
+        )
         const gastado = (((r as any).expenseIds as any[]) || []).reduce(
           (s: number, e: any) => {
             const st = String(e?.status || '').toLowerCase()
-            return st === 'rejected' ? s : s + (Number(e?.total) || 0)
+            return st === 'rejected' ? s : s + this.expenseSettlementAmountBase(e)
           },
           0
         )
@@ -2778,11 +2865,11 @@ export class ExpenseReportService implements OnModuleInit {
     if (!settlementType || settlementType !== 'reembolso') {
       const populated = await this.expenseReportModel
         .findById(reportId)
-        .populate('expenseIds', 'total')
+        .populate('expenseIds', 'total montoBase moneda montoReporte monedaReporte')
         .exec()
       const expenses = (populated?.expenseIds ?? []) as any[]
       const expenseTotal = expenses.reduce(
-        (s: number, e: any) => s + (Number(e.total) || 0),
+        (s: number, e: any) => s + this.expenseSettlementAmountBase(e),
         0
       )
       const rawAdvanceIds = ((report as any).advanceIds ?? []).map((x: any) =>
@@ -2800,11 +2887,7 @@ export class ExpenseReportService implements OnModuleInit {
       const depositTotal = this.directaFundsGiven(report)
       const advanceTotal =
         activeAdvances.reduce(
-          (s: number, a: any) =>
-            s +
-            (a.status === 'approved'
-              ? 0
-              : Number(a.paidAmount ?? a.amount) || 0),
+          (s: number, a: any) => s + this.advanceSettlementAmountBase(a),
           0
         ) + depositTotal
       const difference = advanceTotal - expenseTotal
@@ -3016,7 +3099,7 @@ export class ExpenseReportService implements OnModuleInit {
       if (!effectiveSettlementType) {
         const expenses = (report.expenseIds as any[]) || []
         const expenseTotal = expenses.reduce(
-          (s: number, e: any) => s + (Number(e.total) || 0),
+          (s: number, e: any) => s + this.expenseSettlementAmountBase(e),
           0
         )
         const rawAdvanceIds = ((report as any).advanceIds ?? []).map(
@@ -3203,7 +3286,7 @@ export class ExpenseReportService implements OnModuleInit {
   ): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel
       .findById(id)
-      .populate('expenseIds', 'total status')
+      .populate('expenseIds', 'total status montoBase moneda montoReporte monedaReporte')
       .exec()
     if (!report) throw new NotFoundException(`Rendición ${id} no encontrada`)
     if (report.status !== 'closed' && report.status !== 'approved') {
@@ -3235,7 +3318,7 @@ export class ExpenseReportService implements OnModuleInit {
     )
     const expenses = (report.expenseIds as any[]) || []
     const expenseTotal = expenses.reduce(
-      (s, e) => s + (Number(e.total) || 0),
+      (s, e) => s + this.expenseSettlementAmountBase(e),
       0
     )
     const advanceTotal =
@@ -3910,6 +3993,18 @@ export class ExpenseReportService implements OnModuleInit {
     // en vez de quedar en pending_l1 sin nadie que pueda avanzarla.
     const initialStatus = chain.length === 0 ? 'pending_contabilidad' : 'pending_l1'
 
+    // Conversión del viático a la moneda base, congelada al crear la solicitud.
+    // Es la tasa que después usan sus gastos para expresarse en la moneda del
+    // viático: si se recalculara, una rendición ya liquidada cambiaría sola.
+    const viaticoMoneda = normalizeMoneda(dto.moneda)
+    const accountingConfig = await this.currencyService.getConfig(clientId)
+    const conversion = await this.currencyService.toBase(
+      roundedSum,
+      viaticoMoneda,
+      new Date(dto.startDate),
+      accountingConfig
+    )
+
     const report = await this.expenseReportModel.create({
       type: 'viatico',
       userId: new Types.ObjectId(userId),
@@ -3921,7 +4016,10 @@ export class ExpenseReportService implements OnModuleInit {
       expenseIds: [],
       budget: roundedSum,
       viaticoAmount: roundedSum,
-      viaticoMoneda: dto.moneda?.trim() || DEFAULT_MONEDA,
+      viaticoMoneda,
+      viaticoMontoBase: conversion.montoBase,
+      tipoCambio: conversion.tipoCambio,
+      tcFecha: conversion.tcFecha,
       viaticoApproverChain: chain,
       viaticoRequiredLevels: chain.length,
       viaticoApprovalLevel: 0,
@@ -4575,7 +4673,7 @@ export class ExpenseReportService implements OnModuleInit {
     const expenses = (report.expenseIds as any[]) || []
     const expenseTotal = expenses.reduce((sum, e) => {
       if (String(e?.status ?? '').toLowerCase() !== 'approved') return sum
-      return sum + (Number(e.total) || 0)
+      return sum + this.expenseSettlementAmountBase(e)
     }, 0)
 
     const advanceTotal = Number(report.viaticoPaidAmount ?? 0)

@@ -21,6 +21,7 @@ import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
+import { monedaSymbol } from '../../../constants/moneda';
 import {
   MobilitySheetExportData,
   RendicionExportService,
@@ -358,12 +359,48 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     // Here we'll map the populated expenseIds if they contain the real amounts,
     // or simulate if the backend just returns IDs.
     this.totalGastado = 0;
-    
+
     // For now, assume expenseIds returns full objects due to mongoose populate
     if (this.report.expenseIds && this.report.expenseIds.length > 0) {
-      this.totalGastado = this.report.expenseIds.reduce((sum, exp: any) => sum + (parseFloat(exp.total) || 0), 0);
+      this.totalGastado = this.report.expenseIds.reduce(
+        (sum, exp: any) => sum + this.expenseAmountInReportCurrency(exp),
+        0
+      );
     }
-    
+  }
+
+  /**
+   * Importe del gasto en la moneda de la rendición.
+   *
+   * Un comprobante emitido en otra moneda guarda su equivalencia congelada al
+   * registrarse (`montoReporte`). Sumar `total` a secas mezclaría monedas.
+   */
+  expenseAmountInReportCurrency(exp: any): number {
+    const enMonedaReporte = Number(exp?.montoReporte);
+    if (!Number.isNaN(enMonedaReporte) && exp?.montoReporte != null) {
+      return enMonedaReporte;
+    }
+    return parseFloat(exp?.total) || 0;
+  }
+
+  /** Símbolo de la moneda de la rendición, para los totales de la ficha. */
+  get currencySymbol(): string {
+    return monedaSymbol(this.report?.viaticoMoneda);
+  }
+
+  /** True si el gasto se emitió en una moneda distinta a la de la rendición. */
+  isExpenseForeign(exp: any): boolean {
+    return (
+      !!exp?.moneda && !!exp?.monedaReporte && exp.moneda !== exp.monedaReporte
+    );
+  }
+
+  /** Importe original del gasto con su símbolo, para mostrarlo junto al convertido. */
+  expenseOriginalText(exp: any): string {
+    const original = `${monedaSymbol(exp?.moneda)} ${(parseFloat(exp?.total) || 0).toFixed(2)}`;
+    // Sin el TC el colaborador no puede comprobar de dónde sale el convertido.
+    const tc = Number(exp?.tcReporte);
+    return tc > 0 && tc !== 1 ? `${original} · TC ${tc}` : original;
   }
 
   goBack() {
