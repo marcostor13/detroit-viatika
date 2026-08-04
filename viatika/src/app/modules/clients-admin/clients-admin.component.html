@@ -306,10 +306,12 @@
                       (click)="startEdit(row)"
                       class="text-sm text-primary font-medium hover:underline"
                     >Editar</button>
-                    <button
-                      (click)="openDeleteConfirm(row)"
-                      class="text-sm text-error font-medium hover:underline"
-                    >Eliminar empresa</button>
+                    @if (canDeleteClient) {
+                      <button
+                        (click)="openDeleteConfirm(row)"
+                        class="text-sm text-error font-medium hover:underline"
+                      >Eliminar empresa</button>
+                    }
                   </div>
                 }
               </div>

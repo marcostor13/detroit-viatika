@@ -7,6 +7,7 @@ import { environment } from '../../../environments/environment';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { UploadService } from '../../services/upload.service';
 import { NotificationService } from '../../services/notification.service';
+import { UserStateService } from '../../services/user-state.service';
 import { ISunatConfig } from '../../interfaces/sunat-config.interface';
 
 interface IUserRow {
@@ -69,6 +70,10 @@ export class ClientsAdminComponent implements OnInit {
   private invoicesService = inject(InvoicesService);
   private uploadService = inject(UploadService);
   private notificationService = inject(NotificationService);
+  private userState = inject(UserStateService);
+
+  /** Eliminar una empresa es exclusivo del Superadministrador (backend: @Roles(SUPER_ADMIN)). */
+  readonly canDeleteClient = this.userState.isSuperAdmin();
 
   clients: IClientRow[] = [];
   loading = false;
@@ -435,6 +440,7 @@ export class ClientsAdminComponent implements OnInit {
   // --- Delete client ---
 
   openDeleteConfirm(row: IClientRow): void {
+    if (!this.canDeleteClient) return;
     row.showDeleteConfirm = true;
     row.deleteConfirmText = '';
   }
@@ -445,6 +451,7 @@ export class ClientsAdminComponent implements OnInit {
   }
 
   confirmDeleteClient(row: IClientRow): void {
+    if (!this.canDeleteClient) return;
     if (row.deleteConfirmText !== 'eliminar empresa definitivamente') return;
     row.deleting = true;
     this.http.delete(`${environment.api}/client/${row._id}`).subscribe({
