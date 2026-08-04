@@ -45,6 +45,7 @@ import {
   ChainStep,
   ChainProject,
 } from '../advance/approval-chain.util'
+import { ApproverLevel } from '../../common/types/approver-level'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
 import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
@@ -3889,7 +3890,11 @@ export class ExpenseReportService implements OnModuleInit {
    * → N2(seleccionado) si no lo está.
    */
   private async buildSolicitudCostCenterChain(
-    profile: { projectIds?: string[]; primaryProjectId?: string },
+    profile: {
+      projectIds?: string[]
+      primaryProjectId?: string
+      approverLevels?: ApproverLevel[]
+    },
     selectedProjectId: string,
     creatorId: string,
     clientId: string
@@ -3906,6 +3911,7 @@ export class ExpenseReportService implements OnModuleInit {
       selectedProjectId,
       creatorId,
       projectById,
+      ownerApproverLevels: profile.approverLevels,
     })
   }
 
@@ -3939,6 +3945,9 @@ export class ExpenseReportService implements OnModuleInit {
     const profile = await this.userService.findTransactionalProfile(ownerUserId)
     const assignedProjectIds = profile?.projectIds ?? []
     const primaryProjectId = profile?.primaryProjectId
+    // Regla 1.10: N1/N2 salen de los niveles propios del colaborador si los
+    // tiene; si no, del centro de costo principal (comportamiento previo).
+    const ownerApproverLevels = profile?.approverLevels
 
     const expenses = await this.expenseModel
       .find({ _id: { $in: expenseIds } })
@@ -3968,6 +3977,7 @@ export class ExpenseReportService implements OnModuleInit {
         selectedProjectId,
         creatorId: ownerUserId,
         projectById,
+        ownerApproverLevels,
       })
       expense.approverChain = chain
       expense.requiredLevels = chain.length

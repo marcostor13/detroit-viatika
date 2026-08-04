@@ -51,7 +51,11 @@ describe('UserPermissionsComponent', () => {
   ];
 
   beforeEach(() => {
-    adminUsersService = jasmine.createSpyObj('AdminUsersService', ['getUser', 'updatePermissions']);
+    adminUsersService = jasmine.createSpyObj('AdminUsersService', [
+      'getUser',
+      'updatePermissions',
+      'getUsers',
+    ]);
     notification = jasmine.createSpyObj('NotificationService', ['show']);
     categoriaService = jasmine.createSpyObj('CategoriaService', ['getAllFlatAdmin']);
     userState = jasmine.createSpyObj('UserStateService', ['getUser']);
@@ -61,6 +65,7 @@ describe('UserPermissionsComponent', () => {
     adminUsersService.getUser.and.returnValue(of(mockUser));
     categoriaService.getAllFlatAdmin.and.returnValue(of(mockCategories));
     invoicesService.getProjects.and.returnValue(of(mockProjects));
+    adminUsersService.getUsers.and.returnValue(of([]));
     userState.getUser.and.returnValue({ companyId: 'c1' } as any);
 
     TestBed.configureTestingModule({
@@ -105,6 +110,8 @@ describe('UserPermissionsComponent', () => {
         categoryIds: [],
         projectIds: [],
         primaryProjectId: undefined,
+        otrosGastosOpcionales: { recibosDiversos: true, djExtranjero: true },
+        approverLevels: [],
       });
     });
 

@@ -8,8 +8,12 @@ por auto-aprobación** (regla 1.5).
 
 ## Convenciones
 
-- **N1 / N2 / N3** = aprobador del nivel _explícito_ del centro de costo. La numeración
-  es **identidad fija**, no posición: un centro puede tener N2 sin tener N1.
+- **N1 / N2 / N3** = aprobador del nivel _explícito_. La numeración es **identidad fija**,
+  no posición: se puede tener N2 sin tener N1.
+- **Fuente del nivel** (regla 1.10): los niveles salen del **colaborador** cuando tiene
+  aprobadores propios configurados en sus permisos; si no tiene ninguno, salen del
+  **centro de costo** (comportamiento previo). El paso del centro **seleccionado no
+  asignado** siempre sale del centro de costo.
 - **Principal** = centro de costo primario del colaborador. **Seleccionado** = centro
   elegido para esa solicitud/rendición.
 - **Asignado** = el centro seleccionado está entre los centros asignados al colaborador.
@@ -125,6 +129,32 @@ Casos de borde del escalamiento:
 - Si **no hay** un nivel superior definido, se usan los **demás aprobadores** del mismo
   nivel (excluyendo al creador).
 - Si el creador era el **único** aprobador y no hay nivel superior, el paso se **omite**.
+
+---
+
+## 5b. Regla 1.10 — De dónde salen los niveles
+
+```mermaid
+flowchart TD
+    A["Armar la cadena (solicitud o rendición)"] --> B{"¿El colaborador tiene<br/>niveles propios configurados?"}
+    B -->|Sí| C["N1/N2 salen del COLABORADOR<br/>(source: user)"]
+    B -->|No| D["N1/N2 salen del CENTRO DE COSTO<br/>(source: project) — como antes"]
+    C --> E{"¿El centro seleccionado<br/>está asignado?"}
+    D --> E
+    E -->|Sí| F([Contabilidad])
+    E -->|No| G["+ N2 del centro SELECCIONADO<br/>(siempre source: project)"] --> F
+```
+
+Cadenas resultantes con niveles propios configurados:
+
+| Flujo | Centro asignado | Centro no asignado |
+|---|---|---|
+| **SOLICITUD** | `N2(colaborador)` → `Contabilidad` | `N2(colaborador)` → `N2(seleccionado)` |
+| **RENDICIÓN** | `N1(colab)` → `N2(colab)` → `Contabilidad` | `N1(colab)` → `N2(colab)` → `N2(sel)` → `Contabilidad` |
+
+Un nivel del colaborador con **varios aprobadores** es un solo paso: cualquiera de ellos
+lo completa y **todos** reciben la notificación. Las reglas 1.5, 1.6 y 1.8 se aplican
+igual sobre los niveles del colaborador.
 
 ---
 

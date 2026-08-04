@@ -16,6 +16,12 @@ export const chainStepSchemaDefinition = {
   level: { type: Number, required: true },
   projectId: { type: Types.ObjectId, ref: 'Project', required: true },
   projectRole: { type: String, enum: ['principal', 'seleccionado'], required: true },
+  /**
+   * Origen de los aprobadores (regla 1.10): 'user' = niveles propios del
+   * colaborador, 'project' = niveles del centro de costo. Ausente en pasos
+   * creados antes de la regla 1.10; se interpreta como 'project'.
+   */
+  source: { type: String, enum: ['user', 'project'], required: false },
   approverIds: { type: [{ type: Types.ObjectId, ref: 'User' }], default: [] },
   escalatedFrom: { type: Number, required: false },
   /** Aprobación en paralelo entre niveles: este paso específico ya fue resuelto. */

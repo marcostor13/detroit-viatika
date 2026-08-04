@@ -144,7 +144,7 @@
       <!-- Cadena de aprobación por centro de costo -->
       @if (chainSteps(exp).length > 0) {
       <div class="mt-4 pt-4 border-t border-gray-100">
-        <p class="text-xs text-gray-400 mb-2">Cadena de aprobación (centro de costo)</p>
+        <p class="text-xs text-gray-400 mb-2">Cadena de aprobación</p>
         <div class="space-y-1.5">
           @for (step of chainSteps(exp); track step.level) {
           <div class="flex items-center justify-between gap-2 text-xs rounded-lg border px-2.5 py-1.5"
@@ -154,6 +154,7 @@
             }">
             <span class="font-semibold">
               N{{ step.level }}
+              <span class="font-normal text-tertiary">· {{ step.origin }}</span>
               @if (step.escalatedFrom) { <span class="font-normal italic">(escalado desde N{{ step.escalatedFrom }})</span> }
             </span>
             <span class="truncate max-w-[55%] text-right" [title]="step.approverNames">{{ step.approverNames }}</span>
