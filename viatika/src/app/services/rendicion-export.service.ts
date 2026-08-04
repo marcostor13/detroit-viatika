@@ -141,6 +141,8 @@ export interface AffidavitExportRow {
 export interface AffidavitExportData {
   fileBaseName: string;
   tipo: 'viaticos_nacionales' | 'viajes_exterior';
+  /** Símbolo de la moneda declarada. La DJ al exterior va en dólares. */
+  monedaSimbolo?: string;
   empresaNombre: string;
   empresaRuc: string;
   colaborador: string;
@@ -253,6 +255,8 @@ export interface SolicitudFondosExportData {
 export interface SingleExpenseAffidavitData {
   fileBaseName: string;
   titulo: string;
+  /** Símbolo de la moneda declarada. La DJ al exterior va en dólares. */
+  monedaSimbolo?: string;
   colaborador: string;
   colaboradorDni?: string;
   empresaNombre?: string;
@@ -1141,10 +1145,11 @@ export class RendicionExportService {
     doc.text(`RUC: ${data.empresaRuc}`, 14, 38);
     doc.text(`Colaborador: ${data.colaborador}`, 14, 44);
     doc.text(`Documento: ${data.documentoColaborador || '-'}`, 14, 50);
+    const djSym = data.monedaSimbolo || 'S/';
 
     autoTable(doc, {
       startY: 58,
-      head: [['Fecha', 'Documento', 'Concepto', 'Categoria', 'Monto (S/)']],
+      head: [['Fecha', 'Documento', 'Concepto', 'Categoria', `Monto (${djSym})`]],
       body: data.rows.map(r => [r.fecha, r.documento, r.concepto, r.categoria, r.monto.toFixed(2)]),
       theme: 'grid',
       headStyles: { fillColor: [145, 47, 44], textColor: 255 },
@@ -1155,7 +1160,7 @@ export class RendicionExportService {
 
     const y = afterTable(doc) + 8;
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total declarado: S/ ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
+    doc.text(`Total declarado: ${djSym} ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.text(`Fecha de generacion: ${data.fechaGeneracion}`, 14, y + 8);
 
@@ -1724,6 +1729,7 @@ export class RendicionExportService {
     if (data.empresaNombre) { doc.text(`Empresa: ${data.empresaNombre}`, 14, y); y += 6; }
     doc.text(`Colaborador: ${data.colaborador}`, 14, y); y += 6;
     if (data.colaboradorDni) { doc.text(`DNI: ${data.colaboradorDni}`, 14, y); y += 6; }
+    const djSym = data.monedaSimbolo || 'S/';
     doc.text(`Fecha: ${data.fechaGeneracion}`, 14, y); y += 10;
 
     let tableRendered = false;
@@ -1761,7 +1767,7 @@ export class RendicionExportService {
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total declarado: S/ ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
+    doc.text(`Total declarado: ${djSym} ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     y += 20;

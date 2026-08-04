@@ -687,7 +687,14 @@ export class DashboardService {
       {
         $group: {
           _id: null,
-          amount: { $sum: { $ifNull: ['$amount', 0] } },
+          amount: {
+            $sum: {
+              $multiply: [
+                { $ifNull: ['$amount', 0] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
+            },
+          },
           count: { $sum: 1 },
         },
       },
@@ -803,10 +810,15 @@ export class DashboardService {
         $group: {
           _id: { $ifNull: ['$status', 'pending_l1'] },
           // Monto desembolsado real: viaticoPaidAmount cuando existe (pagos
-          // parciales), si no el monto solicitado.
+          // parciales), si no el monto solicitado. Llevado a moneda base con el
+          // TC congelado, igual que el resto de agregados: sin eso un viático en
+          // dólares entraba al gráfico como si fueran soles.
           amount: {
             $sum: {
-              $ifNull: ['$viaticoPaidAmount', { $ifNull: ['$viaticoAmount', 0] }],
+              $multiply: [
+                { $ifNull: ['$viaticoPaidAmount', { $ifNull: ['$viaticoAmount', 0] }] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
             },
           },
           count: { $sum: 1 },

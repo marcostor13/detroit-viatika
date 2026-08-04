@@ -12,11 +12,19 @@
  *          Público (art. 44 inc. c).
  *  - 0008: exceso de gasto de movilidad de trabajadores (art. 37 inc. a.1).
  */
+import { monedaSymbol } from '../../../common/moneda.constants'
+
 export interface CargoContext {
   idx: number
   /** Origen del cargo en el comprobante: 'otrosTributos' | 'otrosCargos'. */
   concepto: string
   monto: number
+  /**
+   * Moneda ISO del comprobante. Los cargos salen de `comprobanteDetallado`,
+   * que está en la moneda del documento: dar por hecho soles le hace evaluar
+   * al modelo un límite de deducibilidad contra una cifra 3.8 veces menor.
+   */
+  moneda?: string
   proveedor?: string
   descripcion?: string
   items?: string[]
@@ -27,7 +35,7 @@ export interface CargoContext {
 export function buildDeducibilidadPrompt(cargos: CargoContext[]): string {
   const cargosText = cargos
     .map(
-      c => `${c.idx}. Concepto: ${c.concepto} | Monto: S/ ${c.monto}
+      c => `${c.idx}. Concepto: ${c.concepto} | Monto: ${monedaSymbol(c.moneda)} ${c.monto}
    Proveedor: ${c.proveedor || 'desconocido'}
    Descripción del gasto: ${c.descripcion || 'sin descripción'}
    Items del comprobante: ${(c.items ?? []).join('; ') || 'sin detalle'}

@@ -826,6 +826,8 @@ export class EmailService {
       collaboratorName: string
       reportTitle: string
       budgetFormatted: string
+      /** Simbolo de la moneda de la rendicion. Por defecto soles. */
+      currencySymbol?: string
       expenseCount: number
       hasDirectaDeposit?: boolean
       depositFormatted?: string
@@ -846,6 +848,7 @@ export class EmailService {
           year: new Date().getFullYear(),
           ...rest,
           reportTitle,
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
       })
@@ -869,6 +872,8 @@ export class EmailService {
       collaboratorName: string
       reportTitle: string
       budgetFormatted: string
+      /** Simbolo de la moneda de la rendicion. Por defecto soles. */
+      currencySymbol?: string
       expenseCount: number
       platformUrl?: string
     }
@@ -885,6 +890,7 @@ export class EmailService {
           year: new Date().getFullYear(),
           ...rest,
           reportTitle,
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
       })
@@ -908,6 +914,8 @@ export class EmailService {
       collaboratorName: string
       reportTitle: string
       budgetFormatted: string
+      /** Simbolo de la moneda de la rendicion. Por defecto soles. */
+      currencySymbol?: string
       platformUrl?: string
     }
   ) {
@@ -923,6 +931,7 @@ export class EmailService {
           year: new Date().getFullYear(),
           ...rest,
           reportTitle,
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
       })
@@ -946,6 +955,8 @@ export class EmailService {
       collaboratorName: string
       collaboratorDni?: string
       budgetFormatted: string
+      /** Simbolo de la moneda de la rendicion. Por defecto soles. */
+      currencySymbol?: string
       bankName?: string
       accountType?: string
       accountNumber?: string
@@ -967,6 +978,7 @@ export class EmailService {
           year: new Date().getFullYear(),
           ...rest,
           reportTitle,
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
       })
@@ -1137,6 +1149,8 @@ export class EmailService {
       collaboratorName: string
       reportTitle: string
       budgetFormatted: string
+      /** Simbolo de la moneda de la rendicion. Por defecto soles. */
+      currencySymbol?: string
       expenseCount: number
       expenseTotalFormatted?: string
       expenseItems?: Array<{
@@ -1163,6 +1177,7 @@ export class EmailService {
           year: new Date().getFullYear(),
           ...data,
           reportTitle,
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(data.platformUrl),
         },
       })
@@ -1742,6 +1757,7 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...data,
+          currencySymbol: data.currencySymbol ?? 'S/',
           dueDate: this.formatDateDDMMYYYY(data.dueDate),
         },
       })
@@ -1769,6 +1785,7 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...data,
+          currencySymbol: data.currencySymbol ?? 'S/',
         },
       })
     } catch (error) {
