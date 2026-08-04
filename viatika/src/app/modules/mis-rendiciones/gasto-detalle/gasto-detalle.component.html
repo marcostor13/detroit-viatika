@@ -75,9 +75,27 @@
       <h2 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Resumen</h2>
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
         <div>
-          <p class="text-xs text-gray-400">Monto (S/)</p>
-          <p class="font-bold text-gray-900 text-lg tabular-nums">S/ {{ getTotal(exp) | number:'1.2-2' }}</p>
+          <p class="text-xs text-gray-400">Monto emitido</p>
+          <p class="font-bold text-gray-900 text-lg tabular-nums">{{ montoOriginalText(exp) }}</p>
         </div>
+        @if (tieneConversionReporte(exp)) {
+        <div>
+          <p class="text-xs text-gray-400">En la moneda de la rendición</p>
+          <p class="font-medium text-gray-900 tabular-nums">
+            {{ montoReporteText(exp) }}
+            <span class="block text-xs font-normal text-gray-400">TC {{ exp['tcReporte'] }}</span>
+          </p>
+        </div>
+        }
+        @if (tieneConversionBase(exp)) {
+        <div>
+          <p class="text-xs text-gray-400">Equivalente contable</p>
+          <p class="font-medium text-gray-900 tabular-nums">
+            {{ montoBaseText(exp) }}
+            <span class="block text-xs font-normal text-gray-400">TC {{ exp['tipoCambio'] }}{{ exp['tcFecha'] ? ' · ' + exp['tcFecha'] : '' }}</span>
+          </p>
+        </div>
+        }
         <div>
           <p class="text-xs text-gray-400">Fecha</p>
           <p class="font-medium text-gray-900">{{ getDate(exp) }}</p>
@@ -223,6 +241,13 @@
             <p class="text-xs text-gray-400">Firmante</p>
             <p class="font-medium text-gray-900">{{ exp['declaracionJuradaFirmante'] || '—' }}</p>
           </div>
+          @if (isMonedaExtranjera(exp)) {
+          <div class="sm:col-span-2">
+            <p class="text-xs text-gray-400">
+              El gasto se registra en la moneda en que se emitió. Las equivalencias del resumen usan el tipo de cambio congelado al registrarlo y no cambian después.
+            </p>
+          </div>
+          }
         </div>
       </section>
       }

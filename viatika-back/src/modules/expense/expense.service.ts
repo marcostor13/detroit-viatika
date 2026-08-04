@@ -28,6 +28,10 @@ import { ROLES } from '../auth/enums/roles.enum'
 import { NotificationsService } from '../notifications/notifications.service'
 import { CategoryService } from '../category/category.service'
 import { Client } from '../client/entities/client.entity'
+import { CurrencyService } from '../exchange-rate/currency.service'
+import { AccountingConfigDocument } from '../accounting-config/entities/accounting-config.entity'
+import { CreateDeclaracionJuradaDto } from './dto/create-declaracion-jurada.dto'
+import { DEFAULT_MONEDA, normalizeMoneda } from '../../common/moneda.constants'
 import {
   applyFechaEmisionDisplayToExpense,
   applyFechaEmisionDisplayToExpenses,
@@ -104,7 +108,8 @@ export class ExpenseService {
     private readonly uploadService: UploadService,
     private readonly expenseReportService: ExpenseReportService,
     private readonly notificationsService: NotificationsService,
-    private readonly categoryService: CategoryService
+    private readonly categoryService: CategoryService,
+    private readonly currencyService: CurrencyService
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY')
     if (!apiKey) {
@@ -606,7 +611,18 @@ export class ExpenseService {
 
     const deadlineMeta = this.evaluateDeadline(dataPayload.fechaEmision)
     const amount = Number(data.montoTotal ?? 0)
-    const categoryMeta = await this.evaluateCategoryLimit(body, amount)
+
+    // La moneda la manda el comprobante: el OCR ya la extrae ('PEN' / 'USD').
+    // El body solo la sobreescribe si el usuario la corrigió a mano.
+    const fx = await this.freezeExpenseCurrency({
+      clientId: body.clientId,
+      total: amount,
+      moneda: body.moneda || data.moneda,
+      fecha: normalizedFechaEmision ?? data.fechaEmision,
+      expenseReportId: body.expenseReportId,
+    })
+    // El límite de la categoría está definido en la moneda base.
+    const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
 
     return this.expenseRepository.create({
       categoryId: categoryObject,
@@ -616,6 +632,7 @@ export class ExpenseService {
         ? new Types.ObjectId(body.expenseReportId)
         : undefined,
       total: data.montoTotal,
+      ...fx,
       data: JSON.stringify(dataPayload),
       file: body.imageUrl,
       status: status,
@@ -1179,12 +1196,20 @@ export class ExpenseService {
       earliestDate ? earliestDate.toISOString().slice(0, 10) : undefined
     )
 
-    const categoryMeta = await this.evaluateCategoryLimit(body, total)
     const internalCode = await this.generateInternalCode(
       body.userId,
       'planilla_movilidad',
       body.expenseReportId
     )
+    const fx = await this.freezeExpenseCurrency({
+      clientId: body.clientId,
+      total,
+      moneda: body.moneda,
+      fecha: this.normalizeFechaEmisionValue(body.fechaEmision) ?? body.fechaEmision,
+      expenseReportId: body.expenseReportId,
+    })
+    // El límite de la categoría está definido en la moneda base.
+    const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
       proyectId: new Types.ObjectId(body.proyectId),
@@ -1194,6 +1219,7 @@ export class ExpenseService {
         ? new Types.ObjectId(body.expenseReportId)
         : undefined,
       total,
+      ...fx,
       expenseType: 'planilla_movilidad',
       mobilityRows: body.mobilityRows,
       file: body.imageUrl,
@@ -1290,7 +1316,15 @@ export class ExpenseService {
     const deadlineMeta = this.evaluateDeadline(
       normalizedFecha ?? body.fechaEmision
     )
-    const categoryMeta = await this.evaluateCategoryLimit(body, body.total)
+    const fx = await this.freezeExpenseCurrency({
+      clientId: body.clientId,
+      total: body.total,
+      moneda: body.moneda,
+      fecha: normalizedFecha ?? body.fechaEmision,
+      expenseReportId: body.expenseReportId,
+    })
+    // El límite de la categoría está definido en la moneda base.
+    const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
       proyectId: new Types.ObjectId(body.proyectId),
@@ -1299,6 +1333,7 @@ export class ExpenseService {
         ? new Types.ObjectId(body.expenseReportId)
         : undefined,
       total: body.total,
+      ...fx,
       description: body.data,
       expenseType: 'otros_gastos',
       subTipo,
@@ -1343,6 +1378,354 @@ export class ExpenseService {
     }
 
     return expense
+  }
+
+  private round2(value: number): number {
+    return Math.round((Number(value) || 0) * 100) / 100
+  }
+
+  /**
+   * Congela la conversión de un gasto en el momento de registrarlo.
+   *
+   * Devuelve dos equivalencias, ambas con su tasa:
+   *  - `montoBase`: en la moneda base de la empresa. Es lo que consumen
+   *    liquidación, tesorería, dashboard y asientos.
+   *  - `montoReporte`: en la moneda de la rendición a la que se adjunta. Es lo
+   *    que permite que un viático en dólares totalice sus boletas en soles.
+   *
+   * Una boleta en soles dentro de un viático en dólares es correcta tal como
+   * está: se guarda en soles y se convierte para mostrarse, no se reescribe.
+   */
+  private async freezeExpenseCurrency(opts: {
+    clientId: string
+    total: number
+    moneda?: string
+    fecha?: string | Date
+    expenseReportId?: string
+  }): Promise<{
+    moneda: string
+    montoBase: number
+    tipoCambio: number
+    tcFecha: string
+    monedaReporte?: string
+    tcReporte?: number
+    montoReporte?: number
+  }> {
+    const config = await this.currencyService.getConfig(opts.clientId)
+    const moneda = normalizeMoneda(opts.moneda ?? config.monedaBase)
+    const fecha = opts.fecha || new Date()
+    const { montoBase, tipoCambio, tcFecha } = await this.currencyService.toBase(
+      opts.total,
+      moneda,
+      fecha,
+      config
+    )
+
+    const base: {
+      moneda: string
+      montoBase: number
+      tipoCambio: number
+      tcFecha: string
+      monedaReporte?: string
+      tcReporte?: number
+      montoReporte?: number
+    } = { moneda, montoBase, tipoCambio, tcFecha }
+
+    return {
+      ...base,
+      ...(await this.resolveMontoReporte(
+        opts.expenseReportId,
+        moneda,
+        opts.total,
+        montoBase
+      )),
+    }
+  }
+
+  /**
+   * Expresa un gasto en la moneda de su rendición.
+   *
+   * El TC del reporte (moneda del viático → base) se congeló al crearlo, así
+   * que la equivalencia no se mueve aunque la tasa cambie después. Sin esto,
+   * un viático en dólares no podría totalizar sus boletas en soles.
+   */
+  private async resolveMontoReporte(
+    expenseReportId: string | undefined,
+    moneda: string,
+    total: number,
+    montoBase: number
+  ): Promise<{
+    monedaReporte?: string
+    tcReporte?: number
+    montoReporte?: number
+  }> {
+    if (!expenseReportId) return {}
+    const reporte = await this.expenseReportService.findCurrencyMeta(
+      expenseReportId
+    )
+    if (!reporte?.moneda) return {}
+
+    // Misma moneda: no hay nada que convertir.
+    if (reporte.moneda === moneda) {
+      return {
+        monedaReporte: reporte.moneda,
+        tcReporte: 1,
+        montoReporte: this.round2(total),
+      }
+    }
+
+    // Sin TC congelado NO se cae a 1: eso trataría dólares como soles y
+    // metería un importe falso en el total de la rendición. Es preferible
+    // dejar el gasto sin equivalencia y que se note.
+    const tcReporte = Number(reporte.tipoCambio)
+    if (!tcReporte || tcReporte <= 0) {
+      this.logger.warn(
+        `Rendición ${expenseReportId} en ${reporte.moneda} sin tipo de cambio congelado: el gasto queda sin equivalencia en la moneda del reporte.`
+      )
+      return { monedaReporte: reporte.moneda }
+    }
+
+    return {
+      monedaReporte: reporte.moneda,
+      tcReporte,
+      montoReporte: this.round2(montoBase / tcReporte),
+    }
+  }
+
+  /**
+   * Convierte las filas de un rubro de la DJ a la moneda base.
+   *
+   * Se resuelve el tipo de cambio de la fecha de CADA fila, no uno solo para
+   * toda la DJ: una declaración cubre varios días de viaje y la tasa cambia. Si
+   * alguna fecha no tiene tasa resoluble se aborta, en vez de guardar una
+   * conversión inventada.
+   */
+  private async convertDeclaracionRowsToBase(
+    rows: { fecha: string; monto: number }[],
+    moneda: string,
+    config: AccountingConfigDocument
+  ): Promise<{ fecha: string; monto: number; tipoCambio: number; montoBase: number }[]> {
+    const converted: {
+      fecha: string
+      monto: number
+      tipoCambio: number
+      montoBase: number
+    }[] = []
+    for (const row of rows) {
+      const tipoCambio = await this.currencyService.resolveRate(
+        moneda,
+        row.fecha,
+        config
+      )
+      if (!tipoCambio || tipoCambio <= 0) {
+        throw new HttpException(
+          `No se pudo obtener el tipo de cambio de ${moneda} del ${row.fecha}. Intenta nuevamente en unos minutos.`,
+          HttpStatus.UNPROCESSABLE_ENTITY
+        )
+      }
+      converted.push({
+        fecha: row.fecha,
+        monto: this.round2(row.monto),
+        tipoCambio,
+        montoBase: this.round2(Number(row.monto) * tipoCambio),
+      })
+    }
+    return converted
+  }
+
+  /**
+   * Declaración jurada de gastos al exterior (sub-tipo DJE de Otros Gastos).
+   *
+   * Crea un gasto por rubro declarado (alimentación y/o movilidad), unidos por
+   * `groupId`. Los importes se declaran en moneda extranjera y aquí se
+   * convierten a soles: `total` queda SIEMPRE en soles —es lo que consumen
+   * liquidación, tesorería, dashboard y asientos— y `montoOriginal` +
+   * `tipoCambio` conservan lo que se firmó, para poder auditarlo después.
+   */
+  async createDeclaracionJurada(
+    body: CreateDeclaracionJuradaDto
+  ): Promise<{ groupId: string; expenses: Expense[] }> {
+    if (!body.clientId) {
+      throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
+    }
+    if (!body.proyectId) {
+      throw new HttpException(
+        'El centro de costo es requerido',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    // Caja chica finalizada: no se permiten más gastos.
+    await this.expenseReportService.assertReportNotLockedByCajaChica(
+      body.expenseReportId
+    )
+
+    const rubros = [
+      { rubro: 'alimentacion' as const, seccion: body.alimentacion },
+      { rubro: 'movilidad' as const, seccion: body.movilidad },
+    ].filter(r => (r.seccion?.rows?.length ?? 0) > 0)
+
+    if (!rubros.length) {
+      throw new HttpException(
+        'Declara al menos un gasto de alimentación o movilidad',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    for (const { rubro, seccion } of rubros) {
+      if (!seccion?.categoryId) {
+        throw new HttpException(
+          `Falta la categoría de ${rubro}`,
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      for (const row of seccion.rows) {
+        if (!row?.fecha) {
+          throw new HttpException(
+            `Falta la fecha de una fila de ${rubro}`,
+            HttpStatus.BAD_REQUEST
+          )
+        }
+        if (!(Number(row.monto) > 0)) {
+          throw new HttpException(
+            `El monto de ${rubro} del ${row.fecha} debe ser mayor a 0`,
+            HttpStatus.BAD_REQUEST
+          )
+        }
+      }
+    }
+
+    // La DJ se sustenta con la firma del colaborador, no con un comprobante:
+    // mismo requisito que la DJ nacional (createOtherExpense).
+    let firmante = ''
+    if (body.userId) {
+      const profile = await this.userService.findTransactionalProfile(
+        body.userId
+      )
+      if (!profile?.signature) {
+        throw new HttpException(
+          'Debes registrar tu firma digital antes de enviar una Declaración Jurada. Ve a tu perfil para añadirla.',
+          HttpStatus.UNPROCESSABLE_ENTITY
+        )
+      }
+      firmante =
+        (await this.userService.findEmailNameClient(body.userId))?.name ?? ''
+    }
+
+    const moneda = normalizeMoneda(body.moneda)
+    const config = await this.currencyService.getConfig(body.clientId)
+    const groupId = new Types.ObjectId().toString()
+    const expenses: Expense[] = []
+
+    for (const { rubro, seccion } of rubros) {
+      const rows = await this.convertDeclaracionRowsToBase(
+        seccion!.rows,
+        moneda,
+        config
+      )
+      // `total` queda en la moneda declarada (coincide al céntimo con el
+      // documento firmado) y `montoBase` lleva la conversión congelada.
+      const total = this.round2(rows.reduce((s, r) => s + r.monto, 0))
+      const montoBase = this.round2(rows.reduce((s, r) => s + r.montoBase, 0))
+      // Tasa efectiva de la DJ completa. El detalle por fila queda en `data`.
+      const tipoCambio = total > 0 ? Number((montoBase / total).toFixed(4)) : 1
+      // La DJ se fecha con el último día declarado del rubro.
+      const fechaDeclarada = rows
+        .map(r => r.fecha)
+        .sort()
+        .slice(-1)[0]
+
+      // Equivalencia en la moneda de la rendición (la DJ ya trae la suya).
+      const djReporte = await this.resolveMontoReporte(
+        body.expenseReportId,
+        moneda,
+        total,
+        montoBase
+      )
+
+      const rubroLabel = rubro === 'alimentacion' ? 'Alimentación' : 'Movilidad'
+      const destinoLabel = [body.destino, body.pais].filter(Boolean).join(', ')
+      const description = destinoLabel
+        ? `Declaración jurada de gastos al exterior - ${rubroLabel} (${destinoLabel})`
+        : `Declaración jurada de gastos al exterior - ${rubroLabel}`
+
+      const normalizedFecha = this.normalizeFechaEmisionValue(fechaDeclarada)
+      const deadlineMeta = this.evaluateDeadline(
+        normalizedFecha ?? fechaDeclarada
+      )
+      const categoryMeta = await this.evaluateCategoryLimit(
+        {
+          expenseReportId: body.expenseReportId,
+          categoryId: seccion!.categoryId,
+          clientId: body.clientId,
+        } as CreateExpenseDto,
+        // El límite de la categoría está definido en la moneda base.
+        montoBase
+      )
+
+      const expense = await this.expenseRepository.create({
+        categoryId: new Types.ObjectId(seccion!.categoryId),
+        proyectId: new Types.ObjectId(body.proyectId),
+        clientId: body.clientId,
+        expenseReportId: body.expenseReportId
+          ? new Types.ObjectId(body.expenseReportId)
+          : undefined,
+        total,
+        moneda,
+        montoBase,
+        tipoCambio,
+        tcFecha: fechaDeclarada,
+        ...djReporte,
+        declaracionJuradaGroupId: groupId,
+        description,
+        expenseType: 'otros_gastos',
+        subTipo: 'DJE',
+        declaracionJurada: true,
+        declaracionJuradaFirmante: firmante || undefined,
+        file: body.imageUrl || undefined,
+        status: 'pending',
+        createdBy: body.userId || 'system',
+        fechaEmision: normalizedFecha ?? fechaDeclarada,
+        observado: deadlineMeta.observado,
+        observacionPlazo: deadlineMeta.observacionPlazo,
+        diasRetraso: deadlineMeta.diasRetraso,
+        categoryLimitPercent: categoryMeta.percent,
+        categoryLimitWarning: categoryMeta.warning,
+        data: JSON.stringify({
+          type: 'otros_gastos',
+          subTipo: 'DJE',
+          declaracionJurada: true,
+          firmante: firmante || undefined,
+          description,
+          rubro,
+          destino: body.destino || undefined,
+          pais: body.pais || undefined,
+          lugarFirma: body.lugarFirma || undefined,
+          moneda,
+          montoBase,
+          tipoCambio,
+          rows,
+        }),
+      })
+
+      if (body.userId) {
+        await this.expenseReportService.buildChainForNewExpense(
+          (expense as any)._id.toString(),
+          body.userId,
+          body.clientId
+        )
+      }
+
+      if (body.expenseReportId) {
+        await this.expenseReportService.addExpenseToReport(
+          body.expenseReportId,
+          (expense as any)._id.toString()
+        )
+      }
+
+      expenses.push(expense)
+    }
+
+    return { groupId, expenses }
   }
 
   async createCashReceiptExpense(body: CreateExpenseDto): Promise<Expense> {
@@ -1397,7 +1780,15 @@ export class ExpenseService {
     const deadlineMeta = this.evaluateDeadline(
       normalizedFecha ?? body.fechaEmision
     )
-    const categoryMeta = await this.evaluateCategoryLimit(body, body.total)
+    const fx = await this.freezeExpenseCurrency({
+      clientId: body.clientId,
+      total: body.total,
+      moneda: body.moneda,
+      fecha: normalizedFecha ?? body.fechaEmision,
+      expenseReportId: body.expenseReportId,
+    })
+    // El límite de la categoría está definido en la moneda base.
+    const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
       proyectId: new Types.ObjectId(body.proyectId),
@@ -1406,6 +1797,7 @@ export class ExpenseService {
         ? new Types.ObjectId(body.expenseReportId)
         : undefined,
       total: body.total,
+      ...fx,
       description: body.data,
       expenseType: 'recibo_caja',
       file: body.imageUrl,

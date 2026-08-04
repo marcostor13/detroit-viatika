@@ -11,9 +11,11 @@ import {
 import { Project, ProjectSchema } from '../project/entities/project.entity'
 import { Category, CategorySchema } from '../category/entities/category.entity'
 import { User, UserSchema } from '../user/schemas/user.schema'
+import { AccountingConfigModule } from '../accounting-config/accounting-config.module'
 
 @Module({
   imports: [
+    AccountingConfigModule,
     MongooseModule.forFeature([
       { name: Expense.name, schema: ExpenseSchema },
       { name: Advance.name, schema: AdvanceSchema },

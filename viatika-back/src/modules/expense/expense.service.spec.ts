@@ -14,6 +14,7 @@ import { UploadService } from '../upload/upload.service'
 import { ExpenseReportService } from '../expense-report/expense-report.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { CategoryService } from '../category/category.service'
+import { CurrencyService } from '../exchange-rate/currency.service'
 import { CreateExpenseDto } from './dto/create-expense.dto'
 import { Client } from '../client/entities/client.entity'
 import { ROLES } from '../auth/enums/roles.enum'
@@ -64,6 +65,13 @@ describe('ExpenseService — email gating (isEmailEnabled)', () => {
           useValue: { create: jest.fn().mockResolvedValue(undefined) },
         },
         { provide: CategoryService, useValue: mockCategoryServiceGating },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            resolveRate: jest.fn().mockResolvedValue(3.75),
+          },
+        },
       ],
     }).compile()
 
@@ -168,6 +176,13 @@ describe('ExpenseService — Fase 5 (plazos y límites de categoría)', () => {
           useValue: noopDeps.notificationsService,
         },
         { provide: CategoryService, useValue: mockCategoryService },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            resolveRate: jest.fn().mockResolvedValue(3.75),
+          },
+        },
       ],
     }).compile()
 
@@ -351,6 +366,13 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
         { provide: ExpenseReportService, useValue: {} },
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            resolveRate: jest.fn().mockResolvedValue(3.75),
+          },
+        },
       ],
     }).compile()
 

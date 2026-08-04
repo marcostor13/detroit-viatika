@@ -299,8 +299,11 @@ export class TesoreriaComponent implements OnInit {
         // VD-82: agregados de lo ya desembolsado desde la MISMA lista (sin llamada
         // extra). Viáticos por su acumulado pagado; reembolsos ya pagados por el
         // |settlement.difference| de las rendiciones con comprobante registrado.
+        // El acumulado se muestra en soles, pero un viático puede estar pagado
+        // en dólares: sumar `viaticoPaidAmount` crudo mezclaría monedas. Se
+        // valora con el TC congelado del viático (1 si ya estaba en soles).
         this.viaticoDesembolsado = viaticos.reduce(
-          (s, r) => s + Number(r.viaticoPaidAmount ?? 0), 0
+          (s, r) => s + Number(r.viaticoPaidAmount ?? 0) * (Number(r.tipoCambio) || 1), 0
         );
         const reembolsados = all.filter(r => !!r.reimbursementPaymentInfo);
         this.reembolsoPagadoCount = reembolsados.length;

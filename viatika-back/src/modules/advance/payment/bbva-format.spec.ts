@@ -276,3 +276,51 @@ describe('bbva-format · conciliación del PDF REAL de BBVA (fixture)', () => {
     expect(repetidos.map((r) => r.amount).sort((a, b) => a - b)).toEqual([98.6, 1000])
   })
 })
+
+describe('bbva-format - moneda de la planilla', () => {
+  const record = {
+    documentType: 'L' as const,
+    documentNumber: '45678912',
+    accountType: 'I' as const,
+    accountNumber: '00212345678901234567',
+    beneficiaryName: 'IVAN TORRES',
+    amountCents: 15000,
+    concepto: 'SOLICITUD DE FONDOS',
+    email: 'colaborador@detroit.pe',
+  }
+  const meta = {
+    chargeAccount: '00011231245784512369',
+    description: 'PROVEEDORES',
+  }
+
+  const lineas = (txt: string) => txt.split(/\r\n/).filter(Boolean)
+  /** La moneda ocupa las posiciones 24-26 de la cabecera (3 chars). */
+  const monedaDeCabecera = (txt: string) => lineas(txt)[0].slice(23, 26)
+
+  it('escribe la moneda declarada en la cabecera', () => {
+    expect(
+      monedaDeCabecera(buildBbvaTxt([record], { ...meta, currency: 'USD' }))
+    ).toBe('USD')
+    expect(
+      monedaDeCabecera(buildBbvaTxt([record], { ...meta, currency: 'PEN' }))
+    ).toBe('PEN')
+  })
+
+  it('asume soles cuando no se declara moneda', () => {
+    expect(monedaDeCabecera(buildBbvaTxt([record], meta))).toBe('PEN')
+  })
+
+  it('el importe no cambia con la moneda: son centimos de la moneda declarada', () => {
+    const pen = lineas(buildBbvaTxt([record], { ...meta, currency: 'PEN' }))
+    const usd = lineas(buildBbvaTxt([record], { ...meta, currency: 'USD' }))
+    // Mismo total (pos 27-41) y misma linea de detalle: solo cambia la moneda.
+    expect(pen[0].slice(26, 41)).toBe(usd[0].slice(26, 41))
+    expect(pen[1]).toBe(usd[1])
+  })
+
+  it('mantiene los anchos fijos con cualquier moneda', () => {
+    const l = lineas(buildBbvaTxt([record], { ...meta, currency: 'USD' }))
+    expect(l[0]).toHaveLength(151)
+    expect(l[1]).toHaveLength(277)
+  })
+})

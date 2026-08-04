@@ -180,6 +180,39 @@ export class AdvanceService implements OnModuleInit {
     })
   }
 
+  /**
+   * Equivalente en moneda base de un gasto. `montoBase` se congela al crear el
+   * comprobante; los documentos previos al multimoneda no lo tienen y su
+   * `total` ya estaba asumido en moneda base.
+   */
+  private expenseAmountBase(e: any): number {
+    return Number(e?.montoBase ?? e?.total) || 0
+  }
+
+  /**
+   * Equivalente en base de lo realmente pagado de un anticipo: reaplica su TC
+   * congelado sobre `paidAmount ?? amount`, porque el pago puede diferir de lo
+   * solicitado.
+   */
+  private advanceAmountBase(a: any): number {
+    const raw = Number(a?.paidAmount ?? a?.amount) || 0
+    const rate = Number(a?.tipoCambio)
+    if (!(rate > 0) && (a?.moneda || DEFAULT_MONEDA) !== DEFAULT_MONEDA) {
+      // `advances` es legado y ya no se crea: en moneda extranjera sin TC el
+      // dato está corrupto. Se avisa en vez de valorarlo 1 a 1 en silencio.
+      this.logger.error(
+        `Anticipo ${a?._id} en ${a?.moneda} sin tipo de cambio congelado: se valora 1 a 1 y la liquidación quedará mal.`
+      )
+    }
+    return Math.round(raw * (rate > 0 ? rate : 1) * 100) / 100
+  }
+
+  /** Equivalente en base de un importe propio del reporte (depósito, presupuesto…). */
+  private reportAmountBase(report: any, amount: number): number {
+    const rate = Number(report?.tipoCambio) || 1
+    return Math.round((Number(amount) || 0) * rate * 100) / 100
+  }
+
   /** Símbolo de moneda ('S/' / '$') a partir del código SUNAT guardado en el anticipo/viático. */
   private moneySymbol(moneda?: string): string {
     return monedaSymbol(moneda)
@@ -1172,6 +1205,7 @@ export class AdvanceService implements OnModuleInit {
           advanceId: String(a._id),
           user: a.userId,
           remaining: Math.round(remaining * 100) / 100,
+          moneda: a.moneda,
           bankName: a.requestBankName ?? a.userId?.bankAccount?.bankName ?? '',
           accountNumber:
             a.requestAccountNumber ?? a.userId?.bankAccount?.accountNumber ?? '',
@@ -1711,7 +1745,10 @@ export class AdvanceService implements OnModuleInit {
 
     // Rendición directa iniciada por Contabilidad: el depósito funciona como anticipo
     // (el saldo no gastado lo devuelve el colaborador/coordinador).
-    const depositTotal = Number((report as any).directaDeposit?.amount ?? 0)
+    const depositTotal = this.reportAmountBase(
+      report,
+      Number((report as any).directaDeposit?.amount ?? 0)
+    )
     const hasDeposit = depositTotal > 0
     const isDirecta = !!(report as any).isDirecta
 
@@ -1726,7 +1763,7 @@ export class AdvanceService implements OnModuleInit {
       } else if (status !== 'approved') {
         return sum
       }
-      return sum + (Number(e.total) || 0)
+      return sum + this.expenseAmountBase(e)
     }, 0)
 
     const paidAdvances = advances.filter(a => a.status === 'paid')
@@ -1766,9 +1803,7 @@ export class AdvanceService implements OnModuleInit {
     // Un anticipo 'approved' (aún sin pago) aporta 0; el resto aporta lo realmente pagado.
     const advanceTotal =
       activeAdvances.reduce(
-        (s, a) =>
-          s +
-          (a.status === 'approved' ? 0 : Number(a.paidAmount ?? a.amount) || 0),
+        (s, a) => s + (a.status === 'approved' ? 0 : this.advanceAmountBase(a)),
         0
       ) + depositTotal
 

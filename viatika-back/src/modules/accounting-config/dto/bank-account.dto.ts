@@ -24,4 +24,9 @@ export class BankAccountDto {
   @IsOptional()
   @IsBoolean()
   activo?: boolean
+
+  /** Cuenta de cargo para los pagos masivos en su moneda. Solo una por moneda. */
+  @IsOptional()
+  @IsBoolean()
+  esCuentaPagos?: boolean
 }

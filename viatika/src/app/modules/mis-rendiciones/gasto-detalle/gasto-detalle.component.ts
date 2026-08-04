@@ -9,6 +9,7 @@ import {
   formatFechaEmisionDdMmYyyy,
   resolveExpenseFechaEmision,
 } from '../../../utils/fecha-emision.util';
+import { DEFAULT_MONEDA, monedaSymbol } from '../../../constants/moneda';
 
 // ─── Tipos auxiliares ─────────────────────────────────────────────────────────
 type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos';
@@ -223,6 +224,53 @@ export class GastoDetalleComponent implements OnInit {
     if (v == null) return '—';
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
+  }
+
+  /** True cuando el gasto se emitió en una moneda distinta de la base. */
+  isMonedaExtranjera(exp: Record<string, unknown>): boolean {
+    return this.tieneConversionBase(exp) || this.tieneConversionReporte(exp);
+  }
+
+  /** El comprobante se emitió en una moneda distinta a la base de la empresa. */
+  tieneConversionBase(exp: Record<string, unknown>): boolean {
+    return (
+      !!exp['moneda'] && exp['moneda'] !== DEFAULT_MONEDA && !!exp['montoBase']
+    );
+  }
+
+  /**
+   * El comprobante se emitió en una moneda distinta a la de la rendición. Es el
+   * caso de una boleta en soles dentro de un viático en dólares: no es moneda
+   * extranjera respecto a la empresa, pero sí lleva conversión y hay que
+   * mostrar con qué tipo de cambio se calculó.
+   */
+  tieneConversionReporte(exp: Record<string, unknown>): boolean {
+    return (
+      !!exp['monedaReporte'] &&
+      exp['monedaReporte'] !== exp['moneda'] &&
+      exp['montoReporte'] != null
+    );
+  }
+
+  /** Importe convertido a la moneda base, que es el que consume el resto del sistema. */
+  montoBaseText(exp: Record<string, unknown>): string {
+    const monto = Number(exp['montoBase']);
+    if (!monto) return '—';
+    return `${monedaSymbol(DEFAULT_MONEDA)} ${monto.toFixed(2)}`;
+  }
+
+  /** Importe expresado en la moneda de la rendición. */
+  montoReporteText(exp: Record<string, unknown>): string {
+    const monto = Number(exp['montoReporte']);
+    if (!monto) return '—';
+    return `${monedaSymbol(exp['monedaReporte'] as string)} ${monto.toFixed(2)}`;
+  }
+
+  /** Importe tal como se emitió, en la moneda del comprobante. */
+  montoOriginalText(exp: Record<string, unknown>): string {
+    const monto = Number(exp['total']);
+    if (!monto) return '—';
+    return `${monedaSymbol(exp['moneda'] as string)} ${monto.toFixed(2)}`;
   }
 
 emissionDateText(exp: Record<string, unknown>): string {

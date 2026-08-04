@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, Types } from 'mongoose'
+import { DEFAULT_MONEDA } from '../../../common/moneda.constants'
 
 /** Tasa de IGV admitida y la cuenta contable 40 (crédito fiscal) asociada. */
 export interface IgvRate {
@@ -7,6 +8,22 @@ export interface IgvRate {
   tasa: number
   /** Cuenta contable 40 para esa tasa (ej. 40.1.1.100). */
   cuenta40: string
+}
+
+/** Moneda soportada por el cliente, con su umbral de aprobación L1 y su TC. */
+export interface CurrencyConfig {
+  /** Código ISO 4217: 'PEN', 'USD', 'EUR'… Es el que se guarda en cada documento. */
+  code: string
+  /** Símbolo de presentación: 'S/', '$', '€'. */
+  symbol: string
+  /** Código de moneda Contanet (Tabla 3): '01' soles, '02' dólares… */
+  contanetCode: string
+  /** Decimales de presentación (normalmente 2). */
+  decimals: number
+  /** Umbral de aprobación de anticipos nivel 1, expresado en ESTA moneda. */
+  approvalThresholdL1: number
+  /** TC manual moneda→monedaBase. No aplica a la base ni a USD (que usa SUNAT). */
+  manualRate?: number
 }
 
 /** Cuenta bancaria de la empresa → resuelve la cuenta contable 104 (Caja-Bancos). */
@@ -17,11 +34,17 @@ export interface BankAccount {
   nroCuenta: string
   /** Cuenta contable asociada (10/104), ej. 10.4.1.100. */
   cuentaContable: string
-  /** Moneda de la cuenta: 01 (soles) / 02 (dólares). Por defecto 01. */
+  /** Moneda ISO de la cuenta ('PEN' / 'USD'). Por defecto la moneda base. */
   moneda?: string
   /** CCI opcional. */
   cci?: string
   activo?: boolean
+  /**
+   * Cuenta de cargo para los pagos masivos (archivo BBVA) en su moneda. Solo
+   * una por moneda: si hay varias cuentas en la misma moneda, esta marca cuál
+   * se usa, en vez de depender del orden en que se registraron.
+   */
+  esCuentaPagos?: boolean
 }
 
 export interface AccountingConfigDocument extends Omit<Document, '_id'> {
@@ -44,6 +67,9 @@ export interface AccountingConfigDocument extends Omit<Document, '_id'> {
   monedaOrigen: string
   monedaRegistro: string
   identificadorCtrMda: string
+  // --- Multimoneda ---
+  monedaBase: string
+  supportedCurrencies: CurrencyConfig[]
   conceptoFec: string
   area?: string
   centroCosto?: string
@@ -133,6 +159,36 @@ export class AccountingConfig {
   @Prop({ default: 'A' })
   identificadorCtrMda: string
 
+  // --- Multimoneda ---
+  /** Moneda de reporting/consolidación y de liquidación de rendiciones. */
+  @Prop({ default: 'PEN' })
+  monedaBase: string
+
+  /**
+   * Monedas habilitadas para captura, cada una con su umbral de aprobación L1.
+   * USD resuelve su TC vía `exchange-rate` (SUNAT); cualquier otra moneda usa
+   * `manualRate`. `contanetCode` es el único punto donde vive la traducción a
+   * los códigos numéricos que exige el archivo contable.
+   */
+  @Prop({
+    type: [
+      {
+        code: { type: String, required: true },
+        symbol: { type: String, required: true },
+        contanetCode: { type: String, required: true },
+        decimals: { type: Number, default: 2 },
+        approvalThresholdL1: { type: Number, required: true },
+        manualRate: { type: Number, required: false },
+        _id: false,
+      },
+    ],
+    default: [
+      { code: 'PEN', symbol: 'S/', contanetCode: '01', decimals: 2, approvalThresholdL1: 500 },
+      { code: 'USD', symbol: '$', contanetCode: '02', decimals: 2, approvalThresholdL1: 150 },
+    ],
+  })
+  supportedCurrencies: CurrencyConfig[]
+
   /** Concepto Flujo Efectivo Contable (Tabla 8). 1 = Operación. */
   @Prop({ default: '1' })
   conceptoFec: string
@@ -164,9 +220,10 @@ export class AccountingConfig {
         banco: { type: String, required: true },
         nroCuenta: { type: String, required: true },
         cuentaContable: { type: String, required: true },
-        moneda: { type: String, default: '01' },
+        moneda: { type: String, default: DEFAULT_MONEDA },
         cci: { type: String, required: false },
         activo: { type: Boolean, default: true },
+        esCuentaPagos: { type: Boolean, default: false },
         _id: false,
       },
     ],

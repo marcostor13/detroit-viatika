@@ -8,6 +8,8 @@ import {
 import { AdvanceService } from '../advance.service'
 import { ExpenseReportService } from '../../expense-report/expense-report.service'
 import { ClientService } from '../../client/client.service'
+import { AccountingConfigService } from '../../accounting-config/accounting-config.service'
+import { DEFAULT_MONEDA, normalizeMoneda } from '../../../common/moneda.constants'
 import {
   BbvaDetailRecord,
   BbvaDocType,
@@ -42,8 +44,10 @@ export interface PendingPayment {
   cci: string
   bankName: string
   email: string
-  /** Importe por pagar en soles. */
+  /** Importe por pagar, en la moneda del documento (`moneda`). */
   amount: number
+  /** Moneda ISO del pago. El archivo BBVA admite UNA sola moneda por planilla. */
+  moneda: string
   concepto: string
 }
 
@@ -102,7 +106,8 @@ export class PaymentBatchService {
     private readonly advanceService: AdvanceService,
     @Inject(forwardRef(() => ExpenseReportService))
     private readonly expenseReportService: ExpenseReportService,
-    private readonly clientService: ClientService
+    private readonly clientService: ClientService,
+    private readonly accountingConfigService: AccountingConfigService
   ) {}
 
   // ── Reglas de derivación ───────────────────────────────────────────────────
@@ -122,7 +127,8 @@ export class PaymentBatchService {
     user: any,
     amount: number,
     cci: string,
-    bankName: string
+    bankName: string,
+    moneda?: string
   ): PendingPayment | ExcludedPayment {
     const beneficiaryName = user?.name ?? '—'
     const documentNumber = (user?.dni ?? '').trim()
@@ -151,12 +157,53 @@ export class PaymentBatchService {
       bankName: bankName ?? '',
       email: user?.email ?? '',
       amount,
+      moneda: normalizeMoneda(moneda),
       concepto: CONCEPTO[kind],
     }
   }
 
   private isExcluded(x: PendingPayment | ExcludedPayment): x is ExcludedPayment {
     return 'reason' in x
+  }
+
+  /**
+   * Cuenta de cargo para la cabecera del archivo, según la moneda de la planilla.
+   *
+   * Una planilla en dólares tiene que cargarse contra una cuenta en dólares.
+   * Se busca entre las cuentas bancarias de la empresa (Plan de Cuentas y
+   * Bancos, que ya llevan moneda) y solo se cae a `Client.paymentAccount` para
+   * la moneda base, que es el caso de una empresa que opera en una sola moneda
+   * y nunca registró sus bancos.
+   */
+  private resolveChargeAccount(
+    client: any,
+    config: {
+      bankAccounts?: Array<{
+        nroCuenta?: string
+        moneda?: string
+        activo?: boolean
+        esCuentaPagos?: boolean
+      }>
+      monedaBase?: string
+    },
+    moneda: string
+  ): string {
+    const candidatas = (config.bankAccounts ?? []).filter(
+      b =>
+        b.activo !== false &&
+        (b.moneda || config.monedaBase || DEFAULT_MONEDA) === moneda &&
+        !!b.nroCuenta?.trim()
+    )
+
+    // La marcada manda. Sin marca se usa la única disponible; si hay varias sin
+    // marcar no se adivina por orden de registro: se exige elegirla.
+    const marcada = candidatas.find(b => b.esCuentaPagos)
+    if (marcada?.nroCuenta) return marcada.nroCuenta.trim()
+    if (candidatas.length === 1) return candidatas[0].nroCuenta!.trim()
+    if (candidatas.length > 1) return ''
+
+    const esMonedaBase = moneda === (config.monedaBase || DEFAULT_MONEDA)
+    return esMonedaBase ? ((client?.paymentAccount ?? '') as string).trim() : ''
   }
 
   // ── Recolección de pendientes ──────────────────────────────────────────────
@@ -172,12 +219,12 @@ export class PaymentBatchService {
 
     for (const a of advances) {
       candidates.push(
-        this.buildCandidate('advance', a.advanceId, a.user, a.remaining, a.cci, a.bankName)
+        this.buildCandidate('advance', a.advanceId, a.user, a.remaining, a.cci, a.bankName, (a as any).moneda)
       )
     }
     for (const v of viaticos) {
       candidates.push(
-        this.buildCandidate('viatico', v.reportId, v.user, v.remaining, v.cci, v.bankName)
+        this.buildCandidate('viatico', v.reportId, v.user, v.remaining, v.cci, v.bankName, (v as any).moneda)
       )
     }
     for (const r of reembolsos as any[]) {
@@ -186,7 +233,7 @@ export class PaymentBatchService {
       const cci = r?.userId?.bankAccount?.cci ?? ''
       const bankName = r?.userId?.bankAccount?.bankName ?? ''
       candidates.push(
-        this.buildCandidate('reembolso', String(r._id), r.userId, amount, cci, bankName)
+        this.buildCandidate('reembolso', String(r._id), r.userId, amount, cci, bankName, r?.viaticoMoneda)
       )
     }
 
@@ -218,14 +265,57 @@ export class PaymentBatchService {
     }
 
     const client = await this.clientService.findOne(clientId)
-    const chargeAccount = (client as any)?.paymentAccount ?? ''
+
+    // El formato BBVA declara la moneda UNA vez, en la cabecera: no admite
+    // mezclar soles y dólares en la misma planilla. Se emite la de la moneda
+    // base y el resto sale como excluido, para que Tesorería genere su propio
+    // archivo en vez de pagar dólares como si fueran soles.
+    const config = await this.accountingConfigService.getEffective(clientId)
+    const monedaArchivo = config.monedaBase || DEFAULT_MONEDA
+
+    const chargeAccount = this.resolveChargeAccount(
+      client,
+      config,
+      monedaArchivo
+    )
     if (!chargeAccount) {
+      const variasSinMarcar =
+        (config.bankAccounts ?? []).filter(
+          b =>
+            b.activo !== false &&
+            (b.moneda || monedaArchivo) === monedaArchivo &&
+            !!b.nroCuenta?.trim()
+        ).length > 1
       throw new BadRequestException(
-        'La empresa no tiene configurada la cuenta de cargo (Configuración → Empresa). Es obligatoria para la cabecera del archivo BBVA.'
+        variasSinMarcar
+          ? `Hay varias cuentas en ${monedaArchivo} y ninguna marcada como cuenta de pagos. Marca cuál usar en Configuración → Plan de Cuentas y Bancos.`
+          : `La empresa no tiene una cuenta de cargo en ${monedaArchivo}. Regístrala en Configuración → Plan de Cuentas y Bancos, o en Configuración → Empresa si opera en una sola moneda.`
       )
     }
+    const otraMoneda = payable.filter(p => p.moneda !== monedaArchivo)
+    const enMoneda = payable.filter(p => p.moneda === monedaArchivo)
 
-    const records: BbvaDetailRecord[] = payable.map(p => ({
+    for (const p of otraMoneda) {
+      excluded.push({
+        kind: p.kind,
+        id: p.id,
+        beneficiaryName: p.beneficiaryName,
+        amount: p.amount,
+        reason: `Pago en ${p.moneda}: el archivo BBVA admite una sola moneda por planilla. Genera una planilla aparte para ${p.moneda}.`,
+      })
+    }
+
+    if (enMoneda.length === 0) {
+      return {
+        fileName: 'BBVAREND.txt',
+        fileBase64: '',
+        count: 0,
+        totalSoles: 0,
+        excluded,
+      }
+    }
+
+    const records: BbvaDetailRecord[] = enMoneda.map(p => ({
       documentType: p.documentType,
       documentNumber: p.documentNumber,
       accountType: p.accountType,
@@ -239,7 +329,7 @@ export class PaymentBatchService {
     const totalCents = records.reduce((s, r) => s + r.amountCents, 0)
     const txt = buildBbvaTxt(records, {
       chargeAccount,
-      currency: 'PEN',
+      currency: monedaArchivo,
       description: this.buildPlanillaDescription(client),
     })
 
@@ -326,6 +416,11 @@ export class PaymentBatchService {
     actor: BatchActor
   ): Promise<ReconcileResult> {
     const { payable } = await this.collectPendingPayments(clientId)
+    // La planilla generada es la de la moneda base; el PDF de retorno es de esa
+    // misma planilla. Cuando se emitan planillas en otra moneda habrá que
+    // pasarla aquí junto al PDF.
+    const config = await this.accountingConfigService.getEffective(clientId)
+    const monedaLote = config.monedaBase || DEFAULT_MONEDA
     const used = new Set<number>() // índices de payable ya conciliados
     const result: ReconcileResult = {
       operationNumber: parsed.operationNumber,
@@ -346,7 +441,7 @@ export class PaymentBatchService {
         })
         continue
       }
-      const idx = this.findMatchingCandidate(payable, used, row)
+      const idx = this.findMatchingCandidate(payable, used, row, monedaLote)
       if (idx < 0) {
         result.sinConciliar.push({
           titular: row.titular,
@@ -396,13 +491,18 @@ export class PaymentBatchService {
   private findMatchingCandidate(
     payable: PendingPayment[],
     used: Set<number>,
-    row: { titular: string; documentNumber: string; amount: number }
+    row: { titular: string; documentNumber: string; amount: number },
+    moneda: string
   ): number {
     const rowDni = (row.documentNumber ?? '').replace(/\D/g, '')
     const matches: number[] = []
     for (let i = 0; i < payable.length; i++) {
       if (used.has(i)) continue
       const c = payable[i]
+      // El PDF no dice la moneda, y una planilla es de una sola: acotar por
+      // ella evita que un abono de 150 USD marque como pagado un pendiente de
+      // 150 PEN del mismo colaborador.
+      if (c.moneda !== moneda) continue
       const dniMatch = (c.documentNumber ?? '').replace(/\D/g, '') === rowDni
       const amountMatch = Math.abs(c.amount - row.amount) < 0.01
       if (dniMatch && amountMatch) matches.push(i)

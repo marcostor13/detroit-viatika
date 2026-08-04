@@ -4,6 +4,7 @@ import { AdvanceService } from '../advance.service'
 import { ExpenseReportService } from '../../expense-report/expense-report.service'
 import { ClientService } from '../../client/client.service'
 import { toLatin1Buffer } from './bbva-format'
+import { AccountingConfigService } from '../../accounting-config/accounting-config.service'
 
 const CCI_BBVA = '00110057000267030775' // empieza 0011 → cuenta P
 const CCI_OTRO = '00219110035563002151' // interbancaria → I
@@ -36,6 +37,14 @@ describe('PaymentBatchService', () => {
         PaymentBatchService,
         { provide: AdvanceService, useValue: advanceService },
         { provide: ExpenseReportService, useValue: expenseReportService },
+        {
+          provide: AccountingConfigService,
+          useValue: {
+            getEffective: jest
+              .fn()
+              .mockResolvedValue({ monedaBase: 'PEN' }),
+          },
+        },
         { provide: ClientService, useValue: clientService },
       ],
     }).compile()
@@ -265,5 +274,77 @@ describe('PaymentBatchService', () => {
         { bypassReceipt: true }
       )
     })
+  })
+})
+
+/**
+ * Cuenta de cargo por moneda: una planilla en dólares no puede cargarse contra
+ * la cuenta en soles de la empresa.
+ */
+describe('PaymentBatchService · cuenta de cargo por moneda', () => {
+  const svc = Object.create(PaymentBatchService.prototype) as any
+  const resolver = (client: any, config: any, moneda: string) =>
+    svc.resolveChargeAccount(client, config, moneda)
+
+  const config = {
+    monedaBase: 'PEN',
+    bankAccounts: [
+      { nroCuenta: '0011-SOLES', moneda: 'PEN', activo: true },
+      { nroCuenta: '0011-DOLARES', moneda: 'USD', activo: true },
+    ],
+  }
+
+  it('elige la cuenta de la moneda de la planilla', () => {
+    expect(resolver({}, config, 'PEN')).toBe('0011-SOLES')
+    expect(resolver({}, config, 'USD')).toBe('0011-DOLARES')
+  })
+
+  it('ignora las cuentas desactivadas', () => {
+    const soloInactiva = {
+      monedaBase: 'PEN',
+      bankAccounts: [{ nroCuenta: '0011-DOLARES', moneda: 'USD', activo: false }],
+    }
+    expect(resolver({}, soloInactiva, 'USD')).toBe('')
+  })
+
+  it('cae a la cuenta de la empresa solo para la moneda base', () => {
+    const sinBancos = { monedaBase: 'PEN', bankAccounts: [] }
+    expect(resolver({ paymentAccount: '00011231245' }, sinBancos, 'PEN')).toBe(
+      '00011231245'
+    )
+    // En dólares NO se cae a la cuenta en soles: se prefiere fallar.
+    expect(resolver({ paymentAccount: '00011231245' }, sinBancos, 'USD')).toBe('')
+  })
+
+  it('con varias cuentas en la misma moneda manda la marcada', () => {
+    const varias = {
+      monedaBase: 'PEN',
+      bankAccounts: [
+        { nroCuenta: '0011-A', moneda: 'PEN', activo: true },
+        { nroCuenta: '0011-B', moneda: 'PEN', activo: true, esCuentaPagos: true },
+      ],
+    }
+    expect(resolver({}, varias, 'PEN')).toBe('0011-B')
+  })
+
+  it('con varias sin marcar no adivina por orden de registro', () => {
+    const ambiguas = {
+      monedaBase: 'PEN',
+      bankAccounts: [
+        { nroCuenta: '0011-A', moneda: 'PEN', activo: true },
+        { nroCuenta: '0011-B', moneda: 'PEN', activo: true },
+      ],
+    }
+    // Devuelve vacío: el generador falla pidiendo que marquen cuál usar.
+    expect(resolver({ paymentAccount: '999' }, ambiguas, 'PEN')).toBe('')
+  })
+
+  it('una cuenta sin moneda declarada se asume en la moneda base', () => {
+    const sinMoneda = {
+      monedaBase: 'PEN',
+      bankAccounts: [{ nroCuenta: '0011-X', activo: true }],
+    }
+    expect(resolver({}, sinMoneda, 'PEN')).toBe('0011-X')
+    expect(resolver({}, sinMoneda, 'USD')).toBe('')
   })
 })
