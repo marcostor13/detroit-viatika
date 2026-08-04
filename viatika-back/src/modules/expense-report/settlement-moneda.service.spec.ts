@@ -98,4 +98,107 @@ describe('ExpenseReportService — importes de liquidación en moneda base', () 
     // Antes se restaba 200 - 370 y salía un reembolso inexistente de 170.
     expect(advanceTotal - expenseTotal).toBeGreaterThan(0)
   })
+
+  /**
+   * Los helpers de arriba ya convertían bien, pero `liquidateViaticoReport` no
+   * los usaba para el anticipo: restaba `viaticoPaidAmount` (dólares) contra
+   * gastos en soles. Se prueba el método completo, no las piezas.
+   */
+  describe('liquidateViaticoReport', () => {
+    const liquidar = async (report: any, expenses: any[]) => {
+      const svc = Object.create(ExpenseReportService.prototype) as any
+      const doc = { ...report, expenseIds: expenses }
+      svc.expenseReportModel = {
+        findById: () => ({
+          populate: () => ({ exec: async () => doc }),
+        }),
+      }
+      svc.currencyService = { getConfig: async () => ({ monedaBase: 'PEN' }) }
+      svc.updateSettlement = jest.fn()
+      svc.close = jest.fn()
+      await svc.liquidateViaticoReport('r1')
+      return {
+        settlement: svc.updateSettlement.mock.calls[0]?.[1],
+        close: svc.close,
+      }
+    }
+
+    const viatico = {
+      type: 'viatico',
+      status: 'approved',
+      clientId: 'c1',
+      viaticoMoneda: 'USD',
+      viaticoPaidAmount: 800,
+      tipoCambio: 3.383,
+    }
+
+    it('valora el viático en dólares con su TC antes de restar los gastos', async () => {
+      // US$ 800 = S/ 2 706.40 contra S/ 1 066.68 gastados.
+      const { settlement } = await liquidar(viatico, [
+        { status: 'approved', total: 338.3, moneda: 'PEN', montoBase: 338.3, montoReporte: 100 },
+        { status: 'approved', total: 75.5, moneda: 'USD', montoBase: 255.42, montoReporte: 75.5 },
+        { status: 'approved', total: 50, moneda: 'PEN', montoBase: 50, montoReporte: 14.78 },
+        { status: 'approved', total: 100, moneda: 'USD', montoBase: 338.38, montoReporte: 100 },
+        { status: 'approved', total: 25, moneda: 'USD', montoBase: 84.58, montoReporte: 25 },
+      ])
+
+      expect(settlement.advanceTotal).toBe(2706.4)
+      expect(settlement.expenseTotal).toBeCloseTo(1066.68, 2)
+      // Antes salía 800 - 1066.68 = reembolso de 266.68, que no existía.
+      expect(settlement.type).toBe('devolucion')
+      expect(settlement.difference).toBeCloseTo(1639.72, 2)
+    })
+
+    it('expresa el equivalente en la moneda del viático sumando los montoReporte', async () => {
+      const { settlement } = await liquidar(viatico, [
+        { status: 'approved', total: 338.3, moneda: 'PEN', montoBase: 338.3, montoReporte: 100 },
+        { status: 'approved', total: 75.5, moneda: 'USD', montoBase: 255.42, montoReporte: 75.5 },
+        { status: 'approved', total: 50, moneda: 'PEN', montoBase: 50, montoReporte: 14.78 },
+        { status: 'approved', total: 100, moneda: 'USD', montoBase: 338.38, montoReporte: 100 },
+        { status: 'approved', total: 25, moneda: 'USD', montoBase: 84.58, montoReporte: 25 },
+      ])
+
+      // Debe coincidir al céntimo con el saldo que ve el colaborador en pantalla:
+      // dividir el total base entre el TC del viático daría 484.69, no 484.72,
+      // porque cada gasto se congeló con el TC de su propia fecha.
+      expect(settlement.monedaReporte).toBe('USD')
+      expect(settlement.moneda).toBe('PEN')
+      expect(settlement.advanceTotalReporte).toBe(800)
+      expect(settlement.expenseTotalReporte).toBe(315.28)
+      expect(settlement.differenceReporte).toBe(484.72)
+    })
+
+    it('ignora los comprobantes no aprobados en ambas monedas', async () => {
+      const { settlement } = await liquidar(viatico, [
+        { status: 'approved', total: 100, moneda: 'USD', montoBase: 338.3, montoReporte: 100 },
+        { status: 'rejected', total: 500, moneda: 'USD', montoBase: 1691.5, montoReporte: 500 },
+        { status: 'pending', total: 200, moneda: 'USD', montoBase: 676.6, montoReporte: 200 },
+      ])
+
+      expect(settlement.expenseTotal).toBe(338.3)
+      expect(settlement.expenseTotalReporte).toBe(100)
+    })
+
+    it('cierra solo el viático que queda equilibrado', async () => {
+      const { settlement, close } = await liquidar(
+        { ...viatico, viaticoPaidAmount: 100 },
+        [{ status: 'approved', total: 100, moneda: 'USD', montoBase: 338.3, montoReporte: 100 }]
+      )
+
+      expect(settlement.type).toBe('equilibrado')
+      expect(close).toHaveBeenCalledWith('r1', 'sistema')
+    })
+
+    it('una rendición en soles se liquida igual que antes', async () => {
+      const { settlement } = await liquidar(
+        { type: 'viatico', status: 'approved', clientId: 'c1', viaticoMoneda: 'PEN', viaticoPaidAmount: 500, tipoCambio: 1 },
+        [{ status: 'approved', total: 120, moneda: 'PEN', montoBase: 120, montoReporte: 120 }]
+      )
+
+      expect(settlement.advanceTotal).toBe(500)
+      expect(settlement.difference).toBe(380)
+      expect(settlement.differenceReporte).toBe(380)
+      expect(settlement.type).toBe('devolucion')
+    })
+  })
 })

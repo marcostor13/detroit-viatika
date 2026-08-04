@@ -581,9 +581,12 @@ export class RendicionExportService {
       v.border = allBorder;
       r++;
     };
-    totalRow('TOTAL GASTOS', sumSoles, false);
-    totalRow('MONTO INICIAL ENTREGADO', montoInicial, false);
-    totalRow('SALDO (REEMB. / DEV.)', saldo, true);
+    // La columna SOLES lleva el equivalente contable; el pie va en la moneda de
+    // la rendición, que es la que el colaborador tiene que cuadrar.
+    const symRep = monedaSymbol(data.moneda);
+    totalRow(`TOTAL GASTOS (${symRep})`, data.totalGastado, false);
+    totalRow(`MONTO INICIAL ENTREGADO (${symRep})`, data.totalAnticipado, false);
+    totalRow(`SALDO (REEMB. / DEV.) (${symRep})`, data.saldoLibre, true);
 
     // --- Resumen de solicitud (presupuesto), si aplica ---
     if (data.items && data.items.length > 0) {
@@ -842,10 +845,13 @@ export class RendicionExportService {
     y += 4;
     doc.setFontSize(8);
     doc.setLineWidth(0.2);
+    // La columna SOLES lleva el equivalente contable; el pie va en la moneda de
+    // la rendición, que es la que el colaborador tiene que cuadrar.
+    const symRep = monedaSymbol(data.moneda);
     const totalRows: [string, number, boolean][] = [
-      ['TOTAL GASTOS', totalGastos, false],
-      ['MONTO INICIAL ENTREGADO', montoInicial, false],
-      ['SALDO (REEMB. / DEV.)', saldo, true],
+      [`TOTAL GASTOS (${symRep})`, data.totalGastado ?? totalGastos, false],
+      [`MONTO INICIAL ENTREGADO (${symRep})`, data.totalAnticipado ?? montoInicial, false],
+      [`SALDO (REEMB. / DEV.) (${symRep})`, data.saldoLibre ?? saldo, true],
     ];
     for (const [label, val, isSaldo] of totalRows) {
       // Celda etiqueta (fondo blanco; solo el SALDO lleva el fondo de la marca).

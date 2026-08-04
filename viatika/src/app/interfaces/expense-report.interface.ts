@@ -162,6 +162,10 @@ export interface IExpenseReport {
   viaticoAmount?: number;
   /** Moneda ISO ('PEN' / 'USD'). Default 'PEN'. */
   viaticoMoneda?: string;
+  /** TC congelado al crear el viático: lleva sus importes a moneda base. */
+  tipoCambio?: number;
+  /** Fecha (YYYY-MM-DD) del TC congelado. */
+  tcFecha?: string;
   viaticoPlace?: string;
   viaticoStartDate?: string;
   viaticoEndDate?: string;

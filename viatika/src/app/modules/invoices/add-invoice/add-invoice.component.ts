@@ -33,6 +33,7 @@ import { ProjectSelectComponent } from '../../../design-system/project-select/pr
 import { WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
+import { DEFAULT_MONEDA, expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
 import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
@@ -137,6 +138,10 @@ export default class AddInvoiceComponent implements OnInit {
   }
   rendicionBudget = signal<number>(0);
   rendicionSpent = signal<number>(0);
+  /** Moneda de la rendición a la que se adjunta el comprobante. */
+  rendicionMoneda = signal<string>(DEFAULT_MONEDA);
+  /** Símbolo de esa moneda, para los importes de la cabecera. */
+  rendicionSymbol = computed(() => monedaSymbol(this.rendicionMoneda()));
   rendicionSettlementDiff = signal<number | null>(null);
   rendicionAvailable = computed(() => {
     const diff = this.rendicionSettlementDiff();
@@ -655,12 +660,15 @@ export default class AddInvoiceComponent implements OnInit {
         // El flag directa puede llegar después de que el usuario ya agregó filas:
         // re-sincroniza validadores del proyecto (superior y por fila).
         this.syncMobilityRowValidators();
+        // La rendición puede tener comprobantes en otra moneda: sumar `total` a
+        // secas mezclaría soles con dólares en el mismo número.
+        this.rendicionMoneda.set((report as any)?.viaticoMoneda || DEFAULT_MONEDA);
         const expenses = Array.isArray(report?.expenseIds) ? report.expenseIds : [];
         const spent = expenses.reduce(
-          (sum: number, exp: any) => sum + (parseFloat(exp?.total) || 0),
+          (sum: number, exp: any) => sum + expenseAmountInReport(exp),
           0,
         );
-        this.rendicionSpent.set(spent);
+        this.rendicionSpent.set(Math.round(spent * 100) / 100);
         const settlement = (report as any)?.settlement;
         if (settlement && settlement.difference !== undefined && settlement.difference !== null) {
           this.rendicionSettlementDiff.set(Number(settlement.difference) || 0);

@@ -2464,6 +2464,16 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Equivalente de un gasto en la moneda de la rendición que lo contiene.
+   * `montoReporte` se congela al crear el comprobante; si no existe, el gasto
+   * ya estaba en esa misma moneda. Es el número que ve el colaborador en el
+   * detalle, así que la liquidación lo reusa en vez de reconvertir.
+   */
+  private expenseAmountInReport(e: any): number {
+    return Number(e?.montoReporte ?? e?.total) || 0
+  }
+
+  /**
    * Equivalente en moneda base de lo realmente pagado de un anticipo. Reaplica
    * el TC congelado sobre `paidAmount ?? amount` en vez de usar `montoBase`
    * (que se congeló sobre el monto solicitado), porque el pago real puede
@@ -3331,7 +3341,16 @@ export class ExpenseReportService implements OnModuleInit {
               : Number(a.paidAmount ?? a.amount) || 0),
           0
         )
-        : Number((report as any).budget ?? 0)
+        : // Sin anticipos enlazados el fondo entregado es propio del reporte
+        // (viático pagado o presupuesto de la directa) y está en la moneda del
+        // reporte, mientras que los gastos ya vienen en base: hay que valorarlo
+        // con el TC congelado antes de restar.
+        this.reportSettlementAmountBase(
+          report,
+          Number(
+            (report as any).viaticoPaidAmount ?? (report as any).budget ?? 0
+          )
+        )
     const difference = advanceTotal - expenseTotal
     const notifySettlement = {
       advanceTotal,
@@ -3342,14 +3361,19 @@ export class ExpenseReportService implements OnModuleInit {
     }
     // Update settlement in DB only if not already set or the stored type conflicts with actual balance
     const existingSettlement = (report as any).settlement
-    if (
+    const settlementIsStale =
       !existingSettlement ||
       (difference > 0.01 && existingSettlement.type !== 'devolucion')
-    ) {
+    if (settlementIsStale) {
       await this.expenseReportModel
         .findByIdAndUpdate(id, { $set: { settlement: notifySettlement } })
         .exec()
     }
+    // La liquidación persistida (calculada al aprobar, con el TC de cada gasto)
+    // manda sobre el recálculo local: si no se pisó, es la que hay que avisar.
+    const effectiveSettlement = settlementIsStale
+      ? notifySettlement
+      : existingSettlement
 
     const voucher = {
       url: dto.fileUrl,
@@ -3368,7 +3392,7 @@ export class ExpenseReportService implements OnModuleInit {
       .exec()
 
     const amountFormatted = Math.abs(
-      Number(notifySettlement.difference ?? 0)
+      Number(effectiveSettlement?.difference ?? 0)
     ).toFixed(2)
     const clientId = report.clientId.toString()
     const platformUrl = this.emailService.buildAppUrl(
@@ -4671,12 +4695,22 @@ export class ExpenseReportService implements OnModuleInit {
     if (!report || report.type !== 'viatico' || report.status !== 'approved') return
 
     const expenses = (report.expenseIds as any[]) || []
-    const expenseTotal = expenses.reduce((sum, e) => {
-      if (String(e?.status ?? '').toLowerCase() !== 'approved') return sum
-      return sum + this.expenseSettlementAmountBase(e)
-    }, 0)
+    const approved = expenses.filter(
+      e => String(e?.status ?? '').toLowerCase() === 'approved'
+    )
+    const expenseTotal = approved.reduce(
+      (sum, e) => sum + this.expenseSettlementAmountBase(e),
+      0
+    )
 
-    const advanceTotal = Number(report.viaticoPaidAmount ?? 0)
+    // `viaticoPaidAmount` está en la moneda del viático (puede ser USD) y los
+    // gastos ya vienen en moneda base: restarlos crudos compararía dólares
+    // contra soles. Se valora el anticipo con el TC congelado del viático,
+    // igual que hace la rendición directa con su depósito.
+    const advanceTotal = this.reportSettlementAmountBase(
+      report,
+      Number(report.viaticoPaidAmount ?? 0)
+    )
     // Solo omitir si ambos son cero (nada que liquidar).
     if (advanceTotal <= 0 && expenseTotal <= 0) return
 
@@ -4684,7 +4718,38 @@ export class ExpenseReportService implements OnModuleInit {
     const type: 'reembolso' | 'devolucion' | 'equilibrado' =
       Math.abs(difference) < 0.01 ? 'equilibrado' : difference > 0 ? 'devolucion' : 'reembolso'
 
-    await this.updateSettlement(reportId, { advanceTotal, expenseTotal, difference, type, settledAt: new Date() })
+    // La liquidación se guarda en moneda base (es la que consumen tesorería,
+    // el TXT y los asientos). Se anota además el equivalente en la moneda del
+    // viático para que la rendición del colaborador pueda mostrar su moneda.
+    const config = await this.currencyService
+      .getConfig(report.clientId.toString())
+      .catch(() => null)
+    const monedaBase = config?.monedaBase || DEFAULT_MONEDA
+    const rate = Number(report.tipoCambio) || 1
+    const monedaReporte = report.viaticoMoneda || monedaBase
+    const round2 = (n: number) => Math.round(n * 100) / 100
+    // El equivalente en la moneda del viático se suma de los `montoReporte`
+    // congelados por comprobante, no dividiendo el total base entre el TC del
+    // viático: cada gasto pudo congelarse con el TC de su propia fecha, así que
+    // dividir daría unos céntimos distintos de lo que ve el colaborador.
+    const advanceTotalReporte = round2(Number(report.viaticoPaidAmount ?? 0))
+    const expenseTotalReporte = round2(
+      approved.reduce((sum, e) => sum + this.expenseAmountInReport(e), 0)
+    )
+
+    await this.updateSettlement(reportId, {
+      advanceTotal,
+      expenseTotal,
+      difference,
+      type,
+      moneda: monedaBase,
+      monedaReporte,
+      advanceTotalReporte,
+      expenseTotalReporte,
+      differenceReporte: round2(advanceTotalReporte - expenseTotalReporte),
+      tipoCambio: rate,
+      settledAt: new Date(),
+    })
 
     // Auto-cierre inmediato cuando el viático queda equilibrado.
     // fromClose=true indica que esta llamada viene desde close() — evita recursión.
