@@ -53,13 +53,14 @@ const mockProjectModel = {
   findOneAndUpdate: jest.fn(),
   findOneAndDelete: jest.fn(),
   countDocuments: jest.fn(),
+  exists: jest.fn(),
   db: {
     model: jest.fn().mockReturnValue(mockExpenseModel),
   },
 }
 
 const mockLineaNegocioModel = { findOne: jest.fn() }
-const mockUserModel = { findOne: jest.fn() }
+const mockUserModel = { findOne: jest.fn(), exists: jest.fn() }
 
 describe('ProjectService', () => {
   let service: ProjectService
@@ -71,6 +72,8 @@ describe('ProjectService', () => {
     mockProjectModel.findOne.mockReturnValue(makeQuery(null))
     mockLineaNegocioModel.findOne.mockReturnValue(makeQuery(null))
     mockUserModel.findOne.mockReturnValue(makeQuery(null))
+    mockProjectModel.exists.mockResolvedValue(null)
+    mockUserModel.exists.mockResolvedValue(null)
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -84,6 +87,41 @@ describe('ProjectService', () => {
       ],
     }).compile()
     service = module.get<ProjectService>(ProjectService)
+  })
+
+  describe('isApproverForClient', () => {
+    const approverId = new Types.ObjectId().toString()
+
+    it('es aprobador si figura en los niveles de un centro de costo', async () => {
+      mockProjectModel.exists.mockResolvedValue({ _id: new Types.ObjectId() })
+
+      await expect(service.isApproverForClient(approverId, clientId)).resolves.toBe(true)
+      // Corta en la primera fuente: no hace falta consultar usuarios.
+      expect(mockUserModel.exists).not.toHaveBeenCalled()
+    })
+
+    it('es aprobador si solo figura en los niveles propios de un colaborador (regla 1.10)', async () => {
+      mockUserModel.exists.mockResolvedValue({ _id: new Types.ObjectId() })
+
+      await expect(service.isApproverForClient(approverId, clientId)).resolves.toBe(true)
+      expect(mockUserModel.exists).toHaveBeenCalledWith({
+        clientId: new Types.ObjectId(clientId),
+        'permissions.approverLevels.userIds': new Types.ObjectId(approverId),
+      })
+    })
+
+    it('no es aprobador si no figura en ninguna de las dos fuentes', async () => {
+      await expect(service.isApproverForClient(approverId, clientId)).resolves.toBe(false)
+      expect(mockProjectModel.exists).toHaveBeenCalled()
+      expect(mockUserModel.exists).toHaveBeenCalled()
+    })
+
+    it('devuelve false con ids inválidos sin consultar la base', async () => {
+      await expect(service.isApproverForClient('no-es-un-id', clientId)).resolves.toBe(false)
+      await expect(service.isApproverForClient(approverId, 'no-es-un-id')).resolves.toBe(false)
+      expect(mockProjectModel.exists).not.toHaveBeenCalled()
+      expect(mockUserModel.exists).not.toHaveBeenCalled()
+    })
   })
 
   describe('create', () => {

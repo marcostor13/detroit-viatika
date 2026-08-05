@@ -249,19 +249,36 @@ export class ProjectService {
   }
 
   /**
-   * ¿Este usuario aparece como aprobador (cualquier nivel) en algún centro de
-   * costo de su empresa? Reemplaza el chequeo por rol "Coordinador" — la
-   * autorización real depende de estar en `approverLevels`, no del rol.
+   * ¿Este usuario aparece como aprobador (cualquier nivel) en su empresa?
+   * Reemplaza el chequeo por rol "Coordinador" — la autorización real depende
+   * de estar en `approverLevels`, no del rol.
+   *
+   * Consulta las DOS fuentes de aprobadores que alimentan el motor de cadena
+   * (ver `ownerOrProjectSource` en `approval-chain.util.ts`): los niveles de un
+   * centro de costo y los niveles propios de un colaborador
+   * (`User.permissions.approverLevels`, regla 1.10). Mirar solo la primera
+   * dejaba fuera de `/rendiciones` a quien aprueba únicamente por asignación
+   * directa en el perfil del colaborador, aunque el motor sí lo pusiera en la
+   * cadena y el API le aceptara la aprobación.
    */
   async isApproverForClient(userId: string, clientId: string): Promise<boolean> {
     if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(clientId)) {
       return false
     }
-    const exists = await this.projectModel.exists({
-      clientId: new Types.ObjectId(clientId),
-      'approverLevels.userIds': new Types.ObjectId(userId),
+    const userIdObject = new Types.ObjectId(userId)
+    const clientIdObject = new Types.ObjectId(clientId)
+
+    const enCentroDeCosto = await this.projectModel.exists({
+      clientId: clientIdObject,
+      'approverLevels.userIds': userIdObject,
     })
-    return !!exists
+    if (enCentroDeCosto) return true
+
+    const enColaborador = await this.userModel.exists({
+      clientId: clientIdObject,
+      'permissions.approverLevels.userIds': userIdObject,
+    })
+    return !!enColaborador
   }
 
   /** Carga varios centros de costo por ID (usado al armar la cadena de aprobación). */
