@@ -87,6 +87,11 @@ export interface IUserPermissions {
     djExtranjero: boolean;
   };
   /**
+   * Habilita al colaborador a elegir fechas de inicio/fin anteriores a hoy en
+   * la solicitud de viáticos. Ausente/false = solo desde hoy en adelante.
+   */
+  permitirFechasAnteriores?: boolean;
+  /**
    * Aprobadores propios del colaborador por nivel (N1, N2, N3…), regla 1.10.
    * Cuando hay al menos un nivel con aprobadores, estos sustituyen a los del
    * centro de costo principal al armar la cadena de solicitudes y rendiciones.

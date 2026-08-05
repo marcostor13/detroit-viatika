@@ -116,7 +116,7 @@
             <input
               type="date"
               formControlName="startDate"
-              [min]="todayStr"
+              [min]="minStartDate"
               class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow appearance-none"
               [class.border-red-400]="form.get('startDate')?.invalid && form.get('startDate')?.touched"
             />
@@ -133,7 +133,7 @@
             <input
               type="date"
               formControlName="endDate"
-              [min]="form.get('startDate')?.value || todayStr"
+              [min]="minEndDate"
               class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow appearance-none"
               [class.border-red-400]="form.get('endDate')?.invalid && form.get('endDate')?.touched"
             />
