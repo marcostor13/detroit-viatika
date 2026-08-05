@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detroit</title>
+  <style>
+    /*
+      Hoja de estilo ÚNICA de los correos. Todas las plantillas siguen la misma
+      estructura, en este orden:
+
+        badge (estado) → h1.title → saludo → párrafo(s)
+        → p.label «Detalles rápidos:» → div.box con div.row por campo
+        → [bloques secundarios: p.label + div.box]
+        → párrafo de cierre → div.btn-container con a.btn
+
+      Cada campo se escribe siempre igual: <strong>Etiqueta:</strong> valor, con
+      la etiqueta en formato oración («Monto total», no «Monto Total»). No
+      añadir clases nuevas aquí sin usarlas en todas las plantillas del mismo
+      tipo: la lista de abajo es exactamente la que se usa, sin alias muertos.
+    */
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333333; line-height: 1.6; background-color: #f4f7f6; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .header { background-color: #f8fafc; padding: 20px; text-align: center; border-bottom: 1px solid #e2e8f0; }
+    .logo { width: auto; height: auto; max-width: 150px; max-height: 64px; display: inline-block; border: 0; }
+    .content { padding: 30px; }
+    p { margin: 0 0 12px; }
+
+    /* Encabezado del mensaje */
+    .badge { display: inline-block; background: #dcfce7; color: #166534; border-radius: 6px; padding: 3px 10px; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
+    .badge-danger { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #e0f2fe; color: #075985; }
+    .title { color: #1e293b; font-size: 22px; margin: 0 0 16px; }
+
+    /* Bloque de datos: p.label + div.box con div.row */
+    .label { font-weight: 700; color: #1e293b; margin: 18px 0 8px; }
+    .box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 0 0 16px; }
+    .row { margin: 6px 0; font-size: 14px; }
+    .no-account { color: #94a3b8; font-style: italic; margin: 0; }
+
+    /* Aviso destacado (solo para urgencias reales) */
+    .urgent-box { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 16px; margin: 0 0 16px; }
+    .urgent { color: #b45309; font-weight: 700; }
+
+    /* Listados largos (comprobantes, rendiciones pendientes) */
+    table.data { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+    table.data th, table.data td { text-align: left; padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    table.data th { background: #f8fafc; color: #374151; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+    table.data td.num { text-align: right; font-weight: 700; white-space: nowrap; }
+    table.data tr.total td { border-top: 2px solid #cbd5e1; border-bottom: none; font-weight: 700; color: #1e293b; }
+    .tag { display: inline-block; background: #eef2ff; color: #4338ca; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+    .tag-desc { color: #64748b; font-size: 13px; margin-top: 4px; }
+
+    /* Código de verificación */
+    .code-container { text-align: center; margin: 24px 0; }
+    .code { display: inline-block; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #1e293b; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 24px; }
+
+    /* Llamada a la acción y pie */
+    .btn-container { text-align: center; margin-top: 24px; }
+    .btn { display: inline-block; background-color: #0ea5e9; color: #ffffff !important; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; }
+    .footer { text-align: center; font-size: 12px; color: #94a3b8; padding: 20px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <!--
+        Tamaño del logo declarado por triplicado a propósito: el atributo `width`
+        es el único que respeta Outlook (motor Word ignora max-width/max-height y
+        renderiza la imagen a su tamaño real — el logo por defecto mide 722x322),
+        el estilo inline cubre a los clientes que eliminan el <style> del <head>,
+        y la clase queda para el resto. Sin `height` para no deformar logos de
+        empresa con otra proporción.
+      -->
+      <img
+        src="{{logoUrl}}"
+        alt="Detroit"
+        class="logo"
+        width="150"
+        style="width: auto; height: auto; max-width: 150px; max-height: 64px; display: inline-block; border: 0;"
+      />
+    </div>
+    <div class="content">

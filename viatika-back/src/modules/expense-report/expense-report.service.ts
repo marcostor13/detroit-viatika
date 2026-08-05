@@ -282,6 +282,113 @@ export class ExpenseReportService implements OnModuleInit {
     return total > 0 ? total : Number(report.budget) || 0
   }
 
+  /**
+   * Destinatarios de correo que son los APROBADORES del reporte: la cadena por
+   * centro de costo de sus comprobantes (Aprobador 1, 2, … N), NO el
+   * `coordinatorId` personal (obsoleto — ya no existe el concepto de
+   * coordinador; ver VD-85/VD-87). N-genérico: recorre TODOS los pasos de la
+   * `approverChain` de cada comprobante no rechazado y deduplica por usuario y
+   * por correo, respetando "email habilitado". Si mañana la cadena arma 3+
+   * niveles, este helper los cubre sin cambios.
+   */
+  private async resolveReportApproverRecipients(
+    reportId: string,
+    opts: { excludeUserIds?: Array<string | undefined> } = {}
+  ): Promise<
+    Array<{ userId: string; email: string; name: string; emailEnabled: boolean }>
+  > {
+    const exclude = new Set(
+      (opts.excludeUserIds ?? []).filter(Boolean).map(x => String(x))
+    )
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('expenseIds')
+      .lean<{ expenseIds?: unknown[] }>()
+      .exec()
+    const expenseIds = (report?.expenseIds ?? []).map((x: any) =>
+      x && typeof x === 'object' && '_id' in x ? x._id : x
+    )
+    if (!expenseIds.length) return []
+
+    const chainExpenses = await this.expenseModel
+      .find({ _id: { $in: expenseIds }, status: { $ne: 'rejected' } })
+      .select('approverChain')
+      .lean<{ approverChain?: { approverIds?: Types.ObjectId[] }[] }[]>()
+      .exec()
+
+    // Único por usuario (la cadena puede repetir el mismo aprobador en varios
+    // comprobantes / pasos).
+    const approverIds = new Set<string>()
+    for (const e of chainExpenses) {
+      for (const step of e.approverChain ?? []) {
+        for (const aid of step.approverIds ?? []) {
+          const id = String(aid)
+          if (!exclude.has(id)) approverIds.add(id)
+        }
+      }
+    }
+
+    const recipients: Array<{
+      userId: string
+      email: string
+      name: string
+      emailEnabled: boolean
+    }> = []
+    for (const userId of approverIds) {
+      const u = await this.userService.findEmailNameClient(userId)
+      if (!u) continue
+      const emailEnabled = await this.userService.isEmailEnabled(userId)
+      recipients.push({
+        userId,
+        email: u.email || '',
+        name: u.name,
+        emailEnabled,
+      })
+    }
+    return recipients
+  }
+
+  /**
+   * Igual que `resolveReportApproverRecipients` pero para una SOLICITUD de
+   * viático: los aprobadores viven en `viaticoApproverChain` (cadena por centro
+   * de costo a nivel de reporte, no por comprobante). N-genérico.
+   */
+  private async resolveViaticoApproverRecipients(
+    report: { viaticoApproverChain?: { approverIds?: Types.ObjectId[] }[] },
+    opts: { excludeUserIds?: Array<string | undefined> } = {}
+  ): Promise<
+    Array<{ userId: string; email: string; name: string; emailEnabled: boolean }>
+  > {
+    const exclude = new Set(
+      (opts.excludeUserIds ?? []).filter(Boolean).map(x => String(x))
+    )
+    const approverIds = new Set<string>()
+    for (const step of report.viaticoApproverChain ?? []) {
+      for (const aid of step.approverIds ?? []) {
+        const id = String(aid)
+        if (!exclude.has(id)) approverIds.add(id)
+      }
+    }
+    const recipients: Array<{
+      userId: string
+      email: string
+      name: string
+      emailEnabled: boolean
+    }> = []
+    for (const userId of approverIds) {
+      const u = await this.userService.findEmailNameClient(userId)
+      if (!u) continue
+      const emailEnabled = await this.userService.isEmailEnabled(userId)
+      recipients.push({
+        userId,
+        email: u.email || '',
+        name: u.name,
+        emailEnabled,
+      })
+    }
+    return recipients
+  }
+
   private async validateBeforeSubmit(reportId: string): Promise<void> {
     const report = await this.expenseReportModel
       .findById(reportId)
@@ -354,6 +461,32 @@ export class ExpenseReportService implements OnModuleInit {
     if (hasPendingChain) {
       throw new BadRequestException(
         'Existen comprobantes que aún no completaron su cadena de aprobación.'
+      )
+    }
+  }
+
+  /**
+   * Guard enfocado para la aprobación final de Contabilidad: bloquea si algún
+   * comprobante quedó observado (rejected). A diferencia de
+   * `validateBeforeFinalApproval`, NO exige comprobantes ni cadena completa —
+   * solo impide aprobar una rendición que contiene un comprobante sin corregir.
+   */
+  private async assertNoRejectedExpenses(reportId: string): Promise<void> {
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .populate('expenseIds')
+      .select('expenseIds')
+      .lean()
+      .exec()
+    const expenses = Array.isArray((report as any)?.expenseIds)
+      ? (report as any).expenseIds
+      : []
+    const hasRejected = expenses.some(
+      (e: any) => String(e?.status || '').toLowerCase() === 'rejected'
+    )
+    if (hasRejected) {
+      throw new BadRequestException(
+        'Existen comprobantes observados. La rendición fue devuelta al colaborador para corrección; no puede aprobarse.'
       )
     }
   }
@@ -653,8 +786,15 @@ export class ExpenseReportService implements OnModuleInit {
       .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
       .populate('directaOrdenTrabajoId', 'nombre costCenterId')
       // Comprobantes: total (monto de la rendición directa) y datos/archivo para
-      // mostrar las facturas en el modal de aprobación del jefe inmediato. VD-25.
-      .populate('expenseIds', 'total data file expenseType montoBase moneda montoReporte monedaReporte')
+      // mostrar las facturas en el modal de aprobación del jefe inmediato (VD-25).
+      // `approverChain` y `status` van también porque con el modelo por
+      // comprobante (regla 1.4) la rendición se aprueba aprobando todos sus
+      // gastos: sin ellos el front no puede saber si a este aprobador todavía le
+      // queda alguno pendiente y el Inicio no podía listarlas.
+      .populate(
+        'expenseIds',
+        'total data file expenseType status approverChain montoBase moneda montoReporte monedaReporte'
+      )
       .sort({ createdAt: -1 })
       .exec()
   }
@@ -808,22 +948,13 @@ export class ExpenseReportService implements OnModuleInit {
       filter['status'] = opts.status
     }
     if (opts.search?.trim()) {
-      // El "concepto" se guarda en distintos campos según el tipo de
-      // comprobante (description plano, JSON dentro de description/data, o
-      // mobilityRows[].gestion/origen/destino), por lo que el search debe
-      // cubrir todos esos lugares.
+      // VD-65: el buscador de comprobantes filtra por RUC del emisor (antes
+      // buscaba por "concepto" en múltiples campos). El RUC vive dentro del JSON
+      // `data`, persistido como string, en el campo `rucEmisor`; se busca el
+      // término dentro de ese valor para admitir coincidencias parciales.
       const term = opts.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const rx = { $regex: term, $options: 'i' }
       and.push({
-        $or: [
-          { description: rx },
-          { data: rx },
-          { 'mobilityRows.gestion': rx },
-          { 'mobilityRows.concepto': rx },
-          { 'mobilityRows.origen': rx },
-          { 'mobilityRows.destino': rx },
-          { 'mobilityRows.clienteProveedor': rx },
-        ],
+        data: { $regex: `"rucEmisor"\\s*:\\s*"[^"]*${term}`, $options: 'i' },
       })
     }
     if (and.length) filter['$and'] = and
@@ -973,7 +1104,9 @@ export class ExpenseReportService implements OnModuleInit {
       .populate('contabilidadApprovedBy', 'name email signature')
       // Contabilidad que aprobó la SOLICITUD del viático (regla 1.3) — distinto de
       // contabilidadApprovedBy, que es de la RENDICIÓN (regla 1.4, posterior al pago).
-      .populate('viaticoSolicitudContabilidadApprovedBy', 'name email')
+      // Firma incluida para el recuadro "V°B° Recepción dinero" del PDF Solicitud
+      // de Fondos (ADF-FOR-003, VD-90).
+      .populate('viaticoSolicitudContabilidadApprovedBy', 'name email signature')
       .populate('projectId', 'name')
       .populate({
         path: 'viaticoOrdenTrabajoId',
@@ -986,6 +1119,7 @@ export class ExpenseReportService implements OnModuleInit {
         populate: { path: 'costCenterId', select: 'code name' },
       })
       .populate('viaticoApproverChain.approverIds', 'name email')
+      .populate('rendicionApproverChain.approverIds', 'name email')
       .exec()
 
     if (!report) {
@@ -1000,7 +1134,46 @@ export class ExpenseReportService implements OnModuleInit {
         (normalized as unknown as { isCajaChica?: boolean }).isCajaChica === true
           ? await this.isLockedByFinalizedCajaChica(id)
           : false
+
+    // N° de rendición para viáticos (VD-63): los viáticos no tienen `codigo`
+    // (solo las directas). Se numeran por la posición del viático entre los del
+    // mismo colaborador, ordenados por fecha de creación. Aquí devolvemos solo la
+    // posición estable; el front arma "INICIALES-00N" con el nombre que muestra.
+    const meta = normalized as unknown as {
+      type?: string
+      userId?: { _id?: unknown }
+      clientId?: unknown
+      createdAt?: Date
+      viaticoPosition?: number
+    }
+    if (meta.type === 'viatico') {
+      const ownerRef = meta.userId as { _id?: unknown } | unknown
+      const ownerId =
+        ownerRef && typeof ownerRef === 'object' && '_id' in ownerRef
+          ? (ownerRef as { _id?: unknown })._id
+          : ownerRef
+      const earlier = await this.expenseReportModel.countDocuments({
+        type: 'viatico',
+        clientId: meta.clientId,
+        userId: ownerId,
+        createdAt: { $lt: meta.createdAt },
+      })
+      meta.viaticoPosition = earlier + 1
+    }
     return normalized
+  }
+
+  /**
+   * Nombre visible de la rendición para correos y notificaciones. Los viáticos
+   * (y algunos reportes) guardan el nombre en `description`, no en `title` — el
+   * header del app usa `description`. Sin este fallback, los correos mostraban el
+   * campo "Título:"/"Rendición:" vacío. Cae a description y luego a un genérico.
+   */
+  private resolveReportTitle(report: any): string {
+    const title = typeof report?.title === 'string' ? report.title.trim() : ''
+    const description =
+      typeof report?.description === 'string' ? report.description.trim() : ''
+    return title || description || 'Rendición'
   }
 
   private normalizeReportExpenseDates(report: ExpenseReportDocument) {
@@ -1040,7 +1213,7 @@ export class ExpenseReportService implements OnModuleInit {
       const ownerId = ownerRef?._id ? String(ownerRef._id) : String(ownerRef)
       const collaboratorName =
         (typeof ownerRef === 'object' && ownerRef?.name) || 'Colaborador'
-      const reportTitle = fullyUpdatedReport.title
+      const reportTitle = this.resolveReportTitle(fullyUpdatedReport)
       const budgetFormatted = (
         await this.computeReportBudgetDisplay(fullyUpdatedReport)
       ).toFixed(2)
@@ -1071,8 +1244,8 @@ export class ExpenseReportService implements OnModuleInit {
       for (const u of accountingUsers) {
         await this.notificationsService.create({
           userId: u._id,
-          title: 'Rendición aprobada por Coordinador',
-          message: `La rendición "${reportTitle}" fue aprobada por el coordinador y está lista para tu aprobación final.`,
+          title: 'Rendición aprobada por los aprobadores',
+          message: `La rendición "${reportTitle}" fue aprobada por los aprobadores y está lista para tu aprobación final.`,
           type: 'info',
           actionUrl: `/mis-rendiciones/${id}/detalle`,
         })
@@ -1105,8 +1278,8 @@ export class ExpenseReportService implements OnModuleInit {
 
       await this.notificationsService.create({
         userId: ownerId,
-        title: 'Tu rendición fue aprobada por el Coordinador',
-        message: `Tu rendición "${reportTitle}" fue aprobada por el coordinador. Contabilidad realizará la revisión final.`,
+        title: 'Tu rendición fue aprobada por los aprobadores',
+        message: `Tu rendición "${reportTitle}" fue aprobada por los aprobadores. Contabilidad realizará la revisión final.`,
         type: 'success',
         actionUrl: `/mis-rendiciones/${id}/detalle`,
       })
@@ -1122,7 +1295,7 @@ export class ExpenseReportService implements OnModuleInit {
     const dto = updateExpenseReportDto
     const existing = await this.expenseReportModel
       .findById(id)
-      .select('status isDirecta type clientId projectId userId expenseIds')
+      .select('status isDirecta type clientId projectId userId expenseIds rendicionApproverChain rendicionApprovalLevel rendicionRequiredLevels')
       .lean()
       .exec()
     if (!existing) {
@@ -1184,11 +1357,30 @@ export class ExpenseReportService implements OnModuleInit {
     }
     if (dto.status === 'pending_accounting') {
       await this.validateBeforeFinalApproval(id)
+      // La rendición pasa a Contabilidad SOLO cuando su cadena de aprobadores de
+      // centro de costo (N1/N2…) a nivel de reporte está completa. Ese avance lo
+      // realiza `approveRendicion` (el último aprobador). Un intento directo por
+      // aquí con la cadena aún incompleta se rechaza (evita saltarse aprobadores).
+      const reportChain = (existing as any).rendicionApproverChain as ChainStep[] | undefined
+      if (reportChain !== undefined && !isChainFullyApproved(reportChain)) {
+        throw new BadRequestException(
+          'La rendición aún no fue aprobada por todos los aprobadores del centro de costo (N1/N2). Debe aprobarse por cada aprobador antes de pasar a Contabilidad.'
+        )
+      }
     }
     if (dto.status === 'approved' && existing.status !== 'pending_accounting') {
       throw new BadRequestException(
         'Solo se puede aprobar una rendicion pendiente de contabilidad.'
       )
+    }
+    // No aprobar la rendición completa si quedó algún comprobante observado.
+    // En el flujo normal, rechazar un comprobante por Contabilidad ya devuelve la
+    // rendición a 'rejected' (returnToCollaboratorOnAccountingRejection). Este
+    // guard cubre además el caso en que un aprobador rechazó un comprobante con
+    // `rejectByCoord`: el auto-avance a `pending_accounting` ignora los rechazados,
+    // así que la rendición podría llegar aquí con uno observado sin corregir.
+    if (dto.status === 'approved') {
+      await this.assertNoRejectedExpenses(id)
     }
     // Un viático con pago parcial SÍ puede aprobarse aunque quede saldo del anticipo
     // sin depositar: la liquidación reconcilia con lo realmente pagado
@@ -1220,6 +1412,30 @@ export class ExpenseReportService implements OnModuleInit {
             ownerId,
             reportClientId
           )
+          // Cadena de aprobación de la RENDICIÓN a nivel de reporte (viático):
+          // los aprobadores del centro de costo (N1/N2…) deben completarla antes
+          // de que la rendición pase a Contabilidad. Reusa `buildRendicionChain`
+          // tal cual — misma lógica (asignado/apoyo/escalamiento/omisión) que la
+          // cadena por comprobante. Se (re)construye en cada envío/reenvío,
+          // reseteando cualquier aprobación previa a nivel de reporte.
+          const reportProjectId = (existing as any).projectId?.toString()
+          if ((existing as any).type === 'viatico' && reportProjectId) {
+            try {
+              const reportChain = await this.buildReportRendicionChain(
+                ownerId,
+                reportClientId,
+                reportProjectId
+              )
+              $set.rendicionApproverChain = reportChain
+              $set.rendicionRequiredLevels = reportChain.length
+              $set.rendicionApprovalLevel = 0
+              $set.rendicionApprovalHistory = []
+            } catch (err: unknown) {
+              this.logger.error(
+                `No se pudo construir la cadena de rendición del reporte ${id}: ${err instanceof Error ? err.message : String(err)}`
+              )
+            }
+          }
         }
         $set.status = 'submitted'
       } else {
@@ -1329,10 +1545,24 @@ export class ExpenseReportService implements OnModuleInit {
       const owner = fullyUpdatedReport.userId as any
       const ownerId = owner?._id ? String(owner._id) : String(owner)
 
-      const reportTitle = fullyUpdatedReport.title
+      // Contabilidad aprueba a nivel de RENDICIÓN, no gasto por gasto: al aprobar
+      // la rendición completa, sus comprobantes quedan aprobados por Contabilidad.
+      // Sin esto quedaban en "Pendiente Contabilidad" (con sus botones ✓/✗) aunque
+      // la rendición ya estaba aprobada, lo cual confundía a todos.
+      const contActor = (fullyUpdatedReport as any).contabilidadApprovedBy
+      const contActorId =
+        contActor && typeof contActor === 'object'
+          ? String(contActor._id)
+          : contActor
+            ? String(contActor)
+            : undefined
+      await this.markReportExpensesAccountingApproved(id, contActorId).catch(
+        () => {}
+      )
+
+      const reportTitle = this.resolveReportTitle(fullyUpdatedReport)
       const budgetDisplay =
         await this.computeReportBudgetDisplay(fullyUpdatedReport)
-      const budgetFormatted = budgetDisplay.toFixed(2)
       const platformUrl = this.emailService.buildAppUrl(
         `/mis-rendiciones/${id}/detalle`
       )
@@ -1362,47 +1592,11 @@ export class ExpenseReportService implements OnModuleInit {
           actionUrl: `/mis-rendiciones/${id}/detalle`,
         })
 
-        // Notificar al coordinador solo en el flujo normal (no en rendición directa).
-        if (!isDirecta) {
-          const profile =
-            await this.userService.findTransactionalProfile(ownerId)
-          const coordinatorId = profile?.coordinatorId?.toString?.()
-          if (coordinatorId) {
-            await this.notificationsService.create({
-              userId: coordinatorId,
-              title: 'Rendición aprobada por Contabilidad',
-              message: `La rendición "${reportTitle}" fue aprobada por contabilidad.`,
-              type: 'info',
-              actionUrl: `/mis-rendiciones/${id}/detalle`,
-            })
-
-            try {
-              const coordinator =
-                await this.userService.findEmailNameClient(coordinatorId)
-              const coordinatorEmailEnabled =
-                await this.userService.isEmailEnabled(coordinatorId)
-              if (coordinator?.email && coordinatorEmailEnabled) {
-                await this.emailService.sendRendicionAprobadaCoordinador(
-                  coordinator.email,
-                  {
-                    clientId: String(fullyUpdatedReport.clientId),
-                    coordinatorName: coordinator.name,
-                    collaboratorName,
-                    reportTitle,
-                    budgetFormatted,
-                    currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
-                    platformUrl,
-                  }
-                )
-              }
-            } catch (mailErr) {
-              console.error(
-                `[approved] Error correo rendición aprobada a coordinador ${coordinatorId}:`,
-                mailErr
-              )
-            }
-          }
-        }
+        // VD-95: la cadena de aprobadores (Aprobador 1, 2, … N) YA NO recibe
+        // aviso cuando Contabilidad aprueba —ni correo ni campana—. Ellos ya
+        // hicieron su parte; a partir de la aprobación de Contabilidad el hilo
+        // es entre Contabilidad y el colaborador. Se eliminó con esto el correo
+        // "Rendición aprobada por Contabilidad" y su plantilla.
       } catch (error) {
         console.error(
           'Error enviando notificaciones de rendición aprobada por contabilidad',
@@ -1410,41 +1604,10 @@ export class ExpenseReportService implements OnModuleInit {
         )
       }
 
-      // Enviar correo a tesorería con datos de pago al colaborador.
-      try {
-        const clientIdStr = String(fullyUpdatedReport.clientId)
-        console.log(`[TESORESRÍA RENDICIÓN] Buscando usuarios de tesorería para clientId=${clientIdStr}`)
-        const tesoreriaRecipients = await this.userService.findTesoreriaNotifyRecipients(clientIdStr)
-        const tesoreriaEmails = tesoreriaRecipients.map(r => r.email)
-        console.log(`[TESORERÍA RENDICIÓN] Emails de tesorería: ${JSON.stringify(tesoreriaEmails)}`)
-        if (tesoreriaEmails.length > 0) {
-          const bank = (typeof owner === 'object' && owner?.bankAccount) || null
-          const hasBankAccount = !!(bank?.accountNumber)
-          console.log(`[TESORERÍA RENDICIÓN] hasBankAccount=${hasBankAccount}, banco=${bank?.bankName}`)
-          const tesoreriaEmailData = {
-            clientId: clientIdStr,
-            reportTitle,
-            collaboratorName,
-            collaboratorDni: (typeof owner === 'object' && owner?.dni) || undefined,
-            budgetFormatted: Number(budgetDisplay).toFixed(2),
-            currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
-            hasBankAccount,
-            bankName: bank?.bankName || undefined,
-            accountType: bank?.accountType === 'ahorros' ? 'Ahorros' : bank?.accountType === 'corriente' ? 'Corriente' : undefined,
-            accountNumber: bank?.accountNumber || undefined,
-            cci: bank?.cci || undefined,
-            platformUrl,
-          }
-          for (const tesoEmail of tesoreriaEmails) {
-            console.log(`[TESORERÍA RENDICIÓN] Enviando a ${tesoEmail}...`)
-            await this.emailService.sendRendicionAprobadaTesoreria(tesoEmail, tesoreriaEmailData)
-            console.log(`[TESORERÍA RENDICIÓN] Enviado a ${tesoEmail} OK`)
-          }
-        }
-      } catch (err) {
-        console.error(`[TESORERÍA RENDICIÓN] ERROR:`, err)
-      }
-
+      // VD-88: liquidar PRIMERO para saber si el resultado es un pago al
+      // colaborador (reembolso/directa) o una DEVOLUCIÓN (el colaborador debe
+      // devolver saldo). El correo de "pendiente de pago" a Tesorería solo
+      // aplica cuando hay algo que pagar.
       try {
         await this.advanceService.liquidateExpenseReport(id)
       } catch (err) {
@@ -1454,21 +1617,82 @@ export class ExpenseReportService implements OnModuleInit {
         )
       }
 
-      // Si la liquidación arroja saldo a favor de la empresa, avisar al colaborador.
+      let liquidated: {
+        settlement?: { type?: string; difference?: number }
+        title?: string
+        description?: string
+        clientId?: any
+      } | null = null
       try {
-        const liquidated = await this.expenseReportModel
+        liquidated = await this.expenseReportModel
           .findById(id)
-          .select('settlement title clientId')
+          .select('settlement title description clientId')
           .lean<{
             settlement?: { type?: string; difference?: number }
             title?: string
+            description?: string
             clientId?: any
           }>()
           .exec()
-        const diffAbs = Math.abs(
-          Number(liquidated?.settlement?.difference ?? 0)
+      } catch (err) {
+        console.error(
+          `[ExpenseReportService] Lectura settlement post-aprobación ${id}:`,
+          err
         )
-        if (liquidated?.settlement?.type === 'devolucion' && diffAbs >= 0.01) {
+      }
+      const diffAbs = Math.abs(Number(liquidated?.settlement?.difference ?? 0))
+      const isDevolucion =
+        liquidated?.settlement?.type === 'devolucion' && diffAbs >= 0.01
+
+      // Correo a Tesorería con datos de pago al colaborador — SOLO cuando hay
+      // un monto real que pagar (reembolso, `diffAbs >= 0.01`). NO en
+      // devolución (VD-88 bug 1) ni en `equilibrado` (nada que pagar → no se
+      // envía "pendiente de pago" ni se muestra un monto en 0).
+      if (!isDevolucion && diffAbs >= 0.01) {
+        try {
+          const clientIdStr = String(fullyUpdatedReport.clientId)
+          const tesoreriaRecipients =
+            await this.userService.findTesoreriaNotifyRecipients(clientIdStr)
+          const tesoreriaEmails = tesoreriaRecipients.map(r => r.email)
+          if (tesoreriaEmails.length > 0) {
+            const bank =
+              (typeof owner === 'object' && owner?.bankAccount) || null
+            const hasBankAccount = !!bank?.accountNumber
+            const tesoreriaEmailData = {
+              clientId: clientIdStr,
+              reportTitle,
+              collaboratorName,
+              collaboratorDni:
+                (typeof owner === 'object' && owner?.dni) || undefined,
+              budgetFormatted: Number(budgetDisplay).toFixed(2),
+              currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
+              hasBankAccount,
+              bankName: bank?.bankName || undefined,
+              accountType:
+                bank?.accountType === 'ahorros'
+                  ? 'Ahorros'
+                  : bank?.accountType === 'corriente'
+                    ? 'Corriente'
+                    : undefined,
+              accountNumber: bank?.accountNumber || undefined,
+              cci: bank?.cci || undefined,
+              platformUrl,
+            }
+            for (const tesoEmail of tesoreriaEmails) {
+              await this.emailService.sendRendicionAprobadaTesoreria(
+                tesoEmail,
+                tesoreriaEmailData
+              )
+            }
+          }
+        } catch (err) {
+          console.error(`[TESORERÍA RENDICIÓN] ERROR:`, err)
+        }
+      }
+
+      // Si el resultado es devolución, avisar al colaborador que debe devolver.
+      if (isDevolucion) {
+        try {
           const amountFormatted = diffAbs.toFixed(2)
           const ownerEmailLocal =
             (typeof owner === 'object' && owner?.email) || undefined
@@ -1481,10 +1705,11 @@ export class ExpenseReportService implements OnModuleInit {
                 ownerEmailLocal,
                 {
                   clientId: String(
-                    liquidated.clientId ?? fullyUpdatedReport.clientId
+                    liquidated?.clientId ?? fullyUpdatedReport.clientId
                   ),
                   recipientName: collaboratorName,
-                  reportTitle: liquidated.title ?? reportTitle,
+                  reportTitle:
+                    liquidated?.title || liquidated?.description || reportTitle,
                   amountFormatted,
                   closedAt: this.emailService.formatDateDDMMYYYY(new Date()),
                   platformUrl,
@@ -1501,14 +1726,13 @@ export class ExpenseReportService implements OnModuleInit {
               actionUrl: `/mis-rendiciones/${id}/detalle`,
             })
             .catch(() => { })
+        } catch (err) {
+          console.error(
+            `[ExpenseReportService] Aviso devolución post-aprobación ${id}:`,
+            err
+          )
         }
-      } catch (err) {
-        console.error(
-          `[ExpenseReportService] Aviso devolución post-aprobación ${id}:`,
-          err
-        )
       }
-
     }
 
     // Rendición enviada (submitted)
@@ -1557,7 +1781,7 @@ export class ExpenseReportService implements OnModuleInit {
         const emailData = {
           clientId,
           collaboratorName: creatorName,
-          reportTitle: fullyUpdatedReport.title,
+          reportTitle: this.resolveReportTitle(fullyUpdatedReport),
           budgetFormatted,
           currencySymbol,
           expenseCount,
@@ -1580,10 +1804,8 @@ export class ExpenseReportService implements OnModuleInit {
         const ownerEmailKey = ownerEmail?.trim().toLowerCase() || ''
 
         if (isDirecta) {
-          // Rendición directa: la cadena de aprobación ya no es a nivel de
-          // reporte — cada comprobante tiene la suya (ver `buildExpenseChains`).
-          // TODO(7.7): notificar a los approverIds del paso pendiente de cada
-          // comprobante recién construido, igual que `notifyViaticoCoordinator`.
+          // Rendición directa: la cadena de aprobación es por comprobante (cada
+          // uno tiene la suya, ver `buildExpenseChains`).
           await this.notificationsService.create({
             userId: ownerId2,
             title: 'Rendición enviada para aprobación',
@@ -1591,6 +1813,30 @@ export class ExpenseReportService implements OnModuleInit {
             type: 'info',
             actionUrl: `/mis-rendiciones/${id}/detalle`,
           })
+
+          // VD-85 (rama directa): avisar por CORREO a los aprobadores del centro
+          // de costo (Aprobador 1, 2, … N), igual que en la rama normal.
+          try {
+            const approvers = await this.resolveReportApproverRecipients(id, {
+              excludeUserIds: [ownerId2],
+            })
+            const sentDirecta = new Set<string>()
+            for (const a of approvers) {
+              if (!a.emailEnabled || !a.email) continue
+              const key = a.email.trim().toLowerCase()
+              if (sentDirecta.has(key)) continue
+              sentDirecta.add(key)
+              await this.emailService.sendRendicionSubmitted(a.email, {
+                recipientName: a.name,
+                ...emailData,
+              })
+            }
+          } catch (err) {
+            console.error(
+              `[submitted-directa] Error correo a aprobadores por centro de costo ${id}:`,
+              err
+            )
+          }
         } else {
           // Flujo normal: admins in-app + coordinador (in-app + correo) + contabilidad.
           const admins = await this.userService.findAdminsByClient(clientId)
@@ -1607,31 +1853,33 @@ export class ExpenseReportService implements OnModuleInit {
           const sentEmails = new Set<string>()
           if (ownerEmailKey) sentEmails.add(ownerEmailKey)
 
-          const profile =
-            await this.userService.findTransactionalProfile(ownerId2)
-          const coordinatorId = profile?.coordinatorId?.toString?.()
-          if (coordinatorId) {
-            const coordinator =
-              await this.userService.findEmailNameClient(coordinatorId)
-            if (coordinator?.email) {
-              const coordEmailKey = coordinator.email.trim().toLowerCase()
-              if (!sentEmails.has(coordEmailKey)) {
-                sentEmails.add(coordEmailKey)
-                const coordEmailEnabled =
-                  await this.userService.isEmailEnabled(coordinatorId)
-                if (coordEmailEnabled) {
-                  await this.emailService.sendRendicionSubmitted(
-                    coordinator.email,
-                    {
-                      recipientName: coordinator.name,
-                      ...emailData,
-                    }
-                  )
-                }
-              }
+          // Aprobadores del centro de costo (Aprobador 1, 2, … N) — VD-85/VD-87.
+          // Reemplaza al `coordinatorId` personal (obsoleto): los avisos van a
+          // quienes realmente aprueban la cadena del reporte. El correo se envía
+          // al ENVIAR la rendición, NO por cada gasto individual aprobado
+          // (comentario de VD-85: "no enviar correos al aprobar gastos").
+          try {
+            const approvers = await this.resolveReportApproverRecipients(id, {
+              excludeUserIds: [ownerId2],
+            })
+            for (const a of approvers) {
+              if (!a.emailEnabled || !a.email) continue
+              const key = a.email.trim().toLowerCase()
+              if (sentEmails.has(key)) continue
+              sentEmails.add(key)
+              await this.emailService.sendRendicionSubmitted(a.email, {
+                recipientName: a.name,
+                ...emailData,
+              })
             }
+          } catch (err) {
+            console.error(
+              `[submitted] Error correo a aprobadores por centro de costo ${id}:`,
+              err
+            )
           }
 
+          // Gate final de Contabilidad.
           const accountingRecipients =
             await this.userService.findContabilidadRecipients(clientId)
           for (const r of accountingRecipients) {
@@ -1681,14 +1929,14 @@ export class ExpenseReportService implements OnModuleInit {
           (typeof ownerRef === 'object' && ownerRef?.name) || 'Colaborador'
         const ownerEmail =
           (typeof ownerRef === 'object' && ownerRef?.email) || undefined
-        const reportTitle = fullyUpdatedReport.title
+        const reportTitle = this.resolveReportTitle(fullyUpdatedReport)
         const rejectionReason =
           (fullyUpdatedReport as any).rejectionReason || 'Ver detalle'
         // Distinguir quién rechazó según el estado previo del documento.
         const rejectedByContabilidad = existing.status === 'pending_accounting'
         const rejectedByLabel = rejectedByContabilidad
           ? 'Contabilidad'
-          : 'el Coordinador'
+          : 'los aprobadores'
         const platformUrl = this.emailService.buildAppUrl(
           `/mis-rendiciones/${id}/detalle`
         )
@@ -1720,44 +1968,43 @@ export class ExpenseReportService implements OnModuleInit {
           }
         }
 
-        // Si lo rechazó Contabilidad, también notificar al coordinador (in-app + correo).
+        // Si lo rechazó Contabilidad, también avisar a los APROBADORES del
+        // centro de costo (Aprobador 1, 2, … N), no al coordinador personal.
         if (rejectedByContabilidad) {
-          const profile =
-            await this.userService.findTransactionalProfile(ownerId)
-          const coordinatorId = profile?.coordinatorId?.toString?.()
-          if (coordinatorId) {
-            await this.notificationsService.create({
-              userId: coordinatorId,
-              title: 'Rendición rechazada por Contabilidad',
-              message: `La rendición "${reportTitle}" de ${collaboratorName} fue rechazada por Contabilidad. Motivo: ${rejectionReason}`,
-              type: 'warning',
-              actionUrl: `/mis-rendiciones/${id}/detalle`,
+          try {
+            const approvers = await this.resolveReportApproverRecipients(id, {
+              excludeUserIds: [ownerId],
             })
-
-            try {
-              const coordinator =
-                await this.userService.findEmailNameClient(coordinatorId)
-              const coordinatorEmailEnabled =
-                await this.userService.isEmailEnabled(coordinatorId)
-              if (coordinator?.email && coordinatorEmailEnabled) {
-                await this.emailService.sendRendicionRechazadaCoordinador(
-                  coordinator.email,
-                  {
-                    clientId: String(fullyUpdatedReport.clientId),
-                    coordinatorName: coordinator.name,
-                    collaboratorName,
-                    reportTitle,
-                    rejectionReason,
-                    platformUrl,
-                  }
-                )
-              }
-            } catch (mailErr) {
-              console.error(
-                `[rejected] Error correo rechazo a coordinador ${coordinatorId}:`,
-                mailErr
+            const sentRejected = new Set<string>()
+            for (const a of approvers) {
+              await this.notificationsService.create({
+                userId: a.userId,
+                title: 'Rendición rechazada por Contabilidad',
+                message: `La rendición "${reportTitle}" de ${collaboratorName} fue rechazada por Contabilidad. Motivo: ${rejectionReason}`,
+                type: 'warning',
+                actionUrl: `/mis-rendiciones/${id}/detalle`,
+              })
+              if (!a.emailEnabled || !a.email) continue
+              const key = a.email.trim().toLowerCase()
+              if (sentRejected.has(key)) continue
+              sentRejected.add(key)
+              await this.emailService.sendRendicionRechazadaCoordinador(
+                a.email,
+                {
+                  clientId: String(fullyUpdatedReport.clientId),
+                  coordinatorName: a.name,
+                  collaboratorName,
+                  reportTitle,
+                  rejectionReason,
+                  platformUrl,
+                }
               )
             }
+          } catch (mailErr) {
+            console.error(
+              `[rejected] Error correo/notif rechazo a aprobadores ${id}:`,
+              mailErr
+            )
           }
         }
       } catch (error) {
@@ -2991,19 +3238,8 @@ export class ExpenseReportService implements OnModuleInit {
     const owner = report.userId as any
     if (!owner?.email) return
 
-    const ownerEmailEnabled = await this.userService.isEmailEnabled(
-      String(owner._id || owner.id)
-    )
-    const profile = await this.userService.findTransactionalProfile(
-      String(owner._id || owner.id)
-    )
-    const coordinatorId = profile?.coordinatorId?.toString?.()
-    const coordinator = coordinatorId
-      ? await this.userService.findEmailNameClient(coordinatorId)
-      : null
-    const coordEmailEnabled = coordinatorId
-      ? await this.userService.isEmailEnabled(coordinatorId)
-      : false
+    const ownerId = String(owner._id || owner.id)
+    const ownerEmailEnabled = await this.userService.isEmailEnabled(ownerId)
 
     const diff = report.settlement?.difference ?? 0
     const amountFormatted = Math.abs(Number(diff)).toFixed(2)
@@ -3018,8 +3254,7 @@ export class ExpenseReportService implements OnModuleInit {
     const baseData = {
       clientId: String(report.clientId),
       collaboratorName: owner.name || 'Colaborador',
-      coordinatorName: coordinator?.name,
-      reportTitle: report.title || 'Rendición',
+      reportTitle: this.resolveReportTitle(report),
       amountFormatted,
       transferDate,
       reference: pi?.reference || '—',
@@ -3031,25 +3266,32 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     try {
+      // Pago realizado: le compete al COLABORADOR (involucrado) y a TESORERÍA
+      // (quien ejecutó el pago), NO a los aprobadores.
+      const sentPaid = new Set<string>()
       if (ownerEmailEnabled) {
+        sentPaid.add(owner.email.trim().toLowerCase())
         await this.emailService.sendRendicionReembolsoPagado(owner.email, {
           recipientName: owner.name || 'Colaborador',
           ...baseData,
         })
       }
 
-      if (coordinator?.email && coordEmailEnabled) {
-        await this.emailService.sendRendicionReembolsoPagado(
-          coordinator.email,
-          {
-            recipientName: coordinator.name || 'Coordinador/a',
-            ...baseData,
-          }
-        )
+      const tesoreria = await this.userService.findTesoreriaNotifyRecipients(
+        String(report.clientId)
+      )
+      for (const t of tesoreria) {
+        const key = t.email.trim().toLowerCase()
+        if (sentPaid.has(key)) continue
+        sentPaid.add(key)
+        await this.emailService.sendRendicionReembolsoPagado(t.email, {
+          recipientName: t.name,
+          ...baseData,
+        })
       }
 
       await this.notificationsService.create({
-        userId: String(owner._id || owner.id),
+        userId: ownerId,
         title: 'Reembolso registrado',
         message: `Se registró el pago del reembolso por S/ ${amountFormatted} para "${report.title}".`,
         type: 'success',
@@ -3178,7 +3420,7 @@ export class ExpenseReportService implements OnModuleInit {
         !(report as any).reimbursementPaymentInfo
       ) {
         errors.push(
-          'Contabilidad debe registrar el comprobante de reembolso al colaborador antes de cerrar la rendición.'
+          'Tesorería debe registrar el comprobante de reembolso al colaborador antes de cerrar la rendición.'
         )
       }
     }
@@ -3234,7 +3476,7 @@ export class ExpenseReportService implements OnModuleInit {
         .sendRendicionCerrada(collaborator!.email, {
           clientId: clientIdStr,
           recipientName: collaborator!.name,
-          reportTitle: updated.title,
+          reportTitle: this.resolveReportTitle(updated),
           closedAt: closedAtStr,
         })
         .catch(() => { })
@@ -3247,44 +3489,32 @@ export class ExpenseReportService implements OnModuleInit {
       `/mis-rendiciones/${id}/detalle`
     )
 
-    // Solo enviar correos de devolución / reembolso si hay un monto real (>= 0.01).
-    // Evita los correos con "S/ 0.00" cuando el settlement persistido quedó stale.
-    if (settlement?.type === 'devolucion' && settlementDiffAbs >= 0.01) {
+    // Al cerrar, al colaborador solo le llega el correo de "rendición cerrada"
+    // (arriba). El pedido de devolución ("debes devolver el saldo, adjunta el
+    // comprobante") ya se envió al APROBAR la rendición (rama `approved`), que es
+    // cuando el colaborador debe depositar y cargar el comprobante. Repetirlo
+    // aquí llegaba junto al de cierre y era contradictorio (pedía devolver en una
+    // rendición ya cerrada y, normalmente, ya devuelta).
+    // Solo enviar correos de reembolso si hay un monto real (>= 0.01).
+    if (settlement?.type === 'reembolso' && settlementDiffAbs >= 0.01) {
       const amountFormatted = settlementDiffAbs.toFixed(2)
-      if (collaboratorEmailEnabled) {
-        this.emailService
-          .sendRendicionDevolucionColaborador(collaborator!.email, {
-            clientId,
-            recipientName: collaborator!.name,
-            reportTitle: updated.title,
-            amountFormatted,
-            closedAt: closedAtStr,
-            platformUrl,
-          })
-          .catch(() => { })
-      }
-      if (collaborator) {
-        this.notificationsService
-          .create({
-            userId: updated.userId.toString(),
-            title: 'Devolución de saldo pendiente',
-            message: `Tu rendición "${updated.title}" fue cerrada. Tienes un saldo de S/ ${amountFormatted} a devolver a la empresa. Por favor, adjunta el comprobante de depósito.`,
-            type: 'warning',
-            actionUrl: `/mis-rendiciones/${id}/detalle`,
-          })
-          .catch(() => { })
-      }
-    } else if (settlement?.type === 'reembolso' && settlementDiffAbs >= 0.01) {
-      const amountFormatted = settlementDiffAbs.toFixed(2)
-      const accountingUsers =
-        await this.userService.findAccountingRecipientsWithIds(clientId)
-      for (const u of accountingUsers) {
+      // Reembolso al colaborador: lo EJECUTA Tesorería (VD-37) y solo a ella le
+      // llega el aviso (correo + in-app). VD-94: Contabilidad ya no recibe la
+      // copia informativa que había agregado VD-88 —lo que ejecuta Tesorería es
+      // asunto de Tesorería—. Se mantiene el dedup por correo.
+      const tesoreriaUsers =
+        await this.userService.findTesoreriaRecipientsWithIds(clientId)
+      const sentReembolso = new Set<string>()
+      for (const u of tesoreriaUsers) {
+        const key = u.email.trim().toLowerCase()
+        if (sentReembolso.has(key)) continue
+        sentReembolso.add(key)
         this.emailService
           .sendRendicionReembolsoContabilidad(u.email, {
             clientId,
             recipientName: u.name,
             reportLabel: updated.title,
-            reportTitle: updated.title,
+            reportTitle: this.resolveReportTitle(updated),
             collaboratorName: collaborator?.name || 'Colaborador',
             amountFormatted,
             detailUrl: platformUrl,
@@ -3311,6 +3541,7 @@ export class ExpenseReportService implements OnModuleInit {
       depositDate: string
       bankOrigin?: string
       operationNumber?: string
+      amountReturned?: number
       fileUrl: string
       fileName?: string
       scannedAmount?: number
@@ -3407,6 +3638,7 @@ export class ExpenseReportService implements OnModuleInit {
       depositDate: dto.depositDate,
       bankOrigin: dto.bankOrigin,
       operationNumber: dto.operationNumber,
+      amountReturned: dto.amountReturned,
       scannedAmount: dto.scannedAmount,
       operationDate: dto.operationDate,
       operationTime: dto.operationTime,
@@ -3435,7 +3667,7 @@ export class ExpenseReportService implements OnModuleInit {
         .sendRendicionCerrada(collaborator!.email, {
           clientId,
           recipientName: collaboratorName,
-          reportTitle: report.title,
+          reportTitle: this.resolveReportTitle(report),
           closedAt: this.emailService.formatDateDDMMYYYY(voucher.uploadedAt),
         })
         .catch(() => { })
@@ -3444,21 +3676,29 @@ export class ExpenseReportService implements OnModuleInit {
       .create({
         userId,
         title: 'Comprobante de devolución enviado',
-        message: `Tu comprobante de devolución para la rendición "${report.title}" fue enviado correctamente. Contabilidad verificará el depósito.`,
+        message: `Tu comprobante de devolución para la rendición "${report.title}" fue enviado correctamente. Tesorería verificará el depósito.`,
         type: 'success',
         actionUrl: `/mis-rendiciones/${id}/detalle`,
       })
       .catch(() => { })
 
-    const accountingUsers =
-      await this.userService.findAccountingRecipientsWithIds(clientId)
-    for (const u of accountingUsers) {
+    // La devolución la verifica TESORERÍA (misma sección de Pagos que los
+    // reembolsos, VD-37) y solo a ella le llega el aviso (correo + in-app).
+    // VD-94: Contabilidad ya no recibe la copia informativa que había agregado
+    // VD-88. Se mantiene el dedup por correo.
+    const tesoreriaUsers =
+      await this.userService.findTesoreriaRecipientsWithIds(clientId)
+    const sentDevolucion = new Set<string>()
+    for (const u of tesoreriaUsers) {
+      const key = u.email.trim().toLowerCase()
+      if (sentDevolucion.has(key)) continue
+      sentDevolucion.add(key)
       this.emailService
         .sendRendicionDevolucionCargada(u.email, {
           clientId,
           recipientName: u.name,
           collaboratorName,
-          reportTitle: report.title,
+          reportTitle: this.resolveReportTitle(report),
           amountFormatted,
           depositDate: dto.depositDate,
           bankOrigin: dto.bankOrigin,
@@ -3598,7 +3838,7 @@ export class ExpenseReportService implements OnModuleInit {
             clientId: String(report.clientId),
             adminName: admin.name || 'Administrador',
             collaboratorName,
-            reportTitle: report.title,
+            reportTitle: this.resolveReportTitle(report),
             cancelReason: reason,
           })
         }
@@ -3675,7 +3915,7 @@ export class ExpenseReportService implements OnModuleInit {
       `/mis-rendiciones/${id}/detalle`
     )
     const clientIdStr = report.clientId.toString()
-    const reportTitle = updated.title
+    const reportTitle = this.resolveReportTitle(updated)
 
     this.notificationsService
       .create({
@@ -3710,16 +3950,17 @@ export class ExpenseReportService implements OnModuleInit {
       }
     }
 
-    // Notificar al coordinador (in-app + correo)
+    // Notificar a los APROBADORES del centro de costo (Aprobador 1, 2, … N),
+    // no al coordinador personal (obsoleto).
     try {
-      const profile = await this.userService.findTransactionalProfile(
-        report.userId.toString()
-      )
-      const coordinatorId = profile?.coordinatorId?.toString?.()
-      if (coordinatorId) {
+      const approvers = await this.resolveReportApproverRecipients(id, {
+        excludeUserIds: [report.userId.toString()],
+      })
+      const sentReopen = new Set<string>()
+      for (const a of approvers) {
         this.notificationsService
           .create({
-            userId: coordinatorId,
+            userId: a.userId,
             title: 'Rendición reabierta por Contabilidad',
             message: `La rendición "${reportTitle}" fue reabierta. Motivo: ${trimmedReason.slice(0, 100)}.`,
             type: 'info',
@@ -3727,28 +3968,24 @@ export class ExpenseReportService implements OnModuleInit {
           })
           .catch(() => { })
 
-        try {
-          const coordinator =
-            await this.userService.findEmailNameClient(coordinatorId)
-          const coordinatorEmailEnabled =
-            await this.userService.isEmailEnabled(coordinatorId)
-          if (coordinator?.email && coordinatorEmailEnabled) {
-            this.emailService
-              .sendRendicionReabierta(coordinator.email, {
-                clientId: clientIdStr,
-                recipientName: coordinator.name,
-                reportTitle,
-                reason: trimmedReason,
-                intro: `La rendición de ${collaborator?.name || 'el colaborador'} que usted aprobó fue reabierta por Contabilidad.`,
-                platformUrl,
-              })
-              .catch((err: unknown) =>
-                console.error(
-                  `Correo reapertura coordinador ${coordinator.email}: ${err instanceof Error ? err.message : String(err)}`
-                )
-              )
-          }
-        } catch { }
+        if (!a.emailEnabled || !a.email) continue
+        const key = a.email.trim().toLowerCase()
+        if (sentReopen.has(key)) continue
+        sentReopen.add(key)
+        this.emailService
+          .sendRendicionReabierta(a.email, {
+            clientId: clientIdStr,
+            recipientName: a.name,
+            reportTitle,
+            reason: trimmedReason,
+            intro: `La rendición de ${collaborator?.name || 'el colaborador'} que usted aprobó fue reabierta por Contabilidad.`,
+            platformUrl,
+          })
+          .catch((err: unknown) =>
+            console.error(
+              `Correo reapertura aprobador ${a.email}: ${err instanceof Error ? err.message : String(err)}`
+            )
+          )
       }
     } catch { }
 
@@ -3917,6 +4154,45 @@ export class ExpenseReportService implements OnModuleInit {
       creatorId,
       projectById,
       ownerApproverLevels: profile.approverLevels,
+    })
+  }
+
+  /**
+   * Arma la cadena de aprobación de la RENDICIÓN a nivel de reporte (regla 1.4,
+   * fase post-pago del viático). Reusa `buildRendicionChain` tal cual, con el
+   * centro de costo del reporte como "seleccionado" — misma lógica de
+   * asignado/apoyo/escalamiento/omisión que la cadena por comprobante, sin
+   * generalizar nada. Para el centro de prueba (2 niveles) devuelve [N1, N2].
+   */
+  private async buildReportRendicionChain(
+    ownerUserId: string,
+    clientId: string,
+    reportProjectId: string
+  ): Promise<ChainStep[]> {
+    const profile = await this.userService.findTransactionalProfile(ownerUserId)
+    const assignedProjectIds = profile?.projectIds ?? []
+    const primaryProjectId = profile?.primaryProjectId
+    const idsToLoad = [
+      ...new Set(
+        [...assignedProjectIds, reportProjectId].filter((x): x is string => !!x)
+      ),
+    ]
+    const projects = await this.projectService.findManyByIds(idsToLoad, clientId)
+    const projectById = new Map<string, ChainProject>(
+      projects.map(p => [String(p._id), p as unknown as ChainProject])
+    )
+    return buildRendicionChain({
+      assignedProjectIds,
+      primaryProjectId,
+      selectedProjectId: reportProjectId,
+      creatorId: ownerUserId,
+      projectById,
+      // Regla 1.10: si el colaborador tiene aprobadores propios por nivel, la
+      // cadena de la rendición sale de ellos, igual que la cadena por
+      // comprobante (`buildExpenseChains`) y la de la solicitud
+      // (`buildSolicitudCostCenterChain`). Sin esto, la fase post-pago del
+      // viático se seguía armando con los niveles del centro de costo.
+      ownerApproverLevels: profile?.approverLevels,
     })
   }
 
@@ -4137,24 +4413,24 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     // Cualquiera de los aprobadores de cualquier paso pendiente puede actuar — se notifica a todos.
-    for (const coordId of approverIds) {
-      const coordinator = await this.userService.findEmailNameClient(coordId.toString())
-      if (!coordinator || !collaborator) {
-        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Coordinador o colaborador no encontrado' } } })
+    for (const approverId of approverIds) {
+      const approver = await this.userService.findEmailNameClient(approverId.toString())
+      if (!approver || !collaborator) {
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'skipped', sentAt: new Date(), errorMessage: 'Aprobador o colaborador no encontrado' } } })
         continue
       }
-      if (coordinator.clientId && collaborator.clientId && coordinator.clientId.toString() !== collaborator.clientId.toString()) {
-        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Coordinador de distinta empresa' } } })
+      if (approver.clientId && collaborator.clientId && approver.clientId.toString() !== collaborator.clientId.toString()) {
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'skipped', sentAt: new Date(), errorMessage: 'Aprobador de distinta empresa' } } })
         continue
       }
 
       try {
-        await this.notificationsService.create({ userId: coordId.toString(), title: 'Nueva solicitud de viáticos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
+        await this.notificationsService.create({ userId: approverId.toString(), title: 'Nueva solicitud de viáticos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
       } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
 
-      const coordEmailEnabled = await this.userService.isEmailEnabled(coordId.toString())
-      if (!coordEmailEnabled) {
-        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'skipped', sentAt: new Date(), errorMessage: 'Notificaciones por correo deshabilitadas' } } })
+      const approverEmailEnabled = await this.userService.isEmailEnabled(approverId.toString())
+      if (!approverEmailEnabled) {
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'skipped', sentAt: new Date(), errorMessage: 'Notificaciones por correo deshabilitadas' } } })
         continue
       }
 
@@ -4163,18 +4439,18 @@ export class ExpenseReportService implements OnModuleInit {
         const projectLabel = `[${project.code} - ${project.name}]`
         const startStr = report.viaticoStartDate instanceof Date ? report.viaticoStartDate.toISOString().slice(0, 10) : String(report.viaticoStartDate ?? '').slice(0, 10)
         const endStr = report.viaticoEndDate instanceof Date ? report.viaticoEndDate.toISOString().slice(0, 10) : String(report.viaticoEndDate ?? '').slice(0, 10)
-        await this.emailService.sendViaticoSolicitudToCoordinator(coordinator.email, {
-          clientId, coordinatorName: coordinator.name, collaboratorName: collaborator.name,
+        await this.emailService.sendViaticoSolicitudToCoordinator(approver.email, {
+          clientId, coordinatorName: approver.name, collaboratorName: collaborator.name,
           place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
           totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
           currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
           projectLabel, platformUrl: this.emailService.buildAppUrl('/viaticos'),
         })
-        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'sent', sentAt: new Date() } } })
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'sent', sentAt: new Date() } } })
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err)
-        this.logger.error(`Correo coordinador viático ${reportId}: ${msg}`)
-        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: coordId, status: 'failed', sentAt: new Date(), errorMessage: msg } } })
+        this.logger.error(`Correo aprobador viático ${reportId}: ${msg}`)
+        await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'failed', sentAt: new Date(), errorMessage: msg } } })
       }
     }
   }
@@ -4229,17 +4505,463 @@ export class ExpenseReportService implements OnModuleInit {
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
 
+  /**
+   * Aprueba UN paso de la cadena de aprobación de la RENDICIÓN a nivel de
+   * reporte (regla 1.4, fase post-pago del viático). Aprobación en paralelo
+   * entre niveles: cualquier aprobador de un paso aún pendiente puede actuar
+   * (N2 puede aprobar antes que N1), o Superadmin. Cuando TODOS los pasos quedan
+   * aprobados, la rendición pasa a Contabilidad (`pending_accounting`). Espejo
+   * de `approveViatico`.
+   */
+  async approveRendicion(
+    id: string,
+    opts: { approvedBy: string; notes?: string },
+    actorId: string,
+    actorRole: string
+  ): Promise<ExpenseReportDocument> {
+    const report = await this.expenseReportModel.findById(id)
+    if (!report) throw new NotFoundException(`Rendición ${id} no encontrada`)
+    if (report.status !== 'submitted') {
+      throw new BadRequestException(
+        `La rendición no está enviada, no se puede aprobar (estado actual: ${report.status}).`
+      )
+    }
+    const chain = report.rendicionApproverChain ?? []
+    if (chain.length === 0) {
+      throw new BadRequestException(
+        'Esta rendición no tiene una cadena de aprobación a nivel de reporte.'
+      )
+    }
+    const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+    if (stepIndex === -1) {
+      throw new ForbiddenException(
+        'No te corresponde aprobar esta rendición en este momento'
+      )
+    }
+
+    const step = chain[stepIndex]
+    const approvalLevel = report.rendicionApprovalLevel ?? 0
+    ;(report.rendicionApprovalHistory ?? []).push({
+      level: step.level,
+      approvedBy: opts.approvedBy,
+      action: 'approved',
+      notes: opts.notes,
+      date: new Date(),
+    })
+    chain[stepIndex] = {
+      ...plainChainStep(step),
+      approved: true,
+      approvedBy: new Types.ObjectId(actorId),
+      approvedAt: new Date(),
+    }
+    report.rendicionApproverChain = chain
+    const nextLevel = approvalLevel + 1
+    report.rendicionApprovalLevel = nextLevel
+    const isComplete = isChainFullyApproved(chain)
+
+    if (isComplete) {
+      // Todos los aprobadores del centro de costo terminaron → la rendición pasa
+      // al gate de Contabilidad (igual que el clic único anterior, pero ahora
+      // exige la cadena completa antes de llegar aquí).
+      report.status = 'pending_accounting'
+      report.coordinatorApprovedAt = new Date()
+      report.coordinatorApprovedBy = new Types.ObjectId(actorId)
+      await report.save()
+      const fresh = (await this.findOne(id)) as ExpenseReportDocument
+      await this.notifyAccountingReportPendingApproval(id, fresh).catch(() => {})
+      this.notificationsService
+        .create({
+          userId: report.userId.toString(),
+          title: 'Rendición aprobada',
+          message:
+            'Tu rendición fue aprobada por los aprobadores del centro de costo y está pendiente de la aprobación final de Contabilidad.',
+          type: 'info',
+          actionUrl: `/mis-rendiciones/${id}/detalle`,
+        })
+        .catch(() => {})
+      return fresh
+    }
+
+    await report.save()
+    this.notificationsService
+      .create({
+        userId: report.userId.toString(),
+        title: 'Rendición en revisión',
+        message: `Tu rendición fue aprobada por uno de sus aprobadores (nivel ${nextLevel} de ${report.rendicionRequiredLevels ?? chain.length}) y está pendiente de los demás.`,
+        type: 'info',
+        actionUrl: `/mis-rendiciones/${id}/detalle`,
+      })
+      .catch(() => {})
+    return this.findOne(id) as Promise<ExpenseReportDocument>
+  }
+
+  /**
+   * VD-87: cuando los aprobadores completan la aprobación de TODOS los gastos
+   * individuales (cadena de centro de costo de cada comprobante), la rendición
+   * pasa automáticamente a Contabilidad (`pending_accounting`) y se avisa a
+   * Contabilidad por correo — sin el paso extra de "aprobar la rendición
+   * completa" (antes se requería una segunda ronda de aprobadores + contabilidad).
+   * Lo llama `ExpenseService.approveByCoord` tras aprobar cada comprobante.
+   * Idempotente: solo actúa si el reporte sigue en `submitted`, hay al menos un
+   * comprobante, NINGUNO está observado (rechazado) y TODOS están aprobados por
+   * su cadena. Si queda un comprobante rechazado, la rendición espera a que el
+   * colaborador lo corrija (no avanza a Contabilidad con observaciones pendientes).
+   */
+  async advanceToAccountingIfAllExpensesApproved(
+    reportId: string
+  ): Promise<void> {
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('status expenseIds userId')
+      .exec()
+    if (!report || report.status !== 'submitted') return
+
+    const expenseIds = (report.expenseIds ?? []).map((x: any) =>
+      x && typeof x === 'object' && '_id' in x ? x._id : x
+    )
+    if (!expenseIds.length) return
+
+    const expenses = await this.expenseModel
+      .find({ _id: { $in: expenseIds } })
+      .select('status approverChain approvalLevel requiredLevels')
+      .lean<
+        {
+          status?: string
+          approverChain?: unknown[]
+          approvalLevel?: number
+          requiredLevels?: number
+        }[]
+      >()
+      .exec()
+
+    // No avanzar a Contabilidad mientras haya un comprobante observado sin
+    // corregir: la rendición debe completar su revisión de aprobadores primero
+    // (el rechazo de un aprobador es por comprobante y la deja en `submitted`;
+    // el colaborador corrige y se re-aprueba antes de pasar a Contabilidad).
+    const hasRejected = expenses.some(
+      e => String(e.status ?? '').toLowerCase() === 'rejected'
+    )
+    if (hasRejected) return
+
+    const active = expenses.filter(e => e.status !== 'rejected')
+    if (active.length === 0) return
+
+    // Un comprobante está aprobado por los aprobadores cuando su cadena de
+    // centro de costo se completó (mismo criterio que `chainCoordStatus`):
+    // approverChain definida y approvalLevel >= niveles requeridos.
+    const coordApproved = (e: {
+      approverChain?: unknown[]
+      approvalLevel?: number
+      requiredLevels?: number
+    }): boolean => {
+      if (e.approverChain === undefined) return false
+      const required = e.requiredLevels ?? e.approverChain.length ?? 0
+      return (e.approvalLevel ?? 0) >= required
+    }
+    if (!active.every(coordApproved)) return
+
+    // Todos los gastos aprobados por los aprobadores → gate de Contabilidad.
+    report.status = 'pending_accounting'
+    ;(report as any).coordinatorApprovedAt = new Date()
+    await report.save()
+
+    const fresh = (await this.findOne(reportId)) as ExpenseReportDocument
+    await this.notifyAccountingReportPendingApproval(reportId, fresh).catch(
+      () => {}
+    )
+  }
+
+  /**
+   * Contabilidad observó un comprobante en su aprobación final: se devuelve TODA
+   * la rendición al colaborador (`rejected`) y se resetean los comprobantes a
+   * estado normal para que pueda corregirlos y se re-aprueben desde cero.
+   *
+   * Por qué el reset total: un comprobante `approved` queda bloqueado de por vida
+   * para el colaborador (ver `ExpenseService.assertCanEdit`), y uno con aprobación
+   * parcial tampoco es editable mientras la rendición esté en revisión. Sin
+   * resetear, el colaborador no podría corregir la rendición devuelta. El
+   * comprobante observado conserva su estado `rejected` + motivo para que sepa
+   * cuál corregir. Lo llama `ExpenseService.rejectByContabilidad`.
+   */
+  async returnToCollaboratorOnAccountingRejection(
+    reportId: string,
+    rejectedExpenseId: string,
+    reason: string
+  ): Promise<void> {
+    const report = await this.expenseReportModel.findById(reportId)
+    if (!report) return
+    // Solo aplica mientras la rendición está en revisión (contabilidad, o por si
+    // acaso aprobadores). En otros estados no se toca.
+    if (
+      report.status !== 'pending_accounting' &&
+      report.status !== 'submitted'
+    ) {
+      return
+    }
+
+    const expenseIds = (report.expenseIds ?? []).map((x: any) =>
+      x && typeof x === 'object' && '_id' in x ? String(x._id) : String(x)
+    )
+    const expenses = await this.expenseModel
+      .find({ _id: { $in: expenseIds } })
+      .select('approverChain')
+      .lean<{ _id: Types.ObjectId; approverChain?: ChainStep[] }[]>()
+      .exec()
+
+    for (const e of expenses) {
+      const isRejected = String(e._id) === String(rejectedExpenseId)
+      // Reset de la cadena de aprobadores en TODOS: cualquier edición posterior
+      // debe re-aprobarse sobre el dato corregido (sin dejar aprobaciones stale).
+      const clearedChain = (e.approverChain ?? []).map(step => ({
+        ...plainChainStep(step),
+        approved: false,
+        approvedBy: undefined,
+        approvedAt: undefined,
+      }))
+      const set: Record<string, unknown> = {
+        approverChain: clearedChain,
+        approvalLevel: 0,
+      }
+      if (!isRejected) {
+        // Los demás vuelven a 'pending' (editables y re-aprobables desde cero).
+        set.contabilidadStatus = 'pending'
+        set.contabilidadApprovedBy = undefined
+        set.contabilidadApprovedAt = undefined
+        set.contabilidadRejectionReason = ''
+        set.status = 'pending'
+        set.rejectionReason = ''
+        set.rejectedBy = ''
+      }
+      // El observado conserva contabilidadStatus='rejected'/status='rejected' + motivo.
+      await this.expenseModel.updateOne({ _id: e._id }, { $set: set })
+    }
+
+    report.status = 'rejected'
+    report.rejectionReason = reason.trim()
+    ;(report as any).rejectedByRole = 'contabilidad'
+    await report.save()
+
+    // Rechazo de la rendición COMPLETA: Contabilidad observó un comprobante y
+    // devolvió toda la rendición → avisar al colaborador (in-app + correo).
+    try {
+      const ownerId = report.userId.toString()
+      this.notificationsService
+        .create({
+          userId: ownerId,
+          title: 'Rendición rechazada',
+          message: `Tu rendición fue rechazada por Contabilidad: ${reason.trim().slice(0, 80)}`,
+          type: 'error',
+          actionUrl: `/mis-rendiciones/${reportId}/detalle`,
+        })
+        .catch(() => { })
+      const owner = await this.userService.findEmailNameClient(ownerId)
+      const ownerEmailEnabled = await this.userService.isEmailEnabled(ownerId)
+      if (owner?.email && ownerEmailEnabled) {
+        await this.emailService.sendRendicionRechazadaColaborador(owner.email, {
+          clientId: report.clientId.toString(),
+          collaboratorName: owner.name,
+          reportTitle: this.resolveReportTitle(report),
+          rejectionReason: reason.trim(),
+          rejectedBy: 'Contabilidad',
+          platformUrl: this.emailService.buildAppUrl(
+            `/mis-rendiciones/${reportId}/detalle`
+          ),
+        })
+      }
+    } catch (err) {
+      console.error(
+        `[returnToCollaboratorOnAccountingRejection] Error correo rechazo ${reportId}:`,
+        err
+      )
+    }
+  }
+
+  /**
+   * Al aprobar la RENDICIÓN completa, Contabilidad aprueba de una todos sus
+   * comprobantes (contabilidad aprueba a nivel de rendición, no gasto por gasto).
+   * Marca los comprobantes NO rechazados como aprobados por Contabilidad para que
+   * dejen de mostrarse "Pendiente Contabilidad" (y desaparezcan sus botones ✓/✗)
+   * una vez aprobada la rendición. Los rechazados no deberían existir aquí
+   * (assertNoRejectedExpenses lo garantiza), pero se excluyen por seguridad.
+   */
+  private async markReportExpensesAccountingApproved(
+    reportId: string,
+    actorId?: string
+  ): Promise<void> {
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('expenseIds')
+      .lean()
+      .exec()
+    const ids = ((report as any)?.expenseIds ?? []).map((x: any) =>
+      x && typeof x === 'object' && '_id' in x ? x._id : x
+    )
+    if (!ids.length) return
+    const set: Record<string, unknown> = {
+      contabilidadStatus: 'approved',
+      contabilidadApprovedAt: new Date(),
+      status: 'approved',
+    }
+    if (actorId) set.contabilidadApprovedBy = new Types.ObjectId(actorId)
+    await this.expenseModel.updateMany(
+      { _id: { $in: ids }, status: { $ne: 'rejected' } },
+      { $set: set }
+    )
+  }
+
+  /**
+   * Rechaza la RENDICIÓN a nivel de reporte. Aprobación en paralelo: cualquier
+   * aprobador de un paso aún pendiente puede rechazar todo el reporte (o
+   * Admin/Contabilidad/Superadmin si no hay cadena). Espejo de `rejectByCoord`.
+   */
+  async rejectRendicion(
+    id: string,
+    opts: { rejectedBy: string; rejectionReason: string },
+    actorId: string,
+    actorRole: string
+  ): Promise<ExpenseReportDocument> {
+    if (!opts.rejectionReason?.trim()) {
+      throw new BadRequestException('El motivo de rechazo es obligatorio.')
+    }
+    const report = await this.expenseReportModel.findById(id)
+    if (!report) throw new NotFoundException(`Rendición ${id} no encontrada`)
+    if (report.status !== 'submitted') {
+      throw new BadRequestException(
+        `La rendición no está enviada, no se puede rechazar (estado actual: ${report.status}).`
+      )
+    }
+    const chain = report.rendicionApproverChain ?? []
+    const isAdminOverride = [
+      ROLES.SUPER_ADMIN,
+      ROLES.ADMIN,
+      ROLES.CONTABILIDAD,
+    ].includes(actorRole as any)
+    let rejectedAtLevel = (report.rendicionApprovalLevel ?? 0) + 1
+    if (chain.length > 0) {
+      const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+      if (stepIndex === -1) {
+        throw new ForbiddenException(
+          'No te corresponde rechazar esta rendición en este momento'
+        )
+      }
+      rejectedAtLevel = chain[stepIndex].level
+    } else if (!isAdminOverride) {
+      throw new ForbiddenException(
+        'No te corresponde rechazar esta rendición en este momento'
+      )
+    }
+    ;(report.rendicionApprovalHistory ?? []).push({
+      level: rejectedAtLevel,
+      approvedBy: opts.rejectedBy,
+      action: 'rejected',
+      notes: opts.rejectionReason.trim(),
+      date: new Date(),
+    })
+    report.status = 'rejected'
+    report.rejectionReason = opts.rejectionReason.trim()
+    report.rejectedByRole = 'coordinador'
+    await report.save()
+    this.notificationsService
+      .create({
+        userId: report.userId.toString(),
+        title: 'Rendición observada',
+        message: `Tu rendición fue rechazada por un aprobador: ${opts.rejectionReason.slice(0, 80)}`,
+        type: 'error',
+        actionUrl: `/mis-rendiciones/${id}/detalle`,
+      })
+      .catch(() => {})
+
+    // Correo al colaborador SOLO cuando se rechaza la rendición COMPLETA (este
+    // path). El rechazo por comprobante (`rejectByCoord`) queda solo in-app para
+    // no spamear.
+    try {
+      const owner = await this.userService.findEmailNameClient(
+        report.userId.toString()
+      )
+      const ownerEmailEnabled = await this.userService.isEmailEnabled(
+        report.userId.toString()
+      )
+      if (owner?.email && ownerEmailEnabled) {
+        await this.emailService.sendRendicionRechazadaColaborador(owner.email, {
+          clientId: report.clientId.toString(),
+          collaboratorName: owner.name,
+          reportTitle: this.resolveReportTitle(report),
+          rejectionReason: opts.rejectionReason.trim(),
+          rejectedBy: 'los aprobadores',
+          platformUrl: this.emailService.buildAppUrl(
+            `/mis-rendiciones/${id}/detalle`
+          ),
+        })
+      }
+    } catch (err) {
+      console.error(
+        `[rejectRendicion] Error correo rechazo a colaborador ${id}:`,
+        err
+      )
+    }
+
+    return this.findOne(id) as Promise<ExpenseReportDocument>
+  }
+
+  /**
+   * Campos del bloque «Detalles rápidos» de los correos de viático, para que
+   * Contabilidad/Tesorería reciban el mismo detalle (centro de costo, lugar,
+   * fechas, monto) que el aprobador — antes solo se les mandaba una frase
+   * suelta en `detailBody` y el correo salía sin datos.
+   */
+  private async buildViaticoDetalleRapido(
+    report: ExpenseReportDocument
+  ): Promise<{
+    collaboratorName: string
+    place: string
+    startDate: string
+    endDate: string
+    totalFormatted: string
+    currencySymbol: string
+    projectLabel: string
+  }> {
+    const collaborator = await this.userService.findEmailNameClient(
+      report.userId.toString()
+    )
+    let projectLabel = ''
+    if (report.projectId) {
+      try {
+        const project = await this.projectService.findOne(
+          report.projectId.toString(),
+          report.clientId.toString()
+        )
+        if (project) projectLabel = `${project.code} - ${project.name}`
+      } catch {
+        // Centro de costo borrado o inaccesible: el correo sale sin la fila.
+      }
+    }
+    const toIsoDay = (v: unknown): string =>
+      v instanceof Date
+        ? v.toISOString().slice(0, 10)
+        : String(v ?? '').slice(0, 10)
+    return {
+      collaboratorName: collaborator?.name ?? '',
+      place: report.viaticoPlace ?? '',
+      startDate: toIsoDay(report.viaticoStartDate),
+      endDate: toIsoDay(report.viaticoEndDate),
+      totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
+      currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
+      projectLabel,
+    }
+  }
+
   /** Notifica a Contabilidad que un viático terminó su cadena de centro de costo y espera su aprobación final. */
   private async notifyContabilidadPendingApproval(report: ExpenseReportDocument): Promise<void> {
     try {
       const recipients = await this.userService.findViaticoAccountingNotifyRecipients(report.clientId.toString())
-      const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
+      const detalle = await this.buildViaticoDetalleRapido(report)
       for (const r of recipients) {
         await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
           clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '',
           emailTitle: 'Solicitud de viáticos pendiente de tu aprobación',
-          detailBody: `<p>Viático por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoEscapeHtml(this.viaticoFormatMoney(report.viaticoAmount ?? 0))} de ${this.viaticoEscapeHtml(collaborator?.name ?? '')} fue aprobado por los centros de costo correspondientes. Requiere tu aprobación final antes de quedar lista para pago.</p>`,
-          projectLabel: '', platformUrl: this.emailService.buildAppUrl('/viaticos'),
+          intro: 'La solicitud fue aprobada por los centros de costo correspondientes y requiere tu aprobación final antes de quedar lista para pago.',
+          ...detalle,
+          platformUrl: this.emailService.buildAppUrl('/viaticos'),
         }).catch(() => {})
       }
     } catch (err: unknown) {
@@ -4288,17 +5010,11 @@ export class ExpenseReportService implements OnModuleInit {
         await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoBudgetCommitmentRecorded: true } })
       } catch (err: unknown) { this.logger.error(`Compromiso presupuestal viático ${(report as any)._id}: ${err instanceof Error ? err.message : String(err)}`) }
     }
-    try {
-      const recipients = await this.userService.findViaticoAccountingNotifyRecipients(report.clientId.toString())
-      const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
-      for (const r of recipients) {
-        await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
-          clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '', emailTitle: 'Solicitud de viáticos aprobada',
-          detailBody: `<p>Viático por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoEscapeHtml(this.viaticoFormatMoney(report.viaticoAmount ?? 0))} de ${this.viaticoEscapeHtml(collaborator?.name ?? '')} aprobado y listo para pago.</p>`,
-          projectLabel: '', platformUrl: this.emailService.buildAppUrl('/tesoreria'),
-        }).catch(() => {})
-      }
-    } catch (err: unknown) { this.logger.error(`Notificación contabilidad viático ${(report as any)._id}: ${err instanceof Error ? err.message : String(err)}`) }
+    // A Contabilidad NO se le avisa aquí: este método solo corre desde
+    // `approveViaticoContabilidad`, es decir, justo después de que Contabilidad
+    // aprobó la solicitud. Enviarle un «Solicitud de viáticos aprobada» sería
+    // notificarle su propia acción. El aviso accionable es el de Tesorería, que
+    // va a continuación.
 
     // Notificar a tesorería con datos de pago del colaborador
     try {
@@ -4551,18 +5267,10 @@ export class ExpenseReportService implements OnModuleInit {
       } catch { /* fallback a etiqueta vacía */ }
     }
 
-    // Coordinador del colaborador: recibe copia del aviso de pago (correo + in-app),
-    // igual que en la ruta del anticipo (advance.service.notifyViaticoPaymentRegistered).
-    const profile = await this.userService.findTransactionalProfile(collabId)
-    const coordinatorId = profile?.coordinatorId?.toString?.()
-    const coordinator = coordinatorId ? await this.userService.findEmailNameClient(coordinatorId) : null
-    const coordEmailEnabled = coordinatorId ? await this.userService.isEmailEnabled(coordinatorId) : false
-
     const viaticoSym = this.viaticoMoneySymbol(report.viaticoMoneda)
     const paymentEmailData = {
       clientId: report.clientId.toString(),
       collaboratorName: collaborator?.name ?? 'Colaborador',
-      coordinatorName: coordinator?.name,
       projectLabel,
       amountFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
       currencySymbol: viaticoSym,
@@ -4589,20 +5297,17 @@ export class ExpenseReportService implements OnModuleInit {
       }).catch(() => {})
     }
 
-    // Copia al coordinador: correo + notificación in-app.
-    if (coordinator?.email && coordEmailEnabled) {
-      this.emailService.sendViaticoPagoRealizado(coordinator.email, {
-        recipientName: coordinator.name,
+    // Pago realizado: copia a TESORERÍA (quien ejecutó el pago), no al
+    // coordinador personal (obsoleto) ni a los aprobadores.
+    const tesoreria = await this.userService.findTesoreriaNotifyRecipients(
+      report.clientId.toString()
+    )
+    const collabEmailKey = collaborator?.email?.trim().toLowerCase()
+    for (const t of tesoreria) {
+      if (t.email.trim().toLowerCase() === collabEmailKey) continue
+      this.emailService.sendViaticoPagoRealizado(t.email, {
+        recipientName: t.name,
         ...paymentEmailData,
-      }).catch(() => {})
-    }
-    if (coordinatorId) {
-      this.notificationsService.create({
-        userId: coordinatorId,
-        title: fullyPaid ? 'Pago de viático registrado' : 'Pago parcial de viático registrado',
-        message: `Se registró el pago del viático de ${collaborator?.name ?? 'un colaborador'} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}.`,
-        type: 'info',
-        actionUrl: `/mis-rendiciones/${reportId}/detalle`,
       }).catch(() => {})
     }
 
@@ -4617,6 +5322,69 @@ export class ExpenseReportService implements OnModuleInit {
     if (report.status !== 'pending_l1') throw new BadRequestException('Solo se puede cancelar una solicitud en estado pendiente de aprobación.')
     report.status = 'cancelled'
     await report.save()
+
+    // Avisar a los APROBADORES del viático (cadena por centro de costo) que el
+    // colaborador canceló su solicitud — no al coordinador personal (obsoleto).
+    try {
+      const collaborator = await this.userService.findEmailNameClient(userId)
+      const collaboratorName = collaborator?.name || 'El colaborador'
+      let projectLabel = ''
+      if (report.projectId) {
+        try {
+          const p = await this.projectService.findOne(
+            report.projectId.toString(),
+            report.clientId.toString()
+          )
+          projectLabel = `[${p.code} - ${p.name}]`
+        } catch { /* etiqueta vacía */ }
+      }
+      const startStr =
+        report.viaticoStartDate instanceof Date
+          ? report.viaticoStartDate.toISOString().slice(0, 10)
+          : String(report.viaticoStartDate ?? '').slice(0, 10)
+      const endStr =
+        report.viaticoEndDate instanceof Date
+          ? report.viaticoEndDate.toISOString().slice(0, 10)
+          : String(report.viaticoEndDate ?? '').slice(0, 10)
+      const totalFormatted = this.viaticoFormatMoney(report.viaticoAmount ?? 0)
+      const plainSummary = `${collaboratorName} canceló su solicitud de viáticos${projectLabel ? ' ' + projectLabel : ''}.`
+
+      const approvers = await this.resolveViaticoApproverRecipients(report, {
+        excludeUserIds: [userId],
+      })
+      const sentCancel = new Set<string>()
+      for (const a of approvers) {
+        await this.notificationsService
+          .create({
+            userId: a.userId,
+            title: 'Solicitud de viáticos cancelada',
+            message: plainSummary,
+            type: 'warning',
+            actionUrl: '/viaticos',
+          })
+          .catch(() => { })
+
+        if (!a.emailEnabled || !a.email) continue
+        const key = a.email.trim().toLowerCase()
+        if (sentCancel.has(key)) continue
+        sentCancel.add(key)
+        await this.emailService.sendViaticoCancelacion(a.email, {
+          clientId: report.clientId.toString(),
+          coordinatorName: a.name,
+          collaboratorName,
+          place: report.viaticoPlace ?? '',
+          startDate: startStr,
+          endDate: endStr,
+          totalFormatted,
+          projectLabel,
+          plainSummary,
+          platformUrl: this.emailService.buildAppUrl('/viaticos'),
+        })
+      }
+    } catch (err) {
+      console.error(`[cancelViatico] Error notificando aprobadores ${id}:`, err)
+    }
+
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
 

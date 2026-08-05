@@ -1,16 +1,19 @@
-<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><title>Comprobante Rechazado</title></head>
-<body style="font-family:Arial,sans-serif;color:#333;max-width:600px;margin:0 auto">
-  <img src="{{logoUrl}}" alt="Viatika" class="logo" width="150" style="width:150px;max-width:150px;height:auto;margin:20px 0;">
-  <h2 style="color:#e53e3e">Comprobante de Devolución Rechazado</h2>
-  <p>Estimado/a <strong>{{recipientName}}</strong>,</p>
-  <p>El comprobante de devolución del anticipo N° <strong>{{advanceId}}</strong> ha sido <strong>rechazado</strong>.</p>
-  {{#if rejectionReason}}
-  <div style="background:#fff5f5;border-left:4px solid #e53e3e;padding:12px;margin:16px 0">
-    <strong>Motivo:</strong> {{rejectionReason}}
-  </div>
-  {{/if}}
-  <p>Por favor cargue un nuevo comprobante en la plataforma lo antes posible.</p>
-</body>
-</html>
+{{> email-header}}
+      <span class="badge badge-danger">Comprobante rechazado</span>
+      <h1 class="title">Comprobante de devolución rechazado</h1>
+      <p>Estimado/a <strong>{{recipientName}}</strong>,</p>
+      <p>El comprobante de devolución del anticipo que cargó ha sido <strong>rechazado</strong>.</p>
+
+      <p class="label">Detalles rápidos:</p>
+      <div class="box">
+        <div class="row"><strong>N° de anticipo:</strong> {{advanceId}}</div>
+        <div class="row"><strong>Monto a devolver:</strong> {{currencySymbol}} {{amountDue}}</div>
+        {{#if rejectionReason}}<div class="row"><strong>Motivo:</strong> {{rejectionReason}}</div>{{/if}}
+      </div>
+
+      <p>Por favor cargue un nuevo comprobante en la plataforma lo antes posible.</p>
+
+      <div class="btn-container">
+        <a href="{{platformUrl}}" class="btn">Ir a la plataforma</a>
+      </div>
+{{> email-footer}}

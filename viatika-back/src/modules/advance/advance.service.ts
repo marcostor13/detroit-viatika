@@ -813,6 +813,7 @@ export class AdvanceService implements OnModuleInit {
           urgentBanner,
           emailTitle,
           detailBody,
+          ...this.buildViaticoDetalleRapido(doc, collabProfile?.name),
           projectLabel: projectLabelSubject,
           platformUrl,
         })
@@ -820,6 +821,34 @@ export class AdvanceService implements OnModuleInit {
         const msg = err instanceof Error ? err.message : String(err)
         this.logger.error(`Correo pendiente L2 a ${r.email}: ${msg}`)
       }
+    }
+  }
+
+  /**
+   * Campos del bloque «Detalles rápidos» que comparten todas las plantillas de
+   * viático, para que el correo traiga el mismo encabezado de datos aunque
+   * `detailBody` ya lleve el desglose largo.
+   */
+  private buildViaticoDetalleRapido(
+    advance: AdvanceDocument,
+    collaboratorName?: string
+  ): {
+    collaboratorName: string
+    place: string
+    startDate: string
+    endDate: string
+    totalFormatted: string
+    currencySymbol: string
+  } {
+    return {
+      collaboratorName: collaboratorName ?? '',
+      place: advance.place?.trim() ?? '',
+      startDate:
+        this.emailService.formatDateDDMMYYYY(advance.startDate as never) || '',
+      endDate:
+        this.emailService.formatDateDDMMYYYY(advance.endDate as never) || '',
+      totalFormatted: this.formatViaticoMoney(advance.amount),
+      currencySymbol: this.moneySymbol(advance.moneda),
     }
   }
 
@@ -1061,6 +1090,7 @@ export class AdvanceService implements OnModuleInit {
           urgentBanner,
           emailTitle,
           detailBody,
+          ...this.buildViaticoDetalleRapido(doc, collabProfile?.name),
           projectLabel: projectLabelSubject,
           platformUrl,
         })
@@ -1880,8 +1910,13 @@ export class AdvanceService implements OnModuleInit {
     amountReimburse: number
   ): Promise<void> {
     const clientId = String(report.clientId)
-    const recipients =
+    // Reembolso al colaborador: lo EJECUTA Tesorería (VD-37); Contabilidad
+    // recibe copia informativa.
+    const tesoreria =
+      await this.userService.findTesoreriaNotifyRecipients(clientId)
+    const contabilidad =
       await this.userService.findViaticoAccountingNotifyRecipients(clientId)
+    const recipients = [...tesoreria, ...contabilidad]
 
     const owner = report.userId as { name?: string; email?: string }
     const collaboratorName = owner?.name || 'Colaborador'
@@ -1894,8 +1929,12 @@ export class AdvanceService implements OnModuleInit {
     const reportTitle = report.title || 'Rendición'
     const reportLabel = reportTitle
 
+    const seenReembolso = new Set<string>()
     for (const r of recipients) {
       if (!r.email?.trim()) continue
+      const key = r.email.trim().toLowerCase()
+      if (seenReembolso.has(key)) continue
+      seenReembolso.add(key)
       await this.emailService.sendRendicionReembolsoContabilidad(r.email, {
         clientId,
         recipientName: r.name || 'Estimado/a',
