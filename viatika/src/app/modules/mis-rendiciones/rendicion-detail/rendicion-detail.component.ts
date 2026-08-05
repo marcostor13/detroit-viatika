@@ -2490,7 +2490,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       documento: `${this.dataText(exp, 'serie')} - ${this.dataText(exp, 'correlativo')}`,
       concepto: this.getExpenseDescription(exp),
       categoria: this.getPopulatedName(exp['categoryId']),
-      monto: this.getExpenseTotal(exp),
+      // En la moneda de la rendición: la DJ al exterior se declara en dólares y
+      // sus comprobantes pueden venir en soles.
+      monto: this.expenseAmountInReportCurrency(exp),
     }));
     const total = rows.reduce((sum, r) => sum + (r.monto || 0), 0);
     return {
@@ -2500,6 +2502,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       empresaRuc: this.companyConfigService.getCompanyConfig()?.businessId ?? '',
       colaborador: this.getCollaboratorDisplayName(),
       documentoColaborador: this.collaboratorDniForPdf(),
+      monedaSimbolo: this.currencySymbol,
       fechaGeneracion: new Date().toLocaleString('es-PE', {
         dateStyle: 'short',
         timeStyle: 'short',
@@ -3341,6 +3344,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const data: SingleExpenseAffidavitData = {
       fileBaseName: `dj_recibo_caja_${String(expense['_id'] || 'sin_id')}`,
       titulo: 'RECIBO DE CAJA',
+      monedaSimbolo: this.expenseSymbol(expense),
       colaborador: this.getCollaboratorDisplayName(),
       colaboradorDni: this.collaboratorDniForPdf(),
       empresaNombre: client?.businessName,
@@ -3359,6 +3363,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const data: SingleExpenseAffidavitData = {
       fileBaseName: `dj_otros_gastos_${String(expense['_id'] || 'sin_id')}`,
       titulo: 'OTROS GASTOS',
+      monedaSimbolo: this.expenseSymbol(expense),
       colaborador: String(expense['declaracionJuradaFirmante'] || this.getCollaboratorDisplayName()),
       colaboradorDni: this.collaboratorDniForPdf(),
       empresaNombre: client?.businessName,

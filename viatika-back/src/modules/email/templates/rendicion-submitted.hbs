@@ -43,20 +43,20 @@
         {{#if isDirecta}}
         {{#if hasDirectaDeposit}}
         <div class="detail-item">
-          <span class="detail-label">Total depositado:</span> S/ {{depositFormatted}}
+          <span class="detail-label">Total depositado:</span> {{currencySymbol}} {{depositFormatted}}
         </div>
         {{/if}}
         <div class="detail-item">
-          <span class="detail-label">Total gastado:</span> S/ {{expenseTotalFormatted}}
+          <span class="detail-label">Total gastado:</span> {{currencySymbol}} {{expenseTotalFormatted}}
         </div>
         {{#if hasDirectaDeposit}}
         <div class="detail-item">
-          <span class="detail-label">Saldo disponible:</span> S/ {{saldoFormatted}}
+          <span class="detail-label">Saldo disponible:</span> {{currencySymbol}} {{saldoFormatted}}
         </div>
         {{/if}}
         {{else}}
         <div class="detail-item">
-          <span class="detail-label">Presupuesto:</span> S/ {{budgetFormatted}}
+          <span class="detail-label">Presupuesto:</span> {{currencySymbol}} {{budgetFormatted}}
         </div>
         {{/if}}
         <div class="detail-item">
@@ -73,17 +73,17 @@
             <span class="cat-tag">{{this.categoryName}}</span>
             {{#if this.description}}<div class="cat-desc">{{this.description}}</div>{{/if}}
           </td>
-          <td class="cat-amount">S/ {{this.totalFormatted}}</td>
+          <td class="cat-amount">{{currencySymbol}} {{this.totalFormatted}}</td>
         </tr>
         {{/each}}
         <tr class="comprobantes-total">
           <td>Total gastado</td>
-          <td class="cat-amount">S/ {{expenseTotalFormatted}}</td>
+          <td class="cat-amount">{{currencySymbol}} {{expenseTotalFormatted}}</td>
         </tr>
         {{#if hasDirectaDeposit}}
         <tr class="comprobantes-total">
           <td>Saldo disponible</td>
-          <td class="cat-amount">S/ {{saldoFormatted}}</td>
+          <td class="cat-amount">{{currencySymbol}} {{saldoFormatted}}</td>
         </tr>
         {{/if}}
       </table>

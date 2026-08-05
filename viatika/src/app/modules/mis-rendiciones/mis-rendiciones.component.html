@@ -367,14 +367,14 @@
 
       <!-- Total -->
       <ng-container *appColumn="'total'; header: 'Total'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let r">
-        S/ {{ getTotalGastado(r) | number:'1.2-2' }}
+        {{ reportSymbol(r) }} {{ getTotalGastado(r) | number:'1.2-2' }}
       </ng-container>
 
       <!-- Saldo -->
       <ng-container *appColumn="'saldo'; header: 'Saldo'; align: 'right'; cellClass: 'whitespace-nowrap tabular-nums'; let r">
         <span [ngClass]="hasReportSaldo(r) ? (getReportSaldo(r) >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold') : 'text-gray-400'">
           @if (hasReportSaldo(r)) {
-            S/ {{ getReportSaldo(r) | number:'1.2-2' }}
+            {{ reportSymbol(r) }} {{ getReportSaldo(r) | number:'1.2-2' }}
           } @else {
             —
           }

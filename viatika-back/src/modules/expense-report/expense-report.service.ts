@@ -1089,6 +1089,7 @@ export class ExpenseReportService implements OnModuleInit {
                 collaboratorName,
                 reportTitle,
                 budgetFormatted,
+                currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
                 expenseCount,
                 platformUrl,
               }
@@ -1389,6 +1390,7 @@ export class ExpenseReportService implements OnModuleInit {
                     collaboratorName,
                     reportTitle,
                     budgetFormatted,
+                    currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
                     platformUrl,
                   }
                 )
@@ -1425,6 +1427,7 @@ export class ExpenseReportService implements OnModuleInit {
             collaboratorName,
             collaboratorDni: (typeof owner === 'object' && owner?.dni) || undefined,
             budgetFormatted: Number(budgetDisplay).toFixed(2),
+            currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
             hasBankAccount,
             bankName: bank?.bankName || undefined,
             accountType: bank?.accountType === 'ahorros' ? 'Ahorros' : bank?.accountType === 'corriente' ? 'Corriente' : undefined,
@@ -1525,16 +1528,19 @@ export class ExpenseReportService implements OnModuleInit {
         const expenseDocs = Array.isArray(fullyUpdatedReport.expenseIds)
           ? fullyUpdatedReport.expenseIds
           : []
+        // `budgetFormatted` viene en la moneda de la rendición, así que los
+        // gastos van en la misma: en base darían "Presupuesto 800" contra
+        // "Gastado 1066.68" dentro del mismo correo, ambos rotulados S/.
+        const currencySymbol = this.reportCurrencySymbol(fullyUpdatedReport)
         const expenseTotal = expenseDocs.reduce(
-          (s: number, e: any) => s + this.expenseSettlementAmountBase(e),
+          (s: number, e: any) => s + this.expenseAmountInReport(e),
           0
         )
         const expenseTotalFormatted = expenseTotal.toFixed(2)
         const expenseItems = expenseDocs.map((e: any) => ({
           categoryName: e?.categoryId?.name || 'Gasto',
           description: e?.description || '',
-          // En moneda base, para que las líneas sumen el total del correo.
-          totalFormatted: this.expenseSettlementAmountBase(e).toFixed(2),
+          totalFormatted: this.expenseAmountInReport(e).toFixed(2),
         }))
         const platformUrl = this.emailService.buildAppUrl(
           `/mis-rendiciones/${id}/detalle`
@@ -1553,6 +1559,7 @@ export class ExpenseReportService implements OnModuleInit {
           collaboratorName: creatorName,
           reportTitle: fullyUpdatedReport.title,
           budgetFormatted,
+          currencySymbol,
           expenseCount,
           expenseTotalFormatted,
           expenseItems,
@@ -2472,6 +2479,24 @@ export class ExpenseReportService implements OnModuleInit {
    */
   private expenseAmountInReport(e: any): number {
     return Number(e?.montoReporte ?? e?.total) || 0
+  }
+
+  /**
+   * Símbolo de la moneda en que está expresada una rendición. Solo los viáticos
+   * pueden salirse de la moneda base; el resto (directas, caja chica) siempre
+   * son soles y caen en el default.
+   */
+  private reportCurrencySymbol(report: any): string {
+    return monedaSymbol(report?.viaticoMoneda)
+  }
+
+  /**
+   * Símbolo de los importes de la liquidación (devolución / reembolso). Van en
+   * moneda base aunque el viático se haya entregado en dólares, porque es la
+   * moneda en la que operan tesorería, el TXT y los asientos.
+   */
+  private settlementCurrencySymbol(report: any): string {
+    return monedaSymbol(report?.settlement?.moneda)
   }
 
   /**
@@ -3757,7 +3782,7 @@ export class ExpenseReportService implements OnModuleInit {
     return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
-  /** Símbolo de moneda ('S/' / '$') a partir del código SUNAT guardado en el viático. */
+  /** Símbolo de moneda ('S/' / '$') a partir del código ISO guardado en el viático. */
   private viaticoMoneySymbol(moneda?: string): string {
     return monedaSymbol(moneda)
   }
@@ -3803,7 +3828,7 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   private async validateViaticoLines(
-    dto: { place: string; startDate: string; endDate: string; projectId: string; lines?: CreateAdvanceLineDto[]; observations?: string; amount: number },
+    dto: { place: string; startDate: string; endDate: string; projectId: string; lines?: CreateAdvanceLineDto[]; observations?: string; amount: number; moneda?: string },
     clientId: string
   ) {
     const start = this.viaticoStartOfDay(new Date(dto.startDate))
@@ -3821,6 +3846,8 @@ export class ExpenseReportService implements OnModuleInit {
     // partir de un detalle por categoría. `lines` solo se procesa si viene (datos
     // legados o clientes antiguos en caché) y en ese caso valida contra `amount`.
     const lineDocs: { categoryId: Types.ObjectId; detalle?: string; importe: number; peopleCount: number; glpPerDay: number; days: number; lineTotal: number }[] = []
+    // Las líneas se declaran en la moneda que pidió el colaborador, no en soles.
+    const sym = monedaSymbol(dto.moneda)
     const lines = dto.lines ?? []
     let sum = 0
     for (const line of lines) {
@@ -3828,7 +3855,7 @@ export class ExpenseReportService implements OnModuleInit {
       if (!cat.isActive) throw new BadRequestException(`La categoría "${cat.name}" está inactiva.`)
       const expected = this.computeViaticoLineTotal(line)
       if (Math.abs(line.lineTotal - expected) > 0.02) {
-        throw new BadRequestException(`Total de línea inconsistente. Esperado S/ ${expected.toFixed(2)}, recibido S/ ${line.lineTotal.toFixed(2)}.`)
+        throw new BadRequestException(`Total de línea inconsistente. Esperado ${sym} ${expected.toFixed(2)}, recibido ${sym} ${line.lineTotal.toFixed(2)}.`)
       }
       sum += line.lineTotal
       const det = line.detalle?.trim()
@@ -3839,7 +3866,7 @@ export class ExpenseReportService implements OnModuleInit {
     if (lines.length > 0) {
       roundedSum = Math.round(sum * 100) / 100
       if (Math.abs(roundedSum - dto.amount) > 0.02) {
-        throw new BadRequestException(`El monto total (S/ ${dto.amount}) debe coincidir con la suma de líneas (S/ ${roundedSum}).`)
+        throw new BadRequestException(`El monto total (${sym} ${dto.amount}) debe coincidir con la suma de líneas (${sym} ${roundedSum}).`)
       }
     } else {
       if (!Number.isFinite(dto.amount) || dto.amount <= 0) {
@@ -3995,7 +4022,7 @@ export class ExpenseReportService implements OnModuleInit {
         await this.notificationsService.create({
           userId: approverId.toString(),
           title: 'Comprobante pendiente de tu aprobación',
-          message: `Un comprobante de S/ ${Number((expense as any).total ?? 0).toFixed(2)} está pendiente de tu revisión (nivel ${step.level}).`,
+          message: `Un comprobante de ${monedaSymbol((expense as any).moneda)} ${Number((expense as any).total ?? 0).toFixed(2)} está pendiente de tu revisión (nivel ${step.level}).`,
           type: 'info',
           actionUrl: `/mis-rendiciones/${(expense as any).expenseReportId?.toString() ?? ''}/detalle`,
           metadata: { expenseId, event: 'expense_pending_coord' },
@@ -4650,7 +4677,9 @@ export class ExpenseReportService implements OnModuleInit {
       this.emailService.sendDevolucionPendiente(collaborator.email, {
         clientId: report.clientId.toString(), recipientName: collaborator.name,
         amountDue: this.viaticoFormatMoney(report.settlement.difference),
-        currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
+        // `difference` está en moneda base, no en la del viático: rotularlo con
+        // el símbolo de la solicitud diría "$ 1639.72" por una deuda de S/ 1639.72.
+        currencySymbol: this.settlementCurrencySymbol(report),
         dueDate: this.emailService.formatDateDDMMYYYY(dueDate), advanceId: id,
       }).catch(() => {})
     }
@@ -4684,7 +4713,7 @@ export class ExpenseReportService implements OnModuleInit {
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email && await this.userService.isEmailEnabled(report.userId.toString())) {
       const sendFn = approved ? this.emailService.sendDevolucionValidada.bind(this.emailService) : this.emailService.sendDevolucionRechazada.bind(this.emailService)
-      sendFn(collaborator.email, { clientId: report.clientId.toString(), recipientName: collaborator.name, amountDue: this.viaticoFormatMoney(rr.amountDue), rejectionReason, advanceId: id }).catch(() => {})
+      sendFn(collaborator.email, { clientId: report.clientId.toString(), recipientName: collaborator.name, amountDue: this.viaticoFormatMoney(rr.amountDue), currencySymbol: this.settlementCurrencySymbol(report), rejectionReason, advanceId: id }).catch(() => {})
     }
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
