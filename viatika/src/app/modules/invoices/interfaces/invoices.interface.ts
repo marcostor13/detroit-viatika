@@ -35,8 +35,12 @@ export interface IMobilityRow {
 
 export interface ICreateMobilitySheetPayload {
   proyectId: string;
-  /** Orden de Trabajo, obligatoria según el formato oficial ADF-FOR-005. */
-  ordenTrabajoId: string;
+  /**
+   * Orden de Trabajo, obligatoria según el formato oficial ADF-FOR-005. Opcional
+   * solo cuando la planilla pertenece a un viático cuya solicitud no llevó OT
+   * (la OT es opcional al solicitar el viático y el gasto la hereda de ahí).
+   */
+  ordenTrabajoId?: string;
   categoryId: string;
   expenseReportId?: string;
   mobilityRows: IMobilityRow[];

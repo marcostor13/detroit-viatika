@@ -1066,6 +1066,21 @@ export class ExpenseReportService implements OnModuleInit {
     }
   }
 
+  /**
+   * True cuando la rendición es un viático que no lleva OT. La OT es opcional al
+   * solicitar el viático y sus gastos la heredan de la solicitud (VD-28): si la
+   * solicitud no la tiene, no hay ninguna que exigirle a la planilla de movilidad.
+   */
+  async isViaticoSinOrdenTrabajo(reportId?: string): Promise<boolean> {
+    if (!reportId || !Types.ObjectId.isValid(reportId)) return false
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('type viaticoOrdenTrabajoId')
+      .lean<{ type?: string; viaticoOrdenTrabajoId?: Types.ObjectId }>()
+      .exec()
+    return !!report && report.type === 'viatico' && !report.viaticoOrdenTrabajoId
+  }
+
   async findOne(id: string) {
     const report = await this.expenseReportModel
       .findById(id)

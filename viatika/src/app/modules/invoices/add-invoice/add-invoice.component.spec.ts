@@ -453,12 +453,27 @@ describe('AddInvoiceComponent', () => {
       component.setExpenseType('planilla_movilidad');
       fixture.detectChanges();
 
-      const options: HTMLOptionElement[] = Array.from(
-        fixture.nativeElement.querySelectorAll('select#categoryId option')
+      // El selector es `app-search-select`: las opciones solo existen en el DOM
+      // con el panel abierto, así que primero se pulsa el disparador.
+      // Se filtra por formControlName: en planilla de movilidad también hay un
+      // `app-search-select` para la OT.
+      const categorySelect: HTMLElement = fixture.nativeElement.querySelector(
+        'app-search-select[formControlName="categoryId"]'
       );
-      const labels = options.map(o => o.textContent?.trim());
-      expect(labels).toContain('Planilla de movilidad — 91.3.1.420');
-      expect(labels).toContain('Planilla de movilidad — 92.3.140');
+      categorySelect.querySelector('button')!.dispatchEvent(
+        new MouseEvent('click', { bubbles: true })
+      );
+      fixture.detectChanges();
+
+      const options: HTMLElement[] = Array.from(
+        categorySelect.querySelectorAll('ul li button')
+      );
+      // Cada opción son dos líneas: nombre arriba y cuenta debajo.
+      const labels = options.map(o =>
+        Array.from(o.querySelectorAll('span span')).map(s => s.textContent?.trim())
+      );
+      expect(labels).toContain(['Planilla de movilidad', '91.3.1.420']);
+      expect(labels).toContain(['Planilla de movilidad', '92.3.140']);
     });
 
     it('inserta la fila nueva al inicio del FormArray', () => {
@@ -1437,6 +1452,71 @@ describe('AddInvoiceComponent', () => {
       expect(component.directaOrdenTrabajoInherited()).toBeTrue();
       expect(component.form.get('ordenTrabajoId')?.disabled).toBeTrue();
       expect(component.form.get('proyectId')?.disabled).toBeTrue();
+    });
+
+    // La OT del viático puede no estar entre las opciones (otro centro de costo o
+    // desactivada): sin añadirla, el selector mostraría el placeholder y el campo
+    // parecería vacío aunque la rendición sí tenga OT.
+    it('shows the inherited viatico OT even when it is not among the cost center options', () => {
+      ordenTrabajoService.getAll.and.returnValue(
+        of([{ _id: 'otP1', nombre: 'OT-OP-001', costCenterId: 'p1', isActive: true } as any])
+      );
+      expenseReportsService.findOne.and.returnValue(
+        of({
+          _id: 'r1',
+          projectId: 'p1',
+          type: 'viatico',
+          viaticoOrdenTrabajoId: { _id: 'otADM', nombre: 'OT-ADM-001', costCenterId: 'p9' },
+          expenseIds: [],
+          settlement: null,
+        } as any)
+      );
+      const component = createComponent({}, { rendicionId: 'r1', tipo: 'planilla_movilidad' });
+      component.ngOnInit();
+
+      expect(component.viaticoOrdenTrabajoInherited()).toBeTrue();
+      expect(component.form.get('ordenTrabajoId')?.value).toBe('otADM');
+      expect(component.ordenTrabajoOptions).toContain(
+        jasmine.objectContaining({ value: 'otADM', label: 'OT-ADM-001' })
+      );
+    });
+
+    // La OT es opcional al solicitar el viático: si la solicitud no la lleva, la
+    // planilla de movilidad no puede exigir una que no existe.
+    it('does not ask for the OT when the viatico has none', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({
+          _id: 'r1',
+          projectId: 'p1',
+          type: 'viatico',
+          expenseIds: [],
+          settlement: null,
+        } as any)
+      );
+      invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent({}, { rendicionId: 'r1', tipo: 'planilla_movilidad' });
+      component.ngOnInit();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+      component.form.patchValue({ categoryId: 'catMov' });
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-01',
+        total: 10,
+        origen: 'A',
+        destino: 'B',
+        gestion: 'g1',
+      });
+
+      component.saveMobilitySheet();
+
+      expect(component.viaticoSinOrdenTrabajo()).toBeTrue();
+      expect(invoicesService.createMobilitySheet).toHaveBeenCalled();
+      const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0] as any;
+      expect(payload.ordenTrabajoId).toBeUndefined();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'Planilla guardada correctamente',
+        'success'
+      );
     });
 
     it('computes rendicionSpent from report expenses and rendicionBudget from paid/settled advances of that report', () => {
