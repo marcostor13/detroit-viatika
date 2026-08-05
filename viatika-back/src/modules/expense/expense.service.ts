@@ -1897,8 +1897,20 @@ export class ExpenseService {
       }
     }
 
+    // Congelar la conversión también en esta vía. Es la que usa el alta genérica
+    // de comprobantes, y sin `montoBase`/`montoReporte` la liquidación cae al
+    // `total` crudo: una factura en dólares se sumaría como si fueran soles.
+    const fx = await this.freezeExpenseCurrency({
+      clientId: createExpenseDto.clientId,
+      total: Number(dto.total) || 0,
+      moneda: dto.moneda,
+      fecha: dto.fechaEmision,
+      expenseReportId: dto.expenseReportId,
+    })
+
     const createdExpense = new this.expenseRepository({
       ...dto,
+      ...fx,
       // Forzar ObjectId: en este flujo el modelo no castea estos ids por sí solo
       // (a diferencia de los create tipados), y guardarlos como string rompe los
       // $lookup/match estrictos del backend.

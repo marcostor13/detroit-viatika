@@ -3827,16 +3827,21 @@ export class ExpenseReportService implements OnModuleInit {
     return result
   }
 
+  /**
+   * @param allowPastDates permiso por usuario `permissions.permitirFechasAnteriores`:
+   * cuando es true se omite la validación de "fecha de inicio no anterior a hoy".
+   */
   private async validateViaticoLines(
     dto: { place: string; startDate: string; endDate: string; projectId: string; lines?: CreateAdvanceLineDto[]; observations?: string; amount: number; moneda?: string },
-    clientId: string
+    clientId: string,
+    allowPastDates = false
   ) {
     const start = this.viaticoStartOfDay(new Date(dto.startDate))
     const end = this.viaticoStartOfDay(new Date(dto.endDate))
     if (end < start) throw new BadRequestException('La fecha fin debe ser mayor o igual a la fecha inicio.')
 
     const today = this.viaticoStartOfDay(new Date())
-    if (start < today) {
+    if (!allowPastDates && start < today) {
       throw new BadRequestException('La fecha de inicio no puede ser anterior a hoy.')
     }
 
@@ -4045,7 +4050,8 @@ export class ExpenseReportService implements OnModuleInit {
     // suma al anticipo: prefinancia ese costo igual que un saldo de la bolsa.
     const { lineDocs, roundedSum, description } = await this.validateViaticoLines(
       { place: dto.place, startDate: dto.startDate, endDate: dto.endDate, projectId: dto.projectId, lines: dto.lines, observations: dto.observations, amount: dto.amount },
-      clientId
+      clientId,
+      profile.permitirFechasAnteriores === true
     )
 
     // Regla 1.6: si todos los niveles del centro de costo quedaron omitidos
@@ -4420,7 +4426,8 @@ export class ExpenseReportService implements OnModuleInit {
 
     const { lineDocs, roundedSum, description } = await this.validateViaticoLines(
       { place: dto.place, startDate: dto.startDate, endDate: dto.endDate, projectId: dto.projectId, lines: dto.lines, observations: dto.observations, amount: dto.amount },
-      clientId
+      clientId,
+      profile.permitirFechasAnteriores === true
     )
 
     // La cadena de aprobadores se recalcula desde el centro de costo elegido y
