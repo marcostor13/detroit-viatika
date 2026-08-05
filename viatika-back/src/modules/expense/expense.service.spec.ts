@@ -898,3 +898,135 @@ describe('ExpenseService — createDeclaracionJurada (DJE: un gasto por rubro)',
     ).rejects.toThrow(/declaracion-jurada/)
   })
 })
+
+describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', () => {
+  let service: ExpenseService
+  const clientId = new Types.ObjectId().toHexString()
+  const userId = new Types.ObjectId().toHexString()
+  const proyectId = new Types.ObjectId().toHexString()
+  const categoryId = new Types.ObjectId().toHexString()
+  const expenseReportId = new Types.ObjectId().toHexString()
+
+  const expenseModel = {
+    create: jest.fn(),
+    countDocuments: jest.fn().mockResolvedValue(0),
+    aggregate: jest.fn().mockResolvedValue([]),
+  }
+  const userService = { findOne: jest.fn().mockResolvedValue({ name: 'John Doe' }) }
+  const expenseReportService = {
+    assertReportNotLockedByCajaChica: jest.fn(),
+    isViaticoSinOrdenTrabajo: jest.fn().mockResolvedValue(false),
+    findCurrencyMeta: jest.fn().mockResolvedValue(null),
+    findOne: jest.fn().mockResolvedValue({ userId }),
+    buildChainForNewExpense: jest.fn(),
+    addExpenseToReport: jest.fn(),
+  }
+  const categoryService = {
+    findOne: jest.fn().mockResolvedValue({
+      _id: new Types.ObjectId(categoryId),
+      name: 'Planilla de movilidad',
+    }),
+  }
+  const clientModel = {
+    findById: jest.fn().mockReturnValue({
+      lean: () => ({ exec: () => Promise.resolve(null) }),
+    }),
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    expenseModel.countDocuments.mockResolvedValue(0)
+    expenseModel.aggregate.mockResolvedValue([])
+    expenseModel.create.mockImplementation((doc: any) =>
+      Promise.resolve({ ...doc, _id: new Types.ObjectId() })
+    )
+    expenseReportService.isViaticoSinOrdenTrabajo.mockResolvedValue(false)
+    clientModel.findById.mockReturnValue({
+      lean: () => ({ exec: () => Promise.resolve(null) }),
+    })
+    categoryService.findOne.mockResolvedValue({
+      _id: new Types.ObjectId(categoryId),
+      name: 'Planilla de movilidad',
+    })
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue('sk-test') },
+        },
+        { provide: getModelToken(Expense.name), useValue: expenseModel },
+        { provide: getModelToken(Client.name), useValue: clientModel },
+        { provide: EmailService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: UserService, useValue: userService },
+        { provide: SunatConfigService, useValue: {} },
+        { provide: HttpService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ExpenseReportService, useValue: expenseReportService },
+        { provide: NotificationsService, useValue: {} },
+        { provide: CategoryService, useValue: categoryService },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
+      ],
+    }).compile()
+    service = module.get<ExpenseService>(ExpenseService)
+  })
+
+  const baseBody = () =>
+    ({
+      clientId,
+      userId,
+      proyectId,
+      categoryId,
+      expenseReportId,
+      mobilityRows: [
+        { fecha: '2026-07-10', total: 20, origen: 'A', destino: 'B', gestion: 'g' },
+      ],
+    }) as unknown as CreateExpenseDto
+
+  it('exige la OT cuando la rendición sí puede aportarla', async () => {
+    await expect(service.createMobilitySheet(baseBody())).rejects.toThrow(
+      'Se requiere seleccionar la Orden de Trabajo (OT)'
+    )
+    expect(expenseModel.create).not.toHaveBeenCalled()
+  })
+
+  // La OT es opcional al solicitar el viático y la planilla la hereda de ahí:
+  // si la solicitud no la lleva, no hay ninguna que exigir ni que elegir.
+  it('acepta la planilla sin OT cuando el viático no la tiene', async () => {
+    expenseReportService.isViaticoSinOrdenTrabajo.mockResolvedValue(true)
+
+    await service.createMobilitySheet(baseBody())
+
+    expect(expenseModel.create).toHaveBeenCalledTimes(1)
+    // Sin castear a ObjectId: `new Types.ObjectId(undefined)` inventaría un id.
+    expect(expenseModel.create.mock.calls[0][0].ordenTrabajoId).toBeUndefined()
+  })
+
+  it('guarda la OT cuando llega en el cuerpo', async () => {
+    const ordenTrabajoId = new Types.ObjectId().toHexString()
+
+    await service.createMobilitySheet({
+      ...baseBody(),
+      ordenTrabajoId,
+    } as CreateExpenseDto)
+
+    expect(String(expenseModel.create.mock.calls[0][0].ordenTrabajoId)).toBe(
+      ordenTrabajoId
+    )
+    // No se consulta la rendición: con OT en el cuerpo no hace falta la excepción.
+    expect(expenseReportService.isViaticoSinOrdenTrabajo).not.toHaveBeenCalled()
+  })
+})

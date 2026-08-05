@@ -31,6 +31,10 @@ import { ButtonComponent } from '../../../design-system/button/button.component'
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerOption } from '../../../design-system/worker-select/worker-select.component';
+import {
+  SearchSelectComponent,
+  SearchSelectOption,
+} from '../../../design-system/search-select/search-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
 import { DEFAULT_MONEDA, expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
@@ -47,7 +51,7 @@ declare const google: any;
 @Component({
   selector: 'app-add-invoice',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, PlacesAutocompleteDirective],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, SearchSelectComponent, PlacesAutocompleteDirective],
   templateUrl: './add-invoice.component.html',
   styleUrl: './add-invoice.component.scss',
 })
@@ -97,6 +101,15 @@ export default class AddInvoiceComponent implements OnInit {
   directaOrdenTrabajoInherited = signal<boolean>(false);
   /** True cuando la planilla de movilidad hereda la OT de la solicitud de viático (VD-28). */
   viaticoOrdenTrabajoInherited = signal<boolean>(false);
+  /** True cuando la rendición asociada es un viático (report.type === 'viatico'). */
+  isViaticoReport = signal<boolean>(false);
+  /**
+   * OT heredada de la rendición, tal como la devuelve el reporte. Se guarda aparte
+   * porque el selector solo lista las OT del centro de costo elegido: si la OT
+   * heredada es de otro centro de costo o está desactivada, no estaría entre las
+   * opciones y el campo se vería vacío aunque la rendición sí tenga OT.
+   */
+  inheritedOrdenTrabajo = signal<{ _id: string; nombre: string } | null>(null);
   fromContabilidad = false;
 
   expenseType = signal<ExpenseType>('factura');
@@ -647,15 +660,20 @@ export default class AddInvoiceComponent implements OnInit {
           this.form.patchValue({ ordenTrabajoId: otId });
           this.form.get('ordenTrabajoId')?.disable();
           this.directaOrdenTrabajoInherited.set(true);
+          this.setInheritedOrdenTrabajo(otRef);
         }
         // Viático: la OT se hereda de la solicitud del viático y la toman sus
         // comprobantes de planilla de movilidad; no se elige por comprobante (VD-28).
+        // La solicitud no la exige, así que puede no haber ninguna que heredar:
+        // en ese caso el campo ni se muestra (ver viaticoSinOrdenTrabajo).
+        this.isViaticoReport.set(!isDirecta && (report as any)?.type === 'viatico');
         const viaticoOtRef = (report as any)?.viaticoOrdenTrabajoId;
-        if (!isDirecta && (report as any)?.type === 'viatico' && viaticoOtRef) {
+        if (this.isViaticoReport() && viaticoOtRef) {
           const otId = typeof viaticoOtRef === 'string' ? viaticoOtRef : viaticoOtRef._id;
           this.form.patchValue({ ordenTrabajoId: otId });
           this.form.get('ordenTrabajoId')?.disable();
           this.viaticoOrdenTrabajoInherited.set(true);
+          this.setInheritedOrdenTrabajo(viaticoOtRef);
         }
         // El flag directa puede llegar después de que el usuario ya agregó filas:
         // re-sincroniza validadores del proyecto (superior y por fila).
@@ -800,6 +818,33 @@ export default class AddInvoiceComponent implements OnInit {
   /** Categorías visibles en el selector superior: siempre todas las activas del cliente. */
   get filteredCategories(): ICategory[] {
     return this.categories;
+  }
+
+  /**
+   * Mapea categorías a opciones de `app-search-select`. La cuenta contable va
+   * como segunda línea: con 53 categorías (91x Servicios/Admin y 92x " COM")
+   * hay nombres que solo se distinguen por ella. También entra en la búsqueda,
+   * así que se puede escribir el código de cuenta en vez del nombre.
+   */
+  private toCategoryOptions(list: ICategory[]): SearchSelectOption[] {
+    return list.map((c) => ({
+      value: c._id ?? '',
+      label: c.name,
+      subLabel: c.cuenta || '',
+      searchText: c.description || '',
+    }));
+  }
+
+  get categoryOptions(): SearchSelectOption[] {
+    return this.toCategoryOptions(this.filteredCategories);
+  }
+
+  get movilidadCategoryOptions(): SearchSelectOption[] {
+    return this.toCategoryOptions(this.movilidadCategories);
+  }
+
+  djCategoryOptionsFor(rubro: 'alimentacion' | 'movilidad'): SearchSelectOption[] {
+    return this.toCategoryOptions(this.djCategoriesFor(rubro));
   }
 
   /** Categorías asignadas al colaborador cuyo nombre contiene "planilla de movilidad" (sin distinguir mayúsculas/minúsculas). */
@@ -1073,6 +1118,27 @@ export default class AddInvoiceComponent implements OnInit {
    */
   needsFallbackOt(): boolean {
     return this.isDirectaPlanilla() && !this.directaOrdenTrabajoInherited();
+  }
+
+  /**
+   * Viático cuya solicitud no llevó OT. La OT es opcional al solicitar el viático
+   * y la planilla de movilidad la hereda de ahí (VD-28): si la solicitud no la
+   * tiene, no hay nada que heredar ni que el colaborador pueda elegir, así que el
+   * campo no se muestra ni se exige.
+   */
+  viaticoSinOrdenTrabajo(): boolean {
+    return this.isViaticoReport() && !this.viaticoOrdenTrabajoInherited();
+  }
+
+  /** Guarda la OT heredada (id + nombre) desde la referencia populada del reporte. */
+  private setInheritedOrdenTrabajo(ref: any): void {
+    const _id = typeof ref === 'string' ? ref : String(ref?._id ?? '');
+    if (!_id) return;
+    const nombre =
+      typeof ref === 'object' && ref?.nombre
+        ? String(ref.nombre)
+        : this.ordenesTrabajo.find((ot) => ot._id === _id)?.nombre ?? '';
+    this.inheritedOrdenTrabajo.set({ _id, nombre });
   }
 
   /**
@@ -1597,10 +1663,17 @@ export default class AddInvoiceComponent implements OnInit {
     // En planilla directa el proyecto vive en cada fila; el selector superior se omite.
     const categoryCtrl = this.form.get('categoryId');
     const categoryOk = !!(categoryCtrl?.disabled || categoryCtrl?.valid);
-    // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de Costo.
-    const otOk = !!this.form.get('ordenTrabajoId')?.value;
+    // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de
+    // Costo. Excepción: viático sin OT en la solicitud — no hay ninguna que heredar
+    // ni que el colaborador pueda elegir aquí (ver viaticoSinOrdenTrabajo).
+    const otOk = this.viaticoSinOrdenTrabajo() || !!this.form.get('ordenTrabajoId')?.value;
     if (!proyectOk || !categoryOk || !otOk) {
-      this.notificationService.show('Completa los campos requeridos (incluida la Orden de Trabajo)', 'error');
+      this.notificationService.show(
+        otOk
+          ? 'Completa los campos requeridos'
+          : 'Completa los campos requeridos (incluida la Orden de Trabajo)',
+        'error'
+      );
       return;
     }
     if (this.isDirectaContext()) {
@@ -1667,7 +1740,7 @@ export default class AddInvoiceComponent implements OnInit {
         (this.isDirectaContext() ? rows.find((r: any) => r.categoryId)?.categoryId || '' : '');
       const payload = {
         proyectId: expenseProjectId,
-        ordenTrabajoId: this.form.get('ordenTrabajoId')?.value,
+        ordenTrabajoId: this.form.get('ordenTrabajoId')?.value || undefined,
         categoryId: expenseCategoryId,
         expenseReportId: this.rendicionId || undefined,
         mobilityRows: rows,
@@ -2315,6 +2388,28 @@ export default class AddInvoiceComponent implements OnInit {
     const pid = this.form.get('proyectId')?.value;
     if (!pid) return [];
     return this.ordenesTrabajo.filter((ot) => this.otCostCenterId(ot) === pid);
+  }
+
+  /**
+   * Opciones de OT para `app-search-select`: las del centro de costo elegido más
+   * la OT heredada de la rendición, aunque no pertenezca a ese centro de costo o
+   * esté desactivada. Sin ella el selector no encuentra la opción y muestra el
+   * placeholder, como si la rendición no tuviera OT.
+   */
+  get ordenTrabajoOptions(): SearchSelectOption[] {
+    const options = this.filteredOrdenesTrabajo.map((ot) => ({
+      value: ot._id ?? '',
+      label: ot.nombre,
+    }));
+    const inherited = this.inheritedOrdenTrabajo();
+    if (inherited && !options.some((o) => o.value === inherited._id)) {
+      const nombre =
+        inherited.nombre ||
+        this.ordenesTrabajo.find((ot) => ot._id === inherited._id)?.nombre ||
+        'OT de la rendición';
+      options.unshift({ value: inherited._id, label: nombre });
+    }
+    return options;
   }
 
   get imageUrl() {
