@@ -8,6 +8,7 @@ import {
   ExpenseReportDocument,
 } from '../expense-report/entities/expense-report.entity'
 import { DashboardQueryDto } from './dto/dashboard-query.dto'
+import { AccountingConfigService } from '../accounting-config/accounting-config.service'
 
 interface ResolvedRange {
   from: Date
@@ -24,12 +25,16 @@ export class DashboardService {
     @InjectModel(Advance.name)
     private readonly advanceModel: Model<AdvanceDocument>,
     @InjectModel(ExpenseReport.name)
-    private readonly reportModel: Model<ExpenseReportDocument>
+    private readonly reportModel: Model<ExpenseReportDocument>,
+    private readonly accountingConfigService: AccountingConfigService
   ) {}
 
   async getDashboard(clientId: string, query: DashboardQueryDto) {
     const clientOid = new Types.ObjectId(clientId)
     const range = this.resolveRange(query.dateFrom, query.dateTo)
+    // Los totales están consolidados en la moneda base de la empresa.
+    const accountingConfig =
+      await this.accountingConfigService.getEffective(clientId)
 
     const [
       expenseAgg,
@@ -201,7 +206,7 @@ export class DashboardService {
         dateFrom: range.from.toISOString(),
         dateTo: range.to.toISOString(),
       },
-      currency: 'PEN',
+      currency: accountingConfig.monedaBase || 'PEN',
       kpis: {
         totalGasto,
         gastoCount,
@@ -440,8 +445,20 @@ export class DashboardService {
     return match
   }
 
+  /**
+   * Monto en moneda base. Usa el `montoBase` congelado del comprobante y solo
+   * cae a `total` en documentos previos al multimoneda, donde `montoBase` no
+   * existe y el importe ya estaba asumido en moneda base.
+   *
+   * Sin esto los KPIs sumarían dólares y soles en un mismo total.
+   */
   private readonly amountExpr = {
-    $convert: { input: '$total', to: 'double', onError: 0, onNull: 0 },
+    $convert: {
+      input: { $ifNull: ['$montoBase', '$total'] },
+      to: 'double',
+      onError: 0,
+      onNull: 0,
+    },
   }
 
   // ─── Expense aggregations ─────────────────────────────────────────────────
@@ -670,7 +687,14 @@ export class DashboardService {
       {
         $group: {
           _id: null,
-          amount: { $sum: { $ifNull: ['$amount', 0] } },
+          amount: {
+            $sum: {
+              $multiply: [
+                { $ifNull: ['$amount', 0] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
+            },
+          },
           count: { $sum: 1 },
         },
       },
@@ -691,7 +715,12 @@ export class DashboardService {
           // Monto desembolsado real: usa paidAmount cuando existe (pagos parciales),
           // sino el monto solicitado.
           amount: {
-            $sum: { $ifNull: ['$paidAmount', { $ifNull: ['$amount', 0] }] },
+            $sum: {
+              $multiply: [
+                { $ifNull: ['$paidAmount', { $ifNull: ['$amount', 0] }] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
+            },
           },
           count: { $sum: 1 },
         },
@@ -755,7 +784,14 @@ export class DashboardService {
       {
         $group: {
           _id: null,
-          amount: { $sum: { $ifNull: ['$viaticoAmount', 0] } },
+          amount: {
+            $sum: {
+              $multiply: [
+                { $ifNull: ['$viaticoAmount', 0] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
+            },
+          },
           count: { $sum: 1 },
         },
       },
@@ -774,10 +810,15 @@ export class DashboardService {
         $group: {
           _id: { $ifNull: ['$status', 'pending_l1'] },
           // Monto desembolsado real: viaticoPaidAmount cuando existe (pagos
-          // parciales), si no el monto solicitado.
+          // parciales), si no el monto solicitado. Llevado a moneda base con el
+          // TC congelado, igual que el resto de agregados: sin eso un viático en
+          // dólares entraba al gráfico como si fueran soles.
           amount: {
             $sum: {
-              $ifNull: ['$viaticoPaidAmount', { $ifNull: ['$viaticoAmount', 0] }],
+              $multiply: [
+                { $ifNull: ['$viaticoPaidAmount', { $ifNull: ['$viaticoAmount', 0] }] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
             },
           },
           count: { $sum: 1 },
@@ -804,7 +845,14 @@ export class DashboardService {
               date: { $ifNull: ['$createdAt', { $toDate: '$_id' }] },
             },
           },
-          amount: { $sum: { $ifNull: ['$viaticoAmount', 0] } },
+          amount: {
+            $sum: {
+              $multiply: [
+                { $ifNull: ['$viaticoAmount', 0] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
+            },
+          },
         },
       },
       { $project: { _id: 0, month: '$_id', amount: 1 } },
@@ -852,7 +900,14 @@ export class DashboardService {
           _id: { $toLower: { $trim: { input: '$viaticoPlace' } } },
           place: { $first: '$viaticoPlace' },
           count: { $sum: 1 },
-          amount: { $sum: { $ifNull: ['$viaticoAmount', 0] } },
+          amount: {
+            $sum: {
+              $multiply: [
+                { $ifNull: ['$viaticoAmount', 0] },
+                { $ifNull: ['$tipoCambio', 1] },
+              ],
+            },
+          },
           lat: { $first: '$viaticoLat' },
           lng: { $first: '$viaticoLng' },
         },

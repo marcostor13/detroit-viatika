@@ -17,6 +17,15 @@ import { CreateCajaChicaReportDto } from './dto/create-caja-chica-report.dto'
 
 @Injectable()
 export class CajaChicaReportService {
+
+  /**
+   * Equivalente en moneda base de un gasto. Los comprobantes en moneda
+   * extranjera guardan su conversión congelada; sumar `total` a secas mezclaría
+   * monedas en el total del reporte de caja chica.
+   */
+  private expenseAmountBase(e: any): number {
+    return Number(e?.montoBase ?? e?.total) || 0
+  }
   constructor(
     @InjectModel(CajaChicaReport.name)
     private readonly model: Model<CajaChicaReportDocument>,
@@ -83,12 +92,12 @@ export class CajaChicaReportService {
     if (expReportIds.length) {
       const expReports = await this.expenseReportModel
         .find({ _id: { $in: expReportIds } })
-        .populate('expenseIds', 'total')
+        .populate('expenseIds', 'total montoBase moneda')
         .lean()
         .exec()
       for (const er of expReports as any[]) {
         const sum = (er.expenseIds ?? []).reduce(
-          (s: number, e: any) => s + (Number(e?.total) || 0),
+          (s: number, e: any) => s + this.expenseAmountBase(e),
           0
         )
         totalsByExpReport.set(String(er._id), sum)
@@ -162,7 +171,7 @@ export class CajaChicaReportService {
     // lista y las exportaciones también queden corregidas.
     const totalAmount = enriched.reduce((sum: number, sr: any) => {
       const expenses = (sr.expenseReport?.expenseIds ?? []) as any[]
-      return sum + expenses.reduce((s, e) => s + (Number(e?.total) || 0), 0)
+      return sum + expenses.reduce((s, e) => s + this.expenseAmountBase(e), 0)
     }, 0)
 
     if (totalAmount !== report.totalAmount) {
@@ -192,7 +201,7 @@ export class CajaChicaReportService {
       const expReport = await this.expenseReportModel
         .findById(reportId)
         .populate('userId', 'name email')
-        .populate('expenseIds', 'total')
+        .populate('expenseIds', 'total montoBase moneda')
         .lean()
         .exec()
 
@@ -262,12 +271,12 @@ export class CajaChicaReportService {
     for (const sr of report.selectedReports) {
       const expReport = await this.expenseReportModel
         .findById(sr.expenseReportId)
-        .populate('expenseIds', 'total')
+        .populate('expenseIds', 'total montoBase moneda')
         .lean()
         .exec()
       if (!expReport) continue
       for (const exp of expReport.expenseIds as any[]) {
-        total += Number(exp?.total) || 0
+        total += this.expenseAmountBase(exp)
       }
     }
     return total

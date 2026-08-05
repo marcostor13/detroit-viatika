@@ -32,7 +32,7 @@
           </div>
           <p class="font-medium text-gray-500">Total gastado</p>
         </div>
-        <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">S/ {{ rendicionSpent() | number:'1.2-2' }}</p>
+        <p class="text-2xl sm:text-3xl font-bold text-gray-900 tabular-nums">{{ rendicionSymbol() }} {{ rendicionSpent() | number:'1.2-2' }}</p>
       </div>
     </div>
   }

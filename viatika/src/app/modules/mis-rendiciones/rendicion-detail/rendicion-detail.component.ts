@@ -21,6 +21,7 @@ import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
+import { DEFAULT_MONEDA, monedaSymbol } from '../../../constants/moneda';
 import {
   MobilitySheetExportData,
   RendicionExportService,
@@ -358,12 +359,66 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     // Here we'll map the populated expenseIds if they contain the real amounts,
     // or simulate if the backend just returns IDs.
     this.totalGastado = 0;
-    
+
     // For now, assume expenseIds returns full objects due to mongoose populate
     if (this.report.expenseIds && this.report.expenseIds.length > 0) {
-      this.totalGastado = this.report.expenseIds.reduce((sum, exp: any) => sum + (parseFloat(exp.total) || 0), 0);
+      this.totalGastado = this.report.expenseIds.reduce(
+        (sum, exp: any) => sum + this.expenseAmountInReportCurrency(exp),
+        0
+      );
     }
-    
+  }
+
+  /**
+   * Importe del gasto en la moneda de la rendición.
+   *
+   * Un comprobante emitido en otra moneda guarda su equivalencia congelada al
+   * registrarse (`montoReporte`). Sumar `total` a secas mezclaría monedas.
+   */
+  expenseAmountInReportCurrency(exp: any): number {
+    const enMonedaReporte = Number(exp?.montoReporte);
+    if (!Number.isNaN(enMonedaReporte) && exp?.montoReporte != null) {
+      return enMonedaReporte;
+    }
+    return parseFloat(exp?.total) || 0;
+  }
+
+  /** Símbolo de la moneda de la rendición, para los totales de la ficha. */
+  get currencySymbol(): string {
+    return monedaSymbol(this.report?.viaticoMoneda);
+  }
+
+  /**
+   * Símbolo de la liquidación (devolución / reembolso). El saldo se calcula y
+   * se cobra en moneda base aunque el viático se haya entregado en dólares, así
+   * que los comprobantes de depósito no llevan el símbolo de la rendición.
+   */
+  get settlementSymbol(): string {
+    return monedaSymbol((this.report as any)?.settlement?.moneda);
+  }
+
+  /**
+   * Símbolo de la moneda en que se emitió un comprobante concreto. No siempre
+   * coincide con la de la rendición: una boleta peruana dentro de un viático en
+   * dólares sigue siendo en soles.
+   */
+  expenseSymbol(exp: any): string {
+    return monedaSymbol(exp?.moneda);
+  }
+
+  /** True si el gasto se emitió en una moneda distinta a la de la rendición. */
+  isExpenseForeign(exp: any): boolean {
+    return (
+      !!exp?.moneda && !!exp?.monedaReporte && exp.moneda !== exp.monedaReporte
+    );
+  }
+
+  /** Importe original del gasto con su símbolo, para mostrarlo junto al convertido. */
+  expenseOriginalText(exp: any): string {
+    const original = `${monedaSymbol(exp?.moneda)} ${(parseFloat(exp?.total) || 0).toFixed(2)}`;
+    // Sin el TC el colaborador no puede comprobar de dónde sale el convertido.
+    const tc = Number(exp?.tcReporte);
+    return tc > 0 && tc !== 1 ? `${original} · TC ${tc}` : original;
   }
 
   goBack() {
@@ -1769,22 +1824,41 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /** Moneda del gasto: dólares, tipo de cambio y monto convertido a soles. */
+  /**
+   * Columnas DÓLARES · T.C. · SOLES del formato ADF-FOR-004.
+   *
+   * Se alimentan de la conversión que el gasto congeló al registrarse. Antes se
+   * deducía la moneda del blob del OCR y se recalculaba el importe, con lo que
+   * el documento podía no coincidir con lo que el sistema tenía guardado.
+   */
   private resolveExpenseMoneda(
     exp: Record<string, unknown>,
     dataObj: Record<string, unknown>,
   ): { soles: number; dolares?: number; tipoCambio?: number } {
     const total = Number(exp['total']) || 0;
-    const monedaRaw = String(dataObj['moneda'] ?? '').toUpperCase();
-    const isUsd = monedaRaw.includes('USD') || monedaRaw.includes('$');
-    // El tipo de cambio puede venir a nivel raíz o dentro de comprobanteDetallado.
-    const tcRoot = dataObj['tipoCambio'];
-    const tcNested = (dataObj['comprobanteDetallado'] as { comprobante?: { tipoCambio?: unknown } })?.comprobante?.tipoCambio;
-    const tcRaw = tcRoot ?? tcNested;
-    const tipoCambio =
-      tcRaw != null && !isNaN(Number(tcRaw)) && Number(tcRaw) > 0 ? Number(tcRaw) : undefined;
-    if (!isUsd) return { soles: total };
-    // Gasto en USD: dólares = total; soles solo si hay TC (si no, queda en blanco).
-    return { soles: tipoCambio ? total * tipoCambio : 0, dolares: total, tipoCambio };
+    const montoBase = exp['montoBase'] != null ? Number(exp['montoBase']) : null;
+    const moneda = String(exp['moneda'] ?? '').toUpperCase();
+    const tipoCambio = Number(exp['tipoCambio']) || undefined;
+
+    // Emitido en moneda extranjera: el importe original va en DÓLARES y su
+    // equivalente congelado en SOLES.
+    if (moneda && moneda !== DEFAULT_MONEDA) {
+      return {
+        soles: montoBase ?? 0,
+        dolares: total,
+        tipoCambio: tipoCambio && tipoCambio !== 1 ? tipoCambio : undefined,
+      };
+    }
+
+    // Emitido en soles: solo SOLES. Si la rendición va en otra moneda, el
+    // equivalente en ella queda en la columna de esa moneda.
+    const montoReporte =
+      exp['montoReporte'] != null ? Number(exp['montoReporte']) : null;
+    const tcReporte = Number(exp['tcReporte']) || undefined;
+    if (montoReporte != null && tcReporte && tcReporte !== 1) {
+      return { soles: montoBase ?? total, dolares: montoReporte, tipoCambio: tcReporte };
+    }
+    return { soles: montoBase ?? total };
   }
 
   private getSettlementForExport(): RendicionExportData['settlement'] | undefined {
@@ -2416,7 +2490,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       documento: `${this.dataText(exp, 'serie')} - ${this.dataText(exp, 'correlativo')}`,
       concepto: this.getExpenseDescription(exp),
       categoria: this.getPopulatedName(exp['categoryId']),
-      monto: this.getExpenseTotal(exp),
+      // En la moneda de la rendición: la DJ al exterior se declara en dólares y
+      // sus comprobantes pueden venir en soles.
+      monto: this.expenseAmountInReportCurrency(exp),
     }));
     const total = rows.reduce((sum, r) => sum + (r.monto || 0), 0);
     return {
@@ -2426,6 +2502,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       empresaRuc: this.companyConfigService.getCompanyConfig()?.businessId ?? '',
       colaborador: this.getCollaboratorDisplayName(),
       documentoColaborador: this.collaboratorDniForPdf(),
+      monedaSimbolo: this.currencySymbol,
       fechaGeneracion: new Date().toLocaleString('es-PE', {
         dateStyle: 'short',
         timeStyle: 'short',
@@ -3267,6 +3344,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const data: SingleExpenseAffidavitData = {
       fileBaseName: `dj_recibo_caja_${String(expense['_id'] || 'sin_id')}`,
       titulo: 'RECIBO DE CAJA',
+      monedaSimbolo: this.expenseSymbol(expense),
       colaborador: this.getCollaboratorDisplayName(),
       colaboradorDni: this.collaboratorDniForPdf(),
       empresaNombre: client?.businessName,
@@ -3285,6 +3363,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const data: SingleExpenseAffidavitData = {
       fileBaseName: `dj_otros_gastos_${String(expense['_id'] || 'sin_id')}`,
       titulo: 'OTROS GASTOS',
+      monedaSimbolo: this.expenseSymbol(expense),
       colaborador: String(expense['declaracionJuradaFirmante'] || this.getCollaboratorDisplayName()),
       colaboradorDni: this.collaboratorDniForPdf(),
       empresaNombre: client?.businessName,

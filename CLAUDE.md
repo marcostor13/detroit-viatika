@@ -172,8 +172,18 @@ permissions: {
   modules: string[]       // módulos accesibles: 'tesoreria', 'invoice-approval', etc.
   canApproveL1: boolean   // puede aprobar anticipos en nivel 1
   canApproveL2: boolean   // puede aprobar anticipos en nivel 2 y registrar pagos
+  projectIds: string[]    // centros de costo asignados
+  primaryProjectId?: string
+  // Aprobadores propios por nivel (regla 1.10). Cuando hay al menos uno,
+  // sustituyen a los del centro de costo principal al armar la cadena de
+  // solicitudes y rendiciones. Vacío = se usan los del centro de costo.
+  approverLevels?: { level: number; userIds: string[] }[]
 }
 ```
+
+`approverLevels` NO viaja en el JWT: lo lee el motor de cadena desde la base
+(`UserService.findTransactionalProfile`). Ver `docs/ReglasAprobacionViaticos-Analisis.md`
+(regla 1.10) y `viatika-back/src/modules/advance/approval-chain.util.ts`.
 
 ### Módulos disponibles para asignar
 

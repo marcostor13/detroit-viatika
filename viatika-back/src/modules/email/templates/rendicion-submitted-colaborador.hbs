@@ -21,7 +21,7 @@
 <body>
   <div class="container">
     <div class="header">
-      <img src="{{logoUrl}}" alt="Viatika" class="logo">
+      <img src="{{logoUrl}}" alt="Viatika" class="logo" width="150" style="width:150px;max-width:150px;height:auto;">
     </div>
     <div class="content">
       <h1 class="heading">Rendición enviada</h1>
@@ -34,17 +34,17 @@
         </div>
         {{#if hasDirectaDeposit}}
         <div class="detail-item">
-          <span class="detail-label">Total depositado:</span> S/ {{depositFormatted}}
+          <span class="detail-label">Total depositado:</span> {{currencySymbol}} {{depositFormatted}}
         </div>
         <div class="detail-item">
-          <span class="detail-label">Total gastado:</span> S/ {{expenseTotalFormatted}}
+          <span class="detail-label">Total gastado:</span> {{currencySymbol}} {{expenseTotalFormatted}}
         </div>
         <div class="detail-item">
-          <span class="detail-label">Saldo disponible:</span> S/ {{saldoFormatted}}
+          <span class="detail-label">Saldo disponible:</span> {{currencySymbol}} {{saldoFormatted}}
         </div>
         {{else}}
         <div class="detail-item">
-          <span class="detail-label">Presupuesto:</span> S/ {{budgetFormatted}}
+          <span class="detail-label">Presupuesto:</span> {{currencySymbol}} {{budgetFormatted}}
         </div>
         {{/if}}
         <div class="detail-item">

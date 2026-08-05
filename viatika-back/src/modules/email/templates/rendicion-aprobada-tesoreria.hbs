@@ -27,7 +27,7 @@
   <div class='wrap'>
     <div class='card'>
       <div class='head'>
-        {{#if logoUrl}}<img src='{{logoUrl}}' alt='Viatika' />{{/if}}
+        {{#if logoUrl}}<img src="{{logoUrl}}" alt="Viatika" class="logo" width="150" style="width:150px;max-width:150px;height:auto;">{{/if}}
       </div>
       <div class='content'>
         <span class='badge'>Aprobada por Contabilidad</span>
@@ -40,7 +40,7 @@
           <div class='row'><strong>Colaborador:</strong> {{collaboratorName}}</div>
           {{#if collaboratorDni}}<div class='row'><strong>DNI:</strong> {{collaboratorDni}}</div>{{/if}}
           <div class='row'><strong>Monto aprobado:</strong></div>
-          <div class='amount'>S/ {{budgetFormatted}}</div>
+          <div class='amount'>{{currencySymbol}} {{budgetFormatted}}</div>
         </div>
 
         {{#if hasBankAccount}}

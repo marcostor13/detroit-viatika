@@ -9,6 +9,7 @@ import {
   formatFechaEmisionDdMmYyyy,
   resolveExpenseFechaEmision,
 } from '../../../utils/fecha-emision.util';
+import { DEFAULT_MONEDA, monedaSymbol } from '../../../constants/moneda';
 
 // ─── Tipos auxiliares ─────────────────────────────────────────────────────────
 type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos';
@@ -225,6 +226,53 @@ export class GastoDetalleComponent implements OnInit {
     return String(v);
   }
 
+  /** True cuando el gasto se emitió en una moneda distinta de la base. */
+  isMonedaExtranjera(exp: Record<string, unknown>): boolean {
+    return this.tieneConversionBase(exp) || this.tieneConversionReporte(exp);
+  }
+
+  /** El comprobante se emitió en una moneda distinta a la base de la empresa. */
+  tieneConversionBase(exp: Record<string, unknown>): boolean {
+    return (
+      !!exp['moneda'] && exp['moneda'] !== DEFAULT_MONEDA && !!exp['montoBase']
+    );
+  }
+
+  /**
+   * El comprobante se emitió en una moneda distinta a la de la rendición. Es el
+   * caso de una boleta en soles dentro de un viático en dólares: no es moneda
+   * extranjera respecto a la empresa, pero sí lleva conversión y hay que
+   * mostrar con qué tipo de cambio se calculó.
+   */
+  tieneConversionReporte(exp: Record<string, unknown>): boolean {
+    return (
+      !!exp['monedaReporte'] &&
+      exp['monedaReporte'] !== exp['moneda'] &&
+      exp['montoReporte'] != null
+    );
+  }
+
+  /** Importe convertido a la moneda base, que es el que consume el resto del sistema. */
+  montoBaseText(exp: Record<string, unknown>): string {
+    const monto = Number(exp['montoBase']);
+    if (!monto) return '—';
+    return `${monedaSymbol(DEFAULT_MONEDA)} ${monto.toFixed(2)}`;
+  }
+
+  /** Importe expresado en la moneda de la rendición. */
+  montoReporteText(exp: Record<string, unknown>): string {
+    const monto = Number(exp['montoReporte']);
+    if (!monto) return '—';
+    return `${monedaSymbol(exp['monedaReporte'] as string)} ${monto.toFixed(2)}`;
+  }
+
+  /** Importe tal como se emitió, en la moneda del comprobante. */
+  montoOriginalText(exp: Record<string, unknown>): string {
+    const monto = Number(exp['total']);
+    if (!monto) return '—';
+    return `${monedaSymbol(exp['moneda'] as string)} ${monto.toFixed(2)}`;
+  }
+
 emissionDateText(exp: Record<string, unknown>): string {
     return formatFechaEmisionDdMmYyyy(resolveExpenseFechaEmision(exp as any));
   }
@@ -390,11 +438,23 @@ emissionDateText(exp: Record<string, unknown>): string {
       .join(' / ');
   }
 
+  /**
+   * Origen del paso (regla 1.10): los aprobadores propios del colaborador o los
+   * del centro de costo del comprobante. Los pasos creados antes de la regla
+   * 1.10 no traen `source` y se muestran como del centro de costo.
+   */
+  private chainStepOrigin(step: Record<string, unknown> | undefined): string {
+    return step?.['source'] === 'user'
+      ? 'Aprobador del colaborador'
+      : 'Aprobador del centro de costo';
+  }
+
   /** Cadena de niveles del comprobante, con estado y aprobador(es) de cada paso. Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
   chainSteps(exp: Record<string, unknown>): Array<{
     level: number;
     state: 'completado' | 'pendiente';
     approverNames: string;
+    origin: string;
     escalatedFrom?: number;
     approvedBy?: string;
     date?: string;
@@ -408,6 +468,7 @@ emissionDateText(exp: Record<string, unknown>): string {
         level: step.level,
         state,
         approverNames: this.chainStepApproverNames(step),
+        origin: this.chainStepOrigin(step),
         escalatedFrom: step.escalatedFrom,
         approvedBy: entry?.approvedBy,
         date: entry?.date,

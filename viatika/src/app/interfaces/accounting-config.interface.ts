@@ -10,6 +10,8 @@ export interface IBankAccount {
   moneda?: string;
   cci?: string;
   activo?: boolean;
+  /** Cuenta de cargo para los pagos masivos en su moneda. Solo una por moneda. */
+  esCuentaPagos?: boolean;
 }
 
 export interface IAccountingConfig {

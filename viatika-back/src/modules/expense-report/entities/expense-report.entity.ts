@@ -9,12 +9,19 @@ import {
   ReturnRecord,
 } from '../../advance/entities/advance.entity'
 import { ChainStep } from '../../advance/approval-chain.util'
+import { DEFAULT_MONEDA } from '../../../common/moneda.constants'
 
 /** Forma Mongoose de un `ChainStep` (ver approval-chain.util.ts) para subdocumentos embebidos. */
 export const chainStepSchemaDefinition = {
   level: { type: Number, required: true },
   projectId: { type: Types.ObjectId, ref: 'Project', required: true },
   projectRole: { type: String, enum: ['principal', 'seleccionado'], required: true },
+  /**
+   * Origen de los aprobadores (regla 1.10): 'user' = niveles propios del
+   * colaborador, 'project' = niveles del centro de costo. Ausente en pasos
+   * creados antes de la regla 1.10; se interpreta como 'project'.
+   */
+  source: { type: String, enum: ['user', 'project'], required: false },
   approverIds: { type: [{ type: Types.ObjectId, ref: 'User' }], default: [] },
   escalatedFrom: { type: Number, required: false },
   /** Aprobación en paralelo entre niveles: este paso específico ya fue resuelto. */
@@ -183,8 +190,14 @@ export interface ExpenseReportDocument extends Document {
   reopenHistory?: ReopenRecord[]
   // Campos exclusivos de viático
   viaticoAmount?: number
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
+  /** Moneda ISO del documento ('PEN' / 'USD'). Default 'PEN'. */
   viaticoMoneda?: string
+  /** `viaticoAmount` convertido a la moneda base, congelado al crear. */
+  viaticoMontoBase?: number
+  /** TC moneda del viático → moneda base, congelado al crear. */
+  tipoCambio?: number
+  /** Fecha (YYYY-MM-DD) de la tasa aplicada. */
+  tcFecha?: string
   viaticoRequiredLevels?: number
   viaticoApprovalLevel?: number
   /** Cadena por centro de costo (N2 principal/seleccionado), snapshot al crear la solicitud. */
@@ -493,9 +506,24 @@ export class ExpenseReport {
   @Prop({ type: Number, required: false })
   viaticoAmount?: number
 
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' para registros pre-existentes. */
-  @Prop({ type: String, default: '01' })
+  /** Moneda ISO del documento ('PEN' / 'USD'). Default 'PEN'. */
+  @Prop({ type: String, default: DEFAULT_MONEDA })
   viaticoMoneda?: string
+
+  /** `viaticoAmount` convertido a la moneda base. Congelado al crear la solicitud. */
+  @Prop({ type: Number, required: false })
+  viaticoMontoBase?: number
+
+  /**
+   * TC moneda del viático → moneda base, congelado al crear la solicitud. Es el
+   * que usan los gastos de la rendición para expresarse en su moneda.
+   */
+  @Prop({ type: Number, required: false })
+  tipoCambio?: number
+
+  /** Fecha (YYYY-MM-DD) de la tasa aplicada al viático. */
+  @Prop({ type: String, required: false })
+  tcFecha?: string
 
   @Prop({ type: Number, default: 1 })
   viaticoRequiredLevels?: number

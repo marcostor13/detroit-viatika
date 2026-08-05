@@ -89,7 +89,7 @@ export interface RendicionExportData {
   startDate?: string;
   endDate?: string;
   items?: RendicionExportBudgetItemRow[];
-  /** Código de moneda SUNAT del viático vinculado ('01' soles, '02' dólares). Default '01'. */
+  /** Moneda ISO del viático vinculado ('PEN' / 'USD'). Default 'PEN'. */
   moneda?: string;
   signature?: string;
   approvedByName?: string;
@@ -141,6 +141,8 @@ export interface AffidavitExportRow {
 export interface AffidavitExportData {
   fileBaseName: string;
   tipo: 'viaticos_nacionales' | 'viajes_exterior';
+  /** Símbolo de la moneda declarada. La DJ al exterior va en dólares. */
+  monedaSimbolo?: string;
   empresaNombre: string;
   empresaRuc: string;
   colaborador: string;
@@ -253,6 +255,8 @@ export interface SolicitudFondosExportData {
 export interface SingleExpenseAffidavitData {
   fileBaseName: string;
   titulo: string;
+  /** Símbolo de la moneda declarada. La DJ al exterior va en dólares. */
+  monedaSimbolo?: string;
   colaborador: string;
   colaboradorDni?: string;
   empresaNombre?: string;
@@ -581,9 +585,12 @@ export class RendicionExportService {
       v.border = allBorder;
       r++;
     };
-    totalRow('TOTAL GASTOS', sumSoles, false);
-    totalRow('MONTO INICIAL ENTREGADO', montoInicial, false);
-    totalRow('SALDO (REEMB. / DEV.)', saldo, true);
+    // La columna SOLES lleva el equivalente contable; el pie va en la moneda de
+    // la rendición, que es la que el colaborador tiene que cuadrar.
+    const symRep = monedaSymbol(data.moneda);
+    totalRow(`TOTAL GASTOS (${symRep})`, data.totalGastado, false);
+    totalRow(`MONTO INICIAL ENTREGADO (${symRep})`, data.totalAnticipado, false);
+    totalRow(`SALDO (REEMB. / DEV.) (${symRep})`, data.saldoLibre, true);
 
     // --- Resumen de solicitud (presupuesto), si aplica ---
     if (data.items && data.items.length > 0) {
@@ -842,10 +849,13 @@ export class RendicionExportService {
     y += 4;
     doc.setFontSize(8);
     doc.setLineWidth(0.2);
+    // La columna SOLES lleva el equivalente contable; el pie va en la moneda de
+    // la rendición, que es la que el colaborador tiene que cuadrar.
+    const symRep = monedaSymbol(data.moneda);
     const totalRows: [string, number, boolean][] = [
-      ['TOTAL GASTOS', totalGastos, false],
-      ['MONTO INICIAL ENTREGADO', montoInicial, false],
-      ['SALDO (REEMB. / DEV.)', saldo, true],
+      [`TOTAL GASTOS (${symRep})`, data.totalGastado ?? totalGastos, false],
+      [`MONTO INICIAL ENTREGADO (${symRep})`, data.totalAnticipado ?? montoInicial, false],
+      [`SALDO (REEMB. / DEV.) (${symRep})`, data.saldoLibre ?? saldo, true],
     ];
     for (const [label, val, isSaldo] of totalRows) {
       // Celda etiqueta (fondo blanco; solo el SALDO lleva el fondo de la marca).
@@ -1135,10 +1145,11 @@ export class RendicionExportService {
     doc.text(`RUC: ${data.empresaRuc}`, 14, 38);
     doc.text(`Colaborador: ${data.colaborador}`, 14, 44);
     doc.text(`Documento: ${data.documentoColaborador || '-'}`, 14, 50);
+    const djSym = data.monedaSimbolo || 'S/';
 
     autoTable(doc, {
       startY: 58,
-      head: [['Fecha', 'Documento', 'Concepto', 'Categoria', 'Monto (S/)']],
+      head: [['Fecha', 'Documento', 'Concepto', 'Categoria', `Monto (${djSym})`]],
       body: data.rows.map(r => [r.fecha, r.documento, r.concepto, r.categoria, r.monto.toFixed(2)]),
       theme: 'grid',
       headStyles: { fillColor: [145, 47, 44], textColor: 255 },
@@ -1149,7 +1160,7 @@ export class RendicionExportService {
 
     const y = afterTable(doc) + 8;
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total declarado: S/ ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
+    doc.text(`Total declarado: ${djSym} ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.text(`Fecha de generacion: ${data.fechaGeneracion}`, 14, y + 8);
 
@@ -1718,6 +1729,7 @@ export class RendicionExportService {
     if (data.empresaNombre) { doc.text(`Empresa: ${data.empresaNombre}`, 14, y); y += 6; }
     doc.text(`Colaborador: ${data.colaborador}`, 14, y); y += 6;
     if (data.colaboradorDni) { doc.text(`DNI: ${data.colaboradorDni}`, 14, y); y += 6; }
+    const djSym = data.monedaSimbolo || 'S/';
     doc.text(`Fecha: ${data.fechaGeneracion}`, 14, y); y += 10;
 
     let tableRendered = false;
@@ -1755,7 +1767,7 @@ export class RendicionExportService {
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total declarado: S/ ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
+    doc.text(`Total declarado: ${djSym} ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     y += 20;

@@ -12,6 +12,7 @@ import { UserModule } from '../user/user.module'
 import { EmailModule } from '../email/email.module'
 import { NotificationsModule } from '../notifications/notifications.module'
 import { ClientModule } from '../client/client.module'
+import { AccountingConfigModule } from '../accounting-config/accounting-config.module'
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ClientModule } from '../client/client.module'
     EmailModule,
     NotificationsModule,
     ClientModule,
+    AccountingConfigModule,
   ],
   controllers: [AdvanceController],
   providers: [AdvanceService, PaymentBatchService],

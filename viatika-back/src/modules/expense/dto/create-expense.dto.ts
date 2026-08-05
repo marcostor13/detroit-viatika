@@ -39,6 +39,15 @@ export class CreateExpenseDto {
   @IsOptional()
   imageUrl?: string
 
+  /**
+   * Moneda ISO del comprobante ('PEN' / 'USD'). Si se omite se asume la moneda
+   * base de la empresa: un comprobante emitido en Perú va en soles aunque la
+   * rendición sea en dólares, y se convierte al mostrarlo.
+   */
+  @IsString()
+  @IsOptional()
+  moneda?: string
+
   @IsString()
   @IsOptional()
   data?: string

@@ -145,7 +145,7 @@ describe('approval-chain.util', () => {
     it('uses the level as-is when the creator is not among its approvers', () => {
       const p = project([{ level: 2, userIds: [a1, a2] }])
       const step = resolveApprovalStep({ project: p, requestedLevel: 2, creatorId: u1.toString(), projectRole: 'seleccionado' })
-      expect(step).toEqual({ level: 2, projectId, projectRole: 'seleccionado', approverIds: [a1, a2], escalatedFrom: undefined })
+      expect(step).toEqual({ level: 2, projectId, projectRole: 'seleccionado', source: 'project', approverIds: [a1, a2], escalatedFrom: undefined })
     })
 
     it('escalates to the next existing level when the creator is the sole approver — regla 1.5', () => {
@@ -154,13 +154,13 @@ describe('approval-chain.util', () => {
         { level: 3, userIds: [a2] },
       ])
       const step = resolveApprovalStep({ project: p, requestedLevel: 2, creatorId: a1.toString(), projectRole: 'principal' })
-      expect(step).toEqual({ level: 3, projectId, projectRole: 'principal', approverIds: [a2], escalatedFrom: 2 })
+      expect(step).toEqual({ level: 3, projectId, projectRole: 'principal', source: 'project', approverIds: [a2], escalatedFrom: 2 })
     })
 
     it('uses the other approvers of the same level when the creator is one of several and there is no higher level', () => {
       const p = project([{ level: 2, userIds: [a1, a2] }])
       const step = resolveApprovalStep({ project: p, requestedLevel: 2, creatorId: a1.toString(), projectRole: 'principal' })
-      expect(step).toEqual({ level: 2, projectId, projectRole: 'principal', approverIds: [a2], escalatedFrom: undefined })
+      expect(step).toEqual({ level: 2, projectId, projectRole: 'principal', source: 'project', approverIds: [a2], escalatedFrom: undefined })
     })
 
     it('omits the step when the creator is the sole approver and there is no higher level', () => {
@@ -175,7 +175,7 @@ describe('approval-chain.util', () => {
         { level: 3, userIds: [a2] },
       ])
       const step = resolveApprovalStep({ project: p, requestedLevel: 1, creatorId: a1.toString(), projectRole: 'principal' })
-      expect(step).toEqual({ level: 3, projectId, projectRole: 'principal', approverIds: [a2], escalatedFrom: 1 })
+      expect(step).toEqual({ level: 3, projectId, projectRole: 'principal', source: 'project', approverIds: [a2], escalatedFrom: 1 })
     })
   })
 
@@ -196,7 +196,7 @@ describe('approval-chain.util', () => {
         creatorId: u1.toString(),
         projectById: projectById({ [projB]: [{ level: 2, userIds: [a2] }] }),
       })
-      expect(chain).toEqual([{ level: 2, projectId: new Types.ObjectId(projB), projectRole: 'seleccionado', approverIds: [a2], escalatedFrom: undefined }])
+      expect(chain).toEqual([{ level: 2, projectId: new Types.ObjectId(projB), projectRole: 'seleccionado', source: 'project', approverIds: [a2], escalatedFrom: undefined }])
     })
 
     it('2 steps (N2 principal -> N2 selected) when not assigned', () => {
@@ -271,7 +271,7 @@ describe('approval-chain.util', () => {
         creatorId: u1.toString(),
         projectById: projectById({ [projA]: [{ level: 2, userIds: [a2] }] }),
       })
-      expect(chain).toEqual([{ level: 2, projectId: new Types.ObjectId(projA), projectRole: 'principal', approverIds: [a2], escalatedFrom: undefined }])
+      expect(chain).toEqual([{ level: 2, projectId: new Types.ObjectId(projA), projectRole: 'principal', source: 'project', approverIds: [a2], escalatedFrom: undefined }])
     })
 
     it('adds N2(selected) as a third step when the expense project is not assigned', () => {
@@ -298,6 +298,187 @@ describe('approval-chain.util', () => {
         projectById: projectById({ [projA]: [] }),
       })
       expect(chain).toEqual([])
+    })
+  })
+
+  describe('aprobadores propios del colaborador (regla 1.10)', () => {
+    const projA = new Types.ObjectId().toString() // principal / asignado
+    const projB = new Types.ObjectId().toString() // seleccionado NO asignado
+    const o1 = new Types.ObjectId() // N1 del colaborador
+    const o2 = new Types.ObjectId() // N2 del colaborador
+    const o3 = new Types.ObjectId() // N3 del colaborador
+
+    function projectById(map: Record<string, { level: number; userIds: Types.ObjectId[] }[]>) {
+      return new Map(
+        Object.entries(map).map(([id, levels]) => [id, { _id: id, approverLevels: levels }])
+      )
+    }
+
+    const projectLevels = projectById({
+      [projA]: [
+        { level: 1, userIds: [a1] },
+        { level: 2, userIds: [a2] },
+      ],
+      [projB]: [{ level: 2, userIds: [a3] }],
+    })
+
+    describe('RENDICIÓN', () => {
+      it('usa N1/N2 del colaborador en vez de los del centro principal cuando el centro está asignado', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [
+            { level: 1, userIds: [o1] },
+            { level: 2, userIds: [o2] },
+          ],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[o1], [o2]])
+        expect(chain.map(s => s.source)).toEqual(['user', 'user'])
+        // El paso sigue anclado al centro principal como contexto.
+        expect(chain.every(s => s.projectId.toString() === projA)).toBe(true)
+      })
+
+      it('añade N2 del centro seleccionado al final cuando el centro NO está asignado', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projB,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [
+            { level: 1, userIds: [o1] },
+            { level: 2, userIds: [o2] },
+          ],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[o1], [o2], [a3]])
+        expect(chain.map(s => s.source)).toEqual(['user', 'user', 'project'])
+      })
+
+      it('notifica a TODOS los aprobadores de un nivel con varios configurados', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [{ level: 2, userIds: [o1, o2, o3] }],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[o1, o2, o3]])
+      })
+
+      it('cae a los niveles del centro principal cuando el colaborador no tiene ninguno', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[a1], [a2]])
+        expect(chain.map(s => s.source)).toEqual(['project', 'project'])
+      })
+
+      it('cae al centro principal si los niveles del colaborador existen pero están vacíos', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [{ level: 1, userIds: [] }],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[a1], [a2]])
+      })
+
+      it('omite N1 sin renumerar cuando el colaborador solo tiene N2 — regla 1.6', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [{ level: 2, userIds: [o2] }],
+        })
+        expect(chain.map(s => s.level)).toEqual([2])
+        expect(chain[0].source).toBe('user')
+      })
+
+      it('escala al siguiente nivel propio cuando el creador es su propio N1 — regla 1.5', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: o1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [
+            { level: 1, userIds: [o1] },
+            { level: 2, userIds: [o2] },
+          ],
+        })
+        // N1 escala a N2 y colapsa con el N2 propio: un solo paso.
+        expect(chain.map(s => s.level)).toEqual([2])
+        expect(chain[0].approverIds).toEqual([o2])
+      })
+
+      it('colapsa el N2 propio con el N2 del centro seleccionado cuando son el mismo conjunto', () => {
+        const chain = buildRendicionChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projB,
+          creatorId: u1.toString(),
+          projectById: projectById({
+            [projA]: [{ level: 1, userIds: [a1] }],
+            [projB]: [{ level: 2, userIds: [o2] }],
+          }),
+          ownerApproverLevels: [{ level: 2, userIds: [o2] }],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[o2]])
+      })
+    })
+
+    describe('SOLICITUD', () => {
+      it('usa el N2 del colaborador cuando el centro seleccionado está asignado', () => {
+        const chain = buildSolicitudChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [{ level: 2, userIds: [o2, o3] }],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[o2, o3]])
+        expect(chain[0].source).toBe('user')
+      })
+
+      it('N2 del colaborador -> N2 del centro seleccionado cuando NO está asignado', () => {
+        const chain = buildSolicitudChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projB,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+          ownerApproverLevels: [{ level: 2, userIds: [o2] }],
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[o2], [a3]])
+        expect(chain.map(s => s.source)).toEqual(['user', 'project'])
+      })
+
+      it('cae al N2 del centro seleccionado cuando el colaborador no tiene niveles', () => {
+        const chain = buildSolicitudChain({
+          assignedProjectIds: [projA],
+          selectedProjectId: projA,
+          creatorId: u1.toString(),
+          projectById: projectLevels,
+        })
+        expect(chain.map(s => s.approverIds)).toEqual([[a2]])
+        expect(chain[0].source).toBe('project')
+      })
+
+      it('sigue exigiendo que el centro seleccionado exista aunque el colaborador tenga niveles propios', () => {
+        expect(() =>
+          buildSolicitudChain({
+            assignedProjectIds: [projA],
+            selectedProjectId: new Types.ObjectId().toString(),
+            creatorId: u1.toString(),
+            projectById: projectLevels,
+            ownerApproverLevels: [{ level: 2, userIds: [o2] }],
+          })
+        ).toThrow(BadRequestException)
+      })
     })
   })
 })

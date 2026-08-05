@@ -501,7 +501,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Depositado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ directaDeposited | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ directaDeposited | number:'1.2-2' }}</p>
           @if (report.directaDeposit?.titular || report.directaDeposit?.operationNumber || report.directaDeposit?.operationDate || report.directaDeposit?.operationTime) {
           <div class="mt-3 border-t border-divider pt-2 space-y-1">
             @if (report.directaDeposit?.titular) {
@@ -529,7 +529,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Gastado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</p>
         </div>
         <!-- Saldo disponible -->
         <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
@@ -542,7 +542,7 @@
             <p class="font-medium text-tertiary">Saldo Disponible</p>
           </div>
           <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': directaSaldo >= 0, 'text-error': directaSaldo < 0}">
-            S/ {{ directaSaldo | number:'1.2-2' }}
+            {{ currencySymbol }} {{ directaSaldo | number:'1.2-2' }}
           </p>
         </div>
       </div>
@@ -557,7 +557,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Gastado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</p>
         </div>
       </div>
       } @else {
@@ -572,27 +572,27 @@
             </div>
             <p class="font-medium text-tertiary">Presupuesto</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalAnticipado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalAnticipado | number:'1.2-2' }}</p>
           @if (paidAdvances.length > 0) {
             <ul class="mt-3 space-y-2 border-t border-divider pt-2">
               @for (adv of paidAdvances; track adv._id) {
                 <li class="text-xs">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-tertiary truncate">{{ adv.place || adv.description }}</span>
-                    <span class="tabular-nums font-medium text-secondary shrink-0">S/ {{ advancePaidAmount(adv) | number:'1.2-2' }}</span>
+                    <span class="tabular-nums font-medium text-secondary shrink-0">{{ currencySymbol }} {{ advancePaidAmount(adv) | number:'1.2-2' }}</span>
                   </div>
                   @if (advancePayments(adv).length > 1) {
                     <ul class="mt-1 ml-2 pl-2 border-l border-divider space-y-0.5">
                       @for (p of advancePayments(adv); track $index) {
                         <li class="flex items-center justify-between gap-2 text-[11px] text-tertiary/70">
                           <span>Pago {{ $index + 1 }}@if (p.transferDate) { · {{ p.transferDate | date:'dd/MM/yyyy' }} }</span>
-                          <span class="tabular-nums shrink-0">S/ {{ p.amount | number:'1.2-2' }}</span>
+                          <span class="tabular-nums shrink-0">{{ currencySymbol }} {{ p.amount | number:'1.2-2' }}</span>
                         </li>
                       }
                     </ul>
                   }
                   @if (advancePaidAmount(adv) < adv.amount) {
-                    <p class="mt-0.5 text-[11px] text-warning-ink">Pago parcial · falta S/ {{ (adv.amount - advancePaidAmount(adv)) | number:'1.2-2' }}</p>
+                    <p class="mt-0.5 text-[11px] text-warning-ink">Pago parcial · falta {{ currencySymbol }} {{ (adv.amount - advancePaidAmount(adv)) | number:'1.2-2' }}</p>
                   }
                 </li>
               }
@@ -610,7 +610,7 @@
             </div>
             <p class="font-medium text-tertiary">Total Gastado</p>
           </div>
-          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</p>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</p>
         </div>
 
         <!-- Remaining balance -->
@@ -624,7 +624,7 @@
             <p class="font-medium text-tertiary">Saldo Disponible</p>
           </div>
           <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': saldoLibre >= 0, 'text-error': saldoLibre < 0}">
-            S/ {{ saldoLibre | number:'1.2-2' }}
+            {{ currencySymbol }} {{ saldoLibre | number:'1.2-2' }}
           </p>
         </div>
       </div>
@@ -691,18 +691,18 @@
                       @for (item of report.items; track $index) {
                         <tr class="hover:bg-background/50 transition-colors">
                           <td class="px-4 py-3 font-medium text-secondary">{{ item.description }}</td>
-                          <td class="px-4 py-3 text-center text-tertiary">S/ {{ item.amount | number:'1.2-2' }}</td>
+                          <td class="px-4 py-3 text-center text-tertiary">{{ currencySymbol }} {{ item.amount | number:'1.2-2' }}</td>
                           <td class="px-4 py-3 text-center text-tertiary">{{ item.peopleCount }}</td>
-                          <td class="px-4 py-3 text-center text-tertiary">S/ {{ item.fuelAmount | number:'1.2-2' }}</td>
+                          <td class="px-4 py-3 text-center text-tertiary">{{ currencySymbol }} {{ item.fuelAmount | number:'1.2-2' }}</td>
                           <td class="px-4 py-3 text-center text-tertiary">{{ item.daysCount }}</td>
-                          <td class="px-4 py-3 text-right font-bold text-secondary">S/ {{ item.total | number:'1.2-2' }}</td>
+                          <td class="px-4 py-3 text-right font-bold text-secondary">{{ currencySymbol }} {{ item.total | number:'1.2-2' }}</td>
                         </tr>
                       }
                     </tbody>
                     <tfoot>
                       <tr class="bg-background/80 font-bold border-t border-divider">
                         <td colspan="5" class="px-4 py-3 text-right text-tertiary uppercase">Total Presupuestado</td>
-                        <td class="px-4 py-3 text-right text-primary">S/ {{ report.budget | number:'1.2-2' }}</td>
+                        <td class="px-4 py-3 text-right text-primary">{{ currencySymbol }} {{ report.budget | number:'1.2-2' }}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -719,7 +719,7 @@
         <div class="px-4 sm:px-6 py-4 border-b border-divider flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h2 class="text-base font-bold text-secondary">Viáticos Solicitados</h2>
           <span class="text-sm font-semibold text-primary bg-primary/10 px-3 py-1.5 rounded-full w-fit">
-            Total aprobado: S/ {{ totalAnticipado | number:'1.2-2' }}
+            Total aprobado: {{ currencySymbol }} {{ totalAnticipado | number:'1.2-2' }}
           </span>
         </div>
         <div class="divide-y divide-divider">
@@ -739,7 +739,7 @@
               <p class="text-xs text-tertiary/70 mt-1">Solicitado el {{ adv.createdAt | date:'dd/MM/yyyy' }}</p>
             </div>
             <div class="flex flex-wrap items-center gap-2 sm:gap-3 sm:justify-end">
-              <span class="text-sm font-bold text-secondary">S/ {{ adv.amount | number:'1.2-2' }}</span>
+              <span class="text-sm font-bold text-secondary">{{ currencySymbol }} {{ adv.amount | number:'1.2-2' }}</span>
               <span [class]="ADVANCE_STATUS_COLORS[adv.status]" class="inline-flex px-2 py-0.5 rounded text-xs font-medium">
                 {{ ADVANCE_STATUS_LABELS[adv.status] }}
               </span>
@@ -786,7 +786,7 @@
         </div>
         <p class="text-xs text-secondary mb-1">
           Viático: <strong>{{ adv.description }}</strong> — Monto a devolver:
-          <strong class="text-error">S/ {{ adv.returnRecord?.amountDue | number:'1.2-2' }}</strong>
+          <strong class="text-error">{{ currencySymbol }} {{ adv.returnRecord?.amountDue | number:'1.2-2' }}</strong>
         </p>
         <p class="text-xs text-tertiary">
           Vencimiento: {{ adv.returnRecord?.dueDate | date:'dd/MM/yyyy' }}
@@ -834,7 +834,7 @@
             <p><span class="text-tertiary">Fecha/hora operación:</span> {{ report.reimbursementPaymentInfo.operationDate }}@if (report.reimbursementPaymentInfo.operationTime) { · {{ report.reimbursementPaymentInfo.operationTime }} }</p>
           }
           @if (report.reimbursementPaymentInfo.scannedAmount) {
-            <p><span class="text-tertiary">Monto detectado:</span> S/ {{ report.reimbursementPaymentInfo.scannedAmount | number:'1.2-2' }}</p>
+            <p><span class="text-tertiary">Monto detectado:</span> {{ settlementSymbol }} {{ report.reimbursementPaymentInfo.scannedAmount | number:'1.2-2' }}</p>
           }
         </div>
         }
@@ -864,7 +864,7 @@
         <div class="text-sm text-secondary space-y-1 mb-3">
           <p><span class="text-tertiary">Fecha de depósito:</span> {{ formatShortDate(report.returnVoucher.depositDate) }}</p>
           @if (report.returnVoucher.amountReturned) {
-            <p><span class="text-tertiary">Monto devuelto:</span> <strong>S/ {{ report.returnVoucher.amountReturned | number:'1.2-2' }}</strong></p>
+            <p><span class="text-tertiary">Monto devuelto:</span> <strong>{{ settlementSymbol }} {{ report.returnVoucher.amountReturned | number:'1.2-2' }}</strong></p>
           }
           @if (report.returnVoucher.bankOrigin) {
             <p><span class="text-tertiary">Banco origen:</span> {{ report.returnVoucher.bankOrigin }}</p>
@@ -879,7 +879,7 @@
             <p><span class="text-tertiary">Fecha/hora operación:</span> {{ report.returnVoucher.operationDate }}@if (report.returnVoucher.operationTime) { · {{ report.returnVoucher.operationTime }} }</p>
           }
           @if (report.returnVoucher.scannedAmount) {
-            <p><span class="text-tertiary">Monto detectado:</span> S/ {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
+            <p><span class="text-tertiary">Monto detectado:</span> {{ settlementSymbol }} {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
           }
           <p><span class="text-tertiary">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
         </div>
@@ -896,7 +896,7 @@
         <h3 class="font-bold text-error mb-1 text-sm">Devolución de saldo pendiente</h3>
         <p class="text-sm text-secondary mb-4">
           Tienes un saldo a devolver a la empresa de
-          <strong class="text-error">S/ {{ saldoLibre | number:'1.2-2' }}</strong>.
+          <strong class="text-error">{{ currencySymbol }} {{ saldoLibre | number:'1.2-2' }}</strong>.
           Realiza el depósito a la cuenta de la empresa y adjunta el comprobante.
         </p>
         <div class="flex flex-wrap gap-3">
@@ -914,7 +914,7 @@
         <h3 class="font-bold text-warning-ink mb-1 text-sm">Esperando comprobante de devolución</h3>
         <p class="text-sm text-secondary">
           Esta rendición tiene un saldo a devolver de
-          <strong class="text-warning-ink">S/ {{ saldoLibre | number:'1.2-2' }}</strong>.
+          <strong class="text-warning-ink">{{ currencySymbol }} {{ saldoLibre | number:'1.2-2' }}</strong>.
           El colaborador debe adjuntar el comprobante de depósito antes de que sea posible cerrar la rendición definitivamente.
         </p>
       </div>
@@ -926,7 +926,7 @@
         <h3 class="font-bold text-success-ink mb-1 text-sm">Reembolso al colaborador pendiente</h3>
         <p class="text-sm text-secondary mb-4">
           La rendición tiene un saldo a favor del colaborador de
-          <strong class="text-success-ink">S/ {{ (saldoLibre < 0 ? saldoLibre * -1 : saldoLibre) | number:'1.2-2' }}</strong>.
+          <strong class="text-success-ink">{{ currencySymbol }} {{ (saldoLibre < 0 ? saldoLibre * -1 : saldoLibre) | number:'1.2-2' }}</strong>.
           Adjunta el comprobante de pago antes de cerrar la rendición definitivamente.
         </p>
         <button (click)="openAdminReembolsoModal()"
@@ -1064,7 +1064,12 @@
                   <span class="text-xs text-tertiary truncate">{{ getExpenseDate(expense) }}</span>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
-                  <p class="text-sm font-semibold text-secondary tabular-nums">S/ {{ expense.total | number:'1.2-2' }}</p>
+                  <p class="text-sm font-semibold text-secondary tabular-nums">
+                    {{ currencySymbol }} {{ expenseAmountInReportCurrency(expense) | number:'1.2-2' }}
+                    @if (isExpenseForeign(expense)) {
+                    <span class="block text-[11px] font-normal text-tertiary">{{ expenseOriginalText(expense) }}</span>
+                    }
+                  </p>
                   @if (getExpenseAmountEdited(expense)) {
                   <div class="relative">
                     <button type="button"
@@ -1080,7 +1085,7 @@
                       (click)="$event.stopPropagation()">
                       <p class="font-semibold">Monto editado</p>
                       @if (getExpenseOriginalOcrTotal(expense) !== null) {
-                        <p class="text-tertiary/70 mt-0.5">OCR: S/ {{ getExpenseOriginalOcrTotal(expense)! | number:'1.2-2' }}</p>
+                        <p class="text-tertiary/70 mt-0.5">OCR: {{ expenseSymbol(expense) }} {{ getExpenseOriginalOcrTotal(expense)! | number:'1.2-2' }}</p>
                       }
                     </div>
                     }
@@ -1252,7 +1257,7 @@
                         <p class="text-xs text-tertiary/70 truncate mt-0.5">{{ row['origen'] || '—' }} → {{ row['destino'] || '—' }}</p>
                         }
                       </div>
-                      <p class="text-xs font-semibold text-secondary tabular-nums shrink-0">S/ {{ mobilityRowTotal(row) | number:'1.2-2' }}</p>
+                      <p class="text-xs font-semibold text-secondary tabular-nums shrink-0">{{ expenseSymbol(row) }} {{ mobilityRowTotal(row) | number:'1.2-2' }}</p>
                     </div>
                   </div>
                   }
@@ -1329,7 +1334,12 @@
                   <!-- Monto -->
                   <td class="px-3 py-3 text-right whitespace-nowrap font-medium tabular-nums">
                     <div class="flex items-center justify-end gap-1">
-                      S/ {{ expense.total | number:'1.2-2' }}
+                      <span>
+                        {{ currencySymbol }} {{ expenseAmountInReportCurrency(expense) | number:'1.2-2' }}
+                        @if (isExpenseForeign(expense)) {
+                        <span class="block text-[11px] font-normal text-tertiary">{{ expenseOriginalText(expense) }}</span>
+                        }
+                      </span>
                       @if (getExpenseAmountEdited(expense)) {
                       <div class="relative">
                         <button type="button"
@@ -1345,7 +1355,7 @@
                           (click)="$event.stopPropagation()">
                           <p class="font-semibold">Monto editado</p>
                           @if (getExpenseOriginalOcrTotal(expense) !== null) {
-                            <p class="text-tertiary/70 mt-0.5">OCR: S/ {{ getExpenseOriginalOcrTotal(expense)! | number:'1.2-2' }}</p>
+                            <p class="text-tertiary/70 mt-0.5">OCR: {{ expenseSymbol(expense) }} {{ getExpenseOriginalOcrTotal(expense)! | number:'1.2-2' }}</p>
                           }
                         </div>
                         }
@@ -1538,7 +1548,7 @@
                             <th class="px-2 py-1.5 font-medium whitespace-nowrap">Fecha</th>
                             <th class="px-2 py-1.5 font-medium hidden md:table-cell">Gestión</th>
                             <th class="px-2 py-1.5 font-medium hidden xl:table-cell whitespace-nowrap">Origen → Destino</th>
-                            <th class="px-2 py-1.5 font-medium text-right whitespace-nowrap">Total (S/)</th>
+                            <th class="px-2 py-1.5 font-medium text-right whitespace-nowrap">Total</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-amber-100/80">
@@ -1820,8 +1830,8 @@
       <!-- Resumen común -->
       <section class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         <div>
-          <p class="text-xs text-tertiary/70">Monto (S/)</p>
-          <p class="font-semibold text-secondary tabular-nums text-base">S/ {{ getExpenseTotal(exp) | number:'1.2-2' }}</p>
+          <p class="text-xs text-tertiary/70">Monto </p>
+          <p class="font-semibold text-secondary tabular-nums text-base">{{ expenseSymbol(exp) }} {{ getExpenseTotal(exp) | number:'1.2-2' }}</p>
         </div>
         <div>
           <p class="text-xs text-tertiary/70">Estado del comprobante</p>
@@ -2146,33 +2156,33 @@
         @if (!report.isDirecta) {
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Presupuesto asignado</span>
-          <span class="font-semibold text-secondary">S/ {{ totalAnticipado | number:'1.2-2' }}</span>
+          <span class="font-semibold text-secondary">{{ currencySymbol }} {{ totalAnticipado | number:'1.2-2' }}</span>
         </div>
         }
         @if (hasDirectaDeposit) {
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Total depositado</span>
-          <span class="font-semibold text-secondary">S/ {{ directaDeposited | number:'1.2-2' }}</span>
+          <span class="font-semibold text-secondary">{{ currencySymbol }} {{ directaDeposited | number:'1.2-2' }}</span>
         </div>
         }
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Total gastado</span>
           <span class="font-semibold" [class.text-error]="!report.isDirecta && totalGastado > totalAnticipado" [class.text-secondary]="report.isDirecta || totalGastado <= totalAnticipado">
-            S/ {{ totalGastado | number:'1.2-2' }}
+            {{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}
           </span>
         </div>
         @if (!report.isDirecta) {
         <div class="flex justify-between text-sm border-t border-divider pt-2 mt-2">
           <span class="text-tertiary">Saldo</span>
           <span class="font-bold" [class.text-success-ink]="saldoLibre >= 0" [class.text-error]="saldoLibre < 0">
-            S/ {{ saldoLibre | number:'1.2-2' }}
+            {{ currencySymbol }} {{ saldoLibre | number:'1.2-2' }}
           </span>
         </div>
         } @else if (hasDirectaDeposit) {
         <div class="flex justify-between text-sm border-t border-divider pt-2 mt-2">
           <span class="text-tertiary">Saldo disponible</span>
           <span class="font-bold" [class.text-success-ink]="directaSaldo >= 0" [class.text-error]="directaSaldo < 0">
-            S/ {{ directaSaldo | number:'1.2-2' }}
+            {{ currencySymbol }} {{ directaSaldo | number:'1.2-2' }}
           </span>
         </div>
         }
@@ -2193,7 +2203,7 @@
             }" class="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 mt-0.5">
               {{ getExpenseTypeLabel(expense) }}
             </span>
-            <span class="text-xs font-semibold text-secondary shrink-0">S/ {{ getExpenseTotal(expense) | number:'1.2-2' }}</span>
+            <span class="text-xs font-semibold text-secondary shrink-0">{{ expenseSymbol(expense) }} {{ getExpenseTotal(expense) | number:'1.2-2' }}</span>
           </div>
           <p class="text-xs text-tertiary mt-1 leading-relaxed">{{ getExpenseDescription(expense) }}</p>
         </div>
@@ -2251,11 +2261,11 @@
       </div>
       <div class="flex justify-between gap-4">
         <span class="text-tertiary">Presupuesto</span>
-        <span class="font-semibold text-secondary tabular-nums">S/ {{ totalAnticipado | number:'1.2-2' }}</span>
+        <span class="font-semibold text-secondary tabular-nums">{{ currencySymbol }} {{ totalAnticipado | number:'1.2-2' }}</span>
       </div>
       <div class="flex justify-between gap-4">
         <span class="text-tertiary">Total gastado</span>
-        <span class="font-semibold text-secondary tabular-nums">S/ {{ totalGastado | number:'1.2-2' }}</span>
+        <span class="font-semibold text-secondary tabular-nums">{{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}</span>
       </div>
       <div class="flex justify-between gap-4">
         <span class="text-tertiary">Comprobantes</span>
@@ -2537,7 +2547,7 @@
               <div class="min-w-0">
                 <p class="text-sm font-medium text-secondary">{{ getExpenseDescription(exp) }}</p>
                 <p class="text-xs text-tertiary">
-                  {{ getExpenseDate(exp) }} · {{ getPopulatedName(exp['categoryId']) }} · S/ {{ getExpenseTotal(exp) | number:'1.2-2' }}
+                  {{ getExpenseDate(exp) }} · {{ getPopulatedName(exp['categoryId']) }} · {{ expenseSymbol(exp) }} {{ getExpenseTotal(exp) | number:'1.2-2' }}
                 </p>
               </div>
             </label>
@@ -2865,7 +2875,7 @@
         <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Hora</span><span class="font-medium text-secondary text-right">{{ returnVoucherOperationTime() }}</span></div>
         }
         @if (returnVoucherScannedAmount()) {
-        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">S/ {{ returnVoucherScannedAmount() | number:'1.2-2' }}</span></div>
+        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">{{ currencySymbol }} {{ returnVoucherScannedAmount() | number:'1.2-2' }}</span></div>
         }
       </div>
       }
@@ -2877,7 +2887,7 @@
           class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
       </div>
       <div>
-        <label class="block text-xs font-medium text-secondary mb-1">Monto devuelto (S/) *</label>
+        <label class="block text-xs font-medium text-secondary mb-1">Monto devuelto ({{ currencySymbol }}) *</label>
         <input type="number" min="0" step="0.01" [value]="returnVoucherAmount()"
           (input)="returnVoucherAmount.set($any($event.target).value === '' ? null : +$any($event.target).value)"
           placeholder="0.00"
@@ -2969,12 +2979,12 @@
         <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Hora</span><span class="font-medium text-secondary text-right">{{ adminReembolsoOperationTime() }}</span></div>
         }
         @if (adminReembolsoScannedAmount()) {
-        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">S/ {{ adminReembolsoScannedAmount() | number:'1.2-2' }}</span></div>
+        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">{{ currencySymbol }} {{ adminReembolsoScannedAmount() | number:'1.2-2' }}</span></div>
         }
       </div>
       }
       <div>
-        <label class="block text-xs font-medium text-secondary mb-1">Monto a reembolsar (S/) *</label>
+        <label class="block text-xs font-medium text-secondary mb-1">Monto a reembolsar ({{ currencySymbol }}) *</label>
         <input type="number" min="0" step="0.01" inputmode="decimal"
           [value]="adminReembolsoMonto()"
           (input)="adminReembolsoMonto.set($any($event.target).value === '' ? null : +$any($event.target).value)"
@@ -3073,7 +3083,7 @@
         <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Hora</span><span class="font-medium text-secondary text-right">{{ returnProofOperationTime() }}</span></div>
         }
         @if (returnProofScannedAmount()) {
-        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">S/ {{ returnProofScannedAmount() | number:'1.2-2' }}</span></div>
+        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">{{ currencySymbol }} {{ returnProofScannedAmount() | number:'1.2-2' }}</span></div>
         }
       </div>
       }
@@ -3084,7 +3094,7 @@
             class="w-full h-[38px] px-3 rounded-lg border border-divider text-sm" />
         </div>
         <div class="flex flex-col gap-1">
-          <label class="text-xs font-medium text-tertiary">Monto devuelto S/ <span class="text-error">*</span></label>
+          <label class="text-xs font-medium text-tertiary">Monto devuelto {{ currencySymbol }} <span class="text-error">*</span></label>
           <input type="number" [value]="returnProofAmount()" (input)="returnProofAmount.set(+$any($event.target).value)"
             min="0" step="0.01" class="w-full h-[38px] px-3 rounded-lg border border-divider text-sm" />
         </div>

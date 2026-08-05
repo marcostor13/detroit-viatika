@@ -7,8 +7,24 @@ import {
   IsArray,
   ValidateNested,
   IsEnum,
+  IsInt,
+  Min,
 } from 'class-validator'
 import { Type } from 'class-transformer'
+
+/**
+ * Nivel de aprobación (identidad fija N1/N2/N3…) con sus aprobadores. Misma
+ * forma que `Project.approverLevels`; ver `common/types/approver-level.ts`.
+ */
+export class ApproverLevelDto {
+  @IsInt()
+  @Min(1)
+  level: number
+
+  @IsArray()
+  @IsMongoId({ each: true })
+  userIds: string[]
+}
 
 class UpdateBankAccountDto {
   @IsString()
@@ -59,6 +75,17 @@ export class UpdatePermissionsDto {
   @IsMongoId()
   @IsOptional()
   primaryProjectId?: string
+
+  /**
+   * Aprobadores propios del colaborador por nivel (regla 1.10). Sustituyen a
+   * los del centro de costo principal al armar la cadena; si viene vacío, la
+   * cadena se arma con los niveles del centro de costo, como antes.
+   */
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ApproverLevelDto)
+  @IsOptional()
+  approverLevels?: ApproverLevelDto[]
 }
 
 export class UpdateUserDto {

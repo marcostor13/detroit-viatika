@@ -1,15 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, Types } from 'mongoose'
 import { GetClientDocument } from '../../client/entities/client.entity'
+import {
+  ApproverLevel,
+  approverLevelSchemaDefinition,
+} from '../../../common/types/approver-level'
 
 /**
  * Aprobadores de un nivel explícito (identidad fija: 1, 2, 3…). Un nivel puede
  * no existir para un centro de costo — se omite en la cadena, no se renumera.
+ * Definido en `common/types/approver-level.ts` porque el colaborador
+ * (`User.permissions.approverLevels`) usa exactamente la misma forma.
  */
-export interface ApproverLevel {
-  level: number
-  userIds: Types.ObjectId[]
-}
+export type { ApproverLevel }
 
 export interface ProjectDocument extends Document {
   name: string
@@ -95,16 +98,7 @@ export class Project {
   approverId?: Types.ObjectId
 
   /** Aprobadores por nivel explícito (N1, N2, N3…) de este centro de costo. */
-  @Prop({
-    type: [
-      {
-        level: { type: Number, required: true },
-        userIds: { type: [{ type: Types.ObjectId, ref: 'User' }], default: [] },
-        _id: false,
-      },
-    ],
-    default: undefined,
-  })
+  @Prop({ type: [approverLevelSchemaDefinition], default: undefined })
   approverLevels?: ApproverLevel[]
 }
 

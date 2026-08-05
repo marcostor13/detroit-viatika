@@ -19,6 +19,7 @@ import {
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { environment } from '../../../environments/environment';
+import { MONEDA_CATALOG, MonedaInfo } from '../../constants/moneda';
 
 @Component({
   selector: 'app-configuracion',
@@ -621,14 +622,34 @@ export class ConfiguracionComponent implements OnInit {
     this.accountingForm.igvRates.splice(index, 1);
   }
 
+  /** Monedas que la empresa puede usar, para los desplegables del formulario. */
+  get monedasDisponibles(): MonedaInfo[] {
+    return Object.values(MONEDA_CATALOG);
+  }
+
+  /**
+   * Solo una cuenta de pagos por moneda: al marcar una se desmarcan las demás
+   * de esa misma moneda, para no tener que validarlo después.
+   */
+  onCuentaPagosChange(bank: IBankAccount, checked: boolean) {
+    bank.esCuentaPagos = checked;
+    if (!checked) return;
+    for (const otra of this.accountingForm.bankAccounts) {
+      if (otra !== bank && (otra.moneda || 'PEN') === (bank.moneda || 'PEN')) {
+        otra.esCuentaPagos = false;
+      }
+    }
+  }
+
   addBankAccount() {
     const bank: IBankAccount = {
       banco: '',
       nroCuenta: '',
       cuentaContable: '',
-      moneda: '01',
+      moneda: 'PEN',
       cci: '',
       activo: true,
+      esCuentaPagos: false,
     };
     this.accountingForm.bankAccounts.push(bank);
   }
