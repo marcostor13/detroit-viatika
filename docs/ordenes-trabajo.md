@@ -76,6 +76,10 @@ El formato oficial de la empresa (**ADF-FOR-005**) exige la OT como campo de cab
 - Frontend: selector "Orden de Trabajo" en `viatika/src/app/modules/invoices/add-invoice/`, visible solo cuando `expenseType() === 'planilla_movilidad'`. Lista todas las OT activas de la empresa (sin filtrar por centro de costo elegido).
 - La OT vive a nivel de todo el comprobante, no por fila de movilidad.
 
+**Excepción: viático sin OT.** La OT es opcional al solicitar el viático y la planilla la hereda de la solicitud (VD-28, campo deshabilitado). Si la solicitud no llevó OT no hay ninguna que heredar ni que el colaborador pueda elegir, así que el campo **no se muestra ni se exige**: `viaticoSinOrdenTrabajo()` en el formulario y `ExpenseReportService.isViaticoSinOrdenTrabajo()` en `createMobilitySheet()`. En rendiciones directas y fuera de un viático la OT sigue siendo obligatoria.
+
+El selector lista las OT del centro de costo de la rendición **más la OT heredada**, aunque esta sea de otro centro de costo o esté desactivada: sin ese añadido `app-search-select` no encuentra la opción y muestra el placeholder, con lo que el campo parece vacío aunque la rendición sí tenga OT.
+
 ## Historial
 
 Este módulo pasó por dos diseños:

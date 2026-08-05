@@ -1257,8 +1257,16 @@ export class ExpenseService {
         HttpStatus.BAD_REQUEST
       )
     }
-    // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de Costo.
-    if (!body.ordenTrabajoId) {
+    // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de
+    // Costo. Excepción: la planilla de un viático hereda la OT de la solicitud
+    // (VD-28) y esa OT es opcional al solicitarlo; si la solicitud no la lleva no
+    // hay nada que heredar ni que el colaborador pueda elegir en el formulario.
+    if (
+      !body.ordenTrabajoId &&
+      !(await this.expenseReportService.isViaticoSinOrdenTrabajo(
+        body.expenseReportId
+      ))
+    ) {
       throw new HttpException(
         'Se requiere seleccionar la Orden de Trabajo (OT)',
         HttpStatus.BAD_REQUEST
@@ -1343,7 +1351,11 @@ export class ExpenseService {
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
       proyectId: new Types.ObjectId(body.proyectId),
-      ordenTrabajoId: new Types.ObjectId(body.ordenTrabajoId),
+      // Sin OT (viático que no la lleva) no se castea: `new Types.ObjectId(undefined)`
+      // generaría un id nuevo y dejaría el gasto apuntando a una OT inexistente.
+      ordenTrabajoId: body.ordenTrabajoId
+        ? new Types.ObjectId(body.ordenTrabajoId)
+        : undefined,
       clientId: body.clientId,
       expenseReportId: body.expenseReportId
         ? new Types.ObjectId(body.expenseReportId)
