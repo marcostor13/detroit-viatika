@@ -241,6 +241,31 @@
       </div>
     </app-card>
 
+    <!-- Solicitud de viáticos: opciones del calendario -->
+    <app-card [hover]="false" class="mb-6">
+      <h2 class="text-base font-semibold text-secondary mb-1">Solicitud de viáticos</h2>
+      <p class="text-sm text-tertiary mb-5">
+        Opciones del formulario de solicitud de viáticos para este usuario.
+      </p>
+      <div class="space-y-3">
+        <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
+          <input
+            type="checkbox"
+            class="mt-0.5 h-4 w-4 rounded border-tertiary/40 text-primary accent-primary cursor-pointer"
+            [checked]="permissions.permitirFechasAnteriores === true"
+            (change)="togglePermitirFechasAnteriores($any($event.target).checked)"
+          />
+          <div>
+            <p class="text-sm font-medium text-secondary">Permitir fechas anteriores en solicitud de viáticos</p>
+            <p class="text-xs text-tertiary mt-0.5">
+              Habilita elegir fechas de inicio/fin anteriores a la fecha de hoy en el calendario de
+              solicitud de viáticos. Desactivado por defecto.
+            </p>
+          </div>
+        </label>
+      </div>
+    </app-card>
+
     <!-- Nota informativa -->
     <div class="rounded-lg bg-primary/5 border border-primary/20 p-4 mb-6 text-sm text-primary">
       <strong>Nota:</strong> Los cambios requieren que el usuario vuelva a iniciar sesión para que tengan efecto.

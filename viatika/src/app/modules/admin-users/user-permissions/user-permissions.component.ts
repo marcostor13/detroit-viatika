@@ -82,6 +82,7 @@ export class UserPermissionsComponent implements OnInit {
     projectIds: [],
     primaryProjectId: undefined,
     otrosGastosOpcionales: { recibosDiversos: true, djExtranjero: true },
+    permitirFechasAnteriores: false,
     approverLevels: [],
   };
 
@@ -122,6 +123,7 @@ export class UserPermissionsComponent implements OnInit {
             recibosDiversos: user.permissions?.otrosGastosOpcionales?.recibosDiversos !== false,
             djExtranjero: user.permissions?.otrosGastosOpcionales?.djExtranjero !== false,
           },
+          permitirFechasAnteriores: user.permissions?.permitirFechasAnteriores === true,
           approverLevels: (user.permissions?.approverLevels ?? []).map((l) => ({
             level: l.level,
             userIds: (l.userIds ?? []).map((u) =>
@@ -281,6 +283,12 @@ export class UserPermissionsComponent implements OnInit {
       djExtranjero: true,
     };
     this.permissions.otrosGastosOpcionales = { ...current, [key]: checked };
+  }
+
+  // --- Solicitud de viáticos: fechas anteriores ---
+
+  togglePermitirFechasAnteriores(checked: boolean) {
+    this.permissions.permitirFechasAnteriores = checked;
   }
 
   // --- Categorías ---

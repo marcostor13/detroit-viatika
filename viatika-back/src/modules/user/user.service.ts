@@ -557,11 +557,13 @@ export class UserService {
     primaryProjectId?: string
     /** Niveles propios del colaborador (regla 1.10). */
     approverLevels?: ApproverLevel[]
+    /** Permite solicitar viáticos con fechas anteriores a hoy. */
+    permitirFechasAnteriores?: boolean
   } | null> {
     const u = await this.userModel
       .findById(userId)
       .select(
-        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId permissions.approverLevels'
+        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId permissions.approverLevels permissions.permitirFechasAnteriores'
       )
       .exec()
     if (!u) return null
@@ -572,6 +574,7 @@ export class UserService {
       projectIds: u.permissions?.projectIds ?? [],
       primaryProjectId: u.permissions?.primaryProjectId,
       approverLevels: u.permissions?.approverLevels,
+      permitirFechasAnteriores: u.permissions?.permitirFechasAnteriores === true,
     }
   }
 

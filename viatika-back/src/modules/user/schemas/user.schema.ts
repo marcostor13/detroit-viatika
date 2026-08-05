@@ -30,6 +30,19 @@ export interface UserPermissions {
   /** Centro de costo principal explícito. Debe estar contenido en `projectIds`. */
   primaryProjectId?: string
   /**
+   * Sub-tipos opcionales de "Otros Gastos" habilitados para el colaborador
+   * (VD-91). Ausente/undefined = ambos habilitados.
+   */
+  otrosGastosOpcionales?: {
+    recibosDiversos: boolean
+    djExtranjero: boolean
+  }
+  /**
+   * Permite al colaborador elegir fechas de inicio/fin anteriores a hoy en la
+   * solicitud de viáticos. Ausente/false = solo desde hoy en adelante.
+   */
+  permitirFechasAnteriores?: boolean
+  /**
    * Aprobadores propios del colaborador por nivel explícito (N1, N2, N3…) —
    * regla 1.10. Cuando hay al menos un nivel con aprobadores, ESTOS sustituyen
    * a los del centro de costo principal al armar la cadena de la solicitud y
@@ -136,6 +149,15 @@ export class User {
       categoryIds: { type: [String], default: [] },
       projectIds: { type: [String], default: [] },
       primaryProjectId: { type: String, required: false },
+      otrosGastosOpcionales: {
+        type: {
+          recibosDiversos: { type: Boolean, default: true },
+          djExtranjero: { type: Boolean, default: true },
+          _id: false,
+        },
+        required: false,
+      },
+      permitirFechasAnteriores: { type: Boolean, default: false },
       approverLevels: { type: [approverLevelSchemaDefinition], default: undefined },
       _id: false,
     },

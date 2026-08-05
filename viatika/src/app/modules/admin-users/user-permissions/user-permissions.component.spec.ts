@@ -111,8 +111,31 @@ describe('UserPermissionsComponent', () => {
         projectIds: [],
         primaryProjectId: undefined,
         otrosGastosOpcionales: { recibosDiversos: true, djExtranjero: true },
+        permitirFechasAnteriores: false,
         approverLevels: [],
       });
+    });
+
+    it('reads permitirFechasAnteriores from the user, defaulting to false', () => {
+      adminUsersService.getUser.and.returnValue(
+        of({
+          ...mockUser,
+          permissions: { ...mockUser.permissions, permitirFechasAnteriores: true },
+        } as any)
+      );
+      component.loadUser();
+      expect(component.permissions.permitirFechasAnteriores).toBeTrue();
+
+      adminUsersService.getUser.and.returnValue(of(mockUser));
+      component.loadUser();
+      expect(component.permissions.permitirFechasAnteriores).toBeFalse();
+    });
+
+    it('togglePermitirFechasAnteriores flips the flag', () => {
+      component.togglePermitirFechasAnteriores(true);
+      expect(component.permissions.permitirFechasAnteriores).toBeTrue();
+      component.togglePermitirFechasAnteriores(false);
+      expect(component.permissions.permitirFechasAnteriores).toBeFalse();
     });
 
     it('shows an error notification when loading the user fails', () => {

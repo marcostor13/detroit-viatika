@@ -8,6 +8,7 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
+import { AccountingConfigService } from '../../../services/accounting-config.service';
 import { IAdvance } from '../../../interfaces/advance.interface';
 import { IExpenseReport } from '../../../interfaces/expense-report.interface';
 
@@ -20,6 +21,7 @@ describe('SolicitudViaticosComponent', () => {
   let invoicesService: jasmine.SpyObj<InvoicesService>;
   let ordenTrabajoService: jasmine.SpyObj<OrdenTrabajoService>;
   let router: jasmine.SpyObj<Router>;
+  let accountingConfigService: jasmine.SpyObj<AccountingConfigService>;
   let paramMapGet: jasmine.Spy;
 
   function makeAdvance(overrides: Partial<IAdvance> = {}): IAdvance {
@@ -41,6 +43,10 @@ describe('SolicitudViaticosComponent', () => {
     invoicesService = jasmine.createSpyObj('InvoicesService', ['getProjects']);
     ordenTrabajoService = jasmine.createSpyObj('OrdenTrabajoService', ['getAll']);
     router = jasmine.createSpyObj('Router', ['navigate']);
+    accountingConfigService = jasmine.createSpyObj('AccountingConfigService', [
+      'getAvailableCurrencies',
+    ]);
+    accountingConfigService.getAvailableCurrencies.and.returnValue(of(['PEN']));
     paramMapGet = jasmine.createSpy('get').and.returnValue(null);
 
     userState.getUser.and.returnValue({ _id: 'u1', companyId: 'c1' } as any);
@@ -59,6 +65,7 @@ describe('SolicitudViaticosComponent', () => {
         { provide: InvoicesService, useValue: invoicesService },
         { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
         { provide: Router, useValue: router },
+        { provide: AccountingConfigService, useValue: accountingConfigService },
         { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: paramMapGet } } } },
       ],
     });
@@ -189,6 +196,35 @@ describe('SolicitudViaticosComponent', () => {
       advanceService.resubmit.and.returnValue(of(makeAdvance()));
       component.submit();
       expect(advanceService.resubmit).toHaveBeenCalledWith('a1', jasmine.any(Object));
+    });
+
+    it('rejects a past start date when the user lacks permitirFechasAnteriores', () => {
+      const past = new Date();
+      past.setDate(past.getDate() - 3);
+      const pastYmd = past.toISOString().slice(0, 10);
+      component.form.patchValue({
+        place: 'Lima', startDate: pastYmd, endDate: pastYmd, projectId: 'p1', amount: 100,
+      });
+      component.submit();
+      expect(notifications.show).toHaveBeenCalledWith(
+        'La fecha de inicio no puede ser anterior a hoy.', 'error'
+      );
+      expect(expenseReportsService.createViatico).not.toHaveBeenCalled();
+    });
+
+    it('accepts a past start date when the user has permitirFechasAnteriores', () => {
+      userState.getUser.and.returnValue({
+        _id: 'u1', companyId: 'c1', permissions: { permitirFechasAnteriores: true },
+      } as any);
+      const past = new Date();
+      past.setDate(past.getDate() - 3);
+      const pastYmd = past.toISOString().slice(0, 10);
+      component.form.patchValue({
+        place: 'Lima', startDate: pastYmd, endDate: pastYmd, projectId: 'p1', amount: 100,
+      });
+      expenseReportsService.createViatico.and.returnValue(of({} as IExpenseReport));
+      component.submit();
+      expect(expenseReportsService.createViatico).toHaveBeenCalled();
     });
 
     it('shows an error notification when the request fails', () => {
