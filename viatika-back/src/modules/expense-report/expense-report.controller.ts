@@ -500,16 +500,18 @@ export class ExpenseReportController {
   // ─── Fase 8 — Cierre Definitivo ────────────────────────────────────────────
 
   /** Valida condiciones de cierre sin cerrar. */
+  // VD-66/VD-49: el cierre de la rendición es responsabilidad de Tesorería
+  // (antes Contabilidad). SuperAdmin se mantiene como override global.
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD)
+  @Roles(ROLES.SUPER_ADMIN, ROLES.TESORERIA)
   @Get(':id/close/validate')
   validateClosure(@Param('id') id: string) {
     return this.expenseReportService.validateClosureConditions(id)
   }
 
-  /** Cierra definitivamente la rendición. */
+  /** Cierra definitivamente la rendición. Tesorería (VD-66/VD-49). */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD)
+  @Roles(ROLES.SUPER_ADMIN, ROLES.TESORERIA)
   @Patch(':id/close')
   async close(@Param('id') id: string, @Request() req: any) {
     const closedBy = req.user._id || req.user.sub
@@ -608,6 +610,7 @@ export class ExpenseReportController {
       depositDate: string
       bankOrigin?: string
       operationNumber?: string
+      amountReturned?: number
       fileUrl: string
       fileName?: string
       scannedAmount?: number
@@ -780,6 +783,51 @@ export class ExpenseReportController {
       actorRole
     )
     await this.auditLogService.log({ userId: req.user._id || req.user.sub, userName: req.user.name || req.user.email || 'Usuario', action: 'reject_viatico', module: 'viaticos', entityId: id, details: body.rejectionReason, clientId: req.user.clientId })
+    return result
+  }
+
+  /**
+   * Aprobación de la RENDICIÓN a nivel de reporte (regla 1.4): aprueba UN paso
+   * de la cadena de aprobadores del centro de costo (N1/N2…). Cualquier
+   * aprobador de un paso pendiente puede actuar (o Superadmin), por eso no se
+   * restringe por @Roles — el servicio valida el turno vía la cadena.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Patch(':id/rendicion/approve')
+  async approveRendicion(
+    @Param('id') id: string,
+    @Body() body: { notes?: string },
+    @Request() req: any
+  ) {
+    const actorId = String(req.user._id || req.user.sub)
+    const actorRole = req.user?.roles?.[0] ?? ''
+    const result = await this.expenseReportService.approveRendicion(
+      id,
+      { approvedBy: actorId, notes: body.notes },
+      actorId,
+      actorRole
+    )
+    await this.auditLogService.log({ userId: req.user._id || req.user.sub, userName: req.user.name || req.user.email || 'Usuario', action: 'approve_rendicion', module: 'rendiciones', entityId: id, clientId: req.user.clientId })
+    return result
+  }
+
+  /** Rechazar la RENDICIÓN a nivel de reporte. El servicio valida el turno (aprobador del paso pendiente) o Admin/Contabilidad si no hay cadena. */
+  @UseGuards(AuthGuard('jwt'))
+  @Patch(':id/rendicion/reject')
+  async rejectRendicion(
+    @Param('id') id: string,
+    @Body() body: { rejectionReason: string },
+    @Request() req: any
+  ) {
+    const actorId = String(req.user._id || req.user.sub)
+    const actorRole = req.user?.roles?.[0] ?? ''
+    const result = await this.expenseReportService.rejectRendicion(
+      id,
+      { rejectedBy: actorId, rejectionReason: body.rejectionReason },
+      actorId,
+      actorRole
+    )
+    await this.auditLogService.log({ userId: req.user._id || req.user.sub, userName: req.user.name || req.user.email || 'Usuario', action: 'reject_rendicion', module: 'rendiciones', entityId: id, details: body.rejectionReason, clientId: req.user.clientId })
     return result
   }
 
