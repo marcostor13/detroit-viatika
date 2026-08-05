@@ -111,6 +111,9 @@ export class CategoryController {
     const mapped = rows.map(row => ({
       name: String(row['Nombre*'] || row['Nombre'] || '').trim(),
       cuenta: String(row['Cuenta'] || '').trim() || undefined,
+      cuentaDestino6x:
+        String(row['Cuenta Destino 6x'] || row['Cuenta Destino'] || '').trim() ||
+        undefined,
       description:
         String(row['Descripción'] || row['Descripcion'] || '').trim() ||
         undefined,
@@ -149,7 +152,13 @@ export class CategoryController {
   }
 
   @Get(':clientId/flat')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD,
+    ROLES.TESORERIA
+  )
   async findAllFlat(@Param('clientId') clientId: string, @Request() req: any) {
     const filter = await this.resolveAllowedCategoryIds(req, clientId)
     return this.categoryService.findAllFlat(clientId, filter)
