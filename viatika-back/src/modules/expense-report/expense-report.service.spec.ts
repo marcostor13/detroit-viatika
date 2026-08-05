@@ -245,11 +245,20 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
           }),
         }
       }
-      const chain: { populate: jest.Mock; exec: jest.Mock } = {
+      const chain: {
+        populate: jest.Mock
+        select: jest.Mock
+        lean: jest.Mock
+        exec: jest.Mock
+      } = {
         populate: jest.fn(),
+        select: jest.fn(),
+        lean: jest.fn(),
         exec: jest.fn(),
       }
       chain.populate.mockReturnValue(chain)
+      chain.select.mockReturnValue(chain)
+      chain.lean.mockReturnValue(chain)
       chain.exec.mockResolvedValue({
         ...fullReportDoc(),
         expenseIds: [],
@@ -262,6 +271,116 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
 
     expect(mockExpenseReportModel.findByIdAndUpdate).toHaveBeenCalled()
     expect(mockEmailService.sendRendicionFullyApprovedEmail).toHaveBeenCalled()
+  })
+
+  it('update(approved): rechaza si hay un comprobante observado', async () => {
+    // Contabilidad no puede aprobar la rendición completa si quedó un comprobante
+    // rechazado (assertNoRejectedExpenses). Cubre el caso de un rechazo por
+    // aprobador que igual dejó avanzar la rendición a pending_accounting.
+    mockFindByIdSequence({
+      existingStatus: 'pending_accounting',
+      submitPopulateResult: {
+        expenseIds: [{ _id: expenseId1, status: 'rejected' }],
+      },
+    })
+
+    await expect(
+      service.update(reportId, { status: 'approved' })
+    ).rejects.toThrow(/observados|devuelta al colaborador/)
+    expect(mockExpenseReportModel.findByIdAndUpdate).not.toHaveBeenCalled()
+  })
+
+  it('returnToCollaboratorOnAccountingRejection: devuelve la rendición y resetea los demás comprobantes', async () => {
+    const reportDoc: {
+      status: string
+      expenseIds: { _id: string }[]
+      userId: string
+      rejectionReason: string
+      rejectedByRole?: string
+      save: jest.Mock
+    } = {
+      status: 'pending_accounting',
+      expenseIds: [{ _id: expenseId1 }, { _id: expenseId2 }],
+      userId,
+      rejectionReason: '',
+      save: jest.fn().mockResolvedValue(undefined),
+    }
+    mockExpenseReportModel.findById.mockReturnValue(reportDoc)
+
+    const updateOne = jest.fn().mockResolvedValue({})
+    // Inyecta el mock de expenseModel sobre la instancia (el provider lo da como {}).
+    ;(service as unknown as { expenseModel: Record<string, jest.Mock> }).expenseModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              { _id: expenseId1, approverChain: [{ level: 1, approved: true }] },
+              { _id: expenseId2, approverChain: [{ level: 1, approved: true }] },
+            ]),
+          }),
+        }),
+      }),
+      updateOne,
+    }
+
+    // expenseId1 es el comprobante observado por Contabilidad.
+    await service.returnToCollaboratorOnAccountingRejection(
+      reportId,
+      expenseId1,
+      'monto incorrecto'
+    )
+
+    // La rendición vuelve al colaborador.
+    expect(reportDoc.status).toBe('rejected')
+    expect(reportDoc.rejectedByRole).toBe('contabilidad')
+    expect(reportDoc.save).toHaveBeenCalled()
+
+    const calls = updateOne.mock.calls
+    const otherSet = calls.find(
+      c => String(c[0]._id) === String(expenseId2)
+    )![1].$set
+    const rejectedSet = calls.find(
+      c => String(c[0]._id) === String(expenseId1)
+    )![1].$set
+    // El comprobante NO observado vuelve a 'pending' (editable y re-aprobable).
+    expect(otherSet.status).toBe('pending')
+    expect(otherSet.contabilidadStatus).toBe('pending')
+    expect(otherSet.approvalLevel).toBe(0)
+    // El observado conserva su estado 'rejected' (solo se resetea su cadena).
+    expect(rejectedSet.status).toBeUndefined()
+    expect(rejectedSet.approvalLevel).toBe(0)
+  })
+
+  it('advanceToAccountingIfAllExpensesApproved: NO avanza si hay un comprobante observado', async () => {
+    const reportObj: { status: string; expenseIds: string[]; userId: string; save: jest.Mock } = {
+      status: 'submitted',
+      expenseIds: [expenseId1, expenseId2],
+      userId,
+      save: jest.fn().mockResolvedValue(undefined),
+    }
+    mockExpenseReportModel.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reportObj),
+      }),
+    })
+    ;(service as unknown as { expenseModel: Record<string, jest.Mock> }).expenseModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              { _id: expenseId1, status: 'approved', approverChain: [{ level: 1 }], approvalLevel: 1, requiredLevels: 1 },
+              { _id: expenseId2, status: 'rejected', approverChain: [{ level: 1 }], approvalLevel: 0, requiredLevels: 1 },
+            ]),
+          }),
+        }),
+      }),
+    }
+
+    await service.advanceToAccountingIfAllExpensesApproved(reportId)
+
+    // Queda en 'submitted' hasta que se corrija el comprobante observado.
+    expect(reportObj.status).toBe('submitted')
+    expect(reportObj.save).not.toHaveBeenCalled()
   })
 
   describe('registerAffidavit — Fase 5 declaración jurada', () => {
@@ -353,6 +472,7 @@ describe('ExpenseReportService — Fase 8 (cierre definitivo)', () => {
       .fn()
       .mockResolvedValue({ name: 'Colaborador', email: 'c@test.com' }),
     findAccountingRecipientsWithIds: jest.fn().mockResolvedValue([]),
+    findTesoreriaRecipientsWithIds: jest.fn().mockResolvedValue([]),
     isEmailEnabled: jest.fn().mockResolvedValue(true),
   }
 
@@ -1320,5 +1440,123 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     expect(
       chainClause!['_id'].$in.map((x: Types.ObjectId) => x.toString())
     ).toContain(reportWithChain.toString())
+  })
+
+  // Regla 1.10 en la cadena de la RENDICIÓN a nivel de reporte (fase post-pago
+  // del viático). `buildReportRendicionChain` es anterior a los aprobadores por
+  // usuario y armaba la cadena solo con los niveles del centro de costo.
+  it('buildReportRendicionChain usa los aprobadores propios del colaborador cuando los tiene', async () => {
+    const ownApprover = new Types.ObjectId().toString()
+    mockProjectServiceLocal.findManyByIds.mockResolvedValue([
+      {
+        _id: projectId,
+        approverLevels: [{ level: 1, userIds: [new Types.ObjectId(approverId)] }],
+      },
+    ])
+    mockUserServiceLocal.findTransactionalProfile.mockResolvedValue({
+      projectIds: [projectId],
+      primaryProjectId: projectId,
+      approverLevels: [{ level: 1, userIds: [ownApprover] }],
+    })
+
+    const chain: ChainStep[] = await (
+      service as unknown as {
+        buildReportRendicionChain: (
+          ownerUserId: string,
+          clientId: string,
+          reportProjectId: string
+        ) => Promise<ChainStep[]>
+      }
+    ).buildReportRendicionChain(addUserId, addClientId, projectId)
+
+    const approverIds = chain.flatMap(step =>
+      step.approverIds.map(id => String(id))
+    )
+    expect(approverIds).toContain(ownApprover)
+    expect(approverIds).not.toContain(approverId)
+    // Y queda marcado que salieron del usuario, no del centro de costo.
+    expect(chain.every(step => step.source === 'user')).toBe(true)
+  })
+})
+
+describe('ExpenseReportService — findExpensesPaginated (búsqueda por RUC, VD-65)', () => {
+  let service: ExpenseReportService
+  let mockExpenseReportModel: Record<string, jest.Mock>
+  let mockExpenseModel: Record<string, jest.Mock>
+
+  const reportId = new Types.ObjectId().toString()
+  const expenseId = new Types.ObjectId().toString()
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+
+    mockExpenseReportModel = {
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({ expenseIds: [expenseId] }),
+        }),
+      }),
+    }
+    mockExpenseModel = {
+      find: jest.fn().mockReturnValue({
+        populate: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([]),
+      }),
+    }
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseReportService,
+        { provide: getModelToken(ExpenseReport.name), useValue: mockExpenseReportModel },
+        { provide: getModelToken(Expense.name), useValue: mockExpenseModel },
+        { provide: getModelToken(CajaChicaReport.name), useValue: { countDocuments: jest.fn() } },
+        { provide: EmailService, useValue: {} },
+        { provide: NotificationsService, useValue: { create: jest.fn() } },
+        { provide: UserService, useValue: {} },
+        { provide: AdvanceService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
+      ],
+    }).compile()
+
+    service = module.get<ExpenseReportService>(ExpenseReportService)
+  })
+
+  it('filtra por rucEmisor dentro del JSON data, no por concepto', async () => {
+    await service.findExpensesPaginated(reportId, { page: 1, limit: 10, search: '20123456789' })
+
+    const filter = mockExpenseModel.find.mock.calls[0][0] as {
+      $and?: Array<Record<string, any>>
+    }
+    expect(filter.$and).toBeDefined()
+    const clause = filter.$and![0]
+    // Apunta al campo data con un regex anclado a la clave rucEmisor.
+    expect(clause['data'].$regex).toContain('rucEmisor')
+    expect(clause['data'].$regex).toContain('20123456789')
+    // Ya no debe buscar por description ni por los campos de concepto/movilidad.
+    expect(clause['description']).toBeUndefined()
+    expect(clause['$or']).toBeUndefined()
+  })
+
+  it('no agrega filtro de búsqueda cuando el término está vacío', async () => {
+    await service.findExpensesPaginated(reportId, { page: 1, limit: 10, search: '   ' })
+
+    const filter = mockExpenseModel.find.mock.calls[0][0] as {
+      $and?: Array<Record<string, any>>
+    }
+    expect(filter.$and).toBeUndefined()
   })
 })
