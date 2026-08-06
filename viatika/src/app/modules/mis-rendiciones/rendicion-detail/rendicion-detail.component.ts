@@ -1742,6 +1742,37 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return undefined;
   }
 
+  /**
+   * Aprobadores que realmente firmaron la rendición, leídos de la cadena de
+   * cada comprobante (`expense.approverChain[].approvedBy`), únicos por persona
+   * y ordenados por nivel.
+   *
+   * Es la única fuente confiable para el recuadro V°B° JEFE INMEDIATO: cuando
+   * la rendición avanza sola a Contabilidad al aprobarse todos los gastos
+   * (VD-87), el reporte no guarda `coordinatorApprovedBy`, porque la aprobación
+   * ocurrió comprobante por comprobante y puede haber más de un firmante. Sin
+   * esto se caía a `report.approvedBy`, que es quien avanzó el estado y
+   * termina siendo Contabilidad, duplicando la firma de FINANZAS.
+   */
+  private getChainApprovers(): { name: string; signature?: string }[] {
+    const porUsuario = new Map<string, { name: string; signature?: string; level: number }>();
+    for (const exp of (this.report?.expenseIds ?? []) as Record<string, unknown>[]) {
+      const chain = (exp?.['approverChain'] ?? []) as Record<string, unknown>[];
+      for (const step of chain) {
+        if (!step?.['approved']) continue;
+        const u = step['approvedBy'];
+        if (!u || typeof u !== 'object') continue;
+        const { _id, name, signature } = u as { _id?: string; name?: string; signature?: string };
+        const key = String(_id ?? name ?? '');
+        if (!key || !name || porUsuario.has(key)) continue;
+        porUsuario.set(key, { name, signature, level: Number(step['level'] ?? 0) });
+      }
+    }
+    return [...porUsuario.values()]
+      .sort((a, b) => a.level - b.level)
+      .map(({ name, signature }) => ({ name, signature }));
+  }
+
   /** OT (nombre) del reporte (viático/directa), usada como fallback por gasto. */
   private getReportOrdenTrabajo(): unknown {
     return (
@@ -2048,8 +2079,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       periodo: this.getPeriodoLabel(),
       centroCostoCabecera: this.getHeaderCentroCosto(),
       montoInicialEntregado: this.totalAnticipado,
-      // Jefe Inmediato: preferimos el coordinador que aprobó (tiene firma/DNI); si no
-      // hubo coordinador, caemos al aprobador genérico (approvedBy).
+      // Jefe Inmediato, en orden de confianza:
+      //  1. Quienes firmaron la cadena del centro de costo en los comprobantes.
+      //     Puede haber dos (N1 y N2); el recuadro se divide y muestra ambos.
+      //  2. El coordinador que aprobó a nivel de reporte (rendición directa o
+      //     flujos sin cadena por comprobante), que trae firma y DNI.
+      //  3. `approvedBy`, último recurso. Ojo: es quien avanzó el estado, así
+      //     que puede ser Contabilidad; por eso va al final y no antes.
+      jefeInmediatoApprovers: this.getChainApprovers(),
       jefeInmediatoName:
         this.getCoordinatorName() ||
         (this.getApprovedByName() !== '—' ? this.getApprovedByName() : undefined),
