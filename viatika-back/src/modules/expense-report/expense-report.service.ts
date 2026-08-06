@@ -1101,6 +1101,12 @@ export class ExpenseReportService implements OnModuleInit {
           // aprobó por Contabilidad — para mostrar nombres reales (no roles
           // genéricos) en la sección Estado de la RENDICIÓN.
           { path: 'approverChain.approverIds', select: 'name email' },
+          // Quién aprobó REALMENTE cada paso de la cadena del comprobante, con
+          // firma. Es la única fuente fiable del recuadro V°B° JEFE INMEDIATO
+          // del formato ADF-FOR-004: cuando VD-87 auto-avanza la rendición no
+          // hay un `coordinatorApprovedBy` a nivel de reporte, porque la
+          // aprobación ocurrió comprobante por comprobante.
+          { path: 'approverChain.approvedBy', select: 'name signature dni' },
           { path: 'contabilidadApprovedBy', select: 'name email' },
         ],
       })

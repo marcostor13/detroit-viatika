@@ -116,6 +116,18 @@ export interface RendicionExportData {
   jefeInmediatoName?: string;
   /** Firma del Jefe Inmediato, si existe. */
   jefeSignature?: string;
+  /**
+   * Aprobadores que realmente firmaron la cadena del centro de costo (N1, N2, …),
+   * en orden de nivel. Cuando hay dos o más, el recuadro V°B° JEFE INMEDIATO se
+   * divide y muestra ambas firmas lado a lado.
+   *
+   * Existe porque `jefeInmediatoName`/`jefeSignature` solo sirven cuando hubo un
+   * único aprobador a nivel de reporte. Con la cadena por comprobante (VD-85/87)
+   * la rendición no guarda un `coordinatorApprovedBy`, y caer al `approvedBy` del
+   * reporte imprimía a quien hubiera avanzado el estado — normalmente
+   * Contabilidad, la misma persona que ya firma en FINANZAS.
+   */
+  jefeInmediatoApprovers?: { name: string; signature?: string }[];
   /** Nombre de Finanzas para el recuadro V°B° FINANZAS. */
   financeName?: string;
   /** Firma de Finanzas, si existe. */
@@ -664,7 +676,19 @@ export class RendicionExportService {
       }
     };
     drawSigBlock(1, 4, 'V°B° SOLICITANTE', data.signature, data.colaborador, data.idDocument);
-    drawSigBlock(5, 8, 'V°B° JEFE INMEDIATO', data.jefeSignature, data.jefeInmediatoName);
+    const jefes = (data.jefeInmediatoApprovers ?? []).slice(0, 2);
+    if (jefes.length >= 2) {
+      // Dos aprobadores: se parte el recuadro (col 5-8) en 5-6 y 7-8. El título
+      // va una sola vez, sobre la mitad izquierda, para no repetirlo.
+      drawSigBlock(5, 6, 'V°B° JEFE INMEDIATO', jefes[0].signature, jefes[0].name);
+      drawSigBlock(7, 8, '', jefes[1].signature, jefes[1].name);
+    } else {
+      drawSigBlock(
+        5, 8, 'V°B° JEFE INMEDIATO',
+        jefes[0]?.signature ?? data.jefeSignature,
+        jefes[0]?.name ?? data.jefeInmediatoName,
+      );
+    }
     drawSigBlock(9, 12, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     const buf = await wb.xlsx.writeBuffer();
@@ -920,8 +944,46 @@ export class RendicionExportService {
       doc.text('NOMBRE Y FIRMA', cx, lineY + 8, { align: 'center' });
       if (dni) doc.text(`DNI: ${dni}`, cx, lineY + 12, { align: 'center' });
     };
+    /**
+     * Variante del recuadro con DOS firmantes lado a lado, dentro del mismo
+     * ancho (70mm) que ocupa un recuadro simple. Se usa cuando la cadena del
+     * centro de costo tiene N1 y N2 y ambos aprobaron: el formato ADF-FOR-004
+     * trae un solo casillero "JEFE INMEDIATO", así que se subdivide en vez de
+     * elegir arbitrariamente a uno de los dos.
+     */
+    const drawSignaturePair = (
+      cx: number, title: string, people: { name: string; signature?: string }[],
+    ) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(title, cx, sigY, { align: 'center' });
+      const lineY = sigY + 20;
+      // ±18mm respecto del centro: deja 32mm de línea por firmante y ~4mm de aire.
+      people.slice(0, 2).forEach((p, i) => {
+        const px = cx + (i === 0 ? -18 : 18);
+        if (p.signature) {
+          try { doc.addImage(p.signature, 'PNG', px - 15, sigY + 2, 30, 16); } catch { /* firma inválida */ }
+        }
+        doc.setLineWidth(0.4);
+        doc.line(px - 16, lineY, px + 16, lineY);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        if (p.name) doc.text(clip(sanitize(p.name).toUpperCase(), 32), px, lineY + 4, { align: 'center' });
+        doc.text('NOMBRE Y FIRMA', px, lineY + 8, { align: 'center' });
+      });
+    };
+
     drawSignature(56, 'V°B° SOLICITANTE', data.signature, data.colaborador, data.idDocument);
-    drawSignature(148, 'V°B° JEFE INMEDIATO', data.jefeSignature, data.jefeInmediatoName);
+    const jefes = (data.jefeInmediatoApprovers ?? []).slice(0, 2);
+    if (jefes.length >= 2) {
+      drawSignaturePair(148, 'V°B° JEFE INMEDIATO', jefes);
+    } else {
+      drawSignature(
+        148, 'V°B° JEFE INMEDIATO',
+        jefes[0]?.signature ?? data.jefeSignature,
+        jefes[0]?.name ?? data.jefeInmediatoName,
+      );
+    }
     drawSignature(240, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     if (!inDoc) {
