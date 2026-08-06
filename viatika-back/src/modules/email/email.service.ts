@@ -14,7 +14,7 @@ import {
  * Es el front de Detroit; el caso normal es que el origen salga de la propia
  * petición — ver `getPublicAppBaseUrl()`.
  */
-const DEFAULT_APP_URL = 'https://detroit-viatika.netlify.app'
+const DEFAULT_APP_URL = 'https://detroit.viatika.tecdidata.com'
 const CLIENT_LOGO_CACHE_TTL_MS = 60_000
 
 /**
@@ -22,8 +22,14 @@ const CLIENT_LOGO_CACHE_TTL_MS = 60_000
  * no hay `APP_ALLOWED_ORIGINS` en el entorno. Al pasar a producción basta
  * añadir el dominio nuevo a esa variable (lista separada por comas) sin tocar
  * código.
+ *
+ * Netlify quedó fuera: el sitio ya no sirve los assets del front (devuelve 404)
+ * y está pendiente de decomisionar, ver DEPLOY_SETUP.md.
  */
-const BUILT_IN_ALLOWED_ORIGINS = ['https://detroit-viatika.netlify.app']
+const BUILT_IN_ALLOWED_ORIGINS = [
+  'https://detroit.viatika.tecdidata.com',
+  'https://qa-detroit-viatika.tecdidata.com',
+]
 
 /** `localhost`/`127.0.0.1` en cualquier puerto: solo fuera de producción. */
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i
@@ -31,11 +37,19 @@ const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i
 /**
  * Logo por defecto de los correos cuando la empresa NO tiene `client.logo`
  * configurado (VD-81). Es el logo de Detroit (`logo_header.png`), servido por
- * el frontend de Detroit — NO el `/logo.svg` genérico (que renderiza el logo de
- * "tema"). Se puede sobrescribir por entorno con `APP_LOGO_URL`.
+ * el frontend de Detroit en su dominio de producción, NO el `/logo.svg`
+ * genérico (que renderiza el logo de "tema"). Se puede sobrescribir por entorno
+ * con `APP_LOGO_URL`.
+ *
+ * Debe ser una URL absoluta y pública: el cliente de correo la descarga desde
+ * fuera de la red. Apuntaba a Netlify, que devuelve 404 desde la migración a
+ * Coolify, así que el logo salía roto en todos los correos.
+ *
+ * El tamaño real del archivo es 722x322; la plantilla lo reduce a 150px de
+ * ancho en `templates/partials/email-header.hbs`.
  */
 const DEFAULT_EMAIL_LOGO_URL =
-  'https://detroit-viatika.netlify.app/logo_header.png'
+  'https://detroit.viatika.tecdidata.com/logo_header.png'
 
 @Injectable()
 export class EmailService {

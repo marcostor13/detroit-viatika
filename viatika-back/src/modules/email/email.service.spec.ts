@@ -63,7 +63,7 @@ describe('EmailService', () => {
       process.env.NODE_ENV = 'production'
 
       expect(service.getPublicAppBaseUrl()).toBe(
-        'https://detroit-viatika.netlify.app'
+        'https://detroit.viatika.tecdidata.com'
       )
     })
 
