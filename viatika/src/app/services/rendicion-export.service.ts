@@ -31,9 +31,9 @@ export interface RendicionExportComprobanteRow {
   ruc?: string;
   /** Nombre de la Orden de Trabajo del gasto. */
   ot?: string;
-  /** Centro de costo (nombre) del gasto, derivado de la OT. */
+  /** Centro de costo del gasto, derivado de la OT: su código (ej. 121), o el nombre si no tiene. */
   centroCosto?: string;
-  /** Cuenta contable de destino. Pendiente de definir con el cliente: por ahora vacío. */
+  /** Cuenta contable de destino: la cuenta 9X de la categoría del gasto (ej. 913140). */
   ctaDestino?: string;
   /** Monto en dólares cuando la moneda del gasto es USD. */
   dolares?: number;
@@ -108,7 +108,7 @@ export interface RendicionExportData {
   departamento?: string;
   /** Periodo (mes) de la rendición. */
   periodo?: string;
-  /** Centro de costo de cabecera (de la OT de la rendición). */
+  /** Centro de costo de cabecera (de la OT de la rendición): su código, o el nombre si no tiene. */
   centroCostoCabecera?: string;
   /** Monto inicial entregado al colaborador (suma de anticipos/depósitos). */
   montoInicialEntregado?: number;

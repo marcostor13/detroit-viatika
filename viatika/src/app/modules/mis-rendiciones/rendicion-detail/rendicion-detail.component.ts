@@ -1324,6 +1324,18 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return '—';
   }
 
+  /**
+   * Cuenta contable 9X de una categoría poblada. Es la que el colaborador ve como
+   * segunda línea al elegir la categoría y la que el cliente escribe a mano en la
+   * columna CTA. DESTINO del formato ADF-FOR-004 (ej. 913140 = alimentación).
+   */
+  private getPopulatedCuenta(field: unknown): string {
+    if (field && typeof field === 'object' && 'cuenta' in field) {
+      return String((field as { cuenta?: unknown }).cuenta ?? '').trim();
+    }
+    return '';
+  }
+
   getExpenseTypeKey(
     exp: Record<string, unknown>
   ): 'factura' | 'planilla_movilidad' | 'otros_gastos' {
@@ -1848,10 +1860,17 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
    * directaOrdenTrabajoId), igual que la CC de cabecera. Así las columnas OT /
    * C.COSTO del formato ADF-FOR-004 no quedan vacías en la tabla (VD-63).
    */
+  /**
+   * OT y centro de costo del gasto. La columna C.COSTO del formato ADF-FOR-004
+   * lleva el código del centro de costo (ej. 121), no su nombre; se cae al nombre
+   * solo si el centro de costo no tiene código cargado.
+   */
   private getExpenseOtAndCc(exp: Record<string, unknown>): { ot: string; centroCosto: string } {
     const own = this.extractOtAndCc(exp['ordenTrabajoId']);
-    if (own.ot || own.centroCosto) return own;
-    return this.extractOtAndCc(this.getReportOrdenTrabajo());
+    const src = own.ot || own.centroCosto || own.centroCostoCodigo
+      ? own
+      : this.extractOtAndCc(this.getReportOrdenTrabajo());
+    return { ot: src.ot, centroCosto: src.centroCostoCodigo || src.centroCosto };
   }
 
   /** Moneda del gasto: dólares, tipo de cambio y monto convertido a soles. */
@@ -1967,8 +1986,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         ruc: ruc || undefined,
         ot: ot || undefined,
         centroCosto: centroCosto || undefined,
-        // CTA. DESTINO: pendiente de definir con el cliente. Se deja vacío por ahora.
-        ctaDestino: undefined,
+        // CTA. DESTINO: cuenta 9X de la categoría del gasto, la misma que se muestra
+        // al seleccionarla. El backend la popula en categoryId (select 'name cuenta').
+        ctaDestino: this.getPopulatedCuenta(exp['categoryId']) || undefined,
         dolares,
         tipoCambio,
       };
@@ -2077,7 +2097,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       destino: this.report.viaticoPlace || this.report.location || undefined,
       departamento: this.getCollaboratorArea(),
       periodo: this.getPeriodoLabel(),
-      centroCostoCabecera: this.getHeaderCentroCosto(),
+      // CC de cabecera: el código del centro de costo (ej. 121), igual que la
+      // columna C.COSTO. Cae al nombre si el centro de costo no tiene código.
+      centroCostoCabecera: this.getHeaderCentroCostoCodigo() || this.getHeaderCentroCosto(),
       montoInicialEntregado: this.totalAnticipado,
       // Jefe Inmediato, en orden de confianza:
       //  1. Quienes firmaron la cadena del centro de costo en los comprobantes.
@@ -2332,26 +2354,52 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return `${d.getFullYear()}-${m}-${day}`;
   }
 
-  private buildConsolidatedMobilityPageData(
+  /** Tope diario de movilidad configurado por la empresa; S/40 si no hay configuración. */
+  private mobilityDailyCap(): number {
+    const cap = this.companyConfigService.getCompanyConfig()?.limits?.movilidadDiario;
+    return typeof cap === 'number' && cap > 0 ? cap : 40;
+  }
+
+  /**
+   * Suma los montos reales de todas las filas de movilidad de la rendición en un
+   * solo total y lo reparte en tramos del tope diario, uno por día empezando en la
+   * fecha de solicitud del viático/rendición. Cada tramo es una planilla física
+   * completa con una única fila: se muestra con los datos (origen/destino/gestión)
+   * de la última gestión real que aporta a ese tramo. Cada planilla lleva además un
+   * código correlativo único.
+   */
+  private buildMobilityPagesByDailyCap(
     mobilityExpenses: Record<string, unknown>[],
-  ): MobilitySheetExportData | null {
-    if (!mobilityExpenses.length) return null;
+  ): MobilitySheetExportData[] {
+    if (!mobilityExpenses.length) return [];
 
-    const totalAmount = Math.round(
-      mobilityExpenses.reduce(
-        (sum, exp) => sum + this.mobilityRows(exp).reduce((s, r) => s + this.mobilityRowTotal(r), 0),
-        0,
-      ) * 100,
-    ) / 100;
+    const sourceRows: MobilitySheetExportData['rows'] = [];
+    for (const exp of mobilityExpenses) {
+      for (const r of this.mobilityRows(exp)) {
+        sourceRows.push({
+          fecha: String(r['fecha'] || ''),
+          origen: String(r['origen'] || ''),
+          destino: String(r['destino'] || ''),
+          gestion: String(r['gestion'] || ''),
+          total: this.mobilityRowTotal(r),
+          proyecto: this.resolveRowProjectLabel(r['proyectId']),
+          colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
+        });
+      }
+    }
+    if (!sourceRows.length) return [];
+    // Orden cronológico según la fecha que el usuario ingresó en cada fila, para
+    // que el reparto en tramos consuma las gestiones en ese mismo orden.
+    this.sortMobilityExportRows(sourceRows);
 
-    if (totalAmount <= 0) return null;
+    const totalAmount = Math.round(sourceRows.reduce((s, r) => s + r.total, 0) * 100) / 100;
+    if (totalAmount <= 0) return [];
 
-    const DAILY_RATE = 40;
-    const rows: MobilitySheetExportData['rows'] = [];
+    const dailyCap = this.mobilityDailyCap();
+    const nPages = Math.ceil((totalAmount - 1e-6) / dailyCap);
 
     // Las rendiciones de anticipo guardan las fechas en startDate/endDate, pero las
-    // de viatico unificado las guardan en viaticoStartDate/viaticoEndDate. Sin este
-    // fallback el viatico cae al else y no separa el total en tramos de S/40 por dia.
+    // de viatico unificado las guardan en viaticoStartDate/viaticoEndDate.
     const startDate = this.parseDateSafe(
       (this.report?.startDate ?? this.report?.viaticoStartDate) as string ?? '',
     );
@@ -2359,57 +2407,69 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       (this.report?.endDate ?? this.report?.viaticoEndDate) as string ?? '',
     );
 
+    let cur: Date;
     if (startDate && endDate) {
       const day2 = new Date(startDate);
       day2.setDate(day2.getDate() + 1);
-
       const msPerDay = 24 * 60 * 60 * 1000;
       const daysFromDay2 = Math.max(0, Math.round((endDate.getTime() - day2.getTime()) / msPerDay) + 1);
-      const rowsNeeded = Math.ceil(totalAmount / DAILY_RATE);
-
-      const cur = rowsNeeded <= daysFromDay2 ? new Date(day2) : new Date(startDate);
-
-      let remaining = totalAmount;
-      while (remaining > 0.005) {
-        const dayAmount = Math.min(DAILY_RATE, Math.round(remaining * 100) / 100);
-        rows.push({
-          fecha: this.dateToYmd(cur),
-          origen: '',
-          destino: '',
-          gestion: '',
-          total: dayAmount,
-          colaborador: this.getCollaboratorDisplayName(),
-        });
-        remaining = Math.round((remaining - dayAmount) * 100) / 100;
-        cur.setDate(cur.getDate() + 1);
-      }
+      cur = nPages <= daysFromDay2 ? day2 : new Date(startDate);
     } else {
-      rows.push({
-        fecha: '',
-        origen: '',
-        destino: '',
-        gestion: '',
-        total: totalAmount,
-        colaborador: this.getCollaboratorDisplayName(),
+      cur = startDate ?? this.parseDateSafe(sourceRows[0].fecha) ?? new Date();
+    }
+
+    // Base del código correlativo: el número de la planilla física más antigua
+    // (o "PM" si ninguna lo tiene), sufijado con un correlativo por página.
+    const codeBase = (mobilityExpenses.find(
+      e => typeof e['internalCode'] === 'string' && e['internalCode'],
+    )?.['internalCode'] as string | undefined) || 'PM';
+
+    // Puntero que recorre las filas reales en orden; cada tramo avanza el puntero
+    // y se queda con los datos de la última gestión que le aportó monto.
+    let rowIdx = 0;
+    let rowRemaining = sourceRows[0].total;
+
+    const pages: MobilitySheetExportData[] = [];
+    for (let i = 0; i < nPages; i++) {
+      const total = Math.round(Math.min(dailyCap, totalAmount - i * dailyCap) * 100) / 100;
+      let remainingToConsume = total;
+      let representative = sourceRows[rowIdx];
+      while (remainingToConsume > 0.005) {
+        const take = Math.round(Math.min(rowRemaining, remainingToConsume) * 100) / 100;
+        // Si el tramo deja de consumir (última fila agotada o con importe no
+        // positivo) el bucle no avanzaría nunca y colgaría la pestaña.
+        if (take <= 0 && rowIdx >= sourceRows.length - 1) break;
+        rowRemaining = Math.round((rowRemaining - take) * 100) / 100;
+        remainingToConsume = Math.round((remainingToConsume - take) * 100) / 100;
+        representative = sourceRows[rowIdx];
+        if (rowRemaining <= 0.005 && rowIdx < sourceRows.length - 1) {
+          rowIdx++;
+          rowRemaining = sourceRows[rowIdx].total;
+        }
+      }
+
+      const pageDate = new Date(cur);
+      pageDate.setDate(pageDate.getDate() + i);
+
+      pages.push({
+        fileBaseName: `planilla_movilidad_${this.dateToYmd(pageDate)}`,
+        collaborator: this.getCollaboratorDisplayName(),
+        collaboratorDni: this.collaboratorDniForPdf(),
+        internalCode: `${codeBase}-${String(i + 1).padStart(2, '0')}`,
+        location: this.report?.location,
+        generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }),
+        periodo: pageDate.toLocaleString('es-PE', { month: 'long' }).toUpperCase(),
+        proyecto: this.getProjectName(),
+        rows: [{ ...representative, fecha: this.dateToYmd(pageDate), total }],
+        total,
+        signature: this.getCollaboratorSignature(),
+        coordinator: this.getCoordinatorName(),
+        coordinatorDni: this.getCoordinatorDni(),
+        coordinatorSignature: this.getCoordinatorSignature(),
       });
     }
 
-    const periodo = startDate
-      ? startDate.toLocaleString('es-PE', { month: 'long' }).toUpperCase()
-      : '';
-
-    return {
-      fileBaseName: 'planilla_movilidad_consolidada',
-      collaborator: this.getCollaboratorDisplayName(),
-      collaboratorDni: this.collaboratorDniForPdf(),
-      location: this.report?.location,
-      generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }),
-      periodo,
-      proyecto: this.getProjectName(),
-      rows,
-      total: totalAmount,
-      signature: this.getCollaboratorSignature(),
-    };
+    return pages;
   }
 
   async exportRendicionFullPdf(): Promise<void> {
@@ -2423,17 +2483,18 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     let facturaIndex = 0;
 
     const mobilityExpenses = expenses.filter(e => this.getExpenseTypeKey(e) === 'planilla_movilidad');
-    let mobilityPageAdded = false;
+    let mobilityPagesAdded = false;
 
     for (const exp of expenses) {
       const typeKey = this.getExpenseTypeKey(exp);
       const expType = exp['expenseType'] as string;
 
       if (typeKey === 'planilla_movilidad') {
-        if (!mobilityPageAdded) {
-          const consolidated = this.buildConsolidatedMobilityPageData(mobilityExpenses);
-          if (consolidated) pages.push({ type: 'mobility', data: consolidated });
-          mobilityPageAdded = true;
+        if (!mobilityPagesAdded) {
+          for (const data of this.buildMobilityPagesByDailyCap(mobilityExpenses)) {
+            pages.push({ type: 'mobility', data });
+          }
+          mobilityPagesAdded = true;
         }
       } else if (expType === 'recibo_caja') {
         pages.push({ type: 'receipt', data: this.buildReceiptPageData(exp) });
