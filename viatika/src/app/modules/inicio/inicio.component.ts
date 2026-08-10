@@ -381,7 +381,7 @@ export class InicioComponent implements OnInit {
     return {
       ...this.reportRow(r),
       amount: this.viaticoRemaining(r),
-      statusLabel: 'Viático por pagar',
+      statusLabel: 'Solicitud de Fondos por pagar',
       statusColor: 'bg-amber-100 text-amber-700',
     };
   }

@@ -245,7 +245,7 @@ export class SchedulerService {
       .create({
         userId: advance.userId.toString(),
         title: 'Recordatorio de rendición',
-        message: `Tienes viáticos activos sin comprobantes cargados esta ${frequency === 'semanal' ? 'semana' : 'quincena/mes'}. Recuerda rendir tus gastos.`,
+        message: `Tienes solicitudes de fondos activas sin comprobantes cargados esta ${frequency === 'semanal' ? 'semana' : 'quincena/mes'}. Recuerda rendir tus gastos.`,
         type: 'warning',
         actionUrl: '/mis-rendiciones',
         metadata: {
@@ -336,9 +336,9 @@ export class SchedulerService {
     this.notificationsService
       .create({
         userId: advance.userId.toString(),
-        title: 'Hoy vence tu periodo de viáticos',
+        title: 'Hoy vence tu periodo de la solicitud de fondos',
         message:
-          'Hoy es el último día de tu periodo de viáticos. Recuerda cargar todos tus comprobantes.',
+          'Hoy es el último día de tu periodo de la solicitud de fondos. Recuerda cargar todos tus comprobantes.',
         type: 'warning',
         actionUrl: '/mis-rendiciones',
         metadata: { advanceId: advance._id, event: 'recordatorio_ultimo_dia' },

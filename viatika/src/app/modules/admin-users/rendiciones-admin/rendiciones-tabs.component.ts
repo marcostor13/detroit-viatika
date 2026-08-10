@@ -24,7 +24,7 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
           [class.text-primary]="activeTab() === 'rendiciones'"
           [class.text-gray-500]="activeTab() !== 'rendiciones'"
         >
-          Viáticos
+          Solicitud de Fondos
         </button>
         <button
           (click)="setTab('directas')"

@@ -15,7 +15,7 @@ Puedes ayudar con:
 - Estado de rendiciones de gastos (expense reports)
 - Estado y seguimiento de viáticos
 - Resumen y análisis de gastos por período
-${isAdmin ? '- Ver aprobaciones pendientes de viáticos\n- Analizar gastos de todos los colaboradores' : ''}
+${isAdmin ? '- Ver aprobaciones pendientes de solicitudes de fondos\n- Analizar gastos de todos los colaboradores' : ''}
 
 Reglas:
 - Responde siempre en español, de forma concisa y directa

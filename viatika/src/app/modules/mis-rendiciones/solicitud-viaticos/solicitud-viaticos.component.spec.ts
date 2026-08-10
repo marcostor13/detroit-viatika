@@ -177,7 +177,7 @@ describe('SolicitudViaticosComponent', () => {
       expenseReportsService.createViatico.and.returnValue(of({} as IExpenseReport));
       component.submit();
       expect(expenseReportsService.createViatico).toHaveBeenCalled();
-      expect(notifications.show).toHaveBeenCalledWith('Solicitud de viáticos enviada correctamente', 'success');
+      expect(notifications.show).toHaveBeenCalledWith('Solicitud de Fondos enviada correctamente', 'success');
       expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones'], { queryParams: { tab: 'viaticos' } });
     });
 

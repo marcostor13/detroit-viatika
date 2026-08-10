@@ -696,7 +696,7 @@ export class ExpenseReportService implements OnModuleInit {
     endDate?: Date
   }): Promise<ExpenseReportDocument> {
     const title =
-      advance.description?.trim() || advance.place?.trim() || 'Viático'
+      advance.description?.trim() || advance.place?.trim() || 'Solicitud de Fondos'
     const assignedCoordinatorId = await this.resolveAssignedCoordinatorId(
       advance.projectId?.toString(),
       advance.clientId.toString()
@@ -3059,7 +3059,7 @@ export class ExpenseReportService implements OnModuleInit {
     const viaticoDocs = (viaticoRows as any[]).flatMap(row => {
       const rep = row.expenseReportId
       const reportTitle =
-        typeof rep === 'object' && rep?.title ? rep.title : 'Viáticos'
+        typeof rep === 'object' && rep?.title ? rep.title : 'Solicitud de Fondos'
       const expenseReportId =
         typeof rep === 'object' && rep?._id
           ? String(rep._id)
@@ -3085,7 +3085,7 @@ export class ExpenseReportService implements OnModuleInit {
           receiptUrl: p.paymentReceiptUrl || '',
           receiptFileName:
             p.paymentReceiptFileName ||
-            `comprobante-pago-viaticos${multiple ? `-${i + 1}` : ''}.pdf`,
+            `comprobante-pago-solicitudes de fondos${multiple ? `-${i + 1}` : ''}.pdf`,
           date:
             p.transferDate?.toISOString?.() ||
             p.createdAt?.toISOString?.() ||
@@ -4141,8 +4141,8 @@ export class ExpenseReportService implements OnModuleInit {
     const startFmt = this.emailService.formatDateDDMMYYYY(dto.startDate as any)
     const endFmt = this.emailService.formatDateDDMMYYYY(dto.endDate as any)
     const description = dto.observations?.trim()
-      ? `Viático: ${dto.place.trim()} (${startFmt} → ${endFmt}) | ${dto.observations.trim()}`
-      : `Viático: ${dto.place.trim()} (${startFmt} → ${endFmt})`
+      ? `Solicitud de Fondos: ${dto.place.trim()} (${startFmt} → ${endFmt}) | ${dto.observations.trim()}`
+      : `Solicitud de Fondos: ${dto.place.trim()} (${startFmt} → ${endFmt})`
 
     return { lineDocs, roundedSum, description }
   }
@@ -4338,7 +4338,7 @@ export class ExpenseReportService implements OnModuleInit {
   async createViatico(dto: CreateViaticoExpenseReportDto, userId: string, clientId: string): Promise<ExpenseReportDocument> {
     const profile = await this.userService.findTransactionalProfile(userId)
     if (!profile?.signature?.trim()) {
-      throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de solicitar viáticos.')
+      throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de solicitar fondos.')
     }
 
     const chain = await this.buildSolicitudCostCenterChain(profile, dto.projectId, userId, clientId)
@@ -4446,7 +4446,7 @@ export class ExpenseReportService implements OnModuleInit {
       }
 
       try {
-        await this.notificationsService.create({ userId: approverId.toString(), title: 'Nueva solicitud de viáticos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
+        await this.notificationsService.create({ userId: approverId.toString(), title: 'Nueva solicitud de fondos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
       } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
 
       const approverEmailEnabled = await this.userService.isEmailEnabled(approverId.toString())
@@ -4485,9 +4485,9 @@ export class ExpenseReportService implements OnModuleInit {
    */
   async approveViatico(id: string, opts: { approvedBy: string; notes?: string }, actorId: string, actorRole: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
-    if (report.status !== 'pending_l1') throw new BadRequestException(`El viático no está pendiente de aprobación (estado actual: ${report.status})`)
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
+    if (report.status !== 'pending_l1') throw new BadRequestException(`La solicitud de fondos no está pendiente de aprobación (estado actual: ${report.status})`)
 
     const chain = report.viaticoApproverChain ?? []
     const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
@@ -4515,11 +4515,11 @@ export class ExpenseReportService implements OnModuleInit {
       // el viático quedó 100% cubierto por saldo, sin desembolso real).
       report.status = 'pending_contabilidad'
       await report.save()
-      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos en aprobación final', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada por los centros de costo y está pendiente de la aprobación final de Contabilidad.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
+      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de Fondos en aprobación final', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada por los centros de costo y está pendiente de la aprobación final de Contabilidad.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
       await this.notifyContabilidadPendingApproval(report as ExpenseReportDocument)
     } else {
       await report.save()
-      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos en revisión', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada por uno de sus aprobadores (${nextLevel} de ${report.viaticoRequiredLevels ?? chain.length}) y está pendiente de los demás niveles.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
+      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de Fondos en revisión', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada por uno de sus aprobadores (${nextLevel} de ${report.viaticoRequiredLevels ?? chain.length}) y está pendiente de los demás niveles.`, type: 'info', actionUrl: '/mis-rendiciones' }).catch(() => {})
       this.notifyViaticoCoordinator(report as ExpenseReportDocument, report.userId.toString(), report.clientId.toString()).catch(() => {})
     }
 
@@ -4979,7 +4979,7 @@ export class ExpenseReportService implements OnModuleInit {
       for (const r of recipients) {
         await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
           clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '',
-          emailTitle: 'Solicitud de viáticos pendiente de tu aprobación',
+          emailTitle: 'Solicitud de Fondos pendiente de tu aprobación',
           intro: 'La solicitud fue aprobada por los centros de costo correspondientes y requiere tu aprobación final antes de quedar lista para pago.',
           ...detalle,
           platformUrl: this.emailService.buildAppUrl('/viaticos'),
@@ -4997,9 +4997,9 @@ export class ExpenseReportService implements OnModuleInit {
    */
   async approveViaticoContabilidad(id: string, opts: { approvedBy: string; notes?: string }, actorId: string, actorRole: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
-    if (report.status !== 'pending_contabilidad') throw new BadRequestException(`El viático no está pendiente de la aprobación de Contabilidad (estado actual: ${report.status})`)
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
+    if (report.status !== 'pending_contabilidad') throw new BadRequestException(`La solicitud de fondos no está pendiente de la aprobación de Contabilidad (estado actual: ${report.status})`)
     if (actorRole !== ROLES.CONTABILIDAD && actorRole !== ROLES.SUPER_ADMIN) {
       throw new ForbiddenException('Solo Contabilidad puede aprobar este paso.')
     }
@@ -5017,7 +5017,7 @@ export class ExpenseReportService implements OnModuleInit {
     const autoOpenedBySaldo = await this.onViaticoFullyApproved(report as ExpenseReportDocument)
 
     if (!autoOpenedBySaldo) {
-      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos aprobada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada. El pago está siendo procesado.`, type: 'success', actionUrl: '/mis-rendiciones' }).catch(() => {})
+      this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de Fondos aprobada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue aprobada. El pago está siendo procesado.`, type: 'success', actionUrl: '/mis-rendiciones' }).catch(() => {})
     }
 
     return this.findOne(id) as Promise<ExpenseReportDocument>
@@ -5069,7 +5069,7 @@ export class ExpenseReportService implements OnModuleInit {
           console.log(`[TESORERÍA VIÁTICO] Enviando a ${tesoEmail}...`)
           await this.emailService.sendViaticoAprobadoTesoreria(tesoEmail, {
             clientId: clientIdStr,
-            advanceDescription: report.viaticoPlace ?? report.title ?? 'Solicitud de viáticos',
+            advanceDescription: report.viaticoPlace ?? report.title ?? 'Solicitud de Fondos',
             collaboratorName: collab?.name ?? 'Colaborador',
             collaboratorDni: collab?.dni,
             budgetFormatted: Number(report.viaticoAmount ?? 0).toFixed(2),
@@ -5094,8 +5094,8 @@ export class ExpenseReportService implements OnModuleInit {
 
   async rejectViatico(id: string, opts: { rejectedBy: string; rejectionReason: string }, actorId: string, actorRole: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     if (!['pending_l1', 'pending_contabilidad'].includes(report.status)) {
       throw new BadRequestException(`No se puede rechazar en estado "${report.status}"`)
     }
@@ -5128,7 +5128,7 @@ export class ExpenseReportService implements OnModuleInit {
     report.viaticoRejectedByRole = rejectedByRole
     await report.save()
 
-    this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de viáticos rechazada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: '/mis-rendiciones' }).catch(() => {})
+    this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de Fondos rechazada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: '/mis-rendiciones' }).catch(() => {})
 
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email && await this.userService.isEmailEnabled(report.userId.toString())) {
@@ -5152,14 +5152,14 @@ export class ExpenseReportService implements OnModuleInit {
 
   async resubmitViatico(id: string, dto: ResubmitViaticoDto, actingUserId: string, clientId: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     if (!['rejected', 'pending_l1'].includes(report.status)) throw new BadRequestException('Solo pueden reenviarse solicitudes rechazadas o pendientes de aprobación.')
     if (report.userId.toString() !== actingUserId) throw new ForbiddenException('Solo el colaborador solicitante puede corregir y reenviar esta solicitud.')
     if (report.clientId.toString() !== clientId) throw new ForbiddenException('La solicitud no pertenece a su organización.')
 
     const profile = await this.userService.findTransactionalProfile(actingUserId)
-    if (!profile?.signature?.trim()) throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de reenviar viáticos.')
+    if (!profile?.signature?.trim()) throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de reenviar solicitudes de fondos.')
 
     const { lineDocs, roundedSum, description } = await this.validateViaticoLines(
       { place: dto.place, startDate: dto.startDate, endDate: dto.endDate, projectId: dto.projectId, lines: dto.lines, observations: dto.observations, amount: dto.amount },
@@ -5214,14 +5214,14 @@ export class ExpenseReportService implements OnModuleInit {
 
   async registerViaticoPayment(id: string, dto: PayViaticoDto, userRole: string, userPermissions?: any, opts?: { bypassReceipt?: boolean }): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     // Estados con saldo del anticipo aún por depositar. Tras el envío del colaborador
     // (submitted/pending_accounting) contabilidad todavía puede completar el pago parcial;
     // en esos casos solo se actualiza el monto pagado, sin tocar el estado del flujo.
     const PAYABLE_STATUSES = ['viatico_approved', 'partially_paid', 'submitted', 'pending_accounting']
     if (!PAYABLE_STATUSES.includes(report.status)) {
-      throw new BadRequestException(`Solo se puede registrar pago de viáticos aprobados (estado actual: ${report.status})`)
+      throw new BadRequestException(`Solo se puede registrar pago de fondos aprobados (estado actual: ${report.status})`)
     }
 
     const canPay = [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA].includes(userRole as ROLES) || userPermissions?.canApproveL2 === true
@@ -5305,11 +5305,11 @@ export class ExpenseReportService implements OnModuleInit {
 
     const fullyPaidMsg = fullyPaid
       ? (inPrePaymentPhase
-          ? `Se registró el pago de tu viático por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
-          : `Se registró el pago restante de tu viático por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
-      : `Se registró un pago parcial de tu viático por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
+          ? `Se registró el pago de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
+          : `Se registró el pago restante de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
+      : `Se registró un pago parcial de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
 
-    this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de viático registrado' : 'Pago parcial de viático registrado', message: fullyPaidMsg, type: 'success', actionUrl: `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
+    this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de fondos registrado' : 'Pago parcial de fondos registrado', message: fullyPaidMsg, type: 'success', actionUrl: `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
 
     if (collaborator?.email && await this.userService.isEmailEnabled(collabId)) {
       this.emailService.sendViaticoPagoRealizado(collaborator.email, {
@@ -5337,8 +5337,8 @@ export class ExpenseReportService implements OnModuleInit {
 
   async cancelViatico(id: string, userId: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     if (report.userId.toString() !== userId) throw new ForbiddenException('Solo el colaborador solicitante puede cancelar esta solicitud.')
     if (report.status !== 'pending_l1') throw new BadRequestException('Solo se puede cancelar una solicitud en estado pendiente de aprobación.')
     report.status = 'cancelled'
@@ -5378,7 +5378,7 @@ export class ExpenseReportService implements OnModuleInit {
         await this.notificationsService
           .create({
             userId: a.userId,
-            title: 'Solicitud de viáticos cancelada',
+            title: 'Solicitud de Fondos cancelada',
             message: plainSummary,
             type: 'warning',
             actionUrl: '/viaticos',
@@ -5459,10 +5459,10 @@ export class ExpenseReportService implements OnModuleInit {
 
   async initiateViaticoReturnTracking(id: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     if (report.status !== 'settled') throw new BadRequestException('Solo se puede iniciar devolución desde estado liquidado')
-    if (!report.settlement || report.settlement.type !== 'devolucion') throw new BadRequestException('Este viático no tiene saldo a devolver')
+    if (!report.settlement || report.settlement.type !== 'devolucion') throw new BadRequestException('Esta solicitud de fondos no tiene saldo a devolver')
 
     const dueDate = this.addViaticoBusinessDays(new Date(), 10)
     await this.expenseReportModel.findByIdAndUpdate(id, {
@@ -5484,8 +5484,8 @@ export class ExpenseReportService implements OnModuleInit {
 
   async uploadViaticoReturnProof(id: string, proof: { depositDate: Date; amountReturned: number; bankOrigin: string; operationNumber: string; fileUrl: string; fileKey?: string; note?: string; scannedAmount?: number; operationDate?: string; operationTime?: string; titular?: string }): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     const rr = (report as any).viaticoReturnRecord
     if (!rr || rr.status !== 'pending') throw new BadRequestException('No hay devolución pendiente de comprobante')
     if (proof.amountReturned < rr.amountDue) throw new BadRequestException(`El monto devuelto (${proof.amountReturned}) es menor al monto adeudado (${rr.amountDue})`)
@@ -5495,8 +5495,8 @@ export class ExpenseReportService implements OnModuleInit {
 
   async validateViaticoReturn(id: string, approved: boolean, validatedBy: string, rejectionReason?: string): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel.findById(id)
-    if (!report) throw new NotFoundException(`Viático ${id} no encontrado`)
-    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo viático')
+    if (!report) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
+    if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     const rr = (report as any).viaticoReturnRecord
     if (!rr || rr.status !== 'proof_uploaded') throw new BadRequestException('No hay comprobante pendiente de validación')
     if (!approved && (!rejectionReason || rejectionReason.trim().length < 50)) throw new BadRequestException('El motivo de rechazo debe tener al menos 50 caracteres')

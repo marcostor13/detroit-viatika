@@ -281,13 +281,13 @@
       <!-- Approval permissions (not shown for Colaborador) -->
       @if (showApprovalPermissions) {
       <div class="border-t border-tertiary/10 pt-5">
-        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Aprobación de viáticos</p>
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Aprobación de solicitudes de fondos</p>
         <div class="flex flex-col gap-2">
           <label class="flex items-start gap-3 p-2.5 rounded-xl border border-tertiary/10 hover:bg-background cursor-pointer transition-colors">
             <input type="checkbox" class="mt-0.5 h-4 w-4 rounded accent-primary cursor-pointer flex-shrink-0" [(ngModel)]="permissions.canApproveL1" />
             <div>
               <p class="text-sm font-medium text-secondary">Aprobación Nivel 1</p>
-              <p class="text-xs text-tertiary mt-0.5">Puede aprobar o rechazar viáticos en primera instancia.</p>
+              <p class="text-xs text-tertiary mt-0.5">Puede aprobar o rechazar solicitudes de fondos en primera instancia.</p>
             </div>
           </label>
           <label class="flex items-start gap-3 p-2.5 rounded-xl border border-tertiary/10 hover:bg-background cursor-pointer transition-colors">
