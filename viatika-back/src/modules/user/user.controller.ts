@@ -336,7 +336,7 @@ export class UserController {
       ],
       [
         'emailCoordinador',
-        'Email de un usuario ya existente que aprobará sus viáticos (opcional)',
+        'Email de un usuario ya existente que aprobará sus solicitudes de fondos (opcional)',
       ],
       ['tipoCuenta', 'ahorros o corriente'],
       [

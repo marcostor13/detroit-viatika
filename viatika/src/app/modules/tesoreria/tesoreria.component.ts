@@ -477,7 +477,7 @@ export class TesoreriaComponent implements OnInit {
       operationTime: this.viaticoOperationTime || undefined,
     }).subscribe({
       next: () => {
-        this.notificationService.show('Pago de viático registrado correctamente', 'success');
+        this.notificationService.show('Pago de fondos registrado correctamente', 'success');
         this.showViaticoPaymentModal = false;
         this.loadData();
         this.isActing.set(false);

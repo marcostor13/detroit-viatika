@@ -420,7 +420,7 @@ export class ViaticosDetailComponent implements OnInit {
       autoTable(doc, {
         startY: tableY,
         margin: { left: M, right: M },
-        head: [['Viáticos', 'Detalle', 'Importe', 'Cantidad\nde personas', 'Combustible\nGLP x dia', 'Días', 'Total']],
+        head: [['Solicitud de Fondos', 'Detalle', 'Importe', 'Cantidad\nde personas', 'Combustible\nGLP x dia', 'Días', 'Total']],
         body: [
           ...tableRows,
           [
@@ -491,7 +491,7 @@ export class ViaticosDetailComponent implements OnInit {
 
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Viatika';
-      const ws = wb.addWorksheet('Solicitud Viáticos');
+      const ws = wb.addWorksheet('Solicitud de Fondos');
 
       ws.columns = [
         { width: 40 },
@@ -557,7 +557,7 @@ export class ViaticosDetailComponent implements OnInit {
 
       // ── Encabezado tabla (row 11) ──
       const hRow = ws.addRow([
-        'Viáticos', 'Detalle', 'Importe', 'Cantidad de personas',
+        'Solicitud de Fondos', 'Detalle', 'Importe', 'Cantidad de personas',
         'Combustible GLP x dia', 'Días', 'Total',
       ]);
       hRow.height = 36;

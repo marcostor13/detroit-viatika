@@ -153,7 +153,7 @@ export class CategoriasComponent implements OnInit {
     headerRow.height = 22;
 
     // Sample row
-    sheet.addRow(['Viáticos de transporte', '6310', '6310001', 'Gastos de movilidad del colaborador', 'Solo traslados locales', 500, 'Movilidad']);
+    sheet.addRow(['Fondos de transporte', '6310', '6310001', 'Gastos de movilidad del colaborador', 'Solo traslados locales', 500, 'Movilidad']);
     sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } };
 
     const instrSheet = workbook.addWorksheet('Instrucciones');

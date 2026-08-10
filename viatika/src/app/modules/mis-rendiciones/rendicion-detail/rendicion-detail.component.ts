@@ -3287,7 +3287,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         this.isCancellingAdvance.set(false);
         this.showCancelAdvanceModal.set(false);
         this.cancellingAdvanceId.set(null);
-        this.notificationService.show('Solicitud de viaticos cancelada', 'success');
+        this.notificationService.show('Solicitud de Fondos cancelada', 'success');
         this.loadAdvances();
       },
       error: (err) => {

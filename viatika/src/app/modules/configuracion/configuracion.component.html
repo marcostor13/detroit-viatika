@@ -444,7 +444,7 @@
       <div class="flex items-center justify-between py-3 border-b border-divider">
         <div>
           <p class="text-sm font-medium text-secondary">Notificaciones automaticas</p>
-          <p class="text-xs text-tertiary mt-0.5">Recordatorios periodicos para rendicion de viaticos</p>
+          <p class="text-xs text-tertiary mt-0.5">Recordatorios periodicos para rendicion de fondos</p>
         </div>
         <span class="text-sm font-semibold" [class]="(companyConfig?.notificationSettings?.enabled) ? 'text-success-ink' : 'text-tertiary/70'">
           {{ (companyConfig?.notificationSettings?.enabled) ? 'Activadas' : 'Desactivadas' }}
@@ -542,10 +542,10 @@
       }
 
       <p class="text-xs text-tertiary">
-        El colaborador recibe un aviso el ultimo dia de su viatico.<br>
+        El colaborador recibe un aviso el ultimo dia de su solicitud de fondos.<br>
         El aprobador recibe un recordatorio de rendiciones pendientes de revision.<br>
         Contabilidad recibe un recordatorio de rendiciones pendientes de aprobacion contable.<br>
-        Para viáticos de menos de 7 dias, se envia una notificacion urgente 1 dia antes del vencimiento.
+        Para solicitudes de fondos de menos de 7 dias, se envia una notificacion urgente 1 dia antes del vencimiento.
       </p>
       }
 

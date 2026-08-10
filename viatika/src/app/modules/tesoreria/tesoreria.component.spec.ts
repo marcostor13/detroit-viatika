@@ -318,7 +318,7 @@ describe('TesoreriaComponent', () => {
       spyOn(component, 'loadData');
       component.confirmViaticoPayment();
       expect(expenseReportsService.registerViaticoPayment).toHaveBeenCalledWith('r1', jasmine.objectContaining({ amount: 100 }));
-      expect(notifications.show).toHaveBeenCalledWith('Pago de viático registrado correctamente', 'success');
+      expect(notifications.show).toHaveBeenCalledWith('Pago de fondos registrado correctamente', 'success');
       expect(component.showViaticoPaymentModal).toBeFalse();
       expect(component.isActing()).toBeFalse();
       expect(component.loadData).toHaveBeenCalled();

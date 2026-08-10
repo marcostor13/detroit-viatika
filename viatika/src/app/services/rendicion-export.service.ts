@@ -611,7 +611,7 @@ export class RendicionExportService {
       ws.getCell(r, 1).font = { bold: true };
       r++;
       const sym = monedaSymbol(data.moneda);
-      const budgetHeaders = ['Viáticos', `Importe (${sym})`, 'Personas', 'Combustible GLP/dia', 'Días', `Total (${sym})`];
+      const budgetHeaders = ['Solicitud de Fondos', `Importe (${sym})`, 'Personas', 'Combustible GLP/dia', 'Días', `Total (${sym})`];
       budgetHeaders.forEach((h, i) => {
         const c = ws.getCell(r, i + 1);
         c.value = h;
@@ -909,7 +909,7 @@ export class RendicionExportService {
       y += 4;
       autoTable(doc, {
         startY: y,
-        head: [['Viáticos', 'Importe', 'Personas', 'Combustible', 'Días', 'Total']],
+        head: [['Solicitud de Fondos', 'Importe', 'Personas', 'Combustible', 'Días', 'Total']],
         body: data.items.map((i) => [
           i.descripcion, i.importe.toFixed(2), i.personas, i.combustible.toFixed(2), i.dias, i.total.toFixed(2),
         ]),
@@ -1202,7 +1202,7 @@ export class RendicionExportService {
     doc.text('DECLARACION JURADA', 105, 16, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Tipo: ${data.tipo === 'viajes_exterior' ? 'Viajes al Exterior' : 'Viaticos Nacionales'}`, 14, 26);
+    doc.text(`Tipo: ${data.tipo === 'viajes_exterior' ? 'Viajes al Exterior' : 'Solicitud de Fondos Nacionales'}`, 14, 26);
     doc.text(`Empresa: ${data.empresaNombre}`, 14, 32);
     doc.text(`RUC: ${data.empresaRuc}`, 14, 38);
     doc.text(`Colaborador: ${data.colaborador}`, 14, 44);
@@ -2120,7 +2120,7 @@ export class RendicionExportService {
 
     y += 10;
     doc.setFontSize(7);
-    doc.text('(*) Comprende únicamente los gastos de viáticos por alimentación y movilidad.', lm, y);
+    doc.text('(*) Comprende únicamente los gastos de fondos por alimentación y movilidad.', lm, y);
     y += 4;
     const notaLines = doc.splitTextToSize(
       '(**) La falta de alguno de los datos señalados en los rubros I y II sólo inhabilita la sustentación del gasto por movilidad o alimentación, según corresponda.',
