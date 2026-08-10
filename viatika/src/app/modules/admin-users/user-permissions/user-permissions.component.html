@@ -48,7 +48,7 @@
       <h2 class="text-base font-semibold text-secondary mb-1">Centros de Costo Asignados</h2>
       <p class="text-sm text-tertiary mb-5">
         Marca con la estrella el <strong>centro de costo principal</strong> del colaborador: cuando solicite un
-        viático hacia un centro de costo que no esté en esta lista, el aprobador del principal actúa como primer
+        solicitud de fondos hacia un centro de costo que no esté en esta lista, el aprobador del principal actúa como primer
         nivel, seguido del aprobador del centro de costo elegido. Si no marcas ninguno, se usa el primero de la lista.
       </p>
 
@@ -109,7 +109,7 @@
       <p class="text-sm text-tertiary mb-5">
         Quién aprueba lo que este colaborador solicita o rinde, por nivel. Cada nivel puede tener varios
         aprobadores: cualquiera de ellos completa ese paso y <strong>todos reciben la notificación</strong>.
-        La <strong>rendición</strong> pasa por el Nivel 1 y el Nivel 2; la <strong>solicitud de viático</strong>
+        La <strong>rendición</strong> pasa por el Nivel 1 y el Nivel 2; la <strong>solicitud de fondos</strong>
         pasa solo por el Nivel 2. Los niveles superiores solo intervienen cuando el propio colaborador figura
         como aprobador de un nivel y el paso escala.
       </p>
@@ -243,9 +243,9 @@
 
     <!-- Solicitud de viáticos: opciones del calendario -->
     <app-card [hover]="false" class="mb-6">
-      <h2 class="text-base font-semibold text-secondary mb-1">Solicitud de viáticos</h2>
+      <h2 class="text-base font-semibold text-secondary mb-1">Solicitud de Fondos</h2>
       <p class="text-sm text-tertiary mb-5">
-        Opciones del formulario de solicitud de viáticos para este usuario.
+        Opciones del formulario de solicitud de fondos para este usuario.
       </p>
       <div class="space-y-3">
         <label class="flex items-start gap-4 p-3 rounded-lg border border-divider hover:bg-background cursor-pointer transition-colors">
@@ -256,10 +256,10 @@
             (change)="togglePermitirFechasAnteriores($any($event.target).checked)"
           />
           <div>
-            <p class="text-sm font-medium text-secondary">Permitir fechas anteriores en solicitud de viáticos</p>
+            <p class="text-sm font-medium text-secondary">Permitir fechas anteriores en solicitud de fondos</p>
             <p class="text-xs text-tertiary mt-0.5">
               Habilita elegir fechas de inicio/fin anteriores a la fecha de hoy en el calendario de
-              solicitud de viáticos. Desactivado por defecto.
+              solicitud de fondos. Desactivado por defecto.
             </p>
           </div>
         </label>

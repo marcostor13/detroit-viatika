@@ -35,7 +35,7 @@
       </div>
       <p class="text-3xl font-bold text-secondary">{{ kpiSolicitudesPendientes() }}</p>
       <p class="text-xs text-tertiary">
-        @if (kpiSolicitudesPendientes() > 0) { solicitud{{ kpiSolicitudesPendientes() !== 1 ? 'es' : '' }} de viáticos por aprobar }
+        @if (kpiSolicitudesPendientes() > 0) { solicitud{{ kpiSolicitudesPendientes() !== 1 ? 'es' : '' }} de solicitudes de fondos por aprobar }
         @else { sin solicitudes pendientes }
       </p>
     </a>
@@ -235,7 +235,7 @@
 <ng-template #miActividad>
   <!-- VIÁTICOS -->
   @if (canSeeViaticos) {
-  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Viáticos</h3>
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Solicitud de Fondos</h3>
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
     <ng-container *ngTemplateOutlet="kpiCard; context: {
       title: 'Solicitudes de viáticos', value: kpiSolicitudesViaticos(), accent: 'yellow',

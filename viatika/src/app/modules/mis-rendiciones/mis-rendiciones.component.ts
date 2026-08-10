@@ -1093,7 +1093,7 @@ export class MisRendicionesComponent implements OnInit {
 
   reportDisplayTitle(report: IExpenseReport): string {
     if (report.isDirecta) return report.gestion || report.motivo || report.description || 'Rendicion directa';
-    return report.description || report.title || 'Rendicion de viaticos';
+    return report.description || report.title || 'Rendicion de fondos';
   }
 
   panelStatusText(report: IExpenseReport): string {

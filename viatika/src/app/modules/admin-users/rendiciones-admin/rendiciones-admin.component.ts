@@ -291,7 +291,7 @@ export class RendicionesAdminComponent implements OnInit {
         _id: r._id,
         source: 'report' as const,
         kind: (isDirectaChain ? 'directa' : 'viatico') as UnifiedRendicionItem['kind'],
-        kindLabel: isDirectaChain ? 'Directa' : 'Viático',
+        kindLabel: isDirectaChain ? 'Directa' : 'Solicitud de Fondos',
         kindColor: isDirectaChain ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
         userName: name,
         userInitials: this.initials(name),

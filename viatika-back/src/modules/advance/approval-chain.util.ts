@@ -331,7 +331,7 @@ export function buildSolicitudChain(opts: {
 
   if (assignedProjectIds.length === 0) {
     throw new BadRequestException(
-      'El colaborador no tiene centros de costo asignados. Un administrador debe asignarle al menos uno en sus permisos antes de solicitar viáticos.'
+      'El colaborador no tiene centros de costo asignados. Un administrador debe asignarle al menos uno en sus permisos antes de solicitar fondos.'
     )
   }
 
@@ -348,7 +348,7 @@ export function buildSolicitudChain(opts: {
     const principalProject = projectById.get(principalId)
     if (!principalProject) {
       throw new BadRequestException(
-        'Su centro de costo principal no fue encontrado. Un administrador debe revisarlo antes de solicitar viáticos hacia otro centro de costo.'
+        'Su centro de costo principal no fue encontrado. Un administrador debe revisarlo antes de solicitar fondos hacia otro centro de costo.'
       )
     }
     const principalStep = resolveStepFromSource({

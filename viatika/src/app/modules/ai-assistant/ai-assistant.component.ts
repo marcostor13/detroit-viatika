@@ -113,7 +113,7 @@ export class AiAssistantComponent implements OnDestroy {
   toolLabel(toolName?: string): string {
     const labels: Record<string, string> = {
       get_my_expense_reports: 'Consultando rendiciones...',
-      get_my_advances: 'Consultando viáticos...',
+      get_my_advances: 'Consultando solicitudes de fondos...',
       get_pending_approvals: 'Consultando aprobaciones pendientes...',
       get_expense_summary: 'Analizando gastos...',
     };

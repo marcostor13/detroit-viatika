@@ -358,7 +358,7 @@ export class AdvanceService implements OnModuleInit {
 
     const startFmt = this.emailService.formatDateDDMMYYYY(dto.startDate)
     const endFmt = this.emailService.formatDateDDMMYYYY(dto.endDate)
-    const metaDesc = `Viático: ${dto.place.trim()} (${startFmt} → ${endFmt})`
+    const metaDesc = `Solicitud de Fondos: ${dto.place.trim()} (${startFmt} → ${endFmt})`
     const description = dto.observations?.trim()
       ? `${metaDesc} | ${dto.observations.trim()}`
       : metaDesc
@@ -473,7 +473,7 @@ export class AdvanceService implements OnModuleInit {
     try {
       await this.notificationsService.create({
         userId: coordId.toString(),
-        title: 'Nueva solicitud de viáticos pendiente',
+        title: 'Nueva solicitud de fondos pendiente',
         message: `${collaborator.name} solicitó viáticos para ${projectLabel} — ${this.moneySymbol(advance.moneda)} ${totalFormatted}. Ingresa a Tesorería para revisar.`,
         type: 'info',
         actionUrl: '/tesoreria',
@@ -799,7 +799,7 @@ export class AdvanceService implements OnModuleInit {
 
     const emailTitle = urgent
       ? 'Aprobación final requerida — inicio de viaje próximo'
-      : 'Solicitud de viáticos pendiente de aprobación final'
+      : 'Solicitud de Fondos pendiente de aprobación final'
 
     const urgentBanner =
       '🟥 URGENTE: la fecha de inicio del viaje es hoy o mañana. Priorizar aprobación y gestión de desembolso.'
@@ -1076,7 +1076,7 @@ export class AdvanceService implements OnModuleInit {
 
     const emailTitle = urgent
       ? 'Solicitud aprobada — inicio de viaje próximo'
-      : 'Solicitud de viáticos aprobada'
+      : 'Solicitud de Fondos aprobada'
 
     const urgentBanner =
       '🟥 URGENTE: la fecha de inicio del viaje es hoy o mañana. Priorizar gestión de desembolso.'
@@ -1338,7 +1338,7 @@ export class AdvanceService implements OnModuleInit {
       })
       .exec()
     if (!advance)
-      throw new NotFoundException(`Viático con ID ${id} no encontrado`)
+      throw new NotFoundException(`Solicitud de Fondos con ID ${id} no encontrada`)
     return advance
   }
 
@@ -1356,11 +1356,11 @@ export class AdvanceService implements OnModuleInit {
     actorRole: string
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
 
     if (advance.status !== 'pending_l1') {
       throw new BadRequestException(
-        `El viático no está pendiente de aprobación (estado actual: ${advance.status})`
+        `La solicitud de fondos no está pendiente de aprobación (estado actual: ${advance.status})`
       )
     }
 
@@ -1399,8 +1399,8 @@ export class AdvanceService implements OnModuleInit {
       this.notificationsService
         .create({
           userId: saved.userId.toString(),
-          title: 'Solicitud de viáticos aprobada',
-          message: `Tu solicitud de viáticos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue aprobada. El pago está siendo procesado.`,
+          title: 'Solicitud de Fondos aprobada',
+          message: `Tu solicitud de fondos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue aprobada. El pago está siendo procesado.`,
           type: 'success',
           actionUrl: '/mis-rendiciones',
         })
@@ -1409,8 +1409,8 @@ export class AdvanceService implements OnModuleInit {
       this.notificationsService
         .create({
           userId: saved.userId.toString(),
-          title: 'Solicitud de viáticos en revisión',
-          message: `Tu solicitud de viáticos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue aprobada en el nivel ${saved.approvalLevel} de ${saved.requiredLevels} y está pendiente del siguiente aprobador.`,
+          title: 'Solicitud de Fondos en revisión',
+          message: `Tu solicitud de fondos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue aprobada en el nivel ${saved.approvalLevel} de ${saved.requiredLevels} y está pendiente del siguiente aprobador.`,
           type: 'info',
           actionUrl: '/mis-rendiciones',
         })
@@ -1431,11 +1431,11 @@ export class AdvanceService implements OnModuleInit {
     actorRole: string
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
 
     if (advance.status !== 'pending_l1') {
       throw new BadRequestException(
-        `No se puede rechazar un viático en estado "${advance.status}"`
+        `No se puede rechazar una solicitud de fondos en estado "${advance.status}"`
       )
     }
 
@@ -1473,8 +1473,8 @@ export class AdvanceService implements OnModuleInit {
     this.notificationsService
       .create({
         userId: saved.userId.toString(),
-        title: 'Solicitud de viáticos rechazada',
-        message: `Tu solicitud de viáticos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue rechazada. Motivo: ${dto.rejectionReason}`,
+        title: 'Solicitud de Fondos rechazada',
+        message: `Tu solicitud de fondos por ${this.moneySymbol(saved.moneda)} ${this.formatViaticoMoney(saved.amount)} fue rechazada. Motivo: ${dto.rejectionReason}`,
         type: 'error',
         actionUrl: '/mis-rendiciones',
       })
@@ -1490,7 +1490,7 @@ export class AdvanceService implements OnModuleInit {
     opts?: { bypassReceipt?: boolean }
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
 
     // Se permite registrar pagos cuando está aprobado/en espera, o seguir
     // sumando pagos parciales (incluso por encima de lo solicitado) mientras no
@@ -1501,7 +1501,7 @@ export class AdvanceService implements OnModuleInit {
       )
     ) {
       throw new BadRequestException(
-        `Solo se puede registrar pago de viáticos aprobados o en proceso de pago (estado actual: ${advance.status})`
+        `Solo se puede registrar pago de fondos aprobados o en proceso de pago (estado actual: ${advance.status})`
       )
     }
 
@@ -1657,14 +1657,14 @@ export class AdvanceService implements OnModuleInit {
     const fullyPaid = saved.status === 'paid'
     const sym = this.moneySymbol(saved.moneda)
     const message = fullyPaid
-      ? `Se registró el pago de tu viático por ${sym} ${this.formatViaticoMoney(paymentAmount)} (total pagado ${sym} ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)}). Ya puedes registrar tus gastos.`
-      : `Se registró un pago parcial de tu viático por ${sym} ${this.formatViaticoMoney(paymentAmount)} (total pagado ${sym} ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)} de ${sym} ${this.formatViaticoMoney(saved.amount)}). Ya puedes registrar tus gastos.`
+      ? `Se registró el pago de tu solicitud de fondos por ${sym} ${this.formatViaticoMoney(paymentAmount)} (total pagado ${sym} ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)}). Ya puedes registrar tus gastos.`
+      : `Se registró un pago parcial de tu solicitud de fondos por ${sym} ${this.formatViaticoMoney(paymentAmount)} (total pagado ${sym} ${this.formatViaticoMoney(saved.paidAmount ?? paymentAmount)} de ${sym} ${this.formatViaticoMoney(saved.amount)}). Ya puedes registrar tus gastos.`
     this.notificationsService
       .create({
         userId: saved.userId.toString(),
         title: fullyPaid
-          ? 'Pago de viático registrado'
-          : 'Pago parcial de viático registrado',
+          ? 'Pago de fondos registrado'
+          : 'Pago parcial de fondos registrado',
         message,
         type: 'success',
         actionUrl,
@@ -1949,11 +1949,11 @@ export class AdvanceService implements OnModuleInit {
 
   async registerReturn(id: string, returnedAmount: number): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
 
     if (!['settled', 'paid', 'partially_paid'].includes(advance.status)) {
       throw new BadRequestException(
-        `Solo se puede registrar devolución de viáticos pagados o liquidados`
+        `Solo se puede registrar devolución de solicitudes de fondos pagadas o liquidadas`
       )
     }
 
@@ -1968,14 +1968,14 @@ export class AdvanceService implements OnModuleInit {
   /** Inicia el registro de devolución luego de settle() cuando type='devolucion'. */
   async initiateReturnTracking(id: string): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
     if (advance.status !== 'settled') {
       throw new BadRequestException(
         'Solo se puede iniciar devolución desde estado liquidado'
       )
     }
     if (!advance.settlement || advance.settlement.type !== 'devolucion') {
-      throw new BadRequestException('Este viático no tiene saldo a devolver')
+      throw new BadRequestException('Esta solicitud de fondos no tiene saldo a devolver')
     }
     const dueDate = this.addBusinessDays(new Date(), 10)
     const returnRecord = {
@@ -2024,11 +2024,11 @@ export class AdvanceService implements OnModuleInit {
     }
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
     const rr = (advance as any).returnRecord
     if (!rr || rr.status !== 'pending') {
       throw new BadRequestException(
-        'El viático no tiene una devolución pendiente de comprobante'
+        'La solicitud de fondos no tiene una devolución pendiente de comprobante'
       )
     }
     if (proof.amountReturned < rr.amountDue) {
@@ -2055,7 +2055,7 @@ export class AdvanceService implements OnModuleInit {
     rejectionReason?: string
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
     const rr = (advance as any).returnRecord
     if (!rr || rr.status !== 'proof_uploaded') {
       throw new BadRequestException(
@@ -2153,7 +2153,7 @@ export class AdvanceService implements OnModuleInit {
     clientId: string
   ): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
 
     if (advance.status !== 'rejected' && advance.status !== 'pending_l1') {
       throw new BadRequestException(
@@ -2177,7 +2177,7 @@ export class AdvanceService implements OnModuleInit {
       await this.userService.findTransactionalProfile(actingUserId)
     if (!profile?.signature?.trim()) {
       throw new ForbiddenException(
-        'Debe registrar su firma digital en el perfil antes de reenviar viáticos.'
+        'Debe registrar su firma digital en el perfil antes de reenviar solicitudes de fondos.'
       )
     }
 
@@ -2254,7 +2254,7 @@ export class AdvanceService implements OnModuleInit {
 
   async cancelByCollaborator(id: string, userId: string): Promise<Advance> {
     const advance = await this.advanceModel.findById(id)
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
     if (advance.userId.toString() !== userId) {
       throw new ForbiddenException(
         'Solo el colaborador solicitante puede cancelar esta solicitud.'
@@ -2289,7 +2289,7 @@ export class AdvanceService implements OnModuleInit {
    */
   async remove(id: string, actor: SolicitudDeleteActor): Promise<Advance> {
     const advance = await this.advanceModel.findById(id).exec()
-    if (!advance) throw new NotFoundException(`Viático ${id} no encontrado`)
+    if (!advance) throw new NotFoundException(`Solicitud de Fondos ${id} no encontrada`)
 
     const role = actor?.role ?? ''
     const isSuperAdmin = role === ROLES.SUPER_ADMIN
@@ -2306,14 +2306,14 @@ export class AdvanceService implements OnModuleInit {
     // rendición vía la cascada.
     if (advance.expenseReportId && !isSuperAdmin) {
       throw new ForbiddenException(
-        'Este viático ya fue pagado y tiene una rendición asociada; no puede eliminarse.'
+        'Esta solicitud de fondos ya fue pagada y tiene una rendición asociada; no puede eliminarse.'
       )
     }
 
     if (hasApproval) {
       if (!isContabilidad && !isSuperAdmin) {
         throw new ForbiddenException(
-          'Este viático ya tiene una aprobación; solo Contabilidad puede eliminarlo.'
+          'Esta solicitud de fondos ya tiene una aprobación; solo Contabilidad puede eliminarlo.'
         )
       }
     } else if (
@@ -2401,7 +2401,7 @@ export class AdvanceService implements OnModuleInit {
     this.notificationsService
       .create({
         userId: coordId.toString(),
-        title: 'Solicitud de viáticos cancelada',
+        title: 'Solicitud de Fondos cancelada',
         message: `${collaborator.name} canceló su solicitud de viáticos para ${projectLabel} — ${this.moneySymbol(advance.moneda)} ${totalFormatted}.`,
         type: 'warning',
         actionUrl: '/viaticos',

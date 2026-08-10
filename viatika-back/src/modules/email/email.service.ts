@@ -1141,7 +1141,7 @@ export class EmailService {
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
-        subject: `Viático aprobado, pendiente de pago — ${data.advanceDescription}`,
+        subject: `Solicitud de Fondos aprobada, pendiente de pago — ${data.advanceDescription}`,
         template: './viatico-aprobado-tesoreria',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
@@ -1327,7 +1327,7 @@ export class EmailService {
     }
   ) {
     try {
-      const subject = `Rechazo de solicitud de viáticos - ${data.projectLabel}`
+      const subject = `Rechazo de solicitud de fondos - ${data.projectLabel}`
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
@@ -1458,7 +1458,7 @@ export class EmailService {
   ) {
     try {
       const subject = this.withSubjectRef(
-        'Nueva solicitud de viáticos',
+        'Nueva solicitud de fondos',
         data.projectLabel
       )
       this.logger.debug(`Enviando solicitud de viáticos a coordinador ${email}`)
@@ -1503,7 +1503,7 @@ export class EmailService {
   ) {
     try {
       const subject = this.withSubjectRef(
-        'Solicitud de viáticos enviada',
+        'Solicitud de Fondos enviada',
         data.projectLabel
       )
       const { platformUrl, ...rest } = data
@@ -1548,7 +1548,7 @@ export class EmailService {
   ) {
     try {
       const subject = this.withSubjectRef(
-        'Nueva solicitud de viáticos',
+        'Nueva solicitud de fondos',
         data.projectLabel
       )
       const { platformUrl, ...rest } = data
@@ -1597,7 +1597,7 @@ export class EmailService {
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
-        subject: this.withSubjectRef('Solicitud de viáticos cancelada', data.projectLabel),
+        subject: this.withSubjectRef('Solicitud de Fondos cancelada', data.projectLabel),
         template: './viatico-cancelacion-coordinator',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
@@ -1730,7 +1730,7 @@ export class EmailService {
     }
   ) {
     try {
-      const subject = `Viáticos aprobados y pagados — ${data.projectLabel}`
+      const subject = `Solicitudes de Fondos aprobadas y pagadas — ${data.projectLabel}`
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
@@ -2042,7 +2042,7 @@ export class EmailService {
         data.frequency === 'semanal' ? 'esta semana' : 'este mes'
       await this.send({
         to: email,
-        subject: `Recordatorio de rendición de viáticos — ${periodoLabel}`,
+        subject: `Recordatorio de rendición de fondos — ${periodoLabel}`,
         template: './viatico-recordatorio-colaborador',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
@@ -2077,7 +2077,7 @@ export class EmailService {
       const formattedEndDate = this.formatDateDDMMYYYY(data.endDate)
       await this.send({
         to: email,
-        subject: `Hoy vence su periodo de viáticos — ${formattedEndDate}`,
+        subject: `Hoy vence el periodo de su solicitud de fondos — ${formattedEndDate}`,
         template: './viatico-recordatorio-ultimo-dia',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
@@ -2114,7 +2114,7 @@ export class EmailService {
       const periodoLabel = data.frequency === 'semanal' ? 'semanal' : 'mensual'
       await this.send({
         to: email,
-        subject: `Gastos de viáticos pendientes de revisión — resumen ${periodoLabel}`,
+        subject: `Gastos de fondos pendientes de revisión — resumen ${periodoLabel}`,
         template: './viatico-resumen-coordinador',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
