@@ -641,7 +641,7 @@ export class ExpenseReportService implements OnModuleInit {
       await this.notificationsService.create({
         userId: String(dto.userId),
         title: 'Nueva Rendición Directa con saldo',
-        message: `Contabilidad te asignó una rendición directa (${report.codigo}) con saldo disponible de S/ ${dto.amount.toFixed(2)}.`,
+        message: `Contabilidad te asignó una rendición directa (${report.codigo}) con saldo disponible de ${this.reportCurrencySymbol(report)} ${dto.amount.toFixed(2)}.`,
         type: 'info',
         actionUrl: `/mis-rendiciones/${report._id}/detalle`,
       })
@@ -1602,6 +1602,9 @@ export class ExpenseReportService implements OnModuleInit {
             userName: collaboratorName,
             title: reportTitle,
             budget: budgetDisplay,
+            // `budgetDisplay` sale de `computeReportBudgetDisplay`, que devuelve
+            // el presupuesto en la moneda de la rendición, no en la base.
+            currencySymbol: this.reportCurrencySymbol(fullyUpdatedReport),
             platformUrl,
           })
         }
@@ -1732,6 +1735,9 @@ export class ExpenseReportService implements OnModuleInit {
                   reportTitle:
                     liquidated?.title || liquidated?.description || reportTitle,
                   amountFormatted,
+                  currencySymbol: this.settlementCurrencySymbol(
+                    liquidated ?? fullyUpdatedReport
+                  ),
                   closedAt: this.emailService.formatDateDDMMYYYY(new Date()),
                   platformUrl,
                 }
@@ -1742,7 +1748,7 @@ export class ExpenseReportService implements OnModuleInit {
             .create({
               userId: ownerId,
               title: 'Saldo pendiente de devolución',
-              message: `Tu rendición "${reportTitle}" fue aprobada. Tienes un saldo de S/ ${amountFormatted} a devolver a la empresa.`,
+              message: `Tu rendición "${reportTitle}" fue aprobada. Tienes un saldo de ${this.settlementCurrencySymbol(liquidated ?? fullyUpdatedReport)} ${amountFormatted} a devolver a la empresa.`,
               type: 'warning',
               actionUrl: `/mis-rendiciones/${id}/detalle`,
             })
@@ -3277,6 +3283,7 @@ export class ExpenseReportService implements OnModuleInit {
       collaboratorName: owner.name || 'Colaborador',
       reportTitle: this.resolveReportTitle(report),
       amountFormatted,
+      currencySymbol: this.settlementCurrencySymbol(report),
       transferDate,
       reference: pi?.reference || '—',
       paymentMethod: pi?.method || 'transferencia_bancaria',
@@ -3314,7 +3321,7 @@ export class ExpenseReportService implements OnModuleInit {
       await this.notificationsService.create({
         userId: ownerId,
         title: 'Reembolso registrado',
-        message: `Se registró el pago del reembolso por S/ ${amountFormatted} para "${report.title}".`,
+        message: `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
         type: 'success',
         actionUrl: `/mis-documentos`,
       })
@@ -3538,6 +3545,7 @@ export class ExpenseReportService implements OnModuleInit {
             reportTitle: this.resolveReportTitle(updated),
             collaboratorName: collaborator?.name || 'Colaborador',
             amountFormatted,
+            currencySymbol: this.settlementCurrencySymbol(updated),
             detailUrl: platformUrl,
           })
           .catch(() => { })
@@ -3545,7 +3553,7 @@ export class ExpenseReportService implements OnModuleInit {
           .create({
             userId: u._id,
             title: 'Reembolso pendiente — Rendición cerrada',
-            message: `La rendición "${updated.title}" fue cerrada. Hay un reembolso de S/ ${amountFormatted} pendiente de pago al colaborador ${collaborator?.name || ''}.`,
+            message: `La rendición "${updated.title}" fue cerrada. Hay un reembolso de ${this.settlementCurrencySymbol(updated)} ${amountFormatted} pendiente de pago al colaborador ${collaborator?.name || ''}.`,
             type: 'info',
             actionUrl: `/mis-rendiciones/${id}/detalle`,
           })
@@ -3721,6 +3729,7 @@ export class ExpenseReportService implements OnModuleInit {
           collaboratorName,
           reportTitle: this.resolveReportTitle(report),
           amountFormatted,
+          currencySymbol: monedaSymbol((effectiveSettlement as any)?.moneda),
           depositDate: dto.depositDate,
           bankOrigin: dto.bankOrigin,
           operationNumber: dto.operationNumber,
@@ -3731,7 +3740,7 @@ export class ExpenseReportService implements OnModuleInit {
         .create({
           userId: u._id,
           title: 'Comprobante de devolución recibido',
-          message: `${collaboratorName} adjuntó el comprobante de devolución de S/ ${amountFormatted} para la rendición "${report.title}". Por favor, verifica el depósito.`,
+          message: `${collaboratorName} adjuntó el comprobante de devolución de ${monedaSymbol((effectiveSettlement as any)?.moneda)} ${amountFormatted} para la rendición "${report.title}". Por favor, verifica el depósito.`,
           type: 'info',
           actionUrl: `/mis-rendiciones/${id}/detalle`,
         })
@@ -5397,6 +5406,7 @@ export class ExpenseReportService implements OnModuleInit {
           startDate: startStr,
           endDate: endStr,
           totalFormatted,
+          currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
           projectLabel,
           plainSummary,
           platformUrl: this.emailService.buildAppUrl('/viaticos'),

@@ -916,6 +916,8 @@ export class EmailService {
       userName: string
       title: string
       budget: number
+      /** Símbolo de la moneda de la rendición: `budget` viene en esa moneda. */
+      currencySymbol?: string
       platformUrl?: string
     }
   ) {
@@ -929,7 +931,7 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           userName: data.userName,
           title: this.normalizeIsoDatesInText(data.title),
-          budget: `S/ ${Number(data.budget).toFixed(2)}`,
+          budget: `${data.currencySymbol ?? 'S/'} ${Number(data.budget).toFixed(2)}`,
           platformUrl: this.resolvePlatformHref(data.platformUrl),
           year: new Date().getFullYear(),
         },
@@ -1587,6 +1589,8 @@ export class EmailService {
       startDate: string
       endDate: string
       totalFormatted: string
+      /** Símbolo de la moneda del viático: `totalFormatted` viene en esa moneda. */
+      currencySymbol?: string
       projectLabel: string
       plainSummary: string
       cancelReason?: string
@@ -1628,13 +1632,16 @@ export class EmailService {
       reportTitle: string
       collaboratorName: string
       amountFormatted: string
+      /** Símbolo de la liquidación: `amountFormatted` va en moneda base. */
+      currencySymbol?: string
       detailUrl: string
     }
   ) {
     try {
       const reportLabel = this.normalizeIsoDatesInText(data.reportLabel)
       const reportTitle = this.normalizeIsoDatesInText(data.reportTitle)
-      const subject = `Rendición «${reportLabel}» requiere reembolso de S/ ${data.amountFormatted} a ${data.collaboratorName}`
+      const simbolo = data.currencySymbol ?? 'S/'
+      const subject = `Rendición «${reportLabel}» requiere reembolso de ${simbolo} ${data.amountFormatted} a ${data.collaboratorName}`
       const { detailUrl, ...rest } = data
       await this.send({
         to: email,
@@ -1668,6 +1675,8 @@ export class EmailService {
       coordinatorName?: string
       reportTitle: string
       amountFormatted: string
+      /** Símbolo de la liquidación: `amountFormatted` va en moneda base. */
+      currencySymbol?: string
       transferDate: string
       reference?: string
       paymentMethod: string
@@ -1798,6 +1807,8 @@ export class EmailService {
       recipientName: string
       reportTitle: string
       amountFormatted: string
+      /** Símbolo de la liquidación: `amountFormatted` va en moneda base. */
+      currencySymbol?: string
       closedAt: string
       platformUrl?: string
     }
@@ -1806,7 +1817,7 @@ export class EmailService {
       const reportTitle = this.normalizeIsoDatesInText(data.reportTitle)
       await this.send({
         to: email,
-        subject: `Devolución pendiente — ${reportTitle} — S/ ${data.amountFormatted}`,
+        subject: `Devolución pendiente — ${reportTitle} — ${data.currencySymbol ?? 'S/'} ${data.amountFormatted}`,
         template: './rendicion-devolucion-colaborador',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
@@ -1833,6 +1844,8 @@ export class EmailService {
       collaboratorName: string
       reportTitle: string
       amountFormatted: string
+      /** Símbolo de la liquidación: `amountFormatted` va en moneda base. */
+      currencySymbol?: string
       depositDate: string
       bankOrigin?: string
       operationNumber?: string
