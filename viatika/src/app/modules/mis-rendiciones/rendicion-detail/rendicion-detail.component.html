@@ -864,7 +864,7 @@
         <div class="text-sm text-secondary space-y-1 mb-3">
           <p><span class="text-tertiary">Fecha de depósito:</span> {{ formatShortDate(report.returnVoucher.depositDate) }}</p>
           @if (report.returnVoucher.amountReturned) {
-            <p><span class="text-tertiary">Monto devuelto:</span> <strong>{{ settlementSymbol }} {{ report.returnVoucher.amountReturned | number:'1.2-2' }}</strong></p>
+            <p><span class="text-tertiary">Monto devuelto:</span> <strong>{{ currencySymbol }} {{ report.returnVoucher.amountReturned | number:'1.2-2' }}</strong></p>
           }
           @if (report.returnVoucher.bankOrigin) {
             <p><span class="text-tertiary">Banco origen:</span> {{ report.returnVoucher.bankOrigin }}</p>
@@ -879,7 +879,7 @@
             <p><span class="text-tertiary">Fecha/hora operación:</span> {{ report.returnVoucher.operationDate }}@if (report.returnVoucher.operationTime) { · {{ report.returnVoucher.operationTime }} }</p>
           }
           @if (report.returnVoucher.scannedAmount) {
-            <p><span class="text-tertiary">Monto detectado:</span> {{ settlementSymbol }} {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
+            <p><span class="text-tertiary">Monto detectado:</span> {{ currencySymbol }} {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
           }
           <p><span class="text-tertiary">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
         </div>
