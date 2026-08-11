@@ -368,7 +368,7 @@
               }
             </td>
             <td class="px-5 py-3.5 text-tertiary max-w-[160px] truncate">{{ getReportTitle(adv) }}</td>
-            <td class="px-5 py-3.5 text-right font-bold text-secondary">S/ {{ adv.amount | number:'1.2-2' }}</td>
+            <td class="px-5 py-3.5 text-right font-bold text-secondary">{{ advanceCurrencySymbol(adv) }} {{ adv.amount | number:'1.2-2' }}</td>
             <td class="px-5 py-3.5 text-center">
               <span [class]="STATUS_COLORS[adv.status]" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium">
                 {{ STATUS_LABELS[adv.status] }}
@@ -689,8 +689,8 @@
         @if (al.amountMismatch) {
         <div class="rounded-lg bg-warning/10 border border-warning/30 p-2.5">
           <p class="text-xs text-tertiary">Monto</p>
-          <p class="text-secondary">Comprobante: <span class="font-semibold">S/ {{ al.scannedAmount | number:'1.2-2' }}</span></p>
-          <p class="text-secondary">Solicitado: <span class="font-semibold">S/ {{ al.expectedAmount | number:'1.2-2' }}</span></p>
+          <p class="text-secondary">Comprobante: <span class="font-semibold">{{ advanceCurrencySymbol(selectedAdvance) }} {{ al.scannedAmount | number:'1.2-2' }}</span></p>
+          <p class="text-secondary">Solicitado: <span class="font-semibold">{{ advanceCurrencySymbol(selectedAdvance) }} {{ al.expectedAmount | number:'1.2-2' }}</span></p>
         </div>
         }
       </div>
