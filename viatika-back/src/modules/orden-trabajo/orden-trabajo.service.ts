@@ -20,6 +20,8 @@ function escapeRegExp(value: string): string {
 
 export interface IBulkCreateResult {
   created: number
+  /** OT que ya existían (mismo nombre) y se actualizaron con lo del archivo. */
+  updated: number
   errors: { row: number; reason: string }[]
 }
 
@@ -167,16 +169,22 @@ export class OrdenTrabajoService {
    * — no aborta el lote completo por una fila mala, acumula errores por fila).
    * A diferencia de Category, cada fila tiene una referencia foránea
    * (`costCenterId`) que el archivo solo puede expresar como texto (código o
-   * nombre del centro de costo), así que se resuelve por fila antes de crear.
+   * nombre del centro de costo), así que se resuelve por fila antes de guardar.
    *
-   * La celda admite varios centros de costo separados por coma, punto y coma o
-   * barra ("123, 223, 423"); el primero queda como principal.
+   * Es ACTUALIZAR-O-CREAR: la plantilla se descarga con las OT que ya existen,
+   * así que una fila cuyo nombre ya está en la empresa actualiza esa OT (sus
+   * centros de costo y si está activa) en vez de fallar por duplicada; las filas
+   * nuevas se crean. El nombre es la llave, y es único por empresa.
+   *
+   * La celda de centro de costo admite varios separados por coma, punto y coma
+   * o barra ("123, 223, 423"); el primero queda como principal. Si la fila viene
+   * sin centro de costo y la OT ya existe, conserva los que tenía.
    */
   async bulkCreate(
     rows: Array<{ nombre: string; costCenterKey: string; isActive?: boolean }>,
     clientId: string
   ): Promise<IBulkCreateResult> {
-    const result: IBulkCreateResult = { created: 0, errors: [] }
+    const result: IBulkCreateResult = { created: 0, updated: 0, errors: [] }
     const clientIdObject = new Types.ObjectId(clientId)
     const seenNombres = new Set<string>()
 
@@ -197,42 +205,69 @@ export class OrdenTrabajoService {
         })
         continue
       }
-      if (!row.costCenterKey?.trim()) {
-        result.errors.push({
-          row: rowNumber,
-          reason: 'El campo Centro de Costo es obligatorio',
-        })
-        continue
-      }
 
       try {
-        const claves = row.costCenterKey
-          .split(/[,;|]/)
-          .map((k) => k.trim())
-          .filter(Boolean)
-        const costCenterIds: Types.ObjectId[] = []
-        let claveNoEncontrada = ''
-        for (const clave of claves) {
-          const encontrado = await this.resolveCostCenterByKey(
-            clave,
-            clientIdObject
-          )
-          if (!encontrado) {
-            claveNoEncontrada = clave
-            break
-          }
-          if (!costCenterIds.some((id) => id.equals(encontrado))) {
-            costCenterIds.push(encontrado)
-          }
-        }
-        if (claveNoEncontrada || !costCenterIds.length) {
+        const existente = await this.ordenTrabajoModel
+          .findOne({
+            clientId: clientIdObject,
+            nombre: { $regex: `^${escapeRegExp(nombre)}$`, $options: 'i' },
+          })
+          .exec()
+
+        if (!row.costCenterKey?.trim() && !existente) {
           result.errors.push({
             row: rowNumber,
-            reason: `Centro de costo "${claveNoEncontrada || row.costCenterKey}" no encontrado en esta empresa`,
+            reason: 'Indica el código del centro de costo',
           })
           continue
         }
-        await this.ensureUniqueNombre(nombre, clientIdObject)
+
+        let costCenterIds: Types.ObjectId[] = []
+        if (row.costCenterKey?.trim()) {
+          const claves = row.costCenterKey
+            .split(/[,;|]/)
+            .map((k) => k.trim())
+            .filter(Boolean)
+          let claveNoEncontrada = ''
+          for (const clave of claves) {
+            const encontrado = await this.resolveCostCenterByKey(
+              clave,
+              clientIdObject
+            )
+            if (!encontrado) {
+              claveNoEncontrada = clave
+              break
+            }
+            if (!costCenterIds.some((id) => id.equals(encontrado))) {
+              costCenterIds.push(encontrado)
+            }
+          }
+          if (claveNoEncontrada || !costCenterIds.length) {
+            result.errors.push({
+              row: rowNumber,
+              reason: `Centro de costo "${claveNoEncontrada || row.costCenterKey}" no encontrado en esta empresa`,
+            })
+            continue
+          }
+        }
+
+        if (existente) {
+          const cambios: Record<string, unknown> = {}
+          if (costCenterIds.length) {
+            cambios.costCenterIds = costCenterIds
+            cambios.costCenterId = costCenterIds[0]
+          }
+          if (row.isActive !== undefined) cambios.isActive = row.isActive
+          if (Object.keys(cambios).length) {
+            await this.ordenTrabajoModel
+              .updateOne({ _id: existente._id }, { $set: cambios })
+              .exec()
+          }
+          seenNombres.add(nombreKey)
+          result.updated++
+          continue
+        }
+
         await this.ordenTrabajoModel.create({
           nombre,
           costCenterId: costCenterIds[0],

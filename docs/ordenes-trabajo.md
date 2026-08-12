@@ -58,7 +58,27 @@ Rutas registradas en `app.routes.ts`: `/ordenes-trabajo`, `/ordenes-trabajo/nuev
 | `PATCH` | `/orden-trabajo/:id` | Superadmin, Admin, Contabilidad |
 | `DELETE` | `/orden-trabajo/:id` | Superadmin, Admin, Contabilidad |
 
+| `POST` | `/orden-trabajo/import` | Superadmin, Admin, Contabilidad — Excel (multipart, máx. 2 MB) |
+
 El `clientId` en `GET` se resuelve automáticamente (interceptor HTTP del frontend lo agrega a la URL); en `POST` se inyecta en el body; en `PATCH`/`DELETE` se resuelve en el backend desde el JWT.
+
+## Carga masiva por Excel (VD-101)
+
+El botón **Descargar Excel** de `/ordenes-trabajo` baja el archivo **con las OT que ya existen**, no una plantilla vacía. Se edita y se vuelve a subir con **Importar Excel**: las filas cuyo nombre ya existe en la empresa se **actualizan** y las nuevas se **crean** (`bulkCreate` es actualizar-o-crear; la llave es el `nombre`, único por empresa). Ninguna fila borra nada: para dar de baja una OT se pone `No` en Activo.
+
+Columnas: **las mismas tres cosas que pide el formulario de alta**, para que no haya dos formas distintas de describir una OT.
+
+| Columna | Requerida | Qué hace |
+|---|---|---|
+| `Nombre*` | Sí | Nombre completo y único de la OT en la empresa, tal cual se escribe en el formulario (`LIM-SMI-1946`) |
+| `Centros de Costo*` | Sí en OT nuevas | Uno o varios **códigos** separados por coma/punto y coma/barra (`123, 223, 423`); el primero es el principal. Vacío en una OT existente = no se tocan los que tiene |
+| `Activo` | No | `Sí`/`No`. **Vacío = no se cambia** (una OT nueva se crea activa). Así un archivo sin esa columna no reactiva OT dadas de baja |
+
+Se siguen aceptando los encabezados de la plantilla anterior (`Código Centro de Costo*`, `Centro de Costo`) para no romper archivos ya armados. El mapeo de columnas está en `orden-trabajo.controller.ts` (`celda`, `nombreDesdeFormatoDetroit`) y el alta/actualización en `orden-trabajo.service.ts` (`bulkCreate`), que devuelve `{ created, updated, errors[] }` — una fila mala no aborta el lote.
+
+Como **respaldo**, el importador también entiende una fila con el nombre partido en `Suc` + `Dep` + `Nº O/T`, que es como viene el informe del ERP (`LIM` + `SMI` + `00001463-G` → `LIM-SMI-1463-G`, sin los ceros de la izquierda). Solo se mira cuando la fila no trae `Nombre`; el archivo que descarga la app no usa esas columnas.
+
+**Ojo:** el informe del ERP *tal como sale* (`Reporte de OTS Vigentes.xlsx`) **no se puede subir directo**: trae tres filas de título y la cabecera partida en dos, y el importador espera los encabezados en la primera fila.
 
 ## Dónde se consume la OT (además del CRUD)
 

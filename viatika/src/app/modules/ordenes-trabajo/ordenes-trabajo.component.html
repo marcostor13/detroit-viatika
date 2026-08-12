@@ -7,7 +7,8 @@
       </p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
-      <app-button variant="secondary" size="sm" label="Plantilla" (clicked)="downloadTemplate()">
+      <!-- La plantilla baja con las OT actuales: se edita y se vuelve a subir. -->
+      <app-button variant="secondary" size="sm" label="Descargar Excel" loadingLabel="Preparando..." [loading]="downloadingTemplate()" (clicked)="downloadTemplate()">
         <app-icon name="download" size="sm" />
       </app-button>
       <app-button variant="secondary" size="sm" label="Importar Excel" loadingLabel="Importando..." [loading]="importing()" (clicked)="triggerFileInput()">
@@ -25,7 +26,9 @@
     <div class="bg-quaternary rounded-2xl border border-tertiary/20 p-4 flex flex-col gap-2 mb-6">
       <div class="flex items-center gap-2">
         <app-icon name="circle-check" size="sm" class="text-success" />
-        <span class="text-sm font-medium text-secondary">{{ importResult()!.created }} orden(es) de trabajo importada(s)</span>
+        <span class="text-sm font-medium text-secondary">
+          {{ importResult()!.created }} creada(s) · {{ importResult()!.updated }} actualizada(s)
+        </span>
         <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" class="ml-auto" (clicked)="importResult.set(null)">
           <app-icon name="close" size="sm" />
         </app-button>

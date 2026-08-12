@@ -33,6 +33,7 @@ const mockOrdenTrabajoModel = {
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
   findOneAndDelete: jest.fn(),
+  updateOne: jest.fn(),
   countDocuments: jest.fn(),
   exists: jest.fn(),
 }
@@ -48,6 +49,10 @@ describe('OrdenTrabajoService', () => {
   beforeEach(async () => {
     jest.clearAllMocks()
     mockOrdenTrabajoModel.exists.mockReturnValue(makeQuery(null))
+    // Por defecto la OT del archivo no existe todavía: la carga masiva la busca
+    // por nombre para decidir si actualiza o crea.
+    mockOrdenTrabajoModel.findOne.mockReturnValue(makeQuery(null))
+    mockOrdenTrabajoModel.updateOne.mockReturnValue(makeQuery({ acknowledged: true }))
     mockProjectModel.exists.mockReturnValue(makeQuery({ _id: costCenterId }))
     mockProjectModel.findOne.mockReturnValue(makeQuery(null))
 
@@ -113,13 +118,13 @@ describe('OrdenTrabajoService', () => {
       ])
     })
 
-    it('reports a row error when costCenterKey is missing', async () => {
+    it('reports a row error when costCenterKey is missing on a new OT', async () => {
       const result = await service.bulkCreate(
         [{ nombre: 'Lim-Com-1', costCenterKey: '' }],
         clientId
       )
       expect(result.errors).toEqual([
-        { row: 2, reason: 'El campo Centro de Costo es obligatorio' },
+        { row: 2, reason: 'Indica el código del centro de costo' },
       ])
     })
 
@@ -194,18 +199,53 @@ describe('OrdenTrabajoService', () => {
       ])
     })
 
-    it('reports a duplicate-name row error (existing DB record) without aborting the batch', async () => {
+    // La plantilla se descarga con las OT existentes, así que una fila repetida
+    // no es un error: es una edición (VD-101).
+    it('actualiza la OT que ya existe en vez de fallar por duplicada', async () => {
       const ccId = new Types.ObjectId()
       mockProjectModel.findOne.mockReturnValue(makeQuery({ _id: ccId }))
-      mockOrdenTrabajoModel.exists.mockReturnValue(makeQuery(mockOrden))
+      mockOrdenTrabajoModel.findOne.mockReturnValue(makeQuery(mockOrden))
 
       const result = await service.bulkCreate(
+        [{ nombre: 'Lim-Com-1', costCenterKey: 'CC-001', isActive: false }],
+        clientId
+      )
+
+      expect(result).toEqual({ created: 0, updated: 1, errors: [] })
+      expect(mockOrdenTrabajoModel.create).not.toHaveBeenCalled()
+      expect(mockOrdenTrabajoModel.updateOne).toHaveBeenCalledWith(
+        { _id: mockOrden._id },
+        { $set: { costCenterIds: [ccId], costCenterId: ccId, isActive: false } }
+      )
+    })
+
+    it('sin centro de costo en la fila, la OT existente conserva los suyos', async () => {
+      mockOrdenTrabajoModel.findOne.mockReturnValue(makeQuery(mockOrden))
+
+      const result = await service.bulkCreate(
+        [{ nombre: 'Lim-Com-1', costCenterKey: '', isActive: false }],
+        clientId
+      )
+
+      expect(result.updated).toBe(1)
+      expect(mockOrdenTrabajoModel.updateOne).toHaveBeenCalledWith(
+        { _id: mockOrden._id },
+        { $set: { isActive: false } }
+      )
+    })
+
+    it('sin la columna Activo no toca el estado de la OT existente', async () => {
+      const ccId = new Types.ObjectId()
+      mockProjectModel.findOne.mockReturnValue(makeQuery({ _id: ccId }))
+      mockOrdenTrabajoModel.findOne.mockReturnValue(makeQuery(mockOrden))
+
+      await service.bulkCreate(
         [{ nombre: 'Lim-Com-1', costCenterKey: 'CC-001' }],
         clientId
       )
 
-      expect(result.created).toBe(0)
-      expect(result.errors[0].reason).toContain('Ya existe una orden de trabajo')
+      const cambios = mockOrdenTrabajoModel.updateOne.mock.calls[0][1].$set
+      expect(cambios.isActive).toBeUndefined()
     })
 
     it('defaults isActive to true when not provided', async () => {
