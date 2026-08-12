@@ -6,7 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
 import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
-import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
+import { IOrdenTrabajo, otCentroCostoIds } from '../../../interfaces/orden-trabajo.interface';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
@@ -44,8 +44,11 @@ export class OrdenesTrabajoFormComponent implements OnInit {
   centrosCosto = signal<IProject[]>([]);
 
   nombre = signal('');
-  costCenterId = signal('');
+  /** Centros de costo elegidos, en orden: el primero es el principal. */
+  costCenterIds = signal<string[]>([]);
   isActive = signal(true);
+  /** Filtro del listado de centros de costo (en Detroit son casi 60). */
+  busquedaCentro = signal('');
 
   nombreError = signal('');
   costCenterError = signal('');
@@ -76,8 +79,7 @@ export class OrdenesTrabajoFormComponent implements OnInit {
     this.ordenTrabajoService.getById(id).subscribe({
       next: (orden: IOrdenTrabajo) => {
         this.nombre.set(orden.nombre);
-        const cc = orden.costCenterId;
-        this.costCenterId.set(cc && typeof cc === 'object' ? (cc._id || '') : String(cc || ''));
+        this.costCenterIds.set(otCentroCostoIds(orden));
         this.isActive.set(orden.isActive ?? true);
         this.loading.set(false);
       },
@@ -94,9 +96,47 @@ export class OrdenesTrabajoFormComponent implements OnInit {
     this.nombreError.set('');
   }
 
-  onCostCenterChange(value: string) {
-    this.costCenterId.set(value);
+  /** Centros de costo que pasan el filtro de búsqueda (código o nombre). */
+  get centrosCostoFiltrados(): IProject[] {
+    const q = this.busquedaCentro().trim().toLowerCase();
+    if (!q) return this.centrosCosto();
+    return this.centrosCosto().filter(
+      (cc) =>
+        (cc.name || '').toLowerCase().includes(q) ||
+        (cc.code || '').toLowerCase().includes(q)
+    );
+  }
+
+  estaSeleccionado(id: string): boolean {
+    return this.costCenterIds().includes(id);
+  }
+
+  /**
+   * El principal es el primero elegido: es el que sale en los reportes
+   * oficiales, que muestran un único centro de costo por OT.
+   */
+  esPrincipal(id: string): boolean {
+    return this.costCenterIds()[0] === id;
+  }
+
+  toggleCentroCosto(id: string, checked: boolean) {
+    const actuales = this.costCenterIds();
+    this.costCenterIds.set(
+      checked ? [...actuales, id] : actuales.filter((x) => x !== id)
+    );
     this.costCenterError.set('');
+  }
+
+  /** Mueve un centro de costo al frente para volverlo el principal. */
+  marcarPrincipal(id: string) {
+    const resto = this.costCenterIds().filter((x) => x !== id);
+    this.costCenterIds.set([id, ...resto]);
+  }
+
+  etiquetaCentro(id: string): string {
+    const cc = this.centrosCosto().find((c) => c._id === id);
+    if (!cc) return id;
+    return cc.code ? `${cc.code} — ${cc.name}` : cc.name;
   }
 
   private validate(): boolean {
@@ -105,8 +145,8 @@ export class OrdenesTrabajoFormComponent implements OnInit {
       this.nombreError.set('Ingresa el nombre de la OT');
       ok = false;
     }
-    if (!this.costCenterId()) {
-      this.costCenterError.set('Selecciona un centro de costo');
+    if (!this.costCenterIds().length) {
+      this.costCenterError.set('Selecciona al menos un centro de costo');
       ok = false;
     }
     return ok;
@@ -118,7 +158,7 @@ export class OrdenesTrabajoFormComponent implements OnInit {
 
     const payload = {
       nombre: this.nombre().trim(),
-      costCenterId: this.costCenterId(),
+      costCenterIds: this.costCenterIds(),
       isActive: this.isActive(),
     };
 

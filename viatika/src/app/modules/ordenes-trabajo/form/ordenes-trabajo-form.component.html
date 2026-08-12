@@ -8,7 +8,7 @@
         {{ isEditMode() ? 'Editar Orden de Trabajo' : 'Nueva Orden de Trabajo' }}
       </h1>
       <p class="text-tertiary text-sm mt-0.5">
-        Relaciona la OT con un centro de costo y dale un nombre único (ej. Lim-Com-1).
+        Relaciona la OT con uno o varios centros de costo y dale un nombre único (ej. Lim-Com-1).
       </p>
     </div>
   </div>
@@ -20,20 +20,62 @@
   } @else {
     <app-card padding="lg">
       <div class="flex flex-col gap-6">
-        <app-form-field #ccField label="Centro de costo" [required]="true" [error]="costCenterError()">
-          <select
-            [id]="ccField.fieldId"
-            [attr.aria-describedby]="ccField.describedBy()"
-            [ngModel]="costCenterId()"
-            (ngModelChange)="onCostCenterChange($event)"
-            class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-            [class]="costCenterError() ? 'border-error' : 'border-tertiary/30'"
-          >
-            <option value="" disabled>Selecciona un centro de costo</option>
-            @for (cc of centrosCosto(); track cc._id) {
-              <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
+        <!-- Una OT puede usarse desde varios centros de costo. El primero elegido
+             es el principal: el que muestran los reportes oficiales. -->
+        <app-form-field #ccField label="Centros de costo" [required]="true" [error]="costCenterError()">
+          <div class="flex flex-col gap-3">
+            @if (costCenterIds().length) {
+              <div class="flex flex-wrap gap-2">
+                @for (id of costCenterIds(); track id) {
+                  <button
+                    type="button"
+                    (click)="marcarPrincipal(id)"
+                    [title]="esPrincipal(id) ? 'Centro de costo principal' : 'Marcar como principal'"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors"
+                    [class]="esPrincipal(id)
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-background text-secondary border-divider hover:border-primary/40'"
+                  >
+                    {{ etiquetaCentro(id) }}
+                    @if (esPrincipal(id)) { <span class="opacity-70">· principal</span> }
+                  </button>
+                }
+              </div>
             }
-          </select>
+
+            <input
+              type="search"
+              [ngModel]="busquedaCentro()"
+              (ngModelChange)="busquedaCentro.set($event)"
+              placeholder="Buscar centro de costo por código o nombre…"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary border-tertiary/30"
+            />
+
+            <div
+              [id]="ccField.fieldId"
+              [attr.aria-describedby]="ccField.describedBy()"
+              class="max-h-72 overflow-y-auto rounded-xl border divide-y divide-divider"
+              [class]="costCenterError() ? 'border-error' : 'border-divider'"
+            >
+              @for (cc of centrosCostoFiltrados; track cc._id) {
+                <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-background cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-tertiary/40 accent-primary cursor-pointer"
+                    [checked]="estaSeleccionado(cc._id!)"
+                    (change)="toggleCentroCosto(cc._id!, $any($event.target).checked)"
+                  />
+                  <span class="text-sm text-secondary flex-1">{{ cc.name }}</span>
+                  @if (cc.code) { <span class="text-xs text-tertiary/60">{{ cc.code }}</span> }
+                </label>
+              } @empty {
+                <p class="text-sm text-tertiary text-center py-6">Sin resultados para tu búsqueda.</p>
+              }
+            </div>
+            <p class="text-xs text-tertiary">
+              El primero elegido queda como principal (sale en los reportes). Toca un chip para cambiarlo.
+            </p>
+          </div>
         </app-form-field>
 
         <div>
