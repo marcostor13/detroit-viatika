@@ -36,7 +36,8 @@ describe('OrdenTrabajoController › carga masiva', () => {
 
   const filasMapeadas = () => service.bulkCreate.mock.calls[0][0]
 
-  // Formato del informe de órdenes de Detroit: sucursal + departamento + Nº O/T.
+  // Respaldo para filas pegadas del informe del ERP, que trae el nombre partido.
+  // El archivo que descarga la app lleva el nombre completo en una sola columna.
   it('arma el nombre con Suc, Dep y Nº O/T, sin los ceros de la izquierda', async () => {
     await controller.importFromExcel(
       excelDe([{ Suc: 'LIM', Dep: 'SMI', 'Nº O/T': '00001463-G', 'Centros de Costo*': '123' }]),

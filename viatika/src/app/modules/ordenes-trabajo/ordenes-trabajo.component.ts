@@ -186,33 +186,23 @@ export class OrdenesTrabajoComponent implements OnInit {
   }
 
   /**
-   * Parte el nombre de una OT en las tres columnas del informe de Detroit
-   * (Suc, Dep, Nº O/T): "LIM-SMI-1463-G" -> LIM | SMI | 1463-G. Si el nombre no
-   * tiene esa forma, se deja en la columna Nombre y las otras tres vacías.
-   */
-  private partirNombreOt(nombre: string): [string, string, string] {
-    const partes = /^([^-]+)-([^-]+)-(.+)$/.exec(nombre.trim());
-    return partes ? [partes[1], partes[2], partes[3]] : ['', '', ''];
-  }
-
-  /**
-   * Filas del Excel: una por OT existente. Sin OT, una fila de ejemplo para que
-   * se vea qué se espera en cada columna.
+   * Filas del Excel: una por OT existente, con las mismas tres cosas que pide el
+   * formulario de alta (nombre completo, centros de costo y si está activa). Sin
+   * OT, una fila de ejemplo para que se vea qué va en cada columna.
    */
   private filasParaExcel(ordenes: IOrdenTrabajo[]): string[][] {
     if (!ordenes.length) {
       const ejemplo = this.centrosCosto()[0]?.code || 'CC-001';
-      return [['LIM', 'SMI', '1463-G', 'LIM-SMI-1463-G', ejemplo, 'Sí']];
+      return [['LIM-SMI-1463-G', ejemplo, 'Sí']];
     }
     // Códigos, no nombres: es lo que el usuario ve en el informe del ERP y lo
     // que el importador resuelve primero.
     return ordenes.map((ot) => {
-      const [suc, dep, numero] = this.partirNombreOt(ot.nombre);
       const codigos = otCentroCostoIds(ot)
         .map((id) => this.centrosCosto().find((cc) => cc._id === id)?.code || '')
         .filter(Boolean)
         .join(', ');
-      return [suc, dep, numero, ot.nombre, codigos, ot.isActive === false ? 'No' : 'Sí'];
+      return [ot.nombre, codigos, ot.isActive === false ? 'No' : 'Sí'];
     });
   }
 
@@ -229,7 +219,8 @@ export class OrdenesTrabajoComponent implements OnInit {
     workbook.creator = 'Viatika';
 
     const sheet = workbook.addWorksheet('Ordenes de Trabajo');
-    const headers = ['Suc', 'Dep', 'Nº O/T', 'Nombre', 'Centros de Costo*', 'Activo'];
+    // Las mismas tres cosas que pide el formulario de alta, ni una más.
+    const headers = ['Nombre*', 'Centros de Costo*', 'Activo'];
     sheet.addRow(headers);
 
     const headerRow = sheet.getRow(1);
@@ -239,10 +230,7 @@ export class OrdenesTrabajoComponent implements OnInit {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
     sheet.columns = [
-      { key: 'Suc', width: 8 },
-      { key: 'Dep', width: 8 },
-      { key: 'Nº O/T', width: 14 },
-      { key: 'Nombre', width: 24 },
+      { key: 'Nombre*', width: 26 },
       { key: 'Centros de Costo*', width: 34 },
       { key: 'Activo', width: 10 },
     ];
@@ -257,10 +245,7 @@ export class OrdenesTrabajoComponent implements OnInit {
     const instrSheet = workbook.addWorksheet('Instrucciones');
     instrSheet.addRow(['Campo', 'Requerido', 'Descripción']);
     instrSheet.getRow(1).font = { bold: true };
-    instrSheet.addRow(['Suc', 'No', 'Sucursal del informe de Detroit (LIM, ANT, TOQ…). Se usa para armar el nombre.']);
-    instrSheet.addRow(['Dep', 'No', 'Departamento del informe (SMI, SCA, COM, TAL, ABA, ICO…).']);
-    instrSheet.addRow(['Nº O/T', 'No', 'Número de la orden tal como sale del informe ("00001463-G"). Los ceros de la izquierda se quitan.']);
-    instrSheet.addRow(['Nombre', 'Sí (o Suc+Dep+Nº)', 'Nombre único de la OT en la empresa. Si se deja vacío se arma como Suc-Dep-Nº O/T (ej. LIM-SMI-1463-G).']);
+    instrSheet.addRow(['Nombre*', 'Sí', 'Nombre completo y único de la OT en la empresa, igual que en el formulario (ej. LIM-SMI-1946).']);
     instrSheet.addRow(['Centros de Costo*', 'Sí en OT nuevas', 'Uno o varios códigos de centro de costo separados por coma ("123, 223, 423"). El primero es el principal, el que sale en los reportes. En una OT que ya existe, vacío = no se tocan los que tiene.']);
     instrSheet.addRow(['Activo', 'No', '"Sí" o "No". Vacío = no se cambia (en una OT nueva se crea activa).']);
     instrSheet.columns = [

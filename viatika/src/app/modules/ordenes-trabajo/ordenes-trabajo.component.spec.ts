@@ -58,17 +58,17 @@ describe('OrdenesTrabajoComponent', () => {
     return component;
   }
 
-  // VD-101: el Excel baja con las OT que ya existen, en el formato de Detroit
-  // (Suc / Dep / Nº O/T), para editarlo y volver a subirlo.
+  // VD-101: el Excel baja con las OT que ya existen y con las mismas tres cosas
+  // que pide el formulario de alta: nombre completo, centros de costo y activo.
   describe('Excel de órdenes de trabajo', () => {
-    it('arma una fila por OT, partiendo el nombre en Suc, Dep y Nº O/T', () => {
+    it('arma una fila por OT con el nombre completo y los códigos de sus centros', () => {
       const component = createComponent();
       const ordenes: IOrdenTrabajo[] = [
         { nombre: 'LIM-SMI-1463-G', costCenterId: cc123, costCenterIds: [cc123, cc223], isActive: true },
       ];
 
       expect(component['filasParaExcel'](ordenes)).toEqual([
-        ['LIM', 'SMI', '1463-G', 'LIM-SMI-1463-G', '123, 223', 'Sí'],
+        ['LIM-SMI-1463-G', '123, 223', 'Sí'],
       ]);
     });
 
@@ -78,24 +78,22 @@ describe('OrdenesTrabajoComponent', () => {
         { nombre: 'LIM-SMI-1', costCenterId: cc123, costCenterIds: [cc123], isActive: false },
       ];
 
-      expect(component['filasParaExcel'](ordenes)[0][5]).toBe('No');
+      expect(component['filasParaExcel'](ordenes)[0][2]).toBe('No');
     });
 
-    it('deja Suc/Dep/Nº vacíos si el nombre no sigue el formato de Detroit', () => {
+    it('no parte el nombre: va tal cual, siga o no la nomenclatura de Detroit', () => {
       const component = createComponent();
       const ordenes: IOrdenTrabajo[] = [
         { nombre: 'TALLER', costCenterId: cc123, costCenterIds: [cc123] },
       ];
 
-      expect(component['filasParaExcel'](ordenes)).toEqual([
-        ['', '', '', 'TALLER', '123', 'Sí'],
-      ]);
+      expect(component['filasParaExcel'](ordenes)).toEqual([['TALLER', '123', 'Sí']]);
     });
 
     it('sin OT cargadas deja una fila de ejemplo', () => {
       const component = createComponent();
       expect(component['filasParaExcel']([])).toEqual([
-        ['LIM', 'SMI', '1463-G', 'LIM-SMI-1463-G', '123', 'Sí'],
+        ['LIM-SMI-1463-G', '123', 'Sí'],
       ]);
     });
 

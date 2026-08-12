@@ -78,10 +78,11 @@ export class OrdenTrabajoController {
   }
 
   /**
-   * Nombre de la OT en el formato de Detroit: sucursal, departamento y número de
-   * O/T tal como salen de su informe de órdenes ("LIM" + "SMI" + "00001463-G" =>
-   * `LIM-SMI-1463-G`). Los ceros a la izquierda del número se quitan, que es como
-   * están cargadas hoy. Si la fila trae la columna Nombre, esa manda.
+   * Respaldo para filas pegadas del informe del ERP de Detroit, que trae el
+   * nombre partido en sucursal, departamento y número ("LIM" + "SMI" +
+   * "00001463-G" => `LIM-SMI-1463-G`, sin los ceros de la izquierda). El archivo
+   * que descarga la app NO usa estas columnas: lleva el nombre completo, igual
+   * que el formulario de alta. Solo se mira si la fila no trae Nombre.
    */
   private nombreDesdeFormatoDetroit(row: Record<string, any>): string {
     const suc = this.celda(row, 'Suc', 'Sucursal', 'SUC')
