@@ -725,6 +725,7 @@ export default class AddInvoiceComponent implements OnInit {
         this.categories = categories;
         this.categoriesLoaded.set(true);
         this.applyMovilidadCategoryDefault();
+        this.applyAlimentacionCategoryDefault();
         this.autoSelectDjCategories();
       },
       error: (error) => {},
@@ -872,12 +873,100 @@ export default class AddInvoiceComponent implements OnInit {
    * está oculto porque todo se hereda de la rendición. La categoría es la
    * excepción: si hay que elegirla, o si no hay ninguna asignada, el bloque
    * tiene que aparecer igual para mostrar el selector o el aviso.
+   *
+   * Solo aplica a planilla de movilidad: sin ese filtro, el aviso "no tienes
+   * categoría de Planilla de movilidad" se colaba en Otros Gastos y en la DJ al
+   * extranjero, que no usan esas categorías.
    */
   get showMovilidadCategoryBlock(): boolean {
     return (
-      this.showMovilidadCategorySelect ||
-      (this.categoriesLoaded() && this.movilidadCategories.length === 0)
+      this.expenseType() === 'planilla_movilidad' &&
+      (this.showMovilidadCategorySelect ||
+        (this.categoriesLoaded() && this.movilidadCategories.length === 0))
     );
+  }
+
+  /**
+   * La categoría se elige en el bloque superior salvo en planilla de movilidad
+   * (se resuelve por nombre entre las asignadas) y en Otros Gastos, donde vive
+   * dentro del tipo de documento, debajo del RUC (VD-100).
+   */
+  get showTopCategorySelect(): boolean {
+    return (
+      this.expenseType() !== 'planilla_movilidad' &&
+      this.expenseType() !== 'otros_gastos'
+    );
+  }
+
+  /**
+   * El bloque superior solo se pinta si le queda algo dentro. En rendición
+   * directa el centro de costo se hereda, así que con la categoría de Otros
+   * Gastos movida a su propio bloque el contenedor quedaría vacío.
+   */
+  get showTopBlock(): boolean {
+    if (!this.isDirectaContext()) return true;
+    return this.showTopCategorySelect || this.showMovilidadCategoryBlock;
+  }
+
+  /** Categorías de Alimentación asignadas al colaborador (mismo criterio por nombre que la DJ al extranjero). */
+  get alimentacionCategories(): ICategory[] {
+    return this.djCategoriesFor('alimentacion');
+  }
+
+  /**
+   * Categoría de Alimentación puesta automáticamente en el gasto AL. `null`
+   * cuando hay 0 o 2+ coincidencias: ahí se muestra el selector manual.
+   */
+  alimentacionCategoryAuto = signal<ICategory | null>(null);
+
+  /**
+   * AL = Alimentación sin documentación. Solo al crear: al editar se respeta la
+   * categoría con la que se guardó el gasto.
+   */
+  isAlimentacionSinDoc(): boolean {
+    return (
+      !this.id &&
+      this.expenseType() === 'otros_gastos' &&
+      this.otrosSubTipo() === 'AL'
+    );
+  }
+
+  /** Opciones del selector de categoría dentro de Otros Gastos. */
+  get otrosCategoryOptions(): SearchSelectOption[] {
+    // Con varias categorías de Alimentación (Servicios 91x y Comercial 92x) se
+    // acotan a esas; si el colaborador no tiene ninguna se cae al listado
+    // completo para no dejarlo sin poder registrar el gasto.
+    if (this.isAlimentacionSinDoc() && this.alimentacionCategories.length > 1) {
+      return this.toCategoryOptions(this.alimentacionCategories);
+    }
+    return this.categoryOptions;
+  }
+
+  /**
+   * "Alimentación sin documentación" no pide categoría: se le asigna la de
+   * Alimentación del colaborador, igual que la planilla de movilidad resuelve
+   * la suya (VD-100). Con 0 o 2+ coincidencias queda el selector manual.
+   * Idempotente: se llama al cargar categorías y al cambiar de sub-tipo.
+   */
+  private applyAlimentacionCategoryDefault(): void {
+    const catCtrl = this.form?.get('categoryId');
+    if (!catCtrl || catCtrl.disabled) return;
+    const previous = this.alimentacionCategoryAuto();
+    // Al salir de AL se retira la categoría que pusimos nosotros, para que el
+    // nuevo tipo de documento no herede la de alimentación sin que se note.
+    const dropAuto = () => {
+      if (previous && catCtrl.value === previous._id) catCtrl.setValue('');
+    };
+    if (!this.isAlimentacionSinDoc()) {
+      dropAuto();
+      this.alimentacionCategoryAuto.set(null);
+      return;
+    }
+    const matches = this.alimentacionCategories;
+    const auto = matches.length === 1 ? matches[0] : null;
+    this.alimentacionCategoryAuto.set(auto);
+    if (auto) catCtrl.setValue(auto._id);
+    else dropAuto();
   }
 
   /**
@@ -1017,6 +1106,7 @@ export default class AddInvoiceComponent implements OnInit {
   selectOtrosSubTipo(code: string): void {
     this.otrosSubTipo.set(code);
     this.autoSelectDjCategories();
+    // syncTopValidators reasigna la categoría de "Alimentación sin documentación".
     this.syncTopValidators();
   }
 
@@ -1170,6 +1260,9 @@ export default class AddInvoiceComponent implements OnInit {
         catCtrl.updateValueAndValidity({ emitEvent: false });
       }
     }
+    // Otros Gastos: AL trae su categoría puesta y el resto de sub-tipos la
+    // sueltan al salir de AL (VD-100).
+    this.applyAlimentacionCategoryDefault();
   }
 
   /**
