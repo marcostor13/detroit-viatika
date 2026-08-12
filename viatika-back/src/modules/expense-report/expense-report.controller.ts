@@ -47,7 +47,12 @@ export class ExpenseReportController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.ADMIN,
+    ROLES.SUPER_ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @Post()
   async create(
     @Body() createExpenseReportDto: CreateExpenseReportDto,
@@ -55,27 +60,23 @@ export class ExpenseReportController {
   ) {
     const createdBy = req.user._id
     const isCollaborator = req.user.roles?.includes(ROLES.COLABORADOR)
+    // El módulo asignado manda para todos los roles menos el Superadministrador
+    // (antes solo se exigía al Colaborador, así que marcar el permiso a
+    // Contabilidad o Admin no tenía efecto alguno).
+    const isSuperAdmin = req.user.roles?.includes(ROLES.SUPER_ADMIN)
+    const hasModule = (module: string): boolean =>
+      isSuperAdmin || req.user.permissions?.modules?.includes(module) === true
 
-    // Rendición directa: requiere permiso 'nueva-rendicion' si quien crea es colaborador
-    if (createExpenseReportDto.isDirecta && isCollaborator) {
-      const hasPermission =
-        req.user.permissions?.modules?.includes('nueva-rendicion')
-      if (!hasPermission) {
-        throw new ForbiddenException(
-          'No tienes permiso para crear rendiciones directas.'
-        )
-      }
+    if (createExpenseReportDto.isDirecta && !hasModule('nueva-rendicion')) {
+      throw new ForbiddenException(
+        'No tienes permiso para crear rendiciones directas.'
+      )
     }
 
-    // Rendición caja chica: requiere permiso 'caja-chica' si quien crea es colaborador
-    if (createExpenseReportDto.isCajaChica && isCollaborator) {
-      const hasPermission =
-        req.user.permissions?.modules?.includes('caja-chica')
-      if (!hasPermission) {
-        throw new ForbiddenException(
-          'No tienes permiso para crear rendiciones de caja chica.'
-        )
-      }
+    if (createExpenseReportDto.isCajaChica && !hasModule('caja-chica')) {
+      throw new ForbiddenException(
+        'No tienes permiso para crear rendiciones de caja chica.'
+      )
     }
 
     const result = await this.expenseReportService.create(
@@ -422,9 +423,14 @@ export class ExpenseReportController {
     return result
   }
 
-  /** Cancela una rendición en estado 'solicited' (colaborador propietario). */
+  /** Cancela una rendición en estado 'solicited' (el propietario). */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.ADMIN,
+    ROLES.SUPER_ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @Patch(':id/cancel')
   async cancel(
     @Param('id') id: string,
@@ -599,9 +605,14 @@ export class ExpenseReportController {
     return result
   }
 
-  /** Colaborador adjunta comprobante de devolución (rendición cerrada, settlement=devolucion). */
+  /** El propietario adjunta comprobante de devolución (rendición cerrada, settlement=devolucion). */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.COLABORADOR, ROLES.ADMIN, ROLES.SUPER_ADMIN)
+  @Roles(
+    ROLES.COLABORADOR,
+    ROLES.ADMIN,
+    ROLES.SUPER_ADMIN,
+    ROLES.CONTABILIDAD
+  )
   @Post(':id/return-voucher')
   async registerReturnVoucher(
     @Param('id') id: string,

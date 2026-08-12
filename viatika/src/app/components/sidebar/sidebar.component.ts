@@ -174,9 +174,79 @@ export class SidebarComponent implements OnInit, OnDestroy {
     return this.userStateService.hasModulePermission(module);
   }
 
-  /** VD-77: chequeo estricto (sin bypass de rol) para que el menú de Contabilidad respete sus permisos. */
-  hasModuleStrict(module: string): boolean {
-    return this.userStateService.hasModuleStrict(module);
+  /**
+   * Visibilidad de cada ítem del menú. Cada entrada se decide en UN solo sitio:
+   * antes había un bloque por perfil (admin/contabilidad, aprobador, tesorería,
+   * colaborador) y quien cumplía dos perfiles a la vez veía el mismo enlace
+   * repetido. La regla es "tiene el módulo asignado", salvo el Superadministrador
+   * y los accesos que nacen de una asignación (ser aprobador de un centro de
+   * costo) o del rol Tesorería, que es exactamente lo que permiten los guards.
+   */
+  private inCompanyPanel(): boolean {
+    return this.isAdminInCompany() || this.isContabilidadInCompany();
+  }
+
+  showDashboard(): boolean {
+    return this.hasModulePermission('consolidated-invoices');
+  }
+
+  /** Contabilidad llama "Inicio" a su tablero; el resto lo ve como "Dashboard". */
+  dashboardLabel(): string {
+    return this.isContabilidadInCompany() ? 'Inicio' : 'Dashboard';
+  }
+
+  /**
+   * Portada de pendientes (/inicio). Se oculta si ya hay un ítem "Inicio" (el
+   * tablero de Contabilidad usa esa misma etiqueta) para no repetir el nombre.
+   */
+  showInicio(): boolean {
+    if (this.isSuper() || this.showDashboard()) return false;
+    return this.isColaborador() || this.isApprover() || this.isTesoreria();
+  }
+
+  /** /admin-users solo lo abre AuthAdmin2Guard (Admin/Contabilidad/Super). */
+  showColaboradores(): boolean {
+    if (this.isSuper()) return true;
+    return this.hasModulePermission('colaboradores') && (this.isAdmin() || this.isContabilidad());
+  }
+
+  /** Mismo criterio que authModuleGuard('rendiciones'). */
+  showRendiciones(): boolean {
+    return (
+      this.isSuper() ||
+      this.isTesoreria() ||
+      this.isApprover() ||
+      this.hasModulePermission('rendiciones')
+    );
+  }
+
+  showMisRendiciones(): boolean {
+    return this.hasModulePermission('mis-rendiciones') || this.hasModulePermission('nueva-rendicion');
+  }
+
+  showMiPerfil(): boolean {
+    return this.isColaborador();
+  }
+
+  showPagos(): boolean {
+    return this.canAccessTesoreria();
+  }
+
+  /** Grupo colapsable de Configuración: solo en los paneles de empresa. */
+  showConfigGroup(): boolean {
+    return this.isSuper() || (this.inCompanyPanel() && this.hasModulePermission('configuracion'));
+  }
+
+  showConfigLink(): boolean {
+    return !this.showConfigGroup() && this.hasModulePermission('configuracion');
+  }
+
+  showActividad(): boolean {
+    return !this.showConfigGroup() && !this.hasModulePermission('configuracion') && this.hasModulePermission('audit-log');
+  }
+
+  showMiFirma(): boolean {
+    return !this.inCompanyPanel() && !this.isSuper();
   }
 
   logout() {

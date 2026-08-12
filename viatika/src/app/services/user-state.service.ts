@@ -211,22 +211,25 @@ export class UserStateService {
     return user?.permissions ?? { modules: [], canApproveL1: false, canApproveL2: false };
   }
 
+  /**
+   * Acceso a un módulo según los módulos asignados al usuario. Ya NO hay bypass
+   * por rol para Administrador ni Contabilidad: ambos son roles con alcance
+   * multi-empresa y el bypass hacía inertes sus permisos (veían módulos que
+   * nadie les otorgó y el menú los duplicaba al cruzarse con otros bloques).
+   * Solo el Superadministrador, que administra la plataforma, ve todo.
+   */
   hasModulePermission(module: string): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
+    if (this.isSuperAdmin()) return true;
     const perms = this.getPermissions();
     return perms.modules?.includes(module) ?? false;
   }
 
   /**
-   * Igual que `hasModulePermission` pero SIN el bypass de rol para
-   * Contabilidad/Admin: comprueba de verdad los módulos asignados al usuario.
-   * Solo el Superadministrador ve todo. Se usa para que el menú de Contabilidad
-   * respete los permisos por-usuario (VD-77) sin alterar los guards de ruta ni
-   * otras vistas que dependen del bypass de `hasModulePermission`.
+   * @deprecated Quedó igual a `hasModulePermission` al quitarse el bypass de rol
+   * (existía solo para saltárselo, VD-77). Se mantiene para no romper llamadas.
    */
   hasModuleStrict(module: string): boolean {
-    if (this.isSuperAdmin()) return true;
-    return this.getPermissions().modules?.includes(module) ?? false;
+    return this.hasModulePermission(module);
   }
 
   canApproveL1(): boolean {
@@ -257,15 +260,16 @@ export class UserStateService {
   }
 
   canAccessCajaChica(): boolean {
-    if (this.isSuperAdmin() || this.isContabilidad() || this.isAdmin()) return true;
     return this.hasModulePermission('caja-chica');
   }
 
+  /**
+   * Crear rendiciones directas propias. Depende solo del módulo asignado: antes
+   * exigía además rol Colaborador o Coordinador, así que marcarle "Rendición
+   * directa" a Contabilidad no hacía nada.
+   */
   canCreateRendicion(): boolean {
-    // Colaboradores y coordinadores con el permiso explícito; admins/contabilidad usan otro flujo
-    if (!this.isColaborador() && !this.isCoordinador()) return false;
-    const perms = this.getPermissions();
-    return perms.modules?.includes('nueva-rendicion') ?? false;
+    return this.hasModulePermission('nueva-rendicion');
   }
 
   /** True when Contabilidad has selected a company (companyId is set) */
@@ -280,5 +284,32 @@ export class UserStateService {
     if (!this.isAdmin()) return false;
     const user = this._user();
     return !!(user?.companyId);
+  }
+
+  /**
+   * Primera pantalla que el usuario puede abrir de verdad, con los mismos
+   * criterios que usa el menú. Sin el bypass de rol los paneles ya no se abren
+   * "porque sí": mandar a Contabilidad a /dashboard sin el módulo Consolidado la
+   * rebotaba de guard en guard hasta /login. Se usa como destino tras elegir
+   * empresa y como fallback de los guards.
+   */
+  defaultRoute(): string {
+    if (!this.isAuthenticated()) return '/login';
+    if (this.isSuperAdmin()) return '/clients-admin';
+    if (this.isAdmin() && !this.isAdminInCompany()) return '/hub';
+    if (this.isContabilidad() && !this.isContabilidadInCompany()) return '/hub';
+    if (this.isColaborador()) return '/inicio';
+    if (this.hasModulePermission('consolidated-invoices')) return '/dashboard';
+    if (this.isApprover() || this.isTesoreria() || this.hasModulePermission('rendiciones')) {
+      return '/rendiciones';
+    }
+    if (this.canAccessTesoreria()) return '/tesoreria';
+    if (this.hasModulePermission('mis-rendiciones') || this.hasModulePermission('nueva-rendicion')) {
+      return '/mis-rendiciones';
+    }
+    // /admin-users sigue abierto por rol (AuthAdmin2Guard), así que un
+    // Administrador o Contabilidad sin módulos aún tiene dónde caer.
+    if (this.isAdmin() || this.isContabilidad()) return '/admin-users';
+    return '/inicio';
   }
 }

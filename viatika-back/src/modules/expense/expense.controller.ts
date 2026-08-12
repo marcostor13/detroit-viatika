@@ -73,7 +73,12 @@ export class ExpenseController {
   // el gasto. La imagen llega como multipart y se analiza en memoria. El gasto
   // se crea recién al confirmar (POST invoice).
   @Post('analyze-image')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   @UseInterceptors(FileInterceptor('file'))
   async analyzeImage(
@@ -91,7 +96,12 @@ export class ExpenseController {
   }
 
   @Post('analize-pdf')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   @UseInterceptors(FileInterceptor('file'))
   async analyzePdf(
@@ -110,7 +120,12 @@ export class ExpenseController {
 
   /** VD-70 Parte B: crea la factura al confirmar (tras el escaneo OCR). */
   @Post('invoice')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createInvoice(@Body() body: CreateExpenseDto, @Request() req) {
     const clientId = body.clientId || req.user?.clientId
@@ -133,7 +148,12 @@ export class ExpenseController {
 
   /** VD-70 Parte B: revalida con SUNAT sin gasto persistido (panel post-OCR). */
   @Post('scan/validate-sunat')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async validateSunatStateless(
     @Body()
@@ -156,7 +176,12 @@ export class ExpenseController {
   }
 
   @Post('mobility-sheet')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createMobilitySheet(@Body() body: CreateExpenseDto, @Request() req) {
     const clientId = body.clientId || req.user?.clientId
@@ -177,7 +202,12 @@ export class ExpenseController {
   }
 
   @Post('other-expense')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createOtherExpense(@Body() body: CreateExpenseDto, @Request() req) {
     const clientId = body.clientId || req.user?.clientId
@@ -203,7 +233,12 @@ export class ExpenseController {
    * para habilitar la descarga del PDF.
    */
   @Post('declaracion-jurada')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createDeclaracionJurada(
     @Body() body: CreateDeclaracionJuradaDto,
@@ -227,7 +262,12 @@ export class ExpenseController {
   }
 
   @Post('cash-receipt')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createCashReceipt(@Body() body: CreateExpenseDto, @Request() req) {
     const clientId = body.clientId || req.user?.clientId
@@ -248,7 +288,12 @@ export class ExpenseController {
   }
 
   @Post()
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD
+  )
   @UseGuards(JwtAuthGuard, RolesGuard)
   create(@Body() createExpenseDto: CreateExpenseDto, @Request() req) {
     const userId = req.user?.sub || req.user?._id || createExpenseDto.userId
@@ -352,7 +397,12 @@ export class ExpenseController {
 
   @Post('my-direct-expenses/submit')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.COLABORADOR, ROLES.ADMIN, ROLES.SUPER_ADMIN)
+  @Roles(
+    ROLES.COLABORADOR,
+    ROLES.ADMIN,
+    ROLES.SUPER_ADMIN,
+    ROLES.CONTABILIDAD
+  )
   async submitMyDirectExpenses(
     @Request() req: any,
     @Body() body: { motivo?: string } = {}

@@ -399,7 +399,8 @@ export const routes: Routes = [
           import('./modules/mis-rendiciones/nueva-caja-chica/nueva-caja-chica.component').then(
             (m) => m.NuevaCajaChicaComponent
           ),
-        canActivate: [AuthColaboradorGuard],
+        // Mismo criterio que 'mis-rendiciones/nueva': manda el módulo asignado.
+        canActivate: [authModuleGuard('caja-chica')],
       },
       {
         path: 'rendiciones-caja-chica',

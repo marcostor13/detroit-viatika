@@ -1941,7 +1941,9 @@ export class AdvanceService implements OnModuleInit {
         reportLabel,
         reportTitle,
         collaboratorName,
+        // El reembolso se liquida en moneda base, igual que `settlement`.
         amountFormatted,
+        currencySymbol: this.moneySymbol(report?.settlement?.moneda),
         detailUrl,
       })
     }
@@ -2421,6 +2423,7 @@ export class AdvanceService implements OnModuleInit {
         startDate: startStr,
         endDate: endStr,
         totalFormatted,
+        currencySymbol: this.moneySymbol(advance.moneda),
         projectLabel,
         plainSummary,
         platformUrl,
