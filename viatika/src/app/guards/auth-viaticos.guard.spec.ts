@@ -10,7 +10,7 @@ describe('AuthViaticosGuard', () => {
 
   beforeEach(() => {
     userState = jasmine.createSpyObj('UserStateService', [
-      'isAuthenticated', 'isSuperAdmin', 'canApproveL1', 'hasModulePermission', 'getRole',
+      'isAuthenticated', 'isSuperAdmin', 'canApproveL1', 'hasModulePermission', 'defaultRoute',
     ]);
     router = jasmine.createSpyObj('Router', ['navigate']);
 
@@ -54,33 +54,23 @@ describe('AuthViaticosGuard', () => {
     expect(guard.canActivate()).toBeTrue();
   });
 
-  it('redirects Colaborador without permission to /mis-rendiciones', () => {
+  it('redirects to defaultRoute() when there is no viaticos access', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.isSuperAdmin.and.returnValue(false);
     userState.canApproveL1.and.returnValue(false);
     userState.hasModulePermission.and.returnValue(false);
-    userState.getRole.and.returnValue('Colaborador');
+    userState.defaultRoute.and.returnValue('/mis-rendiciones');
     expect(guard.canActivate()).toBeFalse();
     expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones']);
   });
 
-  it('redirects Administrador without permission to /admin-users', () => {
+  it('uses the landing page resolved from the modules, not the role', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.isSuperAdmin.and.returnValue(false);
     userState.canApproveL1.and.returnValue(false);
     userState.hasModulePermission.and.returnValue(false);
-    userState.getRole.and.returnValue('Administrador');
-    expect(guard.canActivate()).toBeFalse();
-    expect(router.navigate).toHaveBeenCalledWith(['/admin-users']);
-  });
-
-  it('redirects other roles to /login when no permission', () => {
-    userState.isAuthenticated.and.returnValue(true);
-    userState.isSuperAdmin.and.returnValue(false);
-    userState.canApproveL1.and.returnValue(false);
-    userState.hasModulePermission.and.returnValue(false);
-    userState.getRole.and.returnValue('OtroRol');
-    expect(guard.canActivate()).toBeFalse();
-    expect(router.navigate).toHaveBeenCalledWith(['/login']);
+    userState.defaultRoute.and.returnValue('/rendiciones');
+    guard.canActivate();
+    expect(router.navigate).toHaveBeenCalledWith(['/rendiciones']);
   });
 });

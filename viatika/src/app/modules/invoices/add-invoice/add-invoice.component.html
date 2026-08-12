@@ -75,8 +75,9 @@
 
   <!-- Proyecto + OT + Categoría. En planilla directa el centro de costo y la OT
        se heredan de la rendición y no se muestran; el bloque solo reaparece
-       cuando queda la categoría por resolver (ver showMovilidadCategoryBlock). -->
-  @if (!isDirectaPlanilla() || showMovilidadCategoryBlock) {
+       cuando queda la categoría por resolver (ver showMovilidadCategoryBlock).
+       En Otros Gastos la categoría se muestra dentro del tipo de documento. -->
+  @if (showTopBlock) {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-6">
     <!-- En rendición directa el centro de costo es el de la rendición: no se elige por comprobante. -->
     @if (!isDirectaContext()) {
@@ -123,8 +124,9 @@
     }
 
     <!-- Categoría: en planilla de movilidad se resuelve entre las categorías "Planilla de movilidad" asignadas al colaborador.
-         En la DJ al extranjero cada rubro (Alimentación/Movilidad) lleva la suya, así que aquí no se elige. -->
-    @if (expenseType() !== 'planilla_movilidad' && !isDj()) {
+         En Otros Gastos vive dentro del tipo de documento (VD-100), y en la DJ al
+         extranjero cada rubro (Alimentación/Movilidad) lleva la suya. -->
+    @if (showTopCategorySelect) {
     <div class="flex flex-col gap-2">
       <label for="categoryId" class="text-sm font-medium text-secondary">
         Categoría <span class="text-error">*</span>
@@ -159,7 +161,7 @@
         <span class="text-sm text-error">La categoría es requerida</span>
         }
       </div>
-    } @else if (categoriesLoaded() && movilidadCategories.length === 0) {
+    } @else if (showMovilidadCategoryBlock) {
       <div class="flex flex-col gap-2">
         <span class="text-sm text-error">
           No tienes asignada ninguna categoría de Planilla de movilidad. Contacta a un administrador para que te asigne una.
@@ -857,6 +859,36 @@
         <input id="otrosCorrelativo" type="text" formControlName="correlativo" placeholder="Ej: 00001234"
           class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
       </div>
+    </div>
+    }
+
+    <!-- Categoría del gasto (VD-100): va dentro del tipo de documento, debajo del
+         RUC. En "Alimentación sin documentación" se asigna sola —como en la
+         planilla de movilidad— y solo se pide a mano si el colaborador no tiene
+         una única categoría de Alimentación. La DJ al extranjero no la usa: cada
+         rubro lleva la suya en su propio bloque. -->
+    @if (!isDj()) {
+    <div class="flex flex-col gap-2">
+      <label for="otrosCategoryId" class="text-sm font-medium text-secondary">
+        Categoría <span class="text-error">*</span>
+      </label>
+      @if (alimentacionCategoryAuto(); as autoCategory) {
+      <p class="text-sm font-semibold text-secondary">{{ autoCategory.name }}</p>
+      } @else {
+      <app-search-select
+        formControlName="categoryId"
+        [options]="otrosCategoryOptions"
+        placeholder="Seleccione una categoría"
+        searchPlaceholder="Buscar categoría o cuenta…"
+        [invalid]="!!(categoryId?.invalid && categoryId?.touched)"
+      />
+      @if (isAlimentacionSinDoc() && alimentacionCategories.length > 1) {
+      <p class="text-xs text-tertiary">Tienes más de una categoría de Alimentación asignada. Elige cuál corresponde.</p>
+      }
+      @if (categoryId?.invalid && categoryId?.touched) {
+      <span class="text-sm text-error">La categoría es requerida</span>
+      }
+      }
     </div>
     }
 

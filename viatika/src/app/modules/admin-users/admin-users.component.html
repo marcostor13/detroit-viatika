@@ -35,7 +35,7 @@
         class="px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30"
       >
         <option value="">Todos los roles</option>
-        @for (role of roleOptions; track role.value) {
+        @for (role of roleOptions(); track role.value) {
           <option [value]="role.value">{{ role.label }}</option>
         }
       </select>

@@ -155,8 +155,9 @@ export class MisRendicionesComponent implements OnInit {
     }
   }
 
+  /** Solo el módulo "caja-chica"; el rol ya no entra en la decisión. */
   get canAccessCajaChica(): boolean {
-    return this.userStateService.canAccessCajaChica() && this.userStateService.isColaborador();
+    return this.userStateService.canAccessCajaChica();
   }
 
   loadCajaChicaReports(): void {

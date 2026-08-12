@@ -30,11 +30,7 @@ export function authModuleGuard(module: string, bypassForAdmin = false): CanActi
         // Aprobadores siempre acceden a rendiciones (es su vista principal)
         if (isApprover && module === 'rendiciones') return true;
 
-        if (userState.isColaborador()) return router.createUrlTree(['/inicio']);
-        if (userState.isAdmin()) return router.createUrlTree(['/admin-users']);
-        if (userState.isContabilidad()) return router.createUrlTree(['/tesoreria']);
-        if (isApprover) return router.createUrlTree(['/rendiciones']);
-        return router.createUrlTree(['/clients-admin']);
+        return router.createUrlTree([userState.defaultRoute()]);
       }),
       catchError(() => of(router.createUrlTree(['/clients-admin']))),
     );

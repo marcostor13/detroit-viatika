@@ -14,6 +14,10 @@ import {
 } from './dto/create-declaracion-jurada.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
+import { execFile } from 'child_process'
+import { mkdtemp, writeFile, readdir, readFile, rm } from 'fs/promises'
+import * as os from 'os'
+import * as path from 'path'
 import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
@@ -90,13 +94,13 @@ export interface DepositScanResult {
 export class ExpenseService {
   private readonly logger = new Logger(ExpenseService.name)
   private readonly openai: OpenAI
-  private readonly visionModel = 'gpt-5.1'
+  private readonly visionModel = 'gpt-5.4-mini'
   /**
-   * Umbral mínimo de caracteres para considerar que un PDF tiene capa de texto.
-   * Por debajo se asume escaneo/imagen y se envía el PDF completo al modelo de
-   * visión (VD-50).
+   * Máximo de páginas de un PDF que se rasterizan y envían al modelo de
+   * visión. Las facturas/boletas peruanas casi siempre son de 1 página; el
+   * límite evita costos descontrolados en PDFs largos o malformados.
    */
-  private readonly PDF_MIN_TEXT_LENGTH = 20
+  private readonly PDF_MAX_PAGES = 5
 
   constructor(
     private readonly configService: ConfigService,
@@ -278,45 +282,89 @@ export class ExpenseService {
     return expense
   }
 
-  // Construcción del mensaje para Vision
-  private buildVisionMessages(prompt: string, imageUrl: string) {
+  // Construcción del mensaje para Vision. Acepta una o varias imágenes (PDF
+  // multi-página rasterizado): el modelo las lee en el orden dado.
+  private buildVisionMessages(prompt: string, imageUrls: string | string[]) {
+    const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls]
     return [
       {
         role: 'user' as const,
         content: [
           { type: 'text' as const, text: prompt },
-          { type: 'image_url' as const, image_url: { url: imageUrl } },
+          ...urls.map(url => ({
+            type: 'image_url' as const,
+            image_url: { url },
+          })),
         ],
       },
     ]
   }
 
   /**
-   * Mensajes para leer un PDF con el modelo de visión enviando el archivo
-   * completo (base64). Se usa como respaldo cuando el PDF es un escaneo/imagen
-   * sin capa de texto: el modelo lee la imagen dentro del PDF (VD-50).
+   * Rasteriza cada página de un PDF a PNG (data URL base64) con `pdftoppm`
+   * (poppler-utils), para que el modelo de visión lea el documento con su
+   * layout real (tablas, columnas, cabecera) en vez de una extracción de
+   * texto plano que puede desordenar los campos de facturas peruanas.
+   *
+   * Se usó antes pdfjs-dist + @napi-rs/canvas in-process, pero el binario
+   * nativo de @napi-rs/canvas (Skia) requiere AVX2 y crashea con SIGILL en
+   * CPUs que no lo soportan (confirmado en el servidor de QA). `pdftoppm` es
+   * un binario de sistema (instalado vía apk en el Dockerfile) sin ese
+   * requisito, y al correr como proceso propio via execFile ya está aislado:
+   * si crashea, solo muere ese proceso, no la API.
    */
-  private buildPdfFileMessages(
-    prompt: string,
-    buffer: Buffer,
-    filename?: string
-  ) {
-    const dataUrl = `data:application/pdf;base64,${buffer.toString('base64')}`
-    return [
-      {
-        role: 'user' as const,
-        content: [
-          { type: 'text' as const, text: prompt },
-          {
-            type: 'file' as const,
-            file: {
-              filename: filename || 'documento.pdf',
-              file_data: dataUrl,
-            },
-          },
+  private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'expense-pdf-'))
+    const pdfPath = path.join(tmpDir, 'input.pdf')
+    const outPrefix = path.join(tmpDir, 'page')
+    try {
+      await writeFile(pdfPath, buffer)
+      await this.runPdftoppm(pdfPath, outPrefix)
+      const pageFiles = (await readdir(tmpDir))
+        .filter(f => f.startsWith('page') && f.endsWith('.png'))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      const images: string[] = []
+      for (const file of pageFiles) {
+        const pngBuffer = await readFile(path.join(tmpDir, file))
+        images.push(`data:image/png;base64,${pngBuffer.toString('base64')}`)
+      }
+      return images
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
+    }
+  }
+
+  private runPdftoppm(pdfPath: string, outPrefix: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        'pdftoppm',
+        [
+          '-png',
+          '-r',
+          '150',
+          '-l',
+          String(this.PDF_MAX_PAGES),
+          pdfPath,
+          outPrefix,
         ],
-      },
-    ]
+        { timeout: 60_000 },
+        (error, _stdout, stderr) => {
+          if (error) {
+            this.logger.error(
+              `pdftoppm terminó con error (code=${error.code}, signal=${(error as any).signal}): ${stderr || error.message}`
+            )
+            reject(
+              new HttpException(
+                'No se pudo renderizar el PDF.',
+                HttpStatus.BAD_REQUEST
+              )
+            )
+            return
+          }
+          resolve()
+        }
+      )
+    })
   }
 
   // Parseo robusto del contenido JSON devuelto por OpenAI
@@ -1088,30 +1136,17 @@ export class ExpenseService {
       body.expenseReportId
     )
     try {
-      const pdfModule = await import('pdf-parse')
-      const pdfParse: (data: Buffer) => Promise<{ text: string }> =
-        pdfModule.default ?? pdfModule
-      const parsed = await pdfParse(file.buffer)
-      const textFromPdf = parsed.text || ''
-
-      const prompt = PROMPT1
-      const hasText = textFromPdf.trim().length >= this.PDF_MIN_TEXT_LENGTH
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-        hasText
-          ? [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: prompt },
-                  { type: 'text', text: textFromPdf.substring(0, 15000) },
-                ],
-              },
-            ]
-          : this.buildPdfFileMessages(prompt, file.buffer, file.originalname)
+      const pageImages = await this.renderPdfPagesToImages(file.buffer)
+      if (pageImages.length === 0) {
+        throw new HttpException(
+          'No se pudo renderizar el PDF.',
+          HttpStatus.BAD_REQUEST
+        )
+      }
 
       const completion = await this.openai.chat.completions.create({
         model: this.visionModel,
-        messages,
+        messages: this.buildVisionMessages(PROMPT1, pageImages),
         temperature: 0,
         max_completion_tokens: 8192,
       })

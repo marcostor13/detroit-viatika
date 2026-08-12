@@ -582,6 +582,202 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  // VD-100: la categoría de Otros Gastos salió del bloque superior y vive dentro
+  // del tipo de documento; AL (Alimentación sin documentación) la trae puesta.
+  describe('categoría en Otros Gastos (VD-100)', () => {
+    const catAli = { _id: 'cat-ali', name: 'Alimentacion', cuenta: '91.3.1.410' } as any;
+    const catAliCom = { _id: 'cat-ali-com', name: 'Alimentacion COM', cuenta: '92.3.1.410' } as any;
+
+    it('no muestra la categoría en el bloque superior para otros_gastos', () => {
+      const component = createComponent();
+      component.setExpenseType('factura');
+      expect(component.showTopCategorySelect).toBeTrue();
+      component.setExpenseType('recibo_caja');
+      expect(component.showTopCategorySelect).toBeTrue();
+      component.setExpenseType('otros_gastos');
+      expect(component.showTopCategorySelect).toBeFalse();
+    });
+
+    it('autoselecciona la categoría de Alimentación en AL cuando hay una sola', () => {
+      const component = createComponent();
+      component.categories = [catAli, { _id: 'c2', name: 'Viajes' } as any];
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('AL');
+
+      expect(component.alimentacionCategoryAuto()?._id).toBe('cat-ali');
+      expect(component.form.get('categoryId')?.value).toBe('cat-ali');
+    });
+
+    it('con varias categorías de Alimentación deja elegir entre ellas', () => {
+      const component = createComponent();
+      component.categories = [catAli, catAliCom, { _id: 'c2', name: 'Viajes' } as any];
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('AL');
+
+      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.form.get('categoryId')?.value).toBeFalsy();
+      expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['cat-ali', 'cat-ali-com']);
+    });
+
+    it('sin categoría de Alimentación cae al listado completo en vez de bloquear', () => {
+      const component = createComponent();
+      component.categories = [{ _id: 'c2', name: 'Viajes' } as any];
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('AL');
+
+      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['c2']);
+    });
+
+    it('suelta la categoría autoasignada al cambiar de AL a otro tipo de documento', () => {
+      const component = createComponent();
+      component.categories = [catAli];
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('AL');
+      expect(component.form.get('categoryId')?.value).toBe('cat-ali');
+
+      component.selectOtrosSubTipo('BV');
+      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.form.get('categoryId')?.value).toBeFalsy();
+    });
+
+    it('respeta la categoría elegida a mano al cambiar de tipo de documento', () => {
+      const component = createComponent();
+      component.categories = [catAli, catAliCom];
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('BV');
+      component.form.get('categoryId')?.setValue('cat-ali-com');
+
+      component.selectOtrosSubTipo('RC');
+      expect(component.form.get('categoryId')?.value).toBe('cat-ali-com');
+    });
+
+    it('al editar respeta la categoría guardada y no autoasigna', () => {
+      const component = createComponent({ id: 'inv1' });
+      component.categories = [catAli];
+      component.setExpenseType('otros_gastos');
+      component.form.get('categoryId')?.setValue('otra-cat');
+      component.selectOtrosSubTipo('AL');
+
+      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.form.get('categoryId')?.value).toBe('otra-cat');
+    });
+
+    // El aviso de "no tienes categoría de Planilla de movilidad" se colaba en
+    // Otros Gastos, que no usa esas categorías.
+    it('no muestra el aviso de categorías de movilidad en otros_gastos', () => {
+      const component = createComponent();
+      component.categoriesLoaded.set(true);
+      component.categories = [{ _id: 'c2', name: 'Viajes' } as any];
+      component.setExpenseType('otros_gastos');
+      expect(component.showMovilidadCategoryBlock).toBeFalse();
+    });
+
+    // Pruebas sobre el DOM: la categoría tiene que quedar dentro del bloque del
+    // tipo de documento, debajo del RUC, y en AL sin selector ni textos extra.
+    describe('render', () => {
+      function renderComponent(categories: any[]) {
+        const activatedRouteStub: any = {
+          snapshot: { params: {}, queryParamMap: convertToParamMap({}) },
+          queryParamMap: of(convertToParamMap({})),
+        };
+        TestBed.configureTestingModule({
+          imports: [AddInvoiceComponent],
+          providers: [
+            { provide: InvoicesService, useValue: invoicesService },
+            { provide: Router, useValue: router },
+            { provide: NotificationService, useValue: notificationService },
+            { provide: ExpenseReportsService, useValue: expenseReportsService },
+            { provide: AdvanceService, useValue: advanceService },
+            { provide: UserStateService, useValue: userStateService },
+            { provide: ActivatedRoute, useValue: activatedRouteStub },
+            { provide: UploadService, useValue: uploadService },
+            { provide: CompanyConfigService, useValue: companyConfigService },
+            { provide: ExpenseService, useValue: expenseService },
+            { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
+          ],
+        });
+        // Las categorías se cargan por el servicio: ngOnInit corre en el primer
+        // detectChanges y sobrescribe lo que se asigne a mano.
+        invoicesService.getCategories.and.returnValue(of(categories));
+        const fixture = TestBed.createComponent(AddInvoiceComponent);
+        fixture.detectChanges();
+        fixture.componentInstance.setExpenseType('otros_gastos');
+        fixture.detectChanges();
+        return fixture;
+      }
+
+      it('pinta la categoría debajo del RUC, dentro del bloque del tipo de documento', () => {
+        const fixture = renderComponent([catAli, catAliCom]);
+        fixture.componentInstance.selectOtrosSubTipo('BV');
+        fixture.detectChanges();
+
+        const ruc: HTMLElement = fixture.nativeElement.querySelector('#otrosRucEmisor');
+        const categoria: HTMLElement = fixture.nativeElement.querySelector(
+          'app-search-select[formControlName="categoryId"]'
+        );
+        expect(ruc).toBeTruthy();
+        expect(categoria).toBeTruthy();
+        // Mismo bloque que el selector de tipo de documento…
+        const bloque = ruc.closest('div.bg-quaternary')!;
+        expect(bloque.textContent).toContain('Tipo de documento');
+        expect(bloque.contains(categoria)).toBeTrue();
+        // …y después del RUC en el orden del documento.
+        const despuesDelRuc = !!(
+          ruc.compareDocumentPosition(categoria) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+        expect(despuesDelRuc).toBeTrue();
+      });
+
+      it('en AL muestra la categoría autoasignada como texto, sin selector ni leyenda', () => {
+        const fixture = renderComponent([catAli]);
+        fixture.componentInstance.selectOtrosSubTipo('AL');
+        fixture.detectChanges();
+
+        const texto: string = fixture.nativeElement.textContent;
+        expect(texto).toContain('Alimentacion');
+        expect(texto).not.toContain('Asignada automáticamente');
+        expect(
+          fixture.nativeElement.querySelector('app-search-select[formControlName="categoryId"]')
+        ).toBeNull();
+      });
+
+      it('en AL con varias categorías de Alimentación sí muestra el selector', () => {
+        const fixture = renderComponent([catAli, catAliCom]);
+        fixture.componentInstance.selectOtrosSubTipo('AL');
+        fixture.detectChanges();
+
+        expect(
+          fixture.nativeElement.querySelector('app-search-select[formControlName="categoryId"]')
+        ).toBeTruthy();
+      });
+
+      it('no deja el selector de categoría en el bloque de arriba', () => {
+        const fixture = renderComponent([catAli, catAliCom]);
+        fixture.componentInstance.selectOtrosSubTipo('BV');
+        fixture.detectChanges();
+
+        const selectores = fixture.nativeElement.querySelectorAll(
+          'app-search-select[formControlName="categoryId"]'
+        );
+        expect(selectores.length).toBe(1);
+      });
+    });
+
+    it('oculta el bloque superior en directa cuando ya no le queda nada', () => {
+      const component = createComponent();
+      spyOn(component, 'isDirectaContext').and.returnValue(true);
+      component.categoriesLoaded.set(true);
+      component.categories = [{ _id: 'c2', name: 'Viajes' } as any];
+
+      component.setExpenseType('otros_gastos');
+      expect(component.showTopBlock).toBeFalse();
+
+      component.setExpenseType('factura');
+      expect(component.showTopBlock).toBeTrue();
+    });
+  });
+
   describe('isFormValid - otros_gastos', () => {
     it('DJ sub-type requires the declaracionJurada checkbox', () => {
       const component = createComponent();
