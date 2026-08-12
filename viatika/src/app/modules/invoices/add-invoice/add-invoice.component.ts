@@ -1538,6 +1538,21 @@ export default class AddInvoiceComponent implements OnInit {
     this.mobilityRowsArray.removeAt(index);
   }
 
+  /**
+   * VD-104: en edición la dirección se escribe a mano (el buscador de Google no
+   * refleja el valor guardado). Si el texto cambia, las coordenadas y la
+   * distancia calculadas al crear la planilla dejan de corresponder.
+   */
+  onMobilityPlaceTyped(index: number, field: 'origen' | 'destino') {
+    const row = this.mobilityRowsArray.at(index);
+    if (row.get(`${field}Lat`)?.value == null) return;
+    row.patchValue({
+      [`${field}Lat`]: null,
+      [`${field}Lng`]: null,
+      distanciaKm: null,
+    });
+  }
+
   onOrigenDepartamentoChange(i: number) {
     this.mobilityRowsArray.at(i).patchValue({ origenProvincia: '', origenDistrito: '' });
   }

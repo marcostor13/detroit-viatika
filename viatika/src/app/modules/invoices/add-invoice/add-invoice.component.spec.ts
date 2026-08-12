@@ -1116,6 +1116,37 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  describe('onMobilityPlaceTyped (VD-104: dirección editada a mano)', () => {
+    it('descarta coordenadas y distancia cuando se reescribe el origen', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        origen: 'A', origenLat: -12.1, origenLng: -77.0,
+        destino: 'B', destinoLat: -12.2, destinoLng: -77.1,
+        distanciaKm: 5.4,
+      });
+
+      component.onMobilityPlaceTyped(0, 'origen');
+
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origenLat')?.value).toBeNull();
+      expect(row.get('origenLng')?.value).toBeNull();
+      expect(row.get('distanciaKm')?.value).toBeNull();
+      // El destino no se toca.
+      expect(row.get('destinoLat')?.value).toBe(-12.2);
+    });
+
+    it('no hace nada en una fila sin coordenadas', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({ origen: 'A', distanciaKm: 3 });
+
+      component.onMobilityPlaceTyped(0, 'origen');
+
+      expect(component.mobilityRowsArray.at(0).get('distanciaKm')?.value).toBe(3);
+    });
+  });
+
   describe('saveMobilitySheet', () => {
     it('shows an error when there are no rows', () => {
       const component = createComponent();
