@@ -314,10 +314,7 @@ export class ExpenseService {
    * API sigue viva.
    */
   private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
-    const tmpFile = path.join(
-      os.tmpdir(),
-      `expense-pdf-${randomUUID()}.pdf`
-    )
+    const tmpFile = path.join(os.tmpdir(), `expense-pdf-${randomUUID()}.pdf`)
     await writeFile(tmpFile, buffer)
     try {
       return await this.runPdfRenderWorker(tmpFile)

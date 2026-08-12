@@ -16,9 +16,10 @@ async function main(): Promise<void> {
   // Mismo motivo que en expense.service.ts: pdfjs-dist es ESM puro y hay que
   // forzar un import() nativo para no depender de require(esm) (Node >=22.12).
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  const dynamicImport = new Function('specifier', 'return import(specifier)') as (
-    specifier: string
-  ) => Promise<any>
+  const dynamicImport = new Function(
+    'specifier',
+    'return import(specifier)'
+  ) as (specifier: string) => Promise<any>
 
   const { getDocument } = await dynamicImport('pdfjs-dist/legacy/build/pdf.mjs')
   const { createCanvas } = await import('@napi-rs/canvas')
