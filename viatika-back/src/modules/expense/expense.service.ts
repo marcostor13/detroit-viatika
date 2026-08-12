@@ -14,6 +14,11 @@ import {
 } from './dto/create-declaracion-jurada.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
+import { execFile } from 'child_process'
+import { writeFile, unlink } from 'fs/promises'
+import { randomUUID } from 'crypto'
+import * as os from 'os'
+import * as path from 'path'
 import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
@@ -296,61 +301,64 @@ export class ExpenseService {
     ]
   }
 
-  // No es eval de datos externos: fuerza un import() nativo con un specifier
-  // fijo, en vez del require() en el que TS baja `await import(...)`.
-  // pdfjs-dist v6 solo distribuye ESM puro (.mjs), sin build CommonJS. Con
-  // `module: "commonjs"` en tsconfig, TypeScript baja `await import(...)` a
-  // `require(...)`, y requerir un .mjs real solo funciona en Node ≥22.12
-  // (require(esm)) — el Dockerfile de producción usa node:20-alpine, donde
-  // eso revienta con ERR_REQUIRE_ESM.
-  private readonly dynamicImport: (specifier: string) => Promise<any> =
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    new Function('specifier', 'return import(specifier)') as (
-      specifier: string
-    ) => Promise<any>
-
   /**
    * Rasteriza cada página de un PDF a PNG (data URL base64) con pdfjs-dist +
    * @napi-rs/canvas, para que el modelo de visión lea el documento con su
    * layout real (tablas, columnas, cabecera) en vez de una extracción de
    * texto plano que puede desordenar los campos de facturas peruanas.
+   *
+   * Corre en un proceso hijo (pdf-render.worker.js) a propósito: un PDF
+   * malformado puede hacer crashear el addon nativo de @napi-rs/canvas
+   * (segfault/OOM), y eso no es un error de JS capturable con try/catch — mata
+   * el proceso entero. Aislado en un hijo, si crashea solo muere el hijo y la
+   * API sigue viva.
    */
   private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
-    // El build por defecto de pdfjs-dist asume globals de browser (DOMMatrix)
-    // y revienta en Node; hay que usar el build "legacy" explícitamente.
-    const { getDocument } = await this.dynamicImport(
-      'pdfjs-dist/legacy/build/pdf.mjs'
-    )
-    const { createCanvas } = await import('@napi-rs/canvas')
-    const loadingTask = getDocument({
-      data: new Uint8Array(buffer),
-      useSystemFonts: true,
-    })
+    const tmpFile = path.join(os.tmpdir(), `expense-pdf-${randomUUID()}.pdf`)
+    await writeFile(tmpFile, buffer)
     try {
-      const doc = await loadingTask.promise
-      const pageCount = Math.min(doc.numPages, this.PDF_MAX_PAGES)
-      const images: string[] = []
-      for (let i = 1; i <= pageCount; i++) {
-        const page = await doc.getPage(i)
-        const viewport = page.getViewport({ scale: 2 })
-        const canvas = createCanvas(
-          Math.ceil(viewport.width),
-          Math.ceil(viewport.height)
-        )
-        const context = canvas.getContext('2d')
-        await page.render({
-          canvas: canvas as unknown as HTMLCanvasElement,
-          canvasContext: context as unknown as CanvasRenderingContext2D,
-          viewport,
-        }).promise
-        images.push(
-          `data:image/png;base64,${canvas.toBuffer('image/png').toString('base64')}`
-        )
-      }
-      return images
+      return await this.runPdfRenderWorker(tmpFile)
     } finally {
-      await loadingTask.destroy()
+      await unlink(tmpFile).catch(() => undefined)
     }
+  }
+
+  private runPdfRenderWorker(pdfPath: string): Promise<string[]> {
+    const workerPath = path.join(__dirname, 'pdf-render.worker.js')
+    return new Promise((resolve, reject) => {
+      execFile(
+        process.execPath,
+        [workerPath, pdfPath, String(this.PDF_MAX_PAGES)],
+        { maxBuffer: 1024 * 1024 * 100, timeout: 60_000 },
+        (error, stdout, stderr) => {
+          if (error) {
+            this.logger.error(
+              `Proceso de render de PDF terminó con error (code=${error.code}, signal=${(error as any).signal}): ${stderr || error.message}`
+            )
+            reject(
+              new HttpException(
+                'No se pudo renderizar el PDF.',
+                HttpStatus.BAD_REQUEST
+              )
+            )
+            return
+          }
+          try {
+            resolve(JSON.parse(stdout) as string[])
+          } catch {
+            this.logger.error(
+              `Salida inválida del proceso de render de PDF: ${stdout.slice(0, 500)}`
+            )
+            reject(
+              new HttpException(
+                'No se pudo renderizar el PDF.',
+                HttpStatus.BAD_REQUEST
+              )
+            )
+          }
+        }
+      )
+    })
   }
 
   // Parseo robusto del contenido JSON devuelto por OpenAI
