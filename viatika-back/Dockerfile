@@ -1,5 +1,7 @@
 # Build stage
-FROM node:20-alpine AS builder
+# node:22+ requerido: pdfjs-dist (renderizado de PDF a imagen) declara
+# engines.node >=22.13 || >=24; en 20 rompe en runtime al procesar PDFs.
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
@@ -7,7 +9,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
