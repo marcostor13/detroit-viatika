@@ -96,25 +96,24 @@
     </div>
     }
 
-    <!-- En directa la OT se hereda de la rendición; si no la tiene, se pide en el bloque de fallback de más abajo. -->
-    @if (expenseType() === 'planilla_movilidad' && !isDirectaPlanilla()) {
+    <!--
+      En directa la OT se hereda de la rendición; si no la tiene, se pide en el bloque
+      de fallback de más abajo. En viático se hereda de la solicitud, que no la exige:
+      si la solicitud no llevó OT no hay campo que mostrar (viaticoSinOrdenTrabajo).
+    -->
+    @if (expenseType() === 'planilla_movilidad' && !isDirectaPlanilla() && !viaticoSinOrdenTrabajo()) {
     <div class="flex flex-col gap-2">
       <label for="ordenTrabajoId" class="text-sm font-medium text-secondary">
         Orden de Trabajo <span class="text-error">*</span>
       </label>
-      <select
-        id="ordenTrabajoId"
+      <app-search-select
         formControlName="ordenTrabajoId"
-        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer disabled:bg-gray-50 disabled:text-tertiary disabled:cursor-not-allowed"
-        style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
-      >
-        <option value="">Seleccione una OT</option>
-        @for (ot of filteredOrdenesTrabajo; track ot._id) {
-        <option [value]="ot._id">{{ ot.nombre }}</option>
-        }
-      </select>
+        [options]="ordenTrabajoOptions"
+        placeholder="Seleccione una OT"
+        searchPlaceholder="Buscar OT…"
+      />
       @if (viaticoOrdenTrabajoInherited()) {
-      <p class="text-xs text-tertiary">Heredada de la solicitud de viático. No se puede cambiar aquí.</p>
+      <p class="text-xs text-tertiary">Heredada de la solicitud de fondos. No se puede cambiar aquí.</p>
       } @else if (proyectId?.value && filteredOrdenesTrabajo.length === 0) {
       <p class="text-xs text-amber-600">El centro de costo elegido no tiene órdenes de trabajo activas.</p>
       } @else {
@@ -130,22 +129,13 @@
       <label for="categoryId" class="text-sm font-medium text-secondary">
         Categoría <span class="text-error">*</span>
       </label>
-      <div class="relative">
-        <select
-          id="categoryId"
-          formControlName="categoryId"
-          class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
-          style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
-        >
-          <option value="">Seleccione una categoría</option>
-          @for(category of filteredCategories; track category._id){
-          <option value="{{ category._id }}">{{ category.name }}</option>
-          }
-        </select>
-        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">
-          <app-icon name="chevron-down" size="sm" />
-        </div>
-      </div>
+      <app-search-select
+        formControlName="categoryId"
+        [options]="categoryOptions"
+        placeholder="Seleccione una categoría"
+        searchPlaceholder="Buscar categoría o cuenta…"
+        [invalid]="!!(categoryId?.invalid && categoryId?.touched)"
+      />
       @if (categoryId?.invalid && categoryId?.touched) {
       <span class="text-sm text-error">La categoría es requerida</span>
       }
@@ -155,25 +145,16 @@
         <label for="categoryId" class="text-sm font-medium text-secondary">
           Categoría de Planilla de movilidad <span class="text-error">*</span>
         </label>
-        <div class="relative">
-          <select
-            id="categoryId"
-            formControlName="categoryId"
-            class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
-            style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
-          >
-            <option value="">Seleccione una categoría</option>
-            @for(category of movilidadCategories; track category._id){
-            <!-- Se muestra la cuenta junto al nombre: un colaborador puede tener
-                 dos "Planilla de movilidad" (Servicios 91x y Comercial 92x) con
-                 el mismo nombre, indistinguibles sin la cuenta. -->
-            <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
-            }
-          </select>
-          <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-tertiary z-10">
-            <app-icon name="chevron-down" size="sm" />
-          </div>
-        </div>
+        <!-- La cuenta va como segunda línea de cada opción: un colaborador puede
+             tener dos "Planilla de movilidad" (Servicios 91x y Comercial 92x)
+             con el mismo nombre, indistinguibles sin la cuenta. -->
+        <app-search-select
+          formControlName="categoryId"
+          [options]="movilidadCategoryOptions"
+          placeholder="Seleccione una categoría"
+          searchPlaceholder="Buscar categoría o cuenta…"
+          [invalid]="!!(categoryId?.invalid && categoryId?.touched)"
+        />
         @if (categoryId?.invalid && categoryId?.touched) {
         <span class="text-sm text-error">La categoría es requerida</span>
         }
@@ -195,17 +176,12 @@
       <label for="ordenTrabajoIdFallback" class="text-sm font-medium text-secondary">
         Orden de Trabajo <span class="text-error">*</span>
       </label>
-      <select
-        id="ordenTrabajoIdFallback"
+      <app-search-select
         formControlName="ordenTrabajoId"
-        class="w-full h-[42px] pl-4 pr-10 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm cursor-pointer"
-        style="-webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: none;"
-      >
-        <option value="">Seleccione una OT</option>
-        @for (ot of filteredOrdenesTrabajo; track ot._id) {
-        <option [value]="ot._id">{{ ot.nombre }}</option>
-        }
-      </select>
+        [options]="ordenTrabajoOptions"
+        placeholder="Seleccione una OT"
+        searchPlaceholder="Buscar OT…"
+      />
       <p class="text-xs text-tertiary">Esta rendición directa no tiene una OT propia asignada. Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005).</p>
     </div>
   </div>
@@ -940,7 +916,7 @@
       <h3 class="text-sm font-semibold text-amber-800">Declaración Jurada — Viaje al exterior</h3>
     </div>
     <p class="text-sm text-amber-700 leading-relaxed">
-      Sustenta tus viáticos por Alimentación y Movilidad sin comprobante del proveedor. Llena las filas de cada rubro; el adjunto es opcional.
+      Sustenta tus solicitudes de fondos por Alimentación y Movilidad sin comprobante del proveedor. Llena las filas de cada rubro; el adjunto es opcional.
     </p>
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -975,13 +951,12 @@
       } @else if (djAlimentacionRowsArray.length > 0) {
       <div class="flex flex-col gap-2">
         <label class="text-xs font-medium text-secondary">Categoría <span class="text-error">*</span></label>
-        <select formControlName="djAlimentacionCategoryId"
-          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
-          <option value="">Seleccione una categoría</option>
-          @for(category of djCategoriesFor('alimentacion'); track category._id){
-          <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
-          }
-        </select>
+        <app-search-select
+          formControlName="djAlimentacionCategoryId"
+          [options]="djCategoryOptionsFor('alimentacion')"
+          placeholder="Seleccione una categoría"
+          searchPlaceholder="Buscar categoría o cuenta…"
+        />
         @if (djCategoriesFor('alimentacion').length === 0) {
         <span class="text-xs text-error">No tienes asignada ninguna categoría de Alimentación. Contacta a un administrador.</span>
         }
@@ -1024,13 +999,12 @@
       } @else if (djMovilidadRowsArray.length > 0) {
       <div class="flex flex-col gap-2">
         <label class="text-xs font-medium text-secondary">Categoría <span class="text-error">*</span></label>
-        <select formControlName="djMovilidadCategoryId"
-          class="w-full h-[38px] px-3 rounded-lg border border-gray-200 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm">
-          <option value="">Seleccione una categoría</option>
-          @for(category of djCategoriesFor('movilidad'); track category._id){
-          <option value="{{ category._id }}">{{ category.name }}{{ category.cuenta ? ' — ' + category.cuenta : '' }}</option>
-          }
-        </select>
+        <app-search-select
+          formControlName="djMovilidadCategoryId"
+          [options]="djCategoryOptionsFor('movilidad')"
+          placeholder="Seleccione una categoría"
+          searchPlaceholder="Buscar categoría o cuenta…"
+        />
         @if (djCategoriesFor('movilidad').length === 0) {
         <span class="text-xs text-error">No tienes asignada ninguna categoría de Movilidad. Contacta a un administrador.</span>
         }

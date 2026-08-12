@@ -109,10 +109,28 @@ export class SolicitudViaticosComponent implements OnInit {
     return `${y}-${m}-${day}`;
   }
 
+  /**
+   * Permiso por usuario para elegir fechas anteriores a hoy en la solicitud
+   * (`permissions.permitirFechasAnteriores`). Por defecto está desactivado.
+   */
+  get permiteFechasAnteriores(): boolean {
+    return this.userState.getUser()?.permissions?.permitirFechasAnteriores === true;
+  }
+
+  /** `min` de la fecha de inicio: hoy, salvo que el usuario tenga el permiso. */
+  get minStartDate(): string {
+    return this.permiteFechasAnteriores ? '' : this.todayStr;
+  }
+
+  /** `min` de la fecha fin: nunca antes de la fecha de inicio elegida. */
+  get minEndDate(): string {
+    return (this.form.get('startDate')?.value as string) || this.minStartDate;
+  }
+
   get pageTitle(): string {
     const adv = this.advanceToResubmit();
     if (adv) return `Corregir solicitud · v${adv.solicitudVersion ?? 1}`;
-    return 'Nueva solicitud de viáticos';
+    return 'Nueva solicitud de fondos';
   }
 
   /** Monto requerido ingresado por el colaborador. */
@@ -313,7 +331,7 @@ export class SolicitudViaticosComponent implements OnInit {
       return;
     }
 
-    if (start < today) {
+    if (start < today && !this.permiteFechasAnteriores) {
       this.notifications.show(
         'La fecha de inicio no puede ser anterior a hoy.',
         'error'
@@ -358,7 +376,7 @@ export class SolicitudViaticosComponent implements OnInit {
       const legacyPayload: ICreateAdvancePayload = {
         amount: montoRequerido,
         moneda,
-        description: `Viático: ${place} (${startStr} → ${endStr})`,
+        description: `Solicitud de Fondos: ${place} (${startStr} → ${endStr})`,
         place,
         ...(this.selectedLat != null && { lat: this.selectedLat }),
         ...(this.selectedLng != null && { lng: this.selectedLng }),
@@ -397,7 +415,7 @@ export class SolicitudViaticosComponent implements OnInit {
   private onSubmitSuccess(isResubmit: boolean): void {
     const msg = isResubmit
       ? 'Solicitud corregida y reenviada correctamente'
-      : 'Solicitud de viáticos enviada correctamente';
+      : 'Solicitud de Fondos enviada correctamente';
     this.notifications.show(msg, 'success');
     this.submitting.set(false);
     this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'viaticos' } });

@@ -187,6 +187,18 @@ export interface ExpenseReportDocument extends Document {
   coordinatorApprovedBy?: Types.ObjectId
   contabilidadApprovedAt?: Date
   contabilidadApprovedBy?: Types.ObjectId
+  /**
+   * Cadena de aprobación de la RENDICIÓN a nivel de reporte (fase post-pago del
+   * viático): los aprobadores del centro de costo del reporte (N1/N2…) deben
+   * completar la cadena antes de que la rendición pase a Contabilidad
+   * (`submitted → pending_accounting`). Aprobación en paralelo entre niveles,
+   * igual que `viaticoApproverChain` (solicitud) y `Expense.approverChain`
+   * (comprobante). Snapshot al enviar.
+   */
+  rendicionApproverChain?: ChainStep[]
+  rendicionApprovalLevel?: number
+  rendicionRequiredLevels?: number
+  rendicionApprovalHistory?: ApprovalEntry[]
   reopenHistory?: ReopenRecord[]
   // Campos exclusivos de viático
   viaticoAmount?: number
@@ -449,6 +461,7 @@ export class ExpenseReport {
       depositDate: { type: String, required: true },
       bankOrigin: { type: String },
       operationNumber: { type: String },
+      amountReturned: { type: Number },
       scannedAmount: { type: Number },
       operationDate: { type: String },
       operationTime: { type: String },
@@ -464,6 +477,8 @@ export class ExpenseReport {
     depositDate: string
     bankOrigin?: string
     operationNumber?: string
+    /** Monto devuelto ingresado manualmente por el colaborador. */
+    amountReturned?: number
     /** Datos extraídos del comprobante por OCR/visión (informativos). */
     scannedAmount?: number
     operationDate?: string
@@ -486,6 +501,31 @@ export class ExpenseReport {
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   contabilidadApprovedBy?: Types.ObjectId
+
+  /** Cadena de aprobación de la RENDICIÓN a nivel de reporte (N1/N2… del centro de costo). Snapshot al enviar. */
+  @Prop({ type: [chainStepSchemaDefinition], default: undefined })
+  rendicionApproverChain?: ChainStep[]
+
+  @Prop({ type: Number, default: 0 })
+  rendicionApprovalLevel?: number
+
+  @Prop({ type: Number, required: false })
+  rendicionRequiredLevels?: number
+
+  @Prop({
+    type: [
+      {
+        level: { type: Number },
+        approvedBy: { type: String },
+        action: { type: String, enum: ['approved', 'rejected', 'resubmitted'] },
+        notes: { type: String },
+        date: { type: Date },
+        _id: false,
+      },
+    ],
+    default: [],
+  })
+  rendicionApprovalHistory?: ApprovalEntry[]
 
   @Prop({
     type: [

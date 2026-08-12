@@ -31,9 +31,9 @@ export interface RendicionExportComprobanteRow {
   ruc?: string;
   /** Nombre de la Orden de Trabajo del gasto. */
   ot?: string;
-  /** Centro de costo (nombre) del gasto, derivado de la OT. */
+  /** Centro de costo del gasto, derivado de la OT: su código (ej. 121), o el nombre si no tiene. */
   centroCosto?: string;
-  /** Cuenta contable de destino. Pendiente de definir con el cliente: por ahora vacío. */
+  /** Cuenta contable de destino: la cuenta 9X de la categoría del gasto (ej. 913140). */
   ctaDestino?: string;
   /** Monto en dólares cuando la moneda del gasto es USD. */
   dolares?: number;
@@ -108,7 +108,7 @@ export interface RendicionExportData {
   departamento?: string;
   /** Periodo (mes) de la rendición. */
   periodo?: string;
-  /** Centro de costo de cabecera (de la OT de la rendición). */
+  /** Centro de costo de cabecera (de la OT de la rendición): su código, o el nombre si no tiene. */
   centroCostoCabecera?: string;
   /** Monto inicial entregado al colaborador (suma de anticipos/depósitos). */
   montoInicialEntregado?: number;
@@ -116,6 +116,18 @@ export interface RendicionExportData {
   jefeInmediatoName?: string;
   /** Firma del Jefe Inmediato, si existe. */
   jefeSignature?: string;
+  /**
+   * Aprobadores que realmente firmaron la cadena del centro de costo (N1, N2, …),
+   * en orden de nivel. Cuando hay dos o más, el recuadro V°B° JEFE INMEDIATO se
+   * divide y muestra ambas firmas lado a lado.
+   *
+   * Existe porque `jefeInmediatoName`/`jefeSignature` solo sirven cuando hubo un
+   * único aprobador a nivel de reporte. Con la cadena por comprobante (VD-85/87)
+   * la rendición no guarda un `coordinatorApprovedBy`, y caer al `approvedBy` del
+   * reporte imprimía a quien hubiera avanzado el estado — normalmente
+   * Contabilidad, la misma persona que ya firma en FINANZAS.
+   */
+  jefeInmediatoApprovers?: { name: string; signature?: string }[];
   /** Nombre de Finanzas para el recuadro V°B° FINANZAS. */
   financeName?: string;
   /** Firma de Finanzas, si existe. */
@@ -141,6 +153,8 @@ export interface AffidavitExportRow {
 export interface AffidavitExportData {
   fileBaseName: string;
   tipo: 'viaticos_nacionales' | 'viajes_exterior';
+  /** Símbolo de la moneda declarada. La DJ al exterior va en dólares. */
+  monedaSimbolo?: string;
   empresaNombre: string;
   empresaRuc: string;
   colaborador: string;
@@ -253,6 +267,8 @@ export interface SolicitudFondosExportData {
 export interface SingleExpenseAffidavitData {
   fileBaseName: string;
   titulo: string;
+  /** Símbolo de la moneda declarada. La DJ al exterior va en dólares. */
+  monedaSimbolo?: string;
   colaborador: string;
   colaboradorDni?: string;
   empresaNombre?: string;
@@ -595,7 +611,7 @@ export class RendicionExportService {
       ws.getCell(r, 1).font = { bold: true };
       r++;
       const sym = monedaSymbol(data.moneda);
-      const budgetHeaders = ['Viáticos', `Importe (${sym})`, 'Personas', 'Combustible GLP/dia', 'Días', `Total (${sym})`];
+      const budgetHeaders = ['Solicitud de Fondos', `Importe (${sym})`, 'Personas', 'Combustible GLP/dia', 'Días', `Total (${sym})`];
       budgetHeaders.forEach((h, i) => {
         const c = ws.getCell(r, i + 1);
         c.value = h;
@@ -660,7 +676,19 @@ export class RendicionExportService {
       }
     };
     drawSigBlock(1, 4, 'V°B° SOLICITANTE', data.signature, data.colaborador, data.idDocument);
-    drawSigBlock(5, 8, 'V°B° JEFE INMEDIATO', data.jefeSignature, data.jefeInmediatoName);
+    const jefes = (data.jefeInmediatoApprovers ?? []).slice(0, 2);
+    if (jefes.length >= 2) {
+      // Dos aprobadores: se parte el recuadro (col 5-8) en 5-6 y 7-8. El título
+      // va una sola vez, sobre la mitad izquierda, para no repetirlo.
+      drawSigBlock(5, 6, 'V°B° JEFE INMEDIATO', jefes[0].signature, jefes[0].name);
+      drawSigBlock(7, 8, '', jefes[1].signature, jefes[1].name);
+    } else {
+      drawSigBlock(
+        5, 8, 'V°B° JEFE INMEDIATO',
+        jefes[0]?.signature ?? data.jefeSignature,
+        jefes[0]?.name ?? data.jefeInmediatoName,
+      );
+    }
     drawSigBlock(9, 12, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     const buf = await wb.xlsx.writeBuffer();
@@ -881,7 +909,7 @@ export class RendicionExportService {
       y += 4;
       autoTable(doc, {
         startY: y,
-        head: [['Viáticos', 'Importe', 'Personas', 'Combustible', 'Días', 'Total']],
+        head: [['Solicitud de Fondos', 'Importe', 'Personas', 'Combustible', 'Días', 'Total']],
         body: data.items.map((i) => [
           i.descripcion, i.importe.toFixed(2), i.personas, i.combustible.toFixed(2), i.dias, i.total.toFixed(2),
         ]),
@@ -916,8 +944,46 @@ export class RendicionExportService {
       doc.text('NOMBRE Y FIRMA', cx, lineY + 8, { align: 'center' });
       if (dni) doc.text(`DNI: ${dni}`, cx, lineY + 12, { align: 'center' });
     };
+    /**
+     * Variante del recuadro con DOS firmantes lado a lado, dentro del mismo
+     * ancho (70mm) que ocupa un recuadro simple. Se usa cuando la cadena del
+     * centro de costo tiene N1 y N2 y ambos aprobaron: el formato ADF-FOR-004
+     * trae un solo casillero "JEFE INMEDIATO", así que se subdivide en vez de
+     * elegir arbitrariamente a uno de los dos.
+     */
+    const drawSignaturePair = (
+      cx: number, title: string, people: { name: string; signature?: string }[],
+    ) => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(title, cx, sigY, { align: 'center' });
+      const lineY = sigY + 20;
+      // ±18mm respecto del centro: deja 32mm de línea por firmante y ~4mm de aire.
+      people.slice(0, 2).forEach((p, i) => {
+        const px = cx + (i === 0 ? -18 : 18);
+        if (p.signature) {
+          try { doc.addImage(p.signature, 'PNG', px - 15, sigY + 2, 30, 16); } catch { /* firma inválida */ }
+        }
+        doc.setLineWidth(0.4);
+        doc.line(px - 16, lineY, px + 16, lineY);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        if (p.name) doc.text(clip(sanitize(p.name).toUpperCase(), 32), px, lineY + 4, { align: 'center' });
+        doc.text('NOMBRE Y FIRMA', px, lineY + 8, { align: 'center' });
+      });
+    };
+
     drawSignature(56, 'V°B° SOLICITANTE', data.signature, data.colaborador, data.idDocument);
-    drawSignature(148, 'V°B° JEFE INMEDIATO', data.jefeSignature, data.jefeInmediatoName);
+    const jefes = (data.jefeInmediatoApprovers ?? []).slice(0, 2);
+    if (jefes.length >= 2) {
+      drawSignaturePair(148, 'V°B° JEFE INMEDIATO', jefes);
+    } else {
+      drawSignature(
+        148, 'V°B° JEFE INMEDIATO',
+        jefes[0]?.signature ?? data.jefeSignature,
+        jefes[0]?.name ?? data.jefeInmediatoName,
+      );
+    }
     drawSignature(240, 'V°B° FINANZAS', data.financeSignature, data.financeName);
 
     if (!inDoc) {
@@ -1136,15 +1202,16 @@ export class RendicionExportService {
     doc.text('DECLARACION JURADA', 105, 16, { align: 'center' });
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Tipo: ${data.tipo === 'viajes_exterior' ? 'Viajes al Exterior' : 'Viaticos Nacionales'}`, 14, 26);
+    doc.text(`Tipo: ${data.tipo === 'viajes_exterior' ? 'Viajes al Exterior' : 'Solicitud de Fondos Nacionales'}`, 14, 26);
     doc.text(`Empresa: ${data.empresaNombre}`, 14, 32);
     doc.text(`RUC: ${data.empresaRuc}`, 14, 38);
     doc.text(`Colaborador: ${data.colaborador}`, 14, 44);
     doc.text(`Documento: ${data.documentoColaborador || '-'}`, 14, 50);
+    const djSym = data.monedaSimbolo || 'S/';
 
     autoTable(doc, {
       startY: 58,
-      head: [['Fecha', 'Documento', 'Concepto', 'Categoria', 'Monto (S/)']],
+      head: [['Fecha', 'Documento', 'Concepto', 'Categoria', `Monto (${djSym})`]],
       body: data.rows.map(r => [r.fecha, r.documento, r.concepto, r.categoria, r.monto.toFixed(2)]),
       theme: 'grid',
       headStyles: { fillColor: [145, 47, 44], textColor: 255 },
@@ -1155,7 +1222,7 @@ export class RendicionExportService {
 
     const y = afterTable(doc) + 8;
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total declarado: S/ ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
+    doc.text(`Total declarado: ${djSym} ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.text(`Fecha de generacion: ${data.fechaGeneracion}`, 14, y + 8);
 
@@ -1724,6 +1791,7 @@ export class RendicionExportService {
     if (data.empresaNombre) { doc.text(`Empresa: ${data.empresaNombre}`, 14, y); y += 6; }
     doc.text(`Colaborador: ${data.colaborador}`, 14, y); y += 6;
     if (data.colaboradorDni) { doc.text(`DNI: ${data.colaboradorDni}`, 14, y); y += 6; }
+    const djSym = data.monedaSimbolo || 'S/';
     doc.text(`Fecha: ${data.fechaGeneracion}`, 14, y); y += 10;
 
     let tableRendered = false;
@@ -1761,7 +1829,7 @@ export class RendicionExportService {
     }
 
     doc.setFont('helvetica', 'bold');
-    doc.text(`Total declarado: S/ ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
+    doc.text(`Total declarado: ${djSym} ${data.total.toFixed(2)}`, 196, y, { align: 'right' });
     doc.setFont('helvetica', 'normal');
 
     y += 20;
@@ -2052,7 +2120,7 @@ export class RendicionExportService {
 
     y += 10;
     doc.setFontSize(7);
-    doc.text('(*) Comprende únicamente los gastos de viáticos por alimentación y movilidad.', lm, y);
+    doc.text('(*) Comprende únicamente los gastos de fondos por alimentación y movilidad.', lm, y);
     y += 4;
     const notaLines = doc.splitTextToSize(
       '(**) La falta de alguno de los datos señalados en los rubros I y II sólo inhabilita la sustentación del gasto por movilidad o alimentación, según corresponda.',

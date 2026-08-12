@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsNotEmpty,
   IsNumber,
@@ -16,7 +17,7 @@ export class DeclaracionJuradaRowDto {
   fecha: string
 
   @IsNumber()
-  @Min(0)
+  @Min(0.01)
   monto: number
 }
 
@@ -27,6 +28,7 @@ export class DeclaracionJuradaSeccionDto {
   categoryId: string
 
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => DeclaracionJuradaRowDto)
   rows: DeclaracionJuradaRowDto[]

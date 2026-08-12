@@ -34,6 +34,7 @@ const makeQuery = (resolvedValue: any) => ({
   limit: jest.fn().mockReturnThis(),
   populate: jest.fn().mockReturnThis(),
   sort: jest.fn().mockReturnThis(),
+  select: jest.fn().mockReturnThis(),
   exec: jest.fn().mockResolvedValue(resolvedValue),
 })
 
@@ -52,10 +53,14 @@ const mockProjectModel = {
   findOneAndUpdate: jest.fn(),
   findOneAndDelete: jest.fn(),
   countDocuments: jest.fn(),
+  exists: jest.fn(),
   db: {
     model: jest.fn().mockReturnValue(mockExpenseModel),
   },
 }
+
+const mockLineaNegocioModel = { findOne: jest.fn() }
+const mockUserModel = { findOne: jest.fn(), exists: jest.fn() }
 
 describe('ProjectService', () => {
   let service: ProjectService
@@ -65,14 +70,58 @@ describe('ProjectService', () => {
     mockProjectModel.db.model.mockReturnValue(mockExpenseModel)
     mockExpenseModel.countDocuments.mockReturnValue(Promise.resolve(0))
     mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+    mockLineaNegocioModel.findOne.mockReturnValue(makeQuery(null))
+    mockUserModel.findOne.mockReturnValue(makeQuery(null))
+    mockProjectModel.exists.mockResolvedValue(null)
+    mockUserModel.exists.mockResolvedValue(null)
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProjectService,
         { provide: getModelToken(Project.name), useValue: mockProjectModel },
+        {
+          provide: getModelToken('LineaNegocio'),
+          useValue: mockLineaNegocioModel,
+        },
+        { provide: getModelToken('User'), useValue: mockUserModel },
       ],
     }).compile()
     service = module.get<ProjectService>(ProjectService)
+  })
+
+  describe('isApproverForClient', () => {
+    const approverId = new Types.ObjectId().toString()
+
+    it('es aprobador si figura en los niveles de un centro de costo', async () => {
+      mockProjectModel.exists.mockResolvedValue({ _id: new Types.ObjectId() })
+
+      await expect(service.isApproverForClient(approverId, clientId)).resolves.toBe(true)
+      // Corta en la primera fuente: no hace falta consultar usuarios.
+      expect(mockUserModel.exists).not.toHaveBeenCalled()
+    })
+
+    it('es aprobador si solo figura en los niveles propios de un colaborador (regla 1.10)', async () => {
+      mockUserModel.exists.mockResolvedValue({ _id: new Types.ObjectId() })
+
+      await expect(service.isApproverForClient(approverId, clientId)).resolves.toBe(true)
+      expect(mockUserModel.exists).toHaveBeenCalledWith({
+        clientId: new Types.ObjectId(clientId),
+        'permissions.approverLevels.userIds': new Types.ObjectId(approverId),
+      })
+    })
+
+    it('no es aprobador si no figura en ninguna de las dos fuentes', async () => {
+      await expect(service.isApproverForClient(approverId, clientId)).resolves.toBe(false)
+      expect(mockProjectModel.exists).toHaveBeenCalled()
+      expect(mockUserModel.exists).toHaveBeenCalled()
+    })
+
+    it('devuelve false con ids inválidos sin consultar la base', async () => {
+      await expect(service.isApproverForClient('no-es-un-id', clientId)).resolves.toBe(false)
+      await expect(service.isApproverForClient(approverId, 'no-es-un-id')).resolves.toBe(false)
+      expect(mockProjectModel.exists).not.toHaveBeenCalled()
+      expect(mockUserModel.exists).not.toHaveBeenCalled()
+    })
   })
 
   describe('create', () => {
@@ -371,6 +420,84 @@ describe('ProjectService', () => {
       expect(result.created).toBe(1)
       expect(result.skipped).toHaveLength(1)
       expect(result.errors).toHaveLength(1)
+    })
+
+    it('resolves "Línea de Negocio" by name and passes its ObjectId through', async () => {
+      const lineaId = new Types.ObjectId()
+      mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+      mockLineaNegocioModel.findOne.mockReturnValue(
+        makeQuery({ _id: lineaId })
+      )
+      mockProjectModel.create.mockResolvedValue(mockProject)
+
+      const result = await service.bulkImport(
+        [{ 'Nombre Proyecto': 'Alpha', 'Línea de Negocio': 'Construcción' }],
+        clientId
+      )
+
+      expect(result.created).toBe(1)
+      expect(mockProjectModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ lineaNegocioId: lineaId })
+      )
+    })
+
+    it('errors the row when "Línea de Negocio" text does not match any record', async () => {
+      mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+      mockLineaNegocioModel.findOne.mockReturnValue(makeQuery(null))
+
+      const result = await service.bulkImport(
+        [{ 'Nombre Proyecto': 'Alpha', 'Línea de Negocio': 'Inexistente' }],
+        clientId
+      )
+
+      expect(result.created).toBe(0)
+      expect(mockProjectModel.create).not.toHaveBeenCalled()
+      expect(result.errors[0]).toContain('línea de negocio')
+    })
+
+    it('resolves "Aprobador N1"/"Aprobador N2" emails to approverLevels', async () => {
+      const n1Id = new Types.ObjectId()
+      const n2Id = new Types.ObjectId()
+      mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+      mockUserModel.findOne
+        .mockReturnValueOnce(makeQuery({ _id: n1Id }))
+        .mockReturnValueOnce(makeQuery({ _id: n2Id }))
+      mockProjectModel.create.mockResolvedValue(mockProject)
+
+      const result = await service.bulkImport(
+        [
+          {
+            'Nombre Proyecto': 'Alpha',
+            'Aprobador N1': 'n1@empresa.com',
+            'Aprobador N2': 'n2@empresa.com',
+          },
+        ],
+        clientId
+      )
+
+      expect(result.created).toBe(1)
+      expect(mockProjectModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          approverLevels: [
+            { level: 1, userIds: [n1Id] },
+            { level: 2, userIds: [n2Id] },
+          ],
+        })
+      )
+    })
+
+    it('errors the row (does not silently drop) when an approver email is not found', async () => {
+      mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+      mockUserModel.findOne.mockReturnValue(makeQuery(null))
+
+      const result = await service.bulkImport(
+        [{ 'Nombre Proyecto': 'Alpha', 'Aprobador N1': 'ghost@empresa.com' }],
+        clientId
+      )
+
+      expect(result.created).toBe(0)
+      expect(mockProjectModel.create).not.toHaveBeenCalled()
+      expect(result.errors[0]).toContain('ghost@empresa.com')
     })
   })
 })

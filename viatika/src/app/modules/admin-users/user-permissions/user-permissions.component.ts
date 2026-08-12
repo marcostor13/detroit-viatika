@@ -66,9 +66,9 @@ export class UserPermissionsComponent implements OnInit {
     { key: 'rendiciones', label: 'Rendiciones', description: 'Ver y gestionar rendiciones de todos los colaboradores' },
     { key: 'mis-rendiciones', label: 'Mis Rendiciones', description: 'Ver y gestionar rendiciones propias' },
     { key: 'nueva-rendicion', label: 'Rendición directa', description: 'Crear nuevas rendiciones directas desde la pantalla de Tesorería' },
-    { key: 'viaticos', label: 'Viáticos', description: 'Acceder a la gestión y seguimiento de anticipos de viáticos' },
+    { key: 'viaticos', label: 'Solicitud de Fondos', description: 'Acceder a la gestión y seguimiento de anticipos de fondos' },
     { key: 'consolidated-invoices', label: 'Dashboard', description: 'Ver el dashboard con KPIs y reportes consolidados de gastos' },
-    { key: 'tesoreria', label: 'Pagos', description: 'Registrar comprobantes de pago de viáticos' },
+    { key: 'tesoreria', label: 'Pagos', description: 'Registrar comprobantes de pago de fondos' },
     { key: 'configuracion', label: 'Configuración', description: 'Configurar parámetros de la empresa' },
     { key: 'audit-log', label: 'Actividad', description: 'Ver el registro de actividad de la empresa' },
     { key: 'caja-chica', label: 'Rendicion Caja Chica', description: 'Crear y subir comprobantes de caja chica propios' },
@@ -82,6 +82,7 @@ export class UserPermissionsComponent implements OnInit {
     projectIds: [],
     primaryProjectId: undefined,
     otrosGastosOpcionales: { recibosDiversos: true, djExtranjero: true },
+    permitirFechasAnteriores: false,
     approverLevels: [],
   };
 
@@ -122,6 +123,7 @@ export class UserPermissionsComponent implements OnInit {
             recibosDiversos: user.permissions?.otrosGastosOpcionales?.recibosDiversos !== false,
             djExtranjero: user.permissions?.otrosGastosOpcionales?.djExtranjero !== false,
           },
+          permitirFechasAnteriores: user.permissions?.permitirFechasAnteriores === true,
           approverLevels: (user.permissions?.approverLevels ?? []).map((l) => ({
             level: l.level,
             userIds: (l.userIds ?? []).map((u) =>
@@ -281,6 +283,12 @@ export class UserPermissionsComponent implements OnInit {
       djExtranjero: true,
     };
     this.permissions.otrosGastosOpcionales = { ...current, [key]: checked };
+  }
+
+  // --- Solicitud de viáticos: fechas anteriores ---
+
+  togglePermitirFechasAnteriores(checked: boolean) {
+    this.permissions.permitirFechasAnteriores = checked;
   }
 
   // --- Categorías ---

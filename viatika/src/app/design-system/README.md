@@ -131,6 +131,26 @@ Reemplazos de `<select>` con buscador integrado, ambos `ControlValueAccessor`:
 <app-worker-select [workers]="workers" [(ngModel)]="workerId" placeholder="Seleccione un colaborador…" />
 ```
 
+### `app-search-select`
+Versión genérica de los dos anteriores para listas largas que no son proyectos ni colaboradores (categorías, órdenes de trabajo…). Recibe las opciones ya mapeadas y también es `ControlValueAccessor`:
+```html
+<app-search-select
+  formControlName="categoryId"
+  [options]="categoryOptions"
+  placeholder="Seleccione una categoría"
+  searchPlaceholder="Buscar categoría o cuenta…"
+  [invalid]="!!(categoryId?.invalid && categoryId?.touched)"
+/>
+```
+```ts
+// SearchSelectOption: { value, label, subLabel?, searchText? }
+// El buscador filtra por label + subLabel + searchText; subLabel se pinta como segunda línea.
+get categoryOptions(): SearchSelectOption[] {
+  return this.categories.map(c => ({ value: c._id!, label: c.name, subLabel: c.cuenta }));
+}
+```
+Preferir este componente antes que copiar el patrón de dropdown-con-buscador en una pantalla nueva.
+
 ## Íconos: por qué Lucide
 
 La plataforma no tenía librería de íconos — 65 archivos con SVG de Heroicons pegado a mano, en 3 tamaños distintos para el mismo ícono conceptual. `app-icon` reemplaza eso con Lucide (`@lucide/angular`): trazo uniforme de 2px, tree-shakeable, y un único punto de control de tamaño/color. La migración de los SVG existentes es progresiva (ver plan de UI kit) — no reemplazar todo de una vez.

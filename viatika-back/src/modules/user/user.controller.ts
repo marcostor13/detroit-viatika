@@ -62,7 +62,13 @@ export class UserController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.CONTABILIDAD,
+    ROLES.COLABORADOR,
+    ROLES.TESORERIA
+  )
   @Get('client/:clientId')
   async findAll(
     @Param('clientId', ParseObjectIdPipe) clientId: Types.ObjectId,
@@ -279,7 +285,9 @@ export class UserController {
         'nombre',
         'email',
         'dni',
+        'tipoDocumento',
         'codigoEmpleado',
+        'subcuenta14',
         'area',
         'cargo',
         'telefono',
@@ -295,7 +303,9 @@ export class UserController {
         'Juan Pérez',
         'juan@empresa.com',
         '12345678',
+        'L',
         'EMP-001',
+        '',
         'Operaciones',
         'Analista',
         '999888777',
@@ -313,12 +323,20 @@ export class UserController {
       ['nombre', 'Obligatorio'],
       ['email', 'Obligatorio. Único por empresa'],
       [
+        'tipoDocumento',
+        'R=RUC, L=DNI, P=Pasaporte, E=C.Ext., M=C.Mil. Por defecto: L (DNI)',
+      ],
+      [
+        'subcuenta14',
+        'Subcuenta contable 14 del colaborador (asientos Contanet). Si vacío, se usa el DNI',
+      ],
+      [
         'rol',
         'Colaborador, Coordinador, Contabilidad o Administrador. Por defecto: Colaborador',
       ],
       [
         'emailCoordinador',
-        'Email de un usuario ya existente que aprobará sus viáticos (opcional)',
+        'Email de un usuario ya existente que aprobará sus solicitudes de fondos (opcional)',
       ],
       ['tipoCuenta', 'ahorros o corriente'],
       [

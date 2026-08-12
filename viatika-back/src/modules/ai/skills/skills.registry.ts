@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { AdvanceService } from '../../advance/advance.service'
 import { ExpenseReportService } from '../../expense-report/expense-report.service'
 import { ExpenseService } from '../../expense/expense.service'
+import { monedaSymbol } from '../../../common/moneda.constants'
 
 export interface UserContext {
   userId: string
@@ -16,7 +17,7 @@ export const OPENAI_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'get_my_expense_reports',
       description:
-        'Obtiene las rendiciones de gastos del usuario. Usar cuando pregunte por rendiciones, viáticos o solicitudes de gastos.',
+        'Obtiene las rendiciones de gastos del usuario. Usar cuando pregunte por rendiciones, solicitudes de fondos o solicitudes de gastos.',
       parameters: {
         type: 'object',
         properties: {
@@ -34,7 +35,7 @@ export const OPENAI_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'get_my_advances',
       description:
-        'Obtiene los viáticos del usuario. Usar cuando pregunte por viáticos, adelantos o pagos adelantados.',
+        'Obtiene las solicitudes de fondos del usuario. Usar cuando pregunte por solicitudes de fondos, adelantos o pagos adelantados.',
       parameters: {
         type: 'object',
         properties: {
@@ -52,7 +53,7 @@ export const OPENAI_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'get_pending_approvals',
       description:
-        'Obtiene viáticos pendientes de aprobación (solo administradores). Usar cuando el admin pregunte por aprobaciones pendientes.',
+        'Obtiene solicitudes de fondos pendientes de aprobación (solo administradores). Usar cuando el admin pregunte por aprobaciones pendientes.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -121,7 +122,7 @@ export class SkillsExecutor {
         id: String(r._id),
         titulo: r.title,
         estado: r.status,
-        presupuesto: `S/ ${r.budget}`,
+        presupuesto: `${monedaSymbol((r as any).viaticoMoneda)} ${r.budget}`,
         gastos: r.expenseIds?.length ?? 0,
         anticipos: r.advanceIds?.length ?? 0,
         fecha: new Date(r.createdAt).toLocaleDateString('es-PE'),
@@ -146,7 +147,7 @@ export class SkillsExecutor {
         : advances
       const data = filtered.map(a => ({
         id: String((a as any)._id),
-        monto: `S/ ${a.amount}`,
+        monto: `${monedaSymbol((a as any).moneda)} ${a.amount}`,
         descripcion: a.description,
         estado: a.status,
         nivelesRequeridos: a.requiredLevels,
@@ -155,7 +156,7 @@ export class SkillsExecutor {
       }))
       return JSON.stringify({ total: data.length, anticipos: data })
     } catch {
-      return JSON.stringify({ error: 'Error al obtener viáticos' })
+      return JSON.stringify({ error: 'Error al obtener solicitudes de fondos' })
     }
   }
 
@@ -173,7 +174,7 @@ export class SkillsExecutor {
       const data = pending.map(a => ({
         id: String((a as any)._id),
         colaborador: (a.userId as any)?.name ?? 'N/A',
-        monto: `S/ ${a.amount}`,
+        monto: `${monedaSymbol((a as any).moneda)} ${a.amount}`,
         descripcion: a.description,
         estado: a.status,
         fecha: new Date((a as any).createdAt).toLocaleDateString('es-PE'),
@@ -201,7 +202,13 @@ export class SkillsExecutor {
 
       const result = await this.expenseService.findAll(ctx.clientId, filters)
       const expenses = result.data
-      const totalAmount = expenses.reduce((sum, e) => sum + (e.total ?? 0), 0)
+      // Cada comprobante guarda `total` en su propia moneda; `montoBase` es el
+      // equivalente congelado en moneda base. Sumar `total` daría un número que
+      // no es ni soles ni dólares.
+      const totalAmount = expenses.reduce(
+        (sum, e) => sum + Number((e as any).montoBase ?? e.total ?? 0),
+        0
+      )
       const byStatus = expenses.reduce<Record<string, number>>((acc, e) => {
         acc[e.status] = (acc[e.status] ?? 0) + 1
         return acc

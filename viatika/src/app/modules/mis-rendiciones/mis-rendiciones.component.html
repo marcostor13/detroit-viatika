@@ -4,7 +4,7 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">Mis Rendiciones</h1>
-      <p class="text-sm text-gray-500 mt-1">Gestiona tus viáticos y documentos de gastos.</p>
+      <p class="text-sm text-gray-500 mt-1">Gestiona tus solicitudes de fondos y documentos de gastos.</p>
     </div>
     <app-button variant="secondary" label="Guía" (clicked)="toggleGuidelines()">
       <app-icon name="file-text" size="sm" />
@@ -23,7 +23,7 @@
       [class.border-transparent]="activeTab() !== 'viaticos'"
       [class.text-gray-500]="activeTab() !== 'viaticos'"
     >
-      Mis viáticos
+      Solicitudes de fondos
       @if (viaticoTabBadgeCount > 0) {
         <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ viaticoTabBadgeCount }}</span>
       }
@@ -70,7 +70,7 @@
 
   <!-- Action bar -->
   <div class="flex justify-end mb-4">
-    <app-button label="Solicitar viáticos" (clicked)="openViaticosModal()">
+    <app-button label="Solicitar fondos" (clicked)="openViaticosModal()">
       <app-icon name="plus" size="sm" />
     </app-button>
   </div>
@@ -132,8 +132,8 @@
           <app-button variant="secondary" label="Limpiar filtros" (clicked)="clearViaticosFilters()" />
         </app-empty-state>
       } @else {
-        <app-empty-state icon="receipt" title="Sin viáticos aún" description="Crea tu primera solicitud de viáticos para comenzar el proceso.">
-          <app-button label="Solicitar viáticos" (clicked)="openViaticosModal()">
+        <app-empty-state icon="receipt" title="Sin solicitudes de fondos aún" description="Crea tu primera solicitud de fondos para comenzar el proceso.">
+          <app-button label="Solicitar fondos" (clicked)="openViaticosModal()">
             <app-icon name="plus" size="sm" />
           </app-button>
         </app-empty-state>
@@ -367,14 +367,14 @@
 
       <!-- Total -->
       <ng-container *appColumn="'total'; header: 'Total'; align: 'right'; cellClass: 'font-bold text-gray-900 whitespace-nowrap tabular-nums'; let r">
-        S/ {{ getTotalGastado(r) | number:'1.2-2' }}
+        {{ reportSymbol(r) }} {{ getTotalGastado(r) | number:'1.2-2' }}
       </ng-container>
 
       <!-- Saldo -->
       <ng-container *appColumn="'saldo'; header: 'Saldo'; align: 'right'; cellClass: 'whitespace-nowrap tabular-nums'; let r">
         <span [ngClass]="hasReportSaldo(r) ? (getReportSaldo(r) >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold') : 'text-gray-400'">
           @if (hasReportSaldo(r)) {
-            S/ {{ getReportSaldo(r) | number:'1.2-2' }}
+            {{ reportSymbol(r) }} {{ getReportSaldo(r) | number:'1.2-2' }}
           } @else {
             —
           }
@@ -545,7 +545,7 @@
       </div>
       <div>
         <h2 class="text-base font-bold text-secondary">Procedimientos y Consideraciones</h2>
-        <p class="text-xs text-tertiary mt-0.5">Normas importantes para la rendición de viáticos</p>
+        <p class="text-xs text-tertiary mt-0.5">Normas importantes para la rendición de fondos</p>
       </div>
     </div>
     <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" (clicked)="toggleGuidelines()">
@@ -641,7 +641,7 @@
       <app-icon name="trash" size="sm" class="text-error-ink" />
     </div>
     <div>
-      <h3 class="text-base font-semibold text-secondary">Eliminar solicitud de viáticos</h3>
+      <h3 class="text-base font-semibold text-secondary">Eliminar solicitud de fondos</h3>
       <p class="text-xs text-tertiary">El registro se eliminará permanentemente</p>
     </div>
   </div>

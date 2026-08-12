@@ -19,7 +19,7 @@ export class ResubmitViaticoDto {
   @Min(1)
   amount: number
 
-  /** Código de moneda SUNAT ('01' soles, '02' dólares). Default '01' si no se envía. */
+  /** Moneda ISO 4217 ('PEN' / 'USD'). Si no se envía se asume la moneda base. */
   @IsString()
   @IsOptional()
   moneda?: string

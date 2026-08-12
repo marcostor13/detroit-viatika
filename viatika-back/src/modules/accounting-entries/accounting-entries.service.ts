@@ -863,6 +863,7 @@ export class AccountingEntriesService {
           idx: contexts.length + 1,
           concepto: cargo.concepto,
           monto: cargo.monto,
+          moneda: pendiente.expense.moneda,
           proveedor: det?.emisor?.razonSocial || '',
           descripcion: pendiente.expense.comentario || '',
           items,

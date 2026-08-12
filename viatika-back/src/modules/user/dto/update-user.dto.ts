@@ -26,6 +26,17 @@ export class ApproverLevelDto {
   userIds: string[]
 }
 
+/** Sub-tipos opcionales de "Otros Gastos" habilitados para el colaborador (VD-91). */
+class UpdateOtrosGastosOpcionalesDto {
+  @IsBoolean()
+  @IsOptional()
+  recibosDiversos?: boolean
+
+  @IsBoolean()
+  @IsOptional()
+  djExtranjero?: boolean
+}
+
 class UpdateBankAccountDto {
   @IsString()
   @IsOptional()
@@ -75,6 +86,20 @@ export class UpdatePermissionsDto {
   @IsMongoId()
   @IsOptional()
   primaryProjectId?: string
+
+  /** Sub-tipos opcionales de "Otros Gastos" habilitados (VD-91). */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateOtrosGastosOpcionalesDto)
+  otrosGastosOpcionales?: UpdateOtrosGastosOpcionalesDto
+
+  /**
+   * Permite elegir fechas de inicio/fin anteriores a hoy en la solicitud de
+   * viáticos. Ausente/false = solo desde hoy en adelante.
+   */
+  @IsBoolean()
+  @IsOptional()
+  permitirFechasAnteriores?: boolean
 
   /**
    * Aprobadores propios del colaborador por nivel (regla 1.10). Sustituyen a

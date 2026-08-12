@@ -15,7 +15,7 @@ import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.i
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
-import { monedaSymbol } from '../../../constants/moneda';
+import { expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 
@@ -291,7 +291,7 @@ export class RendicionesAdminComponent implements OnInit {
         _id: r._id,
         source: 'report' as const,
         kind: (isDirectaChain ? 'directa' : 'viatico') as UnifiedRendicionItem['kind'],
-        kindLabel: isDirectaChain ? 'Directa' : 'Viático',
+        kindLabel: isDirectaChain ? 'Directa' : 'Solicitud de Fondos',
         kindColor: isDirectaChain ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
         userName: name,
         userInitials: this.initials(name),
@@ -725,11 +725,18 @@ export class RendicionesAdminComponent implements OnInit {
   private reportExpensesTotal(report: IExpenseReport): number {
     const expenses = report.expenseIds;
     if (!Array.isArray(expenses)) return 0;
+    // En la moneda de la rendición: `total` está en la del comprobante y una
+    // rendición en dólares puede contener boletas en soles.
     return expenses.reduce(
       (sum, exp: any) =>
-        sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
+        sum + (exp && typeof exp === 'object' ? expenseAmountInReport(exp) : 0),
       0
     );
+  }
+
+  /** Símbolo de la moneda en que se emitió un comprobante concreto. */
+  expenseSymbol(exp: unknown): string {
+    return monedaSymbol((exp as { moneda?: string } | null)?.moneda);
   }
 
   /**

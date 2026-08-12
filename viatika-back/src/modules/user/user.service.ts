@@ -557,11 +557,13 @@ export class UserService {
     primaryProjectId?: string
     /** Niveles propios del colaborador (regla 1.10). */
     approverLevels?: ApproverLevel[]
+    /** Permite solicitar viáticos con fechas anteriores a hoy. */
+    permitirFechasAnteriores?: boolean
   } | null> {
     const u = await this.userModel
       .findById(userId)
       .select(
-        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId permissions.approverLevels'
+        'signature coordinatorId approverIds permissions.projectIds permissions.primaryProjectId permissions.approverLevels permissions.permitirFechasAnteriores'
       )
       .exec()
     if (!u) return null
@@ -572,6 +574,7 @@ export class UserService {
       projectIds: u.permissions?.projectIds ?? [],
       primaryProjectId: u.permissions?.primaryProjectId,
       approverLevels: u.permissions?.approverLevels,
+      permitirFechasAnteriores: u.permissions?.permitirFechasAnteriores === true,
     }
   }
 
@@ -881,6 +884,49 @@ export class UserService {
     return out
   }
 
+  /**
+   * Usuarios con rol Tesorería (scoped + globales), con `_id` para poder crear
+   * notificaciones in-app además de correo. Espejo de
+   * `findAccountingRecipientsWithIds`. Tesorería es quien ejecuta reembolsos
+   * (VD-37), por eso necesita recibir el aviso de reembolso pendiente.
+   */
+  async findTesoreriaRecipientsWithIds(
+    clientId: string
+  ): Promise<{ _id: string; email: string; name: string }[]> {
+    const tesoreriaRole = await this.roleService.getByName('Tesoreria')
+    if (!tesoreriaRole) return []
+
+    const scopedUsers = await this.userModel
+      .find({
+        clientId: new Types.ObjectId(clientId),
+        isActive: true,
+        emailNotificationsEnabled: true,
+        roleId: (tesoreriaRole as any)._id,
+      })
+      .select('_id email name')
+      .exec()
+
+    const globalUsers = await this.userModel
+      .find({
+        clientId: null,
+        roleId: (tesoreriaRole as any)._id,
+        isActive: true,
+        emailNotificationsEnabled: true,
+      })
+      .select('_id email name')
+      .exec()
+
+    const seen = new Set<string>()
+    const out: { _id: string; email: string; name: string }[] = []
+    for (const u of [...scopedUsers, ...globalUsers]) {
+      const em = u.email?.trim().toLowerCase()
+      if (!em || seen.has(em)) continue
+      seen.add(em)
+      out.push({ _id: String((u as any)._id), email: u.email, name: u.name })
+    }
+    return out
+  }
+
   async changeOwnPassword(userId: string, newPassword: string): Promise<void> {
     const hashed = await bcrypt.hash(newPassword, 10)
     await this.userModel
@@ -929,6 +975,12 @@ export class UserService {
     documento: 'dni',
     'nro documento': 'dni',
     'numero de documento': 'dni',
+    tipodocumento: 'documentType',
+    'tipo documento': 'documentType',
+    'tipo de documento': 'documentType',
+    subcuenta14: 'subcuenta14',
+    'sub cuenta 14': 'subcuenta14',
+    'subcuenta 14': 'subcuenta14',
     employeecode: 'employeeCode',
     codigo: 'employeeCode',
     'codigo empleado': 'employeeCode',
@@ -1159,6 +1211,13 @@ export class UserService {
               }
             : undefined
 
+        const allowedDocTypes = ['R', 'L', 'P', 'E', 'M']
+        const documentType = allowedDocTypes.includes(
+          (row.documentType || '').toUpperCase()
+        )
+          ? (row.documentType.toUpperCase() as 'R' | 'L' | 'P' | 'E' | 'M')
+          : undefined
+
         const temporaryPassword =
           Math.random().toString(36).slice(-8) +
           Math.random().toString(36).slice(-4).toUpperCase()
@@ -1177,6 +1236,8 @@ export class UserService {
             ? { coordinatorId, approverIds: [coordinatorId] }
             : {}),
           ...(row.dni ? { dni: row.dni } : {}),
+          ...(documentType ? { documentType } : {}),
+          ...(row.subcuenta14 ? { subcuenta14: row.subcuenta14 } : {}),
           ...(row.employeeCode ? { employeeCode: row.employeeCode } : {}),
           ...(row.area ? { area: row.area } : {}),
           ...(row.cargo ? { cargo: row.cargo } : {}),

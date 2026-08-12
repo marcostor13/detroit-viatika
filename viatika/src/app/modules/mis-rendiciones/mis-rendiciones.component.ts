@@ -25,8 +25,7 @@ import {
   ADVANCE_STATUS_LABELS,
   ADVANCE_STATUS_COLORS,
 } from '../../interfaces/advance.interface';
-import { monedaSymbol } from '../../constants/moneda';
-import { expenseAmountBase } from '../../constants/moneda';
+import { expenseAmountBase, expenseAmountInReport, monedaSymbol } from '../../constants/moneda';
 
 type UnifiedViaticoItem = {
   _id: string;
@@ -557,9 +556,22 @@ export class MisRendicionesComponent implements OnInit {
     return '';
   }
 
+  /**
+   * Total gastado en la moneda de la rendición. Un viático en dólares puede
+   * contener boletas en soles: sumar `total` a secas daría una cifra que no es
+   * ni una moneda ni la otra.
+   */
   getTotalGastado(report: IExpenseReport): number {
     if (!report.expenseIds?.length) return 0;
-    return report.expenseIds.reduce((sum: number, e: any) => sum + (parseFloat(e.total) || 0), 0);
+    return report.expenseIds.reduce(
+      (sum: number, e: any) => sum + expenseAmountInReport(e),
+      0
+    );
+  }
+
+  /** Símbolo de la moneda en que está expresada la rendición. */
+  reportSymbol(report: IExpenseReport): string {
+    return monedaSymbol(report.viaticoMoneda);
   }
 
   getSaldoLibre(report: IExpenseReport): number {
@@ -1081,7 +1093,7 @@ export class MisRendicionesComponent implements OnInit {
 
   reportDisplayTitle(report: IExpenseReport): string {
     if (report.isDirecta) return report.gestion || report.motivo || report.description || 'Rendicion directa';
-    return report.description || report.title || 'Rendicion de viaticos';
+    return report.description || report.title || 'Rendicion de fondos';
   }
 
   panelStatusText(report: IExpenseReport): string {

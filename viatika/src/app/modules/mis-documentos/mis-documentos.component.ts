@@ -68,7 +68,7 @@ export class MisDocumentosComponent implements OnInit {
   }
 
   kindLabel(kind: IMisDocumentoItem['kind']): string {
-    return kind === 'reembolso_rendicion' ? 'Reembolso de rendición' : 'Pago de viáticos';
+    return kind === 'reembolso_rendicion' ? 'Reembolso de rendición' : 'Pago de fondos';
   }
 
   formatDate(iso?: string): string {

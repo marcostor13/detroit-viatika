@@ -4,7 +4,7 @@
   <div class="flex items-center justify-between gap-4 mb-6">
     <div>
       <h1 class="text-2xl font-bold text-secondary">Mis Documentos</h1>
-      <p class="text-sm text-tertiary mt-1">Comprobantes de pagos de viáticos y reembolsos registrados por tesorería.</p>
+      <p class="text-sm text-tertiary mt-1">Comprobantes de pagos de solicitudes de fondos y reembolsos registrados por tesorería.</p>
     </div>
     @if (hasActiveFilters) {
     <button (click)="clearFilters()"
@@ -25,7 +25,7 @@
         <select [ngModel]="filterKind()" (ngModelChange)="filterKind.set($event)"
           class="w-full px-3 py-2 text-sm border border-tertiary/30 rounded-xl bg-background text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30">
           <option value="">Todos</option>
-          <option value="viatico_pago">Pago de viáticos</option>
+          <option value="viatico_pago">Pago de fondos</option>
           <option value="reembolso_rendicion">Reembolso de rendición</option>
         </select>
       </div>
@@ -55,7 +55,7 @@
       @if (hasActiveFilters) { No hay documentos con esos filtros. } @else { Aún no hay comprobantes disponibles. }
     </p>
     <p class="text-tertiary/60 text-sm mt-1">
-      @if (!hasActiveFilters) { Cuando tesorería registre el pago de tu viático o el reembolso de una rendición, aparecerán aquí. }
+      @if (!hasActiveFilters) { Cuando tesorería registre el pago de tu solicitud de fondos o el reembolso de una rendición, aparecerán aquí. }
     </p>
   </div>
   } @else {
