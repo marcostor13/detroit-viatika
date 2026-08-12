@@ -20,6 +20,8 @@ function escapeRegExp(value: string): string {
 
 export interface IBulkCreateResult {
   created: number
+  /** OT que ya existían (mismo nombre) y se actualizaron con lo del archivo. */
+  updated: number
   errors: { row: number; reason: string }[]
 }
 
@@ -33,26 +35,49 @@ export class OrdenTrabajoService {
   ) {}
 
   /**
-   * Verifica que el centro de costo exista y pertenezca a la empresa. Devuelve
-   * su ObjectId listo para persistir. Evita relacionar la OT con un centro de
-   * costo de otra empresa (aislamiento multitenant).
+   * Verifica que cada centro de costo exista y pertenezca a la empresa, y
+   * devuelve la lista sin repetidos y en el mismo orden recibido: el primero es
+   * el principal. Evita relacionar la OT con un centro de costo de otra empresa
+   * (aislamiento multitenant).
    */
-  private async assertCostCenter(
-    costCenterId: string,
+  private async assertCostCenters(
+    costCenterIds: string[],
     clientId: Types.ObjectId
-  ): Promise<Types.ObjectId> {
-    if (!Types.ObjectId.isValid(costCenterId)) {
-      throw new BadRequestException('El centro de costo no es válido')
+  ): Promise<Types.ObjectId[]> {
+    const unicos = [...new Set(costCenterIds.map((id) => String(id ?? '').trim()))]
+    if (!unicos.length) {
+      throw new BadRequestException('Indica al menos un centro de costo')
     }
-    const exists = await this.projectModel
-      .exists({ _id: new Types.ObjectId(costCenterId), clientId })
-      .exec()
-    if (!exists) {
-      throw new BadRequestException(
-        'El centro de costo no existe o no pertenece a esta empresa'
-      )
+    const resultado: Types.ObjectId[] = []
+    for (const id of unicos) {
+      if (!Types.ObjectId.isValid(id)) {
+        throw new BadRequestException('El centro de costo no es válido')
+      }
+      const exists = await this.projectModel
+        .exists({ _id: new Types.ObjectId(id), clientId })
+        .exec()
+      if (!exists) {
+        throw new BadRequestException(
+          'El centro de costo no existe o no pertenece a esta empresa'
+        )
+      }
+      resultado.push(new Types.ObjectId(id))
     }
-    return new Types.ObjectId(costCenterId)
+    return resultado
+  }
+
+  /**
+   * Une las dos formas de mandar centros de costo: la lista `costCenterIds` y
+   * el `costCenterId` suelto (compatibilidad). Devuelve la lista con el
+   * principal al frente, o vacía si no vino ninguno.
+   */
+  private mergeCostCenterInput(dto: {
+    costCenterId?: string
+    costCenterIds?: string[]
+  }): string[] {
+    const lista = dto.costCenterIds?.length ? [...dto.costCenterIds] : []
+    if (dto.costCenterId) lista.unshift(dto.costCenterId)
+    return lista.filter(Boolean)
   }
 
   /**
@@ -86,8 +111,8 @@ export class OrdenTrabajoService {
     }
 
     const clientIdObject = new Types.ObjectId(clientId)
-    const costCenterId = await this.assertCostCenter(
-      dto.costCenterId,
+    const costCenterIds = await this.assertCostCenters(
+      this.mergeCostCenterInput(dto),
       clientIdObject
     )
     await this.ensureUniqueNombre(nombre, clientIdObject)
@@ -95,7 +120,10 @@ export class OrdenTrabajoService {
     try {
       return await this.ordenTrabajoModel.create({
         nombre,
-        costCenterId,
+        // El principal es el primero de la lista; se guarda además suelto
+        // porque los reportes oficiales muestran un único centro de costo.
+        costCenterId: costCenterIds[0],
+        costCenterIds,
         isActive: dto.isActive ?? true,
         clientId: clientIdObject,
       })
@@ -141,13 +169,22 @@ export class OrdenTrabajoService {
    * — no aborta el lote completo por una fila mala, acumula errores por fila).
    * A diferencia de Category, cada fila tiene una referencia foránea
    * (`costCenterId`) que el archivo solo puede expresar como texto (código o
-   * nombre del centro de costo), así que se resuelve por fila antes de crear.
+   * nombre del centro de costo), así que se resuelve por fila antes de guardar.
+   *
+   * Es ACTUALIZAR-O-CREAR: la plantilla se descarga con las OT que ya existen,
+   * así que una fila cuyo nombre ya está en la empresa actualiza esa OT (sus
+   * centros de costo y si está activa) en vez de fallar por duplicada; las filas
+   * nuevas se crean. El nombre es la llave, y es único por empresa.
+   *
+   * La celda de centro de costo admite varios separados por coma, punto y coma
+   * o barra ("123, 223, 423"); el primero queda como principal. Si la fila viene
+   * sin centro de costo y la OT ya existe, conserva los que tenía.
    */
   async bulkCreate(
     rows: Array<{ nombre: string; costCenterKey: string; isActive?: boolean }>,
     clientId: string
   ): Promise<IBulkCreateResult> {
-    const result: IBulkCreateResult = { created: 0, errors: [] }
+    const result: IBulkCreateResult = { created: 0, updated: 0, errors: [] }
     const clientIdObject = new Types.ObjectId(clientId)
     const seenNombres = new Set<string>()
 
@@ -168,30 +205,73 @@ export class OrdenTrabajoService {
         })
         continue
       }
-      if (!row.costCenterKey?.trim()) {
-        result.errors.push({
-          row: rowNumber,
-          reason: 'El campo Centro de Costo es obligatorio',
-        })
-        continue
-      }
 
       try {
-        const costCenterId = await this.resolveCostCenterByKey(
-          row.costCenterKey,
-          clientIdObject
-        )
-        if (!costCenterId) {
+        const existente = await this.ordenTrabajoModel
+          .findOne({
+            clientId: clientIdObject,
+            nombre: { $regex: `^${escapeRegExp(nombre)}$`, $options: 'i' },
+          })
+          .exec()
+
+        if (!row.costCenterKey?.trim() && !existente) {
           result.errors.push({
             row: rowNumber,
-            reason: `Centro de costo "${row.costCenterKey}" no encontrado en esta empresa`,
+            reason: 'Indica el código del centro de costo',
           })
           continue
         }
-        await this.ensureUniqueNombre(nombre, clientIdObject)
+
+        let costCenterIds: Types.ObjectId[] = []
+        if (row.costCenterKey?.trim()) {
+          const claves = row.costCenterKey
+            .split(/[,;|]/)
+            .map((k) => k.trim())
+            .filter(Boolean)
+          let claveNoEncontrada = ''
+          for (const clave of claves) {
+            const encontrado = await this.resolveCostCenterByKey(
+              clave,
+              clientIdObject
+            )
+            if (!encontrado) {
+              claveNoEncontrada = clave
+              break
+            }
+            if (!costCenterIds.some((id) => id.equals(encontrado))) {
+              costCenterIds.push(encontrado)
+            }
+          }
+          if (claveNoEncontrada || !costCenterIds.length) {
+            result.errors.push({
+              row: rowNumber,
+              reason: `Centro de costo "${claveNoEncontrada || row.costCenterKey}" no encontrado en esta empresa`,
+            })
+            continue
+          }
+        }
+
+        if (existente) {
+          const cambios: Record<string, unknown> = {}
+          if (costCenterIds.length) {
+            cambios.costCenterIds = costCenterIds
+            cambios.costCenterId = costCenterIds[0]
+          }
+          if (row.isActive !== undefined) cambios.isActive = row.isActive
+          if (Object.keys(cambios).length) {
+            await this.ordenTrabajoModel
+              .updateOne({ _id: existente._id }, { $set: cambios })
+              .exec()
+          }
+          seenNombres.add(nombreKey)
+          result.updated++
+          continue
+        }
+
         await this.ordenTrabajoModel.create({
           nombre,
-          costCenterId,
+          costCenterId: costCenterIds[0],
+          costCenterIds,
           isActive: row.isActive ?? true,
           clientId: clientIdObject,
         })
@@ -217,7 +297,10 @@ export class OrdenTrabajoService {
     const filter: Record<string, unknown> = { clientId: clientIdObject }
 
     if (opts?.costCenterId && Types.ObjectId.isValid(opts.costCenterId)) {
-      filter.costCenterId = new Types.ObjectId(opts.costCenterId)
+      const centro = new Types.ObjectId(opts.costCenterId)
+      // La OT puede servir a varios centros de costo. Se consulta también el
+      // campo suelto por si algún documento todavía no tiene la lista.
+      filter.$or = [{ costCenterIds: centro }, { costCenterId: centro }]
     }
     if (opts?.search) {
       filter.nombre = new RegExp(escapeRegExp(opts.search), 'i')
@@ -232,6 +315,7 @@ export class OrdenTrabajoService {
       this.ordenTrabajoModel
         .find(filter)
         .populate('costCenterId', 'code name isActive')
+        .populate('costCenterIds', 'code name isActive')
         .sort({ createdAt: -1 })
         .skip(usePagination ? skip : 0)
         .limit(usePagination ? limit : 0)
@@ -252,6 +336,7 @@ export class OrdenTrabajoService {
         clientId: new Types.ObjectId(clientId),
       })
       .populate('costCenterId', 'code name isActive')
+      .populate('costCenterIds', 'code name isActive')
       .exec()
     if (!orden) {
       throw new NotFoundException('Orden de trabajo no encontrada')
@@ -273,11 +358,14 @@ export class OrdenTrabajoService {
       await this.ensureUniqueNombre(nombre, clientIdObject, idObject)
       payload.nombre = nombre
     }
-    if (dto.costCenterId) {
-      payload.costCenterId = await this.assertCostCenter(
-        dto.costCenterId,
+    const centrosPedidos = this.mergeCostCenterInput(dto)
+    if (centrosPedidos.length) {
+      const costCenterIds = await this.assertCostCenters(
+        centrosPedidos,
         clientIdObject
       )
+      payload.costCenterIds = costCenterIds
+      payload.costCenterId = costCenterIds[0]
     }
     if (typeof dto.isActive === 'boolean') {
       payload.isActive = dto.isActive
@@ -292,6 +380,7 @@ export class OrdenTrabajoService {
           { new: true }
         )
         .populate('costCenterId', 'code name isActive')
+        .populate('costCenterIds', 'code name isActive')
         .exec()
     } catch (error: any) {
       if (error?.code === 11000) {

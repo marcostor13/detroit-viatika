@@ -9,10 +9,10 @@ Cada OT tiene tres campos:
 | Campo | Descripción |
 |---|---|
 | **Nombre** | Texto libre que escribe el usuario (ej. `Lim-Com-1`). Es el identificador visible de la OT y **único por empresa** (índice `{ nombre, clientId }`) — dos empresas distintas pueden repetir el mismo nombre, la misma empresa no. |
-| **Centro de costo** | Referencia a un `Project` (centro de costo). Relación **1 centro de costo → N OT**. |
+| **Centros de costo** | Lista de referencias a `Project` (`costCenterIds`). Una OT puede usarse desde **varios** centros de costo (las OT `SMI` se cargan desde los cinco centros de SERVICIO MINERIA: 123, 223, 423, 523 y 823). El **primero es el principal** y se guarda además en `costCenterId`: es el que muestran los reportes oficiales, que llevan un único centro de costo por OT. |
 | **Estado** | `isActive` — Activa / Inactiva. |
 
-Nombre y Centro de costo son editables en cualquier momento (a diferencia de un código autogenerado inmutable).
+Nombre y centros de costo son editables en cualquier momento (a diferencia de un código autogenerado inmutable).
 
 ## Permisos y acceso
 
@@ -28,10 +28,10 @@ El módulo se protege igual que los demás maestros administrativos de la app (C
 
 | Archivo | Contenido |
 |---|---|
-| `entities/orden-trabajo.entity.ts` | Schema `OrdenTrabajo` (`nombre`, `costCenterId` ref `Project`, `isActive`, `clientId`). Índice único `{ nombre, clientId }`; índice de búsqueda `{ clientId, costCenterId }`. |
-| `dto/create-orden-trabajo.dto.ts` | `nombre` (requerido), `costCenterId` (requerido, `IsMongoId`), `isActive` (opcional) |
-| `dto/update-orden-trabajo.dto.ts` | `nombre`, `costCenterId`, `isActive` — todos opcionales; se puede renombrar, reasignar de centro de costo o activar/desactivar |
-| `orden-trabajo.service.ts` | CRUD; valida que `costCenterId` exista y pertenezca a la empresa (`assertCostCenter`); valida unicidad de `nombre` por empresa (`ensureUniqueNombre`) |
+| `entities/orden-trabajo.entity.ts` | Schema `OrdenTrabajo` (`nombre`, `costCenterId` principal, `costCenterIds` lista, ambos ref `Project`, `isActive`, `clientId`). Índice único `{ nombre, clientId }`; índices de búsqueda `{ clientId, costCenterId }` y `{ clientId, costCenterIds }` (multiclave). |
+| `dto/create-orden-trabajo.dto.ts` | `nombre` (requerido), `costCenterIds` (lista de `IsMongoId`; el primero es el principal), `costCenterId` (opcional, compatibilidad: equivale a una lista de uno), `isActive` (opcional). Tiene que llegar al menos uno de los dos campos de centro de costo. |
+| `dto/update-orden-trabajo.dto.ts` | `nombre`, `costCenterIds` (o `costCenterId`), `isActive` — todos opcionales; se puede renombrar, reasignar los centros de costo o activar/desactivar |
+| `orden-trabajo.service.ts` | CRUD; valida que cada centro de costo exista y pertenezca a la empresa (`assertCostCenters`, sin repetidos); mantiene `costCenterId` = primero de la lista; filtra por `costCenterIds`; valida unicidad de `nombre` por empresa (`ensureUniqueNombre`). La carga masiva admite varios centros de costo en la misma celda separados por coma, punto y coma o barra. |
 | `orden-trabajo.controller.ts` | Endpoints REST + `@Roles` + registro en audit log |
 | `orden-trabajo.module.ts` | Registro de schema y providers |
 
@@ -41,10 +41,10 @@ Registrado en `viatika-back/src/app.module.ts`. Acciones de auditoría en `Audit
 
 | Archivo | Contenido |
 |---|---|
-| `ordenes-trabajo.component.ts/html` | Lista con búsqueda por nombre, filtro por centro de costo, tabla (`app-data-table`, columnas Nombre / Centro de costo / Estado / Creado / Acciones), paginación |
-| `form/ordenes-trabajo-form.component.ts/html` | Crear/Editar: Nombre (`app-input`), Centro de Costo (`app-project-select`), Activo (checkbox) — todos editables |
+| `ordenes-trabajo.component.ts/html` | Lista con búsqueda por nombre, filtro por centro de costo, tabla (`app-data-table`, columnas Nombre / Centros de costo — un chip por centro, el principal destacado — / Estado / Creado / Acciones), paginación |
+| `form/ordenes-trabajo-form.component.ts/html` | Crear/Editar: Nombre, Centros de costo (buscador + lista de checkboxes; chips arriba con el elegido, se toca un chip para volverlo principal), Activo (checkbox) — todos editables |
 
-Además: `services/orden-trabajo.service.ts`, `interfaces/orden-trabajo.interface.ts` (`IOrdenTrabajo`: `_id`, `nombre`, `costCenterId` — string o poblado `{_id, code?, name, isActive?}` —, `isActive`, `clientId`, `createdAt`, `updatedAt`).
+Además: `services/orden-trabajo.service.ts`, `interfaces/orden-trabajo.interface.ts` (`IOrdenTrabajo`: `_id`, `nombre`, `costCenterId` y `costCenterIds` — string o poblado `{_id, code?, name, isActive?}` —, `isActive`, `clientId`, `createdAt`, `updatedAt`). Ahí viven los helpers compartidos `otCentroCostoIds`, `otPerteneceACentroCosto`, `otCentroCostoLabel` y `otCentroCostoLabels`: **toda pantalla que filtre OT por centro de costo usa `otPerteneceACentroCosto`**, nunca compara `costCenterId` a mano (antes cada pantalla tenía su propia copia del helper y solo miraba el principal).
 
 Rutas registradas en `app.routes.ts`: `/ordenes-trabajo`, `/ordenes-trabajo/nueva`, `/ordenes-trabajo/:id/editar`, todas con `AuthAdmin2Guard`. Enlace en `components/sidebar/sidebar.component.html` (versión escritorio y móvil).
 
@@ -58,13 +58,33 @@ Rutas registradas en `app.routes.ts`: `/ordenes-trabajo`, `/ordenes-trabajo/nuev
 | `PATCH` | `/orden-trabajo/:id` | Superadmin, Admin, Contabilidad |
 | `DELETE` | `/orden-trabajo/:id` | Superadmin, Admin, Contabilidad |
 
+| `POST` | `/orden-trabajo/import` | Superadmin, Admin, Contabilidad — Excel (multipart, máx. 2 MB) |
+
 El `clientId` en `GET` se resuelve automáticamente (interceptor HTTP del frontend lo agrega a la URL); en `POST` se inyecta en el body; en `PATCH`/`DELETE` se resuelve en el backend desde el JWT.
+
+## Carga masiva por Excel (VD-101)
+
+El botón **Descargar Excel** de `/ordenes-trabajo` baja el archivo **con las OT que ya existen**, no una plantilla vacía. Se edita y se vuelve a subir con **Importar Excel**: las filas cuyo nombre ya existe en la empresa se **actualizan** y las nuevas se **crean** (`bulkCreate` es actualizar-o-crear; la llave es el `nombre`, único por empresa). Ninguna fila borra nada: para dar de baja una OT se pone `No` en Activo.
+
+Columnas: **las mismas tres cosas que pide el formulario de alta**, para que no haya dos formas distintas de describir una OT.
+
+| Columna | Requerida | Qué hace |
+|---|---|---|
+| `Nombre*` | Sí | Nombre completo y único de la OT en la empresa, tal cual se escribe en el formulario (`LIM-SMI-1946`) |
+| `Centros de Costo*` | Sí en OT nuevas | Uno o varios **códigos** separados por coma/punto y coma/barra (`123, 223, 423`); el primero es el principal. Vacío en una OT existente = no se tocan los que tiene |
+| `Activo` | No | `Sí`/`No`. **Vacío = no se cambia** (una OT nueva se crea activa). Así un archivo sin esa columna no reactiva OT dadas de baja |
+
+Se siguen aceptando los encabezados de la plantilla anterior (`Código Centro de Costo*`, `Centro de Costo`) para no romper archivos ya armados. El mapeo de columnas está en `orden-trabajo.controller.ts` (`celda`, `nombreDesdeFormatoDetroit`) y el alta/actualización en `orden-trabajo.service.ts` (`bulkCreate`), que devuelve `{ created, updated, errors[] }` — una fila mala no aborta el lote.
+
+Como **respaldo**, el importador también entiende una fila con el nombre partido en `Suc` + `Dep` + `Nº O/T`, que es como viene el informe del ERP (`LIM` + `SMI` + `00001463-G` → `LIM-SMI-1463-G`, sin los ceros de la izquierda). Solo se mira cuando la fila no trae `Nombre`; el archivo que descarga la app no usa esas columnas.
+
+**Ojo:** el informe del ERP *tal como sale* (`Reporte de OTS Vigentes.xlsx`) **no se puede subir directo**: trae tres filas de título y la cabecera partida en dos, y el importador espera los encabezados en la primera fila.
 
 ## Dónde se consume la OT (además del CRUD)
 
 ### Solicitud de viáticos
 
-`viatika/src/app/modules/mis-rendiciones/solicitud-viaticos/` — selector opcional de OT justo debajo del selector de Centro de Costo, **filtrado por el centro de costo elegido** (una OT pertenece a un único centro de costo). Si el colaborador cambia de centro de costo y la OT ya elegida no pertenece al nuevo, se limpia automáticamente (`clearOtIfNotInCostCenter`). Se persiste en el viático unificado (`ExpenseReport` `type: 'viatico'`) en el campo `viaticoOrdenTrabajoId`, poblado con `'nombre costCenterId'` en `findOne`, `findOneWithAdvances`, `findAllByUser`, `findViaticos` y `findMyViaticos`. Se restaura al editar/reenviar una solicitud rechazada.
+`viatika/src/app/modules/mis-rendiciones/solicitud-viaticos/` — selector opcional de OT justo debajo del selector de Centro de Costo, **filtrado por el centro de costo elegido** (la OT aparece si ese centro está entre sus `costCenterIds`). Si el colaborador cambia de centro de costo y la OT ya elegida no pertenece al nuevo, se limpia automáticamente (`clearOtIfNotInCostCenter`). Se persiste en el viático unificado (`ExpenseReport` `type: 'viatico'`) en el campo `viaticoOrdenTrabajoId`, poblado con `'nombre costCenterId'` en `findOne`, `findOneWithAdvances`, `findAllByUser`, `findViaticos` y `findMyViaticos`. Se restaura al editar/reenviar una solicitud rechazada.
 
 No se extendió al flujo legado `/viaticos/:id` (`ViaticosDetailComponent`, basado en `Advance`) — ese es el sistema anterior a la unificación de viáticos.
 

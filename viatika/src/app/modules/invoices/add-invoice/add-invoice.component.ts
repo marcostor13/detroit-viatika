@@ -40,7 +40,10 @@ import { CompanyConfigService } from '../../../services/company-config.service';
 import { DEFAULT_MONEDA, expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
+import {
+  IOrdenTrabajo,
+  otPerteneceACentroCosto,
+} from '../../../interfaces/orden-trabajo.interface';
 
 function findDepartamento(label: string): Departamento | undefined {
   return PERU_LOCATIONS.find(d => d.label === label);
@@ -474,7 +477,7 @@ export default class AddInvoiceComponent implements OnInit {
       if (
         otId &&
         !this.ordenesTrabajo.some(
-          (ot) => ot._id === otId && this.otCostCenterId(ot) === (pid ?? '')
+          (ot) => ot._id === otId && otPerteneceACentroCosto(ot, pid ?? '')
         )
       ) {
         this.form.get('ordenTrabajoId')?.setValue('');
@@ -2470,17 +2473,11 @@ export default class AddInvoiceComponent implements OnInit {
     return this.form.get('proyectId');
   }
 
-  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
-  private otCostCenterId(ot: IOrdenTrabajo): string {
-    const cc = ot.costCenterId;
-    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
-  }
-
   /** OTs a mostrar: solo las del centro de costo (proyecto) elegido. */
   get filteredOrdenesTrabajo(): IOrdenTrabajo[] {
     const pid = this.form.get('proyectId')?.value;
     if (!pid) return [];
-    return this.ordenesTrabajo.filter((ot) => this.otCostCenterId(ot) === pid);
+    return this.ordenesTrabajo.filter((ot) => otPerteneceACentroCosto(ot, pid));
   }
 
   /**

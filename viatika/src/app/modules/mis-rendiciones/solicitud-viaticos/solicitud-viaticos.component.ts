@@ -18,7 +18,10 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
+import {
+  IOrdenTrabajo,
+  otPerteneceACentroCosto,
+} from '../../../interfaces/orden-trabajo.interface';
 import {
   PlacesAutocompleteDirective,
   PlaceResult,
@@ -76,7 +79,7 @@ export class SolicitudViaticosComponent implements OnInit {
   filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
     const pid = this.selectedProjectId();
     if (!pid) return [];
-    return this.ordenesTrabajo().filter((ot) => this.otCostCenterId(ot) === pid);
+    return this.ordenesTrabajo().filter((ot) => otPerteneceACentroCosto(ot, pid));
   });
   advanceToResubmit = signal<IAdvance | null>(null);
   /** Viático unificado (ExpenseReport) en edición/reenvío. */
@@ -159,18 +162,12 @@ export class SolicitudViaticosComponent implements OnInit {
     }
   }
 
-  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
-  private otCostCenterId(ot: IOrdenTrabajo): string {
-    const cc = ot.costCenterId;
-    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
-  }
-
   /** Limpia la OT seleccionada si no pertenece al centro de costo indicado. */
   private clearOtIfNotInCostCenter(projectId: string): void {
     const otId = this.form.get('ordenTrabajoId')?.value;
     if (!otId) return;
     const stillValid = this.ordenesTrabajo().some(
-      (ot) => ot._id === otId && this.otCostCenterId(ot) === projectId
+      (ot) => ot._id === otId && otPerteneceACentroCosto(ot, projectId)
     );
     if (!stillValid) {
       this.form.get('ordenTrabajoId')?.setValue('');

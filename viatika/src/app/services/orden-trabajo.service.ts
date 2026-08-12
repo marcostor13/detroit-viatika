@@ -8,6 +8,8 @@ import { UserStateService } from './user-state.service';
 
 export interface IBulkImportResult {
   created: number;
+  /** OT que ya existían (mismo nombre) y se actualizaron con lo del archivo. */
+  updated: number;
   errors: { row: number; reason: string }[];
 }
 
@@ -46,11 +48,12 @@ export class OrdenTrabajoService {
     return this.http.get<IOrdenTrabajo>(`${this.apiUrl}/${id}`);
   }
 
-  create(orden: { nombre: string; costCenterId: string; isActive?: boolean }): Observable<IOrdenTrabajo> {
+  /** `costCenterIds` va ordenado: el primero queda como centro de costo principal. */
+  create(orden: { nombre: string; costCenterIds: string[]; isActive?: boolean }): Observable<IOrdenTrabajo> {
     return this.http.post<IOrdenTrabajo>(this.apiUrl, orden);
   }
 
-  update(id: string, orden: { nombre?: string; costCenterId?: string; isActive?: boolean }): Observable<IOrdenTrabajo> {
+  update(id: string, orden: { nombre?: string; costCenterIds?: string[]; isActive?: boolean }): Observable<IOrdenTrabajo> {
     return this.http.patch<IOrdenTrabajo>(`${this.apiUrl}/${id}`, orden);
   }
 
