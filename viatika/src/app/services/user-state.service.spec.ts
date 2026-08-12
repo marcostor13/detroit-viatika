@@ -236,9 +236,17 @@ describe('UserStateService — empty localStorage', () => {
       expect(service.getPermissions()).toEqual({ modules: [], canApproveL1: false, canApproveL2: false });
     });
 
-    it('hasModulePermission() returns true for Administrador regardless of modules', () => {
+    // Ya no hay bypass de rol: Administrador y Contabilidad necesitan el módulo
+    // asignado igual que cualquier usuario.
+    it('hasModulePermission() returns false for Administrador without the module', () => {
       const role = { _id: 'r2', name: 'Administrador', active: true, createdAt: new Date(), updatedAt: new Date() };
       service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
+      expect(service.hasModulePermission('tesoreria')).toBeFalse();
+    });
+
+    it('hasModulePermission() returns true for Administrador with the module', () => {
+      const role = { _id: 'r2', name: 'Administrador', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['tesoreria'], canApproveL1: false, canApproveL2: false } }));
       expect(service.hasModulePermission('tesoreria')).toBeTrue();
     });
 
@@ -258,13 +266,13 @@ describe('UserStateService — empty localStorage', () => {
       expect(service.hasModulePermission('tesoreria')).toBeFalse();
     });
 
-    // VD-77: hasModuleStrict NO tiene bypass para Contabilidad/Admin.
-    it('hasModuleStrict() returns false for Contabilidad without the module (VD-77)', () => {
+    // Contabilidad tampoco ve módulos que no tiene asignados (antes VD-77 solo
+    // lo garantizaba en hasModuleStrict; ahora vale para las dos funciones).
+    it('hasModuleStrict() returns false for Contabilidad without the module', () => {
       const role = { _id: 'rc', name: 'Contabilidad', active: true, createdAt: new Date(), updatedAt: new Date() };
       service.setUser(makeUser({ role, permissions: { modules: ['rendiciones'], canApproveL1: true, canApproveL2: true } }));
       expect(service.hasModuleStrict('tesoreria')).toBeFalse();
-      // hasModulePermission sí conserva el bypass (no afecta guards ni otras vistas)
-      expect(service.hasModulePermission('tesoreria')).toBeTrue();
+      expect(service.hasModulePermission('tesoreria')).toBeFalse();
     });
 
     it('hasModuleStrict() returns true for Contabilidad with the module', () => {
@@ -358,6 +366,71 @@ describe('UserStateService — empty localStorage', () => {
       const role = { _id: 'r4', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
       service.setUser(makeUser({ role, permissions: { modules: [], canApproveL1: false, canApproveL2: false } }));
       expect(service.canAccessTesoreria()).toBeTrue();
+    });
+  });
+
+  // Sin bypass de rol el destino ya no se puede deducir del rol: hay que caer en
+  // una pantalla que los módulos asignados realmente abran.
+  describe('defaultRoute()', () => {
+    const rol = (name: string) => ({ _id: `r-${name}`, name, active: true, createdAt: new Date(), updatedAt: new Date() });
+
+    it('returns /login when there is no session', () => {
+      expect(service.defaultRoute()).toBe('/login');
+    });
+
+    it('sends Superadministrador to /clients-admin', () => {
+      service.setUser(makeUser({ role: rol('Superadministrador'), access_token: 't' }));
+      expect(service.defaultRoute()).toBe('/clients-admin');
+    });
+
+    it('sends Contabilidad without a selected company to /hub', () => {
+      service.setUser(makeUser({ role: rol('Contabilidad'), access_token: 't', companyId: '' }));
+      expect(service.defaultRoute()).toBe('/hub');
+    });
+
+    it('sends Colaborador to /inicio', () => {
+      service.setUser(makeUser({ access_token: 't' }));
+      expect(service.defaultRoute()).toBe('/inicio');
+    });
+
+    it('sends Contabilidad with the consolidado module to /dashboard', () => {
+      service.setUser(makeUser({
+        role: rol('Contabilidad'),
+        access_token: 't',
+        companyId: 'c1',
+        permissions: { modules: ['consolidated-invoices'], canApproveL1: false, canApproveL2: false },
+      }));
+      expect(service.defaultRoute()).toBe('/dashboard');
+    });
+
+    it('sends Contabilidad without consolidado but with rendiciones to /rendiciones', () => {
+      service.setUser(makeUser({
+        role: rol('Contabilidad'),
+        access_token: 't',
+        companyId: 'c1',
+        permissions: { modules: ['rendiciones'], canApproveL1: false, canApproveL2: false },
+      }));
+      expect(service.defaultRoute()).toBe('/rendiciones');
+    });
+
+    it('sends Contabilidad with only the tesoreria module to /tesoreria', () => {
+      service.setUser(makeUser({
+        role: rol('Contabilidad'),
+        access_token: 't',
+        companyId: 'c1',
+        permissions: { modules: ['tesoreria'], canApproveL1: false, canApproveL2: false },
+      }));
+      expect(service.defaultRoute()).toBe('/tesoreria');
+    });
+
+    it('falls back to /admin-users for Contabilidad with no modules instead of bouncing to /login', () => {
+      service.setUser(makeUser({
+        role: rol('Contabilidad'),
+        access_token: 't',
+        companyId: 'c1',
+        permissions: { modules: [], canApproveL1: false, canApproveL2: false },
+      }));
+      expect(service.defaultRoute()).toBe('/admin-users');
     });
   });
 });

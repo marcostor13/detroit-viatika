@@ -389,9 +389,13 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Símbolo de la liquidación (devolución / reembolso). El saldo se calcula y
-   * se cobra en moneda base aunque el viático se haya entregado en dólares, así
-   * que los comprobantes de depósito no llevan el símbolo de la rendición.
+   * Símbolo de la liquidación en moneda base: el reembolso lo ejecuta tesorería
+   * contra la moneda base aunque el viático se haya entregado en dólares.
+   *
+   * Ojo: NO aplica al comprobante de devolución del colaborador. Ese monto se
+   * captura en la moneda de la rendición (el modal lo precarga con `saldoLibre`
+   * y lo rotula con `currencySymbol`), así que se muestra con `currencySymbol`.
+   * Mostrarlo con este símbolo pintaba "S/ 300.00" un saldo de $ 300.00.
    */
   get settlementSymbol(): string {
     return monedaSymbol((this.report as any)?.settlement?.moneda);

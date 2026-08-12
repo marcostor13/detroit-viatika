@@ -6,26 +6,7 @@ export const defaultRedirectGuard: CanActivateFn = () => {
   const userState = inject(UserStateService);
   const router = inject(Router);
 
-  if (!userState.isAuthenticated()) {
-    return router.createUrlTree(['/login']);
-  }
-
-  if (userState.isColaborador()) {
-    return router.createUrlTree(['/inicio']);
-  }
-
-  if (userState.isSuperAdmin()) {
-    return router.createUrlTree(['/clients-admin']);
-  }
-
-  if (userState.isAdmin()) {
-    return router.createUrlTree([userState.isAdminInCompany() ? '/admin-users' : '/hub']);
-  }
-
-  if (userState.isContabilidad()) {
-    return router.createUrlTree([userState.isContabilidadInCompany() ? '/dashboard' : '/hub']);
-  }
-
-  // Coordinador
-  return router.createUrlTree(['/inicio']);
+  // El destino se calcula con los módulos asignados (ver defaultRoute): sin el
+  // bypass de rol, un panel al que el usuario no tiene permiso lo rebotaría.
+  return router.createUrlTree([userState.defaultRoute()]);
 };

@@ -88,8 +88,9 @@ export class HubComponent implements OnInit {
             return;
           }
           this.notificationService.show('Bienvenid@ ' + res.name, 'success');
-          const redirect = isAdmin ? '/admin-users' : isContabilidad ? '/dashboard' : '/';
-          this.router.navigate([redirect]);
+          // Ya no se asume /admin-users ni /dashboard: sin bypass de rol esos
+          // paneles dependen de los módulos asignados en la empresa elegida.
+          this.router.navigate([this.userStateService.defaultRoute()]);
         },
         error: () => {
           this.notificationService.show('Error al seleccionar empresa', 'error');
