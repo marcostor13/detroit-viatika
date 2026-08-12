@@ -90,13 +90,13 @@ export interface DepositScanResult {
 export class ExpenseService {
   private readonly logger = new Logger(ExpenseService.name)
   private readonly openai: OpenAI
-  private readonly visionModel = 'gpt-5.1'
+  private readonly visionModel = 'gpt-5.4-mini'
   /**
-   * Umbral mínimo de caracteres para considerar que un PDF tiene capa de texto.
-   * Por debajo se asume escaneo/imagen y se envía el PDF completo al modelo de
-   * visión (VD-50).
+   * Máximo de páginas de un PDF que se rasterizan y envían al modelo de
+   * visión. Las facturas/boletas peruanas casi siempre son de 1 página; el
+   * límite evita costos descontrolados en PDFs largos o malformados.
    */
-  private readonly PDF_MIN_TEXT_LENGTH = 20
+  private readonly PDF_MAX_PAGES = 5
 
   constructor(
     private readonly configService: ConfigService,
@@ -278,45 +278,79 @@ export class ExpenseService {
     return expense
   }
 
-  // Construcción del mensaje para Vision
-  private buildVisionMessages(prompt: string, imageUrl: string) {
+  // Construcción del mensaje para Vision. Acepta una o varias imágenes (PDF
+  // multi-página rasterizado): el modelo las lee en el orden dado.
+  private buildVisionMessages(prompt: string, imageUrls: string | string[]) {
+    const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls]
     return [
       {
         role: 'user' as const,
         content: [
           { type: 'text' as const, text: prompt },
-          { type: 'image_url' as const, image_url: { url: imageUrl } },
+          ...urls.map(url => ({
+            type: 'image_url' as const,
+            image_url: { url },
+          })),
         ],
       },
     ]
   }
 
+  // No es eval de datos externos: fuerza un import() nativo con un specifier
+  // fijo, en vez del require() en el que TS baja `await import(...)`.
+  // pdfjs-dist v6 solo distribuye ESM puro (.mjs), sin build CommonJS. Con
+  // `module: "commonjs"` en tsconfig, TypeScript baja `await import(...)` a
+  // `require(...)`, y requerir un .mjs real solo funciona en Node ≥22.12
+  // (require(esm)) — el Dockerfile de producción usa node:20-alpine, donde
+  // eso revienta con ERR_REQUIRE_ESM.
+  private readonly dynamicImport: (specifier: string) => Promise<any> =
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    new Function('specifier', 'return import(specifier)') as (
+      specifier: string
+    ) => Promise<any>
+
   /**
-   * Mensajes para leer un PDF con el modelo de visión enviando el archivo
-   * completo (base64). Se usa como respaldo cuando el PDF es un escaneo/imagen
-   * sin capa de texto: el modelo lee la imagen dentro del PDF (VD-50).
+   * Rasteriza cada página de un PDF a PNG (data URL base64) con pdfjs-dist +
+   * @napi-rs/canvas, para que el modelo de visión lea el documento con su
+   * layout real (tablas, columnas, cabecera) en vez de una extracción de
+   * texto plano que puede desordenar los campos de facturas peruanas.
    */
-  private buildPdfFileMessages(
-    prompt: string,
-    buffer: Buffer,
-    filename?: string
-  ) {
-    const dataUrl = `data:application/pdf;base64,${buffer.toString('base64')}`
-    return [
-      {
-        role: 'user' as const,
-        content: [
-          { type: 'text' as const, text: prompt },
-          {
-            type: 'file' as const,
-            file: {
-              filename: filename || 'documento.pdf',
-              file_data: dataUrl,
-            },
-          },
-        ],
-      },
-    ]
+  private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
+    // El build por defecto de pdfjs-dist asume globals de browser (DOMMatrix)
+    // y revienta en Node; hay que usar el build "legacy" explícitamente.
+    const { getDocument } = await this.dynamicImport(
+      'pdfjs-dist/legacy/build/pdf.mjs'
+    )
+    const { createCanvas } = await import('@napi-rs/canvas')
+    const loadingTask = getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+    })
+    try {
+      const doc = await loadingTask.promise
+      const pageCount = Math.min(doc.numPages, this.PDF_MAX_PAGES)
+      const images: string[] = []
+      for (let i = 1; i <= pageCount; i++) {
+        const page = await doc.getPage(i)
+        const viewport = page.getViewport({ scale: 2 })
+        const canvas = createCanvas(
+          Math.ceil(viewport.width),
+          Math.ceil(viewport.height)
+        )
+        const context = canvas.getContext('2d')
+        await page.render({
+          canvas: canvas as unknown as HTMLCanvasElement,
+          canvasContext: context as unknown as CanvasRenderingContext2D,
+          viewport,
+        }).promise
+        images.push(
+          `data:image/png;base64,${canvas.toBuffer('image/png').toString('base64')}`
+        )
+      }
+      return images
+    } finally {
+      await loadingTask.destroy()
+    }
   }
 
   // Parseo robusto del contenido JSON devuelto por OpenAI
@@ -1088,30 +1122,17 @@ export class ExpenseService {
       body.expenseReportId
     )
     try {
-      const pdfModule = await import('pdf-parse')
-      const pdfParse: (data: Buffer) => Promise<{ text: string }> =
-        pdfModule.default ?? pdfModule
-      const parsed = await pdfParse(file.buffer)
-      const textFromPdf = parsed.text || ''
-
-      const prompt = PROMPT1
-      const hasText = textFromPdf.trim().length >= this.PDF_MIN_TEXT_LENGTH
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
-        hasText
-          ? [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: prompt },
-                  { type: 'text', text: textFromPdf.substring(0, 15000) },
-                ],
-              },
-            ]
-          : this.buildPdfFileMessages(prompt, file.buffer, file.originalname)
+      const pageImages = await this.renderPdfPagesToImages(file.buffer)
+      if (pageImages.length === 0) {
+        throw new HttpException(
+          'No se pudo renderizar el PDF.',
+          HttpStatus.BAD_REQUEST
+        )
+      }
 
       const completion = await this.openai.chat.completions.create({
         model: this.visionModel,
-        messages,
+        messages: this.buildVisionMessages(PROMPT1, pageImages),
         temperature: 0,
         max_completion_tokens: 8192,
       })
