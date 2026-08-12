@@ -34,7 +34,7 @@ describe('AdminUsersComponent', () => {
 
   beforeEach(() => {
     adminUsersService = jasmine.createSpyObj('AdminUsersService', [
-      'getUsersPaginated', 'deleteUser', 'updateUser', 'resetPassword',
+      'getUsersPaginated', 'deleteUser', 'updateUser', 'resetPassword', 'getRoles',
     ]);
     notification = jasmine.createSpyObj('NotificationService', ['show']);
     confirmationService = jasmine.createSpyObj('ConfirmationService', ['show']);
@@ -44,6 +44,15 @@ describe('AdminUsersComponent', () => {
     userState.isSuperAdmin.and.returnValue(false);
     userState.getUser.and.returnValue({ _id: 'logged-in' } as any);
     adminUsersService.getUsersPaginated.and.returnValue(of(mockResult));
+    adminUsersService.getRoles.and.returnValue(
+      of([
+        { _id: 'r1', name: 'Administrador', active: true },
+        { _id: 'r2', name: 'Colaborador', active: true },
+        { _id: 'r3', name: 'Contabilidad', active: true },
+        { _id: 'r4', name: 'Tesoreria', active: true },
+        { _id: 'r5', name: 'Coordinador', active: false },
+      ] as any)
+    );
 
     TestBed.configureTestingModule({
       imports: [AdminUsersComponent],
@@ -63,6 +72,30 @@ describe('AdminUsersComponent', () => {
     component.ngOnInit();
     expect(adminUsersService.getUsersPaginated).toHaveBeenCalled();
     expect(component.result().data.length).toBe(2);
+  });
+
+  describe('filtro por rol', () => {
+    it('carga las opciones desde la API, no de una lista fija', () => {
+      component.ngOnInit();
+      expect(component.roleOptions().map((o) => o.value)).toEqual([
+        'Administrador',
+        'Colaborador',
+        'Contabilidad',
+        'Tesoreria',
+      ]);
+    });
+
+    it('omite los roles inactivos', () => {
+      component.ngOnInit();
+      expect(component.roleOptions().some((o) => o.value === 'Coordinador')).toBeFalse();
+    });
+
+    it('deja el filtro vacío si la carga de roles falla, sin romper el listado', () => {
+      adminUsersService.getRoles.and.returnValue(throwError(() => new Error('boom')));
+      component.ngOnInit();
+      expect(component.roleOptions()).toEqual([]);
+      expect(component.result().data.length).toBe(2);
+    });
   });
 
   describe('loadUsers', () => {

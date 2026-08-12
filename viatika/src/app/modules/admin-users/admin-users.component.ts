@@ -42,10 +42,13 @@ export default class AdminUsersComponent implements OnInit {
   limit = signal(20);
   isSuperAdmin = this.userStateService.isSuperAdmin();
 
-  readonly roleOptions = [
-    { value: 'Administrador', label: 'Administrador' },
-    { value: 'Colaborador', label: 'Colaborador' },
-  ];
+  /**
+   * Opciones del filtro por rol. Se cargan de la API (mismo catálogo que usa el
+   * alta de usuarios) en vez de estar fijas: estaban escritas a mano con
+   * Administrador y Colaborador, así que no se podía filtrar por Contabilidad,
+   * Coordinador ni Tesorería aunque existieran usuarios de esos roles.
+   */
+  roleOptions = signal<{ value: string; label: string }[]>([]);
 
   get loggedInUserId(): string {
     return this.userStateService.getUser()?._id || '';
@@ -53,6 +56,22 @@ export default class AdminUsersComponent implements OnInit {
 
   ngOnInit() {
     this.loadUsers();
+    this.loadRoleOptions();
+  }
+
+  private loadRoleOptions() {
+    this.adminUsersService.getRoles().subscribe({
+      next: (roles) => {
+        this.roleOptions.set(
+          (roles ?? [])
+            .filter((r) => r?.name && r.active !== false)
+            .map((r) => ({ value: r.name, label: ERoles[r.name as keyof typeof ERoles] ?? r.name }))
+            .sort((a, b) => a.label.localeCompare(b.label))
+        );
+      },
+      // Sin catálogo el filtro queda vacío pero el listado sigue funcionando.
+      error: () => this.roleOptions.set([]),
+    });
   }
 
   loadUsers() {
