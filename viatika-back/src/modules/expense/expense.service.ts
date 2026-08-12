@@ -15,8 +15,7 @@ import {
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
 import { execFile } from 'child_process'
-import { writeFile, unlink } from 'fs/promises'
-import { randomUUID } from 'crypto'
+import { mkdtemp, writeFile, readdir, readFile, rm } from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
 import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
@@ -302,38 +301,57 @@ export class ExpenseService {
   }
 
   /**
-   * Rasteriza cada página de un PDF a PNG (data URL base64) con pdfjs-dist +
-   * @napi-rs/canvas, para que el modelo de visión lea el documento con su
+   * Rasteriza cada página de un PDF a PNG (data URL base64) con `pdftoppm`
+   * (poppler-utils), para que el modelo de visión lea el documento con su
    * layout real (tablas, columnas, cabecera) en vez de una extracción de
    * texto plano que puede desordenar los campos de facturas peruanas.
    *
-   * Corre en un proceso hijo (pdf-render.worker.js) a propósito: un PDF
-   * malformado puede hacer crashear el addon nativo de @napi-rs/canvas
-   * (segfault/OOM), y eso no es un error de JS capturable con try/catch — mata
-   * el proceso entero. Aislado en un hijo, si crashea solo muere el hijo y la
-   * API sigue viva.
+   * Se usó antes pdfjs-dist + @napi-rs/canvas in-process, pero el binario
+   * nativo de @napi-rs/canvas (Skia) requiere AVX2 y crashea con SIGILL en
+   * CPUs que no lo soportan (confirmado en el servidor de QA). `pdftoppm` es
+   * un binario de sistema (instalado vía apk en el Dockerfile) sin ese
+   * requisito, y al correr como proceso propio via execFile ya está aislado:
+   * si crashea, solo muere ese proceso, no la API.
    */
   private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
-    const tmpFile = path.join(os.tmpdir(), `expense-pdf-${randomUUID()}.pdf`)
-    await writeFile(tmpFile, buffer)
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'expense-pdf-'))
+    const pdfPath = path.join(tmpDir, 'input.pdf')
+    const outPrefix = path.join(tmpDir, 'page')
     try {
-      return await this.runPdfRenderWorker(tmpFile)
+      await writeFile(pdfPath, buffer)
+      await this.runPdftoppm(pdfPath, outPrefix)
+      const pageFiles = (await readdir(tmpDir))
+        .filter(f => f.startsWith('page') && f.endsWith('.png'))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      const images: string[] = []
+      for (const file of pageFiles) {
+        const pngBuffer = await readFile(path.join(tmpDir, file))
+        images.push(`data:image/png;base64,${pngBuffer.toString('base64')}`)
+      }
+      return images
     } finally {
-      await unlink(tmpFile).catch(() => undefined)
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 
-  private runPdfRenderWorker(pdfPath: string): Promise<string[]> {
-    const workerPath = path.join(__dirname, 'pdf-render.worker.js')
+  private runPdftoppm(pdfPath: string, outPrefix: string): Promise<void> {
     return new Promise((resolve, reject) => {
       execFile(
-        process.execPath,
-        [workerPath, pdfPath, String(this.PDF_MAX_PAGES)],
-        { maxBuffer: 1024 * 1024 * 100, timeout: 60_000 },
-        (error, stdout, stderr) => {
+        'pdftoppm',
+        [
+          '-png',
+          '-r',
+          '150',
+          '-l',
+          String(this.PDF_MAX_PAGES),
+          pdfPath,
+          outPrefix,
+        ],
+        { timeout: 60_000 },
+        (error, _stdout, stderr) => {
           if (error) {
             this.logger.error(
-              `Proceso de render de PDF terminó con error (code=${error.code}, signal=${(error as any).signal}): ${stderr || error.message}`
+              `pdftoppm terminó con error (code=${error.code}, signal=${(error as any).signal}): ${stderr || error.message}`
             )
             reject(
               new HttpException(
@@ -343,19 +361,7 @@ export class ExpenseService {
             )
             return
           }
-          try {
-            resolve(JSON.parse(stdout) as string[])
-          } catch {
-            this.logger.error(
-              `Salida inválida del proceso de render de PDF: ${stdout.slice(0, 500)}`
-            )
-            reject(
-              new HttpException(
-                'No se pudo renderizar el PDF.',
-                HttpStatus.BAD_REQUEST
-              )
-            )
-          }
+          resolve()
         }
       )
     })
