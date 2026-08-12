@@ -376,7 +376,12 @@ export class ExpenseService {
       .replace(/\s*```$/i, '')
       .trim()
     try {
-      return JSON.parse(safe)
+      const parsed = JSON.parse(safe) as ExtractedInvoiceData
+      parsed.comentario = this.sanitizeComentario(
+        parsed.comentario,
+        parsed.razonSocial
+      )
+      return parsed
     } catch (error) {
       this.logger.error('No se pudo parsear la respuesta de OpenAI', error)
       throw new HttpException(
@@ -384,6 +389,54 @@ export class ExpenseService {
         HttpStatus.BAD_GATEWAY
       )
     }
+  }
+
+  /**
+   * VD-103: el comentario que propone el OCR debe ser una descripción breve del
+   * concepto, sin montos ni nombres de empresas. El prompt ya lo pide, pero el
+   * modelo reincide, así que se limpia también aquí (determinista).
+   */
+  private sanitizeComentario(
+    comentario?: string,
+    razonSocial?: string
+  ): string | undefined {
+    if (typeof comentario !== 'string') return comentario
+    let text = comentario.trim()
+    if (!text) return undefined
+
+    // Nombre del emisor tal como lo devolvió el OCR ("... por ACME S.A.C.").
+    const emisor = (razonSocial ?? '').trim()
+    if (emisor.length > 2) {
+      const escaped = emisor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      text = text.replace(
+        // Sin `\b` al final: la razón social suele terminar en punto ("S.A.").
+        new RegExp(`\\s*(?:\\b(?:por|de|a|en)\\s+)?${escaped}\\.?(?!\\w)`, 'gi'),
+        ' '
+      )
+    }
+    // Formas societarias sueltas que queden colgando (S.A., S.A.C., E.I.R.L.).
+    text = text.replace(/\s*\b(?:S\.?A\.?C?\.?|E\.?I\.?R\.?L\.?|S\.?R\.?L\.?)\b\.?/gi, ' ')
+    // Importes: "S/ 1,000.00", "$ 90", "PEN 1000", "por 1,000.00".
+    text = text.replace(
+      /\s*(?:\bpor\s+)?(?:S\/\.?|\$|US\$|PEN|USD|soles?|d[oó]lares?)\s*\d[\d.,]*/gi,
+      ' '
+    )
+    text = text.replace(/\s*\bpor\s+\d[\d.,]*\b/gi, ' ')
+    // Restos: conectores o puntuación al final tras los recortes.
+    text = text.replace(/\s{2,}/g, ' ').trim()
+    text = text.replace(/[\s,;:.]*(?:\b(?:por|de|del|para|con|a|en)\b)?[\s,;:.]*$/i, '')
+    text = text.trim()
+    if (!text) return undefined
+
+    // Una sola frase corta.
+    const firstSentence = text.split(/(?<=[.!?])\s+/)[0] ?? text
+    text = firstSentence.replace(/[.\s]+$/, '')
+    if (text.length > 60) {
+      const cut = text.slice(0, 60)
+      const lastSpace = cut.lastIndexOf(' ')
+      text = (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim()
+    }
+    return text || undefined
   }
 
   private determineCodComp(tipo?: string): string {

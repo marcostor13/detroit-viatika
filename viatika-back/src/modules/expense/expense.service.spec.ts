@@ -407,6 +407,41 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
     })
   })
 
+  describe('sanitizeComentario (VD-103: comentario breve, sin monto ni empresa)', () => {
+    const clean = (comentario?: string, razonSocial?: string): string | undefined =>
+      (service as any).sanitizeComentario(comentario, razonSocial)
+
+    it('quita el nombre del emisor y el importe', () => {
+      expect(
+        clean(
+          'Servicio de transporte de carga por Empresa de Transporte S.A. por S/ 1,000.00.',
+          'Empresa de Transporte S.A.'
+        )
+      ).toBe('Servicio de transporte de carga')
+    })
+
+    it('quita el importe aunque el emisor no venga en la extracción', () => {
+      expect(clean('Servicio de movilidad por S/ 90.00')).toBe('Servicio de movilidad')
+      expect(clean('Almuerzo de trabajo por $ 45')).toBe('Almuerzo de trabajo')
+    })
+
+    it('deja intacta una descripción que ya es breve y limpia', () => {
+      expect(clean('Compra de útiles de oficina')).toBe('Compra de útiles de oficina')
+    })
+
+    it('se queda con la primera oración y recorta a 60 caracteres', () => {
+      expect(
+        clean('Servicio de hospedaje. Incluye desayuno y traslado al aeropuerto.')
+      ).toBe('Servicio de hospedaje')
+      expect((clean('a'.repeat(80)) ?? '').length).toBeLessThanOrEqual(60)
+    })
+
+    it('tolera valores vacíos o ausentes', () => {
+      expect(clean(undefined)).toBeUndefined()
+      expect(clean('   ')).toBeUndefined()
+    })
+  })
+
   describe('approveByCoord', () => {
     it('deja que N2 apruebe antes que N1 (cualquier orden)', async () => {
       const expense = baseExpense()
