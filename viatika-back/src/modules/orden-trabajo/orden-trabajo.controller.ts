@@ -68,6 +68,29 @@ export class OrdenTrabajoController {
     return ['si', 'sí', 'true', '1', 'yes'].includes(str)
   }
 
+  /** Primer valor no vacío entre varios encabezados posibles de la misma columna. */
+  private celda(row: Record<string, any>, ...encabezados: string[]): string {
+    for (const encabezado of encabezados) {
+      const valor = String(row[encabezado] ?? '').trim()
+      if (valor) return valor
+    }
+    return ''
+  }
+
+  /**
+   * Nombre de la OT en el formato de Detroit: sucursal, departamento y número de
+   * O/T tal como salen de su informe de órdenes ("LIM" + "SMI" + "00001463-G" =>
+   * `LIM-SMI-1463-G`). Los ceros a la izquierda del número se quitan, que es como
+   * están cargadas hoy. Si la fila trae la columna Nombre, esa manda.
+   */
+  private nombreDesdeFormatoDetroit(row: Record<string, any>): string {
+    const suc = this.celda(row, 'Suc', 'Sucursal', 'SUC')
+    const dep = this.celda(row, 'Dep', 'Departamento', 'DEP')
+    const numero = this.celda(row, 'Nº O/T', 'N° O/T', 'No O/T', 'Nro O/T', 'O/T', 'OT')
+    if (!suc || !dep || !numero) return ''
+    return `${suc}-${dep}-${numero.replace(/^0+/, '')}`
+  }
+
   @Post('import')
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD)
   @UseInterceptors(
@@ -109,15 +132,26 @@ export class OrdenTrabajoController {
     })
 
     const mapped = rows.map(row => ({
-      nombre: String(row['Nombre*'] || row['Nombre'] || '').trim(),
-      costCenterKey: String(
-        row['Código Centro de Costo*'] ||
-          row['Código Centro de Costo'] ||
-          row['Centro de Costo'] ||
-          row['costCenterId'] ||
-          ''
-      ).trim(),
-      isActive: this.parseExcelBoolean(row['Activo'], true),
+      // La columna Nombre manda; si no viene, se arma con Suc + Dep + Nº O/T,
+      // que es como Detroit nombra sus órdenes en el informe del ERP.
+      nombre:
+        this.celda(row, 'Nombre*', 'Nombre') ||
+        this.nombreDesdeFormatoDetroit(row),
+      costCenterKey: this.celda(
+        row,
+        'Centros de Costo*',
+        'Centros de Costo',
+        'Código Centro de Costo*',
+        'Código Centro de Costo',
+        'Centro de Costo',
+        'costCenterId'
+      ),
+      // Celda vacía = "no toques el estado": una OT desactivada no se reactiva
+      // sola al subir un archivo que no trae esa columna (el informe del ERP no
+      // la trae). En una OT nueva, sin dato, se crea activa.
+      isActive: this.celda(row, 'Activo')
+        ? this.parseExcelBoolean(row['Activo'], true)
+        : undefined,
     }))
 
     const result = await this.ordenTrabajoService.bulkCreate(mapped, clientId)
@@ -127,7 +161,7 @@ export class OrdenTrabajoController {
       userName: req.user.name || req.user.email,
       action: 'import_ordenes_trabajo',
       module: 'configuracion',
-      details: `Importadas: ${result.created}, Errores: ${result.errors.length}`,
+      details: `Creadas: ${result.created}, Actualizadas: ${result.updated}, Errores: ${result.errors.length}`,
       clientId,
     })
 

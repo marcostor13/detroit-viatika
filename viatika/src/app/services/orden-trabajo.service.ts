@@ -8,6 +8,8 @@ import { UserStateService } from './user-state.service';
 
 export interface IBulkImportResult {
   created: number;
+  /** OT que ya existían (mismo nombre) y se actualizaron con lo del archivo. */
+  updated: number;
   errors: { row: number; reason: string }[];
 }
 

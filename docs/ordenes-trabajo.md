@@ -58,7 +58,28 @@ Rutas registradas en `app.routes.ts`: `/ordenes-trabajo`, `/ordenes-trabajo/nuev
 | `PATCH` | `/orden-trabajo/:id` | Superadmin, Admin, Contabilidad |
 | `DELETE` | `/orden-trabajo/:id` | Superadmin, Admin, Contabilidad |
 
+| `POST` | `/orden-trabajo/import` | Superadmin, Admin, Contabilidad — Excel (multipart, máx. 2 MB) |
+
 El `clientId` en `GET` se resuelve automáticamente (interceptor HTTP del frontend lo agrega a la URL); en `POST` se inyecta en el body; en `PATCH`/`DELETE` se resuelve en el backend desde el JWT.
+
+## Carga masiva por Excel (VD-101)
+
+El botón **Descargar Excel** de `/ordenes-trabajo` baja el archivo **con las OT que ya existen**, no una plantilla vacía. Se edita y se vuelve a subir con **Importar Excel**: las filas cuyo nombre ya existe en la empresa se **actualizan** y las nuevas se **crean** (`bulkCreate` es actualizar-o-crear; la llave es el `nombre`, único por empresa). Ninguna fila borra nada: para dar de baja una OT se pone `No` en Activo.
+
+Columnas, en el vocabulario del informe de órdenes de Detroit:
+
+| Columna | Requerida | Qué hace |
+|---|---|---|
+| `Suc` | No | Sucursal (LIM, ANT, TOQ…) |
+| `Dep` | No | Departamento (SMI, SCA, COM, TAL, ABA, ICO…) |
+| `Nº O/T` | No | Número de la orden tal como sale del informe (`00001463-G`); se le quitan los ceros de la izquierda |
+| `Nombre` | Sí, o `Suc`+`Dep`+`Nº O/T` | Nombre único de la OT. Si viene vacío se arma como `Suc-Dep-Nº` → `LIM-SMI-1463-G`, que es como están cargadas hoy. Si viene, manda sobre las tres anteriores |
+| `Centros de Costo*` | Sí en OT nuevas | Uno o varios **códigos** separados por coma/punto y coma/barra (`123, 223, 423`); el primero es el principal. Vacío en una OT existente = no se tocan los que tiene |
+| `Activo` | No | `Sí`/`No`. **Vacío = no se cambia** (una OT nueva se crea activa). Así un archivo sin esa columna no reactiva OT dadas de baja |
+
+Se siguen aceptando los encabezados de la plantilla anterior (`Nombre*`, `Código Centro de Costo*`, `Centro de Costo`) para no romper archivos ya armados. El mapeo de columnas está en `orden-trabajo.controller.ts` (`celda`, `nombreDesdeFormatoDetroit`) y el alta/actualización en `orden-trabajo.service.ts` (`bulkCreate`), que devuelve `{ created, updated, errors[] }` — una fila mala no aborta el lote.
+
+**Ojo:** el informe del ERP *tal como sale* (`Reporte de OTS Vigentes.xlsx`) **no se puede subir directo**: trae tres filas de título y la cabecera partida en dos, y el importador espera los encabezados en la primera fila. Lo que se usa es el archivo que descarga la app, donde las columnas `Suc`/`Dep`/`Nº O/T` permiten pegar los datos del informe.
 
 ## Dónde se consume la OT (además del CRUD)
 

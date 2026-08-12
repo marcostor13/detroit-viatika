@@ -8,7 +8,12 @@ import { OrdenTrabajoService, IBulkImportResult } from '../../services/orden-tra
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmationService } from '../../services/confirmation.service';
 import { UserStateService } from '../../services/user-state.service';
-import { IOrdenTrabajo, otCentroCostoLabels } from '../../interfaces/orden-trabajo.interface';
+import { firstValueFrom } from 'rxjs';
+import {
+  IOrdenTrabajo,
+  otCentroCostoIds,
+  otCentroCostoLabels,
+} from '../../interfaces/orden-trabajo.interface';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
@@ -60,6 +65,8 @@ export class OrdenesTrabajoComponent implements OnInit {
   filterCostCenter = signal('');
   importResult = signal<IBulkImportResult | null>(null);
   importing = signal(false);
+  /** La plantilla trae todas las OT, así que hay que ir a buscarlas al servidor. */
+  downloadingTemplate = signal(false);
 
   ngOnInit() {
     this.loadCentrosCosto();
@@ -159,8 +166,12 @@ export class OrdenesTrabajoComponent implements OnInit {
       next: (res) => {
         this.importing.set(false);
         this.importResult.set(res);
-        if (res.created > 0) {
-          this.notificationService.show(`${res.created} orden(es) de trabajo importada(s)`, 'success');
+        if (res.created > 0 || res.updated > 0) {
+          const partes = [
+            res.created > 0 ? `${res.created} creada(s)` : '',
+            res.updated > 0 ? `${res.updated} actualizada(s)` : '',
+          ].filter(Boolean);
+          this.notificationService.show(`Órdenes de trabajo: ${partes.join(' y ')}`, 'success');
           this.load();
         }
         if (res.errors.length > 0) {
@@ -174,12 +185,51 @@ export class OrdenesTrabajoComponent implements OnInit {
     });
   }
 
+  /**
+   * Parte el nombre de una OT en las tres columnas del informe de Detroit
+   * (Suc, Dep, Nº O/T): "LIM-SMI-1463-G" -> LIM | SMI | 1463-G. Si el nombre no
+   * tiene esa forma, se deja en la columna Nombre y las otras tres vacías.
+   */
+  private partirNombreOt(nombre: string): [string, string, string] {
+    const partes = /^([^-]+)-([^-]+)-(.+)$/.exec(nombre.trim());
+    return partes ? [partes[1], partes[2], partes[3]] : ['', '', ''];
+  }
+
+  /**
+   * Filas del Excel: una por OT existente. Sin OT, una fila de ejemplo para que
+   * se vea qué se espera en cada columna.
+   */
+  private filasParaExcel(ordenes: IOrdenTrabajo[]): string[][] {
+    if (!ordenes.length) {
+      const ejemplo = this.centrosCosto()[0]?.code || 'CC-001';
+      return [['LIM', 'SMI', '1463-G', 'LIM-SMI-1463-G', ejemplo, 'Sí']];
+    }
+    // Códigos, no nombres: es lo que el usuario ve en el informe del ERP y lo
+    // que el importador resuelve primero.
+    return ordenes.map((ot) => {
+      const [suc, dep, numero] = this.partirNombreOt(ot.nombre);
+      const codigos = otCentroCostoIds(ot)
+        .map((id) => this.centrosCosto().find((cc) => cc._id === id)?.code || '')
+        .filter(Boolean)
+        .join(', ');
+      return [suc, dep, numero, ot.nombre, codigos, ot.isActive === false ? 'No' : 'Sí'];
+    });
+  }
+
+  /**
+   * Descarga la plantilla YA CARGADA con las OT de la empresa: se edita en Excel
+   * y al volver a subirla las filas existentes se actualizan (la llave es el
+   * nombre) y las nuevas se crean.
+   */
   async downloadTemplate() {
+    this.downloadingTemplate.set(true);
+    const ordenes = await firstValueFrom(this.ordenTrabajoService.getAll()).catch(() => [] as IOrdenTrabajo[]);
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Viatika';
 
     const sheet = workbook.addWorksheet('Ordenes de Trabajo');
-    const headers = ['Nombre*', 'Código Centro de Costo*', 'Activo'];
+    const headers = ['Suc', 'Dep', 'Nº O/T', 'Nombre', 'Centros de Costo*', 'Activo'];
     sheet.addRow(headers);
 
     const headerRow = sheet.getRow(1);
@@ -189,28 +239,40 @@ export class OrdenesTrabajoComponent implements OnInit {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
     sheet.columns = [
-      { key: 'Nombre*', width: 28 },
-      { key: 'Código Centro de Costo*', width: 26 },
-      { key: 'Activo', width: 12 },
+      { key: 'Suc', width: 8 },
+      { key: 'Dep', width: 8 },
+      { key: 'Nº O/T', width: 14 },
+      { key: 'Nombre', width: 24 },
+      { key: 'Centros de Costo*', width: 34 },
+      { key: 'Activo', width: 10 },
     ];
     headerRow.height = 22;
 
-    const sampleCode = this.centrosCosto()[0]?.code || 'CC-001';
-    sheet.addRow(['Lim-Com-1', sampleCode, 'Sí']);
-    sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } };
+    for (const fila of this.filasParaExcel(ordenes)) sheet.addRow(fila);
+
+    if (!ordenes.length) {
+      sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } };
+    }
 
     const instrSheet = workbook.addWorksheet('Instrucciones');
     instrSheet.addRow(['Campo', 'Requerido', 'Descripción']);
     instrSheet.getRow(1).font = { bold: true };
-    instrSheet.addRow(['Nombre*', 'Sí', 'Nombre/código único de la OT dentro de la empresa (ej. "Lim-Com-1")']);
-    instrSheet.addRow(['Código Centro de Costo*', 'Sí', 'Código (o nombre) de un centro de costo existente en la empresa']);
-    instrSheet.addRow(['Activo', 'No', '"Sí" o "No" (vacío = Sí)']);
+    instrSheet.addRow(['Suc', 'No', 'Sucursal del informe de Detroit (LIM, ANT, TOQ…). Se usa para armar el nombre.']);
+    instrSheet.addRow(['Dep', 'No', 'Departamento del informe (SMI, SCA, COM, TAL, ABA, ICO…).']);
+    instrSheet.addRow(['Nº O/T', 'No', 'Número de la orden tal como sale del informe ("00001463-G"). Los ceros de la izquierda se quitan.']);
+    instrSheet.addRow(['Nombre', 'Sí (o Suc+Dep+Nº)', 'Nombre único de la OT en la empresa. Si se deja vacío se arma como Suc-Dep-Nº O/T (ej. LIM-SMI-1463-G).']);
+    instrSheet.addRow(['Centros de Costo*', 'Sí en OT nuevas', 'Uno o varios códigos de centro de costo separados por coma ("123, 223, 423"). El primero es el principal, el que sale en los reportes. En una OT que ya existe, vacío = no se tocan los que tiene.']);
+    instrSheet.addRow(['Activo', 'No', '"Sí" o "No". Vacío = no se cambia (en una OT nueva se crea activa).']);
     instrSheet.columns = [
       { key: 'Campo', width: 26 },
-      { key: 'Requerido', width: 12 },
-      { key: 'Descripción', width: 55 },
+      { key: 'Requerido', width: 18 },
+      { key: 'Descripción', width: 80 },
     ];
     instrSheet.addRow([]);
+    instrSheet.addRow(['Cómo funciona la carga:']).font = { bold: true };
+    instrSheet.addRow(['El archivo baja con las OT que ya existen. Al subirlo, las filas cuyo nombre ya está en la empresa se ACTUALIZAN y las filas nuevas se CREAN.']);
+    instrSheet.addRow(['Ninguna fila borra OT: para dar de baja una, pon "No" en Activo.']);
+    instrSheet.addRow(['Si una fila falla (por ejemplo, sin centro de costo), solo se reporta esa fila; el resto del archivo se procesa igual.']);
 
     const codesSheet = workbook.addWorksheet('Centros de Costo Disponibles');
     codesSheet.addRow(['Código', 'Nombre']);
@@ -225,8 +287,9 @@ export class OrdenesTrabajoComponent implements OnInit {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'plantilla_ordenes_trabajo.xlsx';
+    a.download = 'ordenes_trabajo.xlsx';
     a.click();
     URL.revokeObjectURL(url);
+    this.downloadingTemplate.set(false);
   }
 }
