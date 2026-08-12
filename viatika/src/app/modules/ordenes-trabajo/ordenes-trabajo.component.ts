@@ -8,7 +8,7 @@ import { OrdenTrabajoService, IBulkImportResult } from '../../services/orden-tra
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmationService } from '../../services/confirmation.service';
 import { UserStateService } from '../../services/user-state.service';
-import { IOrdenTrabajo, otCentroCostoLabel } from '../../interfaces/orden-trabajo.interface';
+import { IOrdenTrabajo, otCentroCostoLabels } from '../../interfaces/orden-trabajo.interface';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
@@ -46,7 +46,8 @@ export class OrdenesTrabajoComponent implements OnInit {
   private userStateService = inject(UserStateService);
   private router = inject(Router);
 
-  readonly centroCostoLabel = otCentroCostoLabel;
+  /** Una OT puede tener varios centros de costo; el primero es el principal. */
+  readonly centroCostoLabels = otCentroCostoLabels;
 
   /** Centros de costo activos, para el filtro. */
   centrosCosto = signal<IProject[]>([]);

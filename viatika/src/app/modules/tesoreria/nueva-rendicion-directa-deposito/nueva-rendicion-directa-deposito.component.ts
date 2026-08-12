@@ -12,7 +12,10 @@ import { ERoles } from '../../admin-users/interfaces/roles.enum';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
-import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
+import {
+  IOrdenTrabajo,
+  otPerteneceACentroCosto,
+} from '../../../interfaces/orden-trabajo.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { FormFieldComponent } from '../../../design-system/form-field/form-field.component';
@@ -50,7 +53,7 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
   filteredOrdenesTrabajo = computed<IOrdenTrabajo[]>(() => {
     const pid = this.selectedProjectId();
     if (!pid) return [];
-    return this.ordenesTrabajo().filter(ot => this.otCostCenterId(ot) === pid);
+    return this.ordenesTrabajo().filter(ot => otPerteneceACentroCosto(ot, pid));
   });
 
   depositReceiptUrl: string | null = null;
@@ -113,16 +116,10 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
       const otId = this.form.get('ordenTrabajoId')?.value;
       if (!otId) return;
       const stillValid = this.ordenesTrabajo().some(
-        ot => ot._id === otId && this.otCostCenterId(ot) === pid
+        ot => ot._id === otId && otPerteneceACentroCosto(ot, pid)
       );
       if (!stillValid) this.form.get('ordenTrabajoId')?.setValue('');
     });
-  }
-
-  /** Id del centro de costo de una OT (soporta el ref poblado o el id plano). */
-  private otCostCenterId(ot: IOrdenTrabajo): string {
-    const cc = ot.costCenterId;
-    return cc && typeof cc === 'object' ? String(cc._id ?? '') : String(cc ?? '');
   }
 
   private resolveClientId(): string {

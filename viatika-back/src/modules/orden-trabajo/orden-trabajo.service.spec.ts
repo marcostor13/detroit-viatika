@@ -222,5 +222,117 @@ describe('OrdenTrabajoService', () => {
         expect.objectContaining({ isActive: true })
       )
     })
+
+    it('admite varios centros de costo en la misma celda', async () => {
+      const cc1 = new Types.ObjectId()
+      const cc2 = new Types.ObjectId()
+      mockProjectModel.findOne
+        .mockReturnValueOnce(makeQuery({ _id: cc1 }))
+        .mockReturnValueOnce(makeQuery({ _id: cc2 }))
+      mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
+
+      const result = await service.bulkCreate(
+        [{ nombre: 'LIM-SMI-1', costCenterKey: '123, 223' }],
+        clientId
+      )
+
+      expect(result.created).toBe(1)
+      expect(mockOrdenTrabajoModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          costCenterId: cc1,
+          costCenterIds: [cc1, cc2],
+        })
+      )
+    })
+
+    it('marca error en la fila si uno de los centros de costo no existe', async () => {
+      const cc1 = new Types.ObjectId()
+      mockProjectModel.findOne
+        .mockReturnValueOnce(makeQuery({ _id: cc1 }))
+        .mockReturnValueOnce(makeQuery(null)) // el segundo no está por code
+        .mockReturnValueOnce(makeQuery(null)) // ni por name
+      mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
+
+      const result = await service.bulkCreate(
+        [{ nombre: 'LIM-SMI-1', costCenterKey: '123; NO-EXISTE' }],
+        clientId
+      )
+
+      expect(result.created).toBe(0)
+      expect(result.errors[0].reason).toContain('NO-EXISTE')
+      expect(mockOrdenTrabajoModel.create).not.toHaveBeenCalled()
+    })
+  })
+
+  // Una OT puede servir a varios centros de costo (p. ej. las OT "SMI" se usan
+  // desde los cinco centros de SERVICIO MINERIA). El primero es el principal:
+  // es el que muestran los reportes oficiales.
+  describe('varios centros de costo por OT', () => {
+    const cc1 = new Types.ObjectId().toString()
+    const cc2 = new Types.ObjectId().toString()
+
+    it('guarda la lista completa y deja el primero como principal', async () => {
+      mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
+
+      await service.create(
+        { nombre: 'LIM-SMI-1', costCenterIds: [cc1, cc2] },
+        clientId
+      )
+
+      const payload = mockOrdenTrabajoModel.create.mock.calls[0][0]
+      expect(String(payload.costCenterId)).toBe(cc1)
+      expect(payload.costCenterIds.map(String)).toEqual([cc1, cc2])
+    })
+
+    it('acepta el costCenterId suelto y lo convierte en lista', async () => {
+      mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
+
+      await service.create({ nombre: 'Lim-Com-1', costCenterId }, clientId)
+
+      const payload = mockOrdenTrabajoModel.create.mock.calls[0][0]
+      expect(String(payload.costCenterId)).toBe(costCenterId)
+      expect(payload.costCenterIds.map(String)).toEqual([costCenterId])
+    })
+
+    it('no repite un centro de costo que llega dos veces', async () => {
+      mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
+
+      await service.create(
+        { nombre: 'LIM-SMI-2', costCenterId: cc1, costCenterIds: [cc1, cc2] },
+        clientId
+      )
+
+      const payload = mockOrdenTrabajoModel.create.mock.calls[0][0]
+      expect(payload.costCenterIds.map(String)).toEqual([cc1, cc2])
+    })
+
+    it('rechaza la creación sin ningún centro de costo', async () => {
+      await expect(
+        service.create({ nombre: 'Sin centro' } as any, clientId)
+      ).rejects.toThrow(BadRequestException)
+    })
+
+    it('al editar reemplaza la lista y recalcula el principal', async () => {
+      mockOrdenTrabajoModel.findOneAndUpdate.mockReturnValue(makeQuery(mockOrden))
+
+      await service.update(ordenId, { costCenterIds: [cc2, cc1] }, clientId)
+
+      const payload = mockOrdenTrabajoModel.findOneAndUpdate.mock.calls[0][1]
+      expect(String(payload.costCenterId)).toBe(cc2)
+      expect(payload.costCenterIds.map(String)).toEqual([cc2, cc1])
+    })
+
+    it('filtra por centro de costo mirando la lista, no solo el principal', async () => {
+      mockOrdenTrabajoModel.find.mockReturnValue(makeQuery([]))
+      mockOrdenTrabajoModel.countDocuments.mockReturnValue(makeQuery(0))
+
+      await service.findAll(clientId, { costCenterId: cc2 })
+
+      const filtro = mockOrdenTrabajoModel.find.mock.calls[0][0]
+      expect(filtro.$or).toEqual([
+        { costCenterIds: new Types.ObjectId(cc2) },
+        { costCenterId: new Types.ObjectId(cc2) },
+      ])
+    })
   })
 })

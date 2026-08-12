@@ -4,6 +4,7 @@ import { Document, Types } from 'mongoose'
 export interface OrdenTrabajoDocument extends Document {
   nombre: string
   costCenterId: Types.ObjectId
+  costCenterIds: Types.ObjectId[]
   isActive: boolean
   clientId: Types.ObjectId
 }
@@ -19,9 +20,22 @@ export class OrdenTrabajo {
   @Prop({ required: true, trim: true })
   nombre: string
 
-  /** Centro de costo (Project) al que pertenece la OT. Relación 1 CC → N OT. */
+  /**
+   * Centro de costo PRINCIPAL de la OT: el que sale en los reportes oficiales
+   * (columnas OT / C.COSTO del ADF-FOR-004) y en la ficha de la OT. Siempre es
+   * el primero de `costCenterIds`.
+   */
   @Prop({ required: true, type: Types.ObjectId, ref: 'Project' })
   costCenterId: Types.ObjectId
+
+  /**
+   * Todos los centros de costo desde los que se puede usar la OT, empezando por
+   * el principal. Una misma OT puede servir a varios centros de costo (p. ej.
+   * las OT "SMI" se cargan desde los cinco centros de SERVICIO MINERIA), así
+   * que los selectores filtran por esta lista y no por `costCenterId`.
+   */
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Project' }], default: [] })
+  costCenterIds: Types.ObjectId[]
 
   @Prop({ default: true })
   isActive: boolean
@@ -41,3 +55,6 @@ OrdenTrabajoSchema.index({ nombre: 1, clientId: 1 }, { unique: true })
 
 /** Búsquedas frecuentes: OTs de un centro de costo dentro de una empresa. */
 OrdenTrabajoSchema.index({ clientId: 1, costCenterId: 1 })
+
+/** Índice multiclave para filtrar por cualquiera de los centros de costo de la OT. */
+OrdenTrabajoSchema.index({ clientId: 1, costCenterIds: 1 })

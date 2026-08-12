@@ -86,8 +86,17 @@
         <span class="font-mono font-semibold text-secondary">{{ row.nombre }}</span>
       </ng-container>
 
-      <ng-container *appColumn="'centroCosto'; header: 'Centro de costo'; let row">
-        <span class="text-sm text-secondary">{{ centroCostoLabel(row) || '—' }}</span>
+      <ng-container *appColumn="'centroCosto'; header: 'Centros de costo'; let row">
+        @if (centroCostoLabels(row).length) {
+          <div class="flex flex-wrap gap-1">
+            @for (label of centroCostoLabels(row); track label; let first = $first) {
+              <!-- El primero es el principal: el que sale en los reportes. -->
+              <app-badge [variant]="first ? 'info' : 'neutral'">{{ label }}</app-badge>
+            }
+          </div>
+        } @else {
+          <span class="text-sm text-secondary">—</span>
+        }
       </ng-container>
 
       <ng-container *appColumn="'estado'; header: 'Estado'; align: 'center'; let row">

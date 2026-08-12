@@ -1,4 +1,6 @@
 import {
+  ArrayNotEmpty,
+  IsArray,
   IsBoolean,
   IsMongoId,
   IsNotEmpty,
@@ -12,10 +14,24 @@ export class CreateOrdenTrabajoDto {
   @IsNotEmpty()
   nombre: string
 
-  /** Centro de costo (Project) al que pertenece la OT. */
+  /**
+   * Centro de costo principal. Opcional cuando llega `costCenterIds`: se toma
+   * el primero de la lista. Se mantiene para no romper integraciones que aún
+   * mandan un único centro de costo.
+   */
   @IsMongoId()
-  @IsNotEmpty()
-  costCenterId: string
+  @IsOptional()
+  costCenterId?: string
+
+  /**
+   * Centros de costo desde los que se puede usar la OT. El primero es el
+   * principal. Debe llegar este campo o `costCenterId`.
+   */
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsMongoId({ each: true })
+  @IsOptional()
+  costCenterIds?: string[]
 
   @IsBoolean()
   @IsOptional()
