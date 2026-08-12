@@ -4,6 +4,7 @@ import { ConfirmationService } from './services/confirmation.service';
 import { Observable } from 'rxjs';
 import { NotificationService } from './services/notification.service';
 import { ShowService } from './services/show.service';
+import { InactivityService } from './services/inactivity.service';
 import { NotificationComponent } from './components/notification/notification.component';
 import { ConfirmationComponent } from './components/confirmation/confirmation.component';
 import { LoaderComponent } from './components/loader/loader.component';
@@ -26,6 +27,7 @@ import { ShowComponent } from './components/show/show.component';
 })
 export class AppComponent {
   isConfirmationVisible = inject(ConfirmationService);
+  private inactivityService = inject(InactivityService);
 
   title = 'Gastos';
   isNotificationVisible!: Observable<Boolean>;
@@ -39,5 +41,7 @@ export class AppComponent {
   ngOnInit() {
     this.isNotificationVisible = this.notificationService.isVisible();
     this.isShow = this.showService.show$;
+    // VD-99: cierra la sesión y manda al login tras 2 horas sin interacción.
+    this.inactivityService.start();
   }
 }
