@@ -20,6 +20,7 @@ describe('ExpenseReportController — Fase 6 (reembolsos / documentos)', () => {
     registerReimbursementPayment: jest
       .fn()
       .mockResolvedValue({ _id: 'r1', status: 'reimbursed' }),
+    create: jest.fn().mockResolvedValue({ _id: 'r1', title: 'Rendición' }),
   }
 
   const mockAuditLogService = {
@@ -195,6 +196,77 @@ describe('ExpenseReportController — Fase 6 (reembolsos / documentos)', () => {
           entityId: reportId,
         })
       )
+    })
+  })
+
+  // El módulo asignado gobierna la creación para todos los roles menos el
+  // Superadministrador: antes solo se exigía al Colaborador, así que marcar
+  // "Rendición directa" o "Caja chica" a Contabilidad o Admin no hacía nada.
+  describe('create — permisos por módulo', () => {
+    const reqFor = (roles: string[], modules: string[]) => ({
+      user: {
+        _id: userSub,
+        sub: userSub,
+        roles,
+        permissions: { modules },
+        clientId: clientA,
+        name: 'Tester',
+        email: 't@test.com',
+      },
+    })
+
+    const dtoDirecta = { isDirecta: true, userId: userSub, clientId: clientA }
+    const dtoCajaChica = { isCajaChica: true, userId: userSub, clientId: clientA }
+
+    it('Contabilidad con el módulo nueva-rendicion crea la directa', async () => {
+      await controller.create(
+        dtoDirecta as never,
+        reqFor([ROLES.CONTABILIDAD], ['nueva-rendicion']) as never
+      )
+      expect(mockExpenseReportService.create).toHaveBeenCalled()
+    })
+
+    it('Contabilidad sin el módulo nueva-rendicion recibe Forbidden', async () => {
+      await expect(
+        controller.create(
+          dtoDirecta as never,
+          reqFor([ROLES.CONTABILIDAD], ['tesoreria']) as never
+        )
+      ).rejects.toThrow(ForbiddenException)
+      expect(mockExpenseReportService.create).not.toHaveBeenCalled()
+    })
+
+    it('Contabilidad con el módulo caja-chica crea la rendición de caja chica', async () => {
+      await controller.create(
+        dtoCajaChica as never,
+        reqFor([ROLES.CONTABILIDAD], ['caja-chica']) as never
+      )
+      expect(mockExpenseReportService.create).toHaveBeenCalled()
+    })
+
+    it('Administrador sin el módulo caja-chica recibe Forbidden', async () => {
+      await expect(
+        controller.create(
+          dtoCajaChica as never,
+          reqFor([ROLES.ADMIN], []) as never
+        )
+      ).rejects.toThrow(ForbiddenException)
+    })
+
+    it('Superadministrador crea sin necesitar módulos', async () => {
+      await controller.create(
+        dtoDirecta as never,
+        reqFor([ROLES.SUPER_ADMIN], []) as never
+      )
+      expect(mockExpenseReportService.create).toHaveBeenCalled()
+    })
+
+    it('una rendición normal (ni directa ni caja chica) no exige módulos', async () => {
+      await controller.create(
+        { userId: userSub, clientId: clientA } as never,
+        reqFor([ROLES.COLABORADOR], []) as never
+      )
+      expect(mockExpenseReportService.create).toHaveBeenCalled()
     })
   })
 })

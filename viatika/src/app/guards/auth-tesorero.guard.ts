@@ -12,11 +12,7 @@ export class AuthTesoreroGuard implements CanActivate {
       return false;
     }
     if (!this.userState.canAccessTesoreria()) {
-      const role = this.userState.getRole();
-      const fallback = (role === 'Colaborador') ? '/inicio'
-        : (role === 'Administrador' || role === 'Coordinador') ? '/admin-users'
-        : '/login';
-      this.router.navigate([fallback]);
+      this.router.navigate([this.userState.defaultRoute()]);
       return false;
     }
     return true;
