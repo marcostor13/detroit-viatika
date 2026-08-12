@@ -14,6 +14,10 @@ import {
 } from './dto/create-declaracion-jurada.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
+import { execFile } from 'child_process'
+import { mkdtemp, writeFile, readdir, readFile, rm } from 'fs/promises'
+import * as os from 'os'
+import * as path from 'path'
 import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
@@ -296,61 +300,71 @@ export class ExpenseService {
     ]
   }
 
-  // No es eval de datos externos: fuerza un import() nativo con un specifier
-  // fijo, en vez del require() en el que TS baja `await import(...)`.
-  // pdfjs-dist v6 solo distribuye ESM puro (.mjs), sin build CommonJS. Con
-  // `module: "commonjs"` en tsconfig, TypeScript baja `await import(...)` a
-  // `require(...)`, y requerir un .mjs real solo funciona en Node ≥22.12
-  // (require(esm)) — el Dockerfile de producción usa node:20-alpine, donde
-  // eso revienta con ERR_REQUIRE_ESM.
-  private readonly dynamicImport: (specifier: string) => Promise<any> =
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    new Function('specifier', 'return import(specifier)') as (
-      specifier: string
-    ) => Promise<any>
-
   /**
-   * Rasteriza cada página de un PDF a PNG (data URL base64) con pdfjs-dist +
-   * @napi-rs/canvas, para que el modelo de visión lea el documento con su
+   * Rasteriza cada página de un PDF a PNG (data URL base64) con `pdftoppm`
+   * (poppler-utils), para que el modelo de visión lea el documento con su
    * layout real (tablas, columnas, cabecera) en vez de una extracción de
    * texto plano que puede desordenar los campos de facturas peruanas.
+   *
+   * Se usó antes pdfjs-dist + @napi-rs/canvas in-process, pero el binario
+   * nativo de @napi-rs/canvas (Skia) requiere AVX2 y crashea con SIGILL en
+   * CPUs que no lo soportan (confirmado en el servidor de QA). `pdftoppm` es
+   * un binario de sistema (instalado vía apk en el Dockerfile) sin ese
+   * requisito, y al correr como proceso propio via execFile ya está aislado:
+   * si crashea, solo muere ese proceso, no la API.
    */
   private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
-    // El build por defecto de pdfjs-dist asume globals de browser (DOMMatrix)
-    // y revienta en Node; hay que usar el build "legacy" explícitamente.
-    const { getDocument } = await this.dynamicImport(
-      'pdfjs-dist/legacy/build/pdf.mjs'
-    )
-    const { createCanvas } = await import('@napi-rs/canvas')
-    const loadingTask = getDocument({
-      data: new Uint8Array(buffer),
-      useSystemFonts: true,
-    })
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'expense-pdf-'))
+    const pdfPath = path.join(tmpDir, 'input.pdf')
+    const outPrefix = path.join(tmpDir, 'page')
     try {
-      const doc = await loadingTask.promise
-      const pageCount = Math.min(doc.numPages, this.PDF_MAX_PAGES)
+      await writeFile(pdfPath, buffer)
+      await this.runPdftoppm(pdfPath, outPrefix)
+      const pageFiles = (await readdir(tmpDir))
+        .filter(f => f.startsWith('page') && f.endsWith('.png'))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
       const images: string[] = []
-      for (let i = 1; i <= pageCount; i++) {
-        const page = await doc.getPage(i)
-        const viewport = page.getViewport({ scale: 2 })
-        const canvas = createCanvas(
-          Math.ceil(viewport.width),
-          Math.ceil(viewport.height)
-        )
-        const context = canvas.getContext('2d')
-        await page.render({
-          canvas: canvas as unknown as HTMLCanvasElement,
-          canvasContext: context as unknown as CanvasRenderingContext2D,
-          viewport,
-        }).promise
-        images.push(
-          `data:image/png;base64,${canvas.toBuffer('image/png').toString('base64')}`
-        )
+      for (const file of pageFiles) {
+        const pngBuffer = await readFile(path.join(tmpDir, file))
+        images.push(`data:image/png;base64,${pngBuffer.toString('base64')}`)
       }
       return images
     } finally {
-      await loadingTask.destroy()
+      await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
     }
+  }
+
+  private runPdftoppm(pdfPath: string, outPrefix: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      execFile(
+        'pdftoppm',
+        [
+          '-png',
+          '-r',
+          '150',
+          '-l',
+          String(this.PDF_MAX_PAGES),
+          pdfPath,
+          outPrefix,
+        ],
+        { timeout: 60_000 },
+        (error, _stdout, stderr) => {
+          if (error) {
+            this.logger.error(
+              `pdftoppm terminó con error (code=${error.code}, signal=${(error as any).signal}): ${stderr || error.message}`
+            )
+            reject(
+              new HttpException(
+                'No se pudo renderizar el PDF.',
+                HttpStatus.BAD_REQUEST
+              )
+            )
+            return
+          }
+          resolve()
+        }
+      )
+    })
   }
 
   // Parseo robusto del contenido JSON devuelto por OpenAI
