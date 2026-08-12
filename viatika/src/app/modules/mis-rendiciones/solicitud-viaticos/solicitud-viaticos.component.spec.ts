@@ -147,11 +147,21 @@ describe('SolicitudViaticosComponent', () => {
       const ymd = future.toISOString().slice(0, 10);
       component.form.patchValue({
         place: 'Lima', startDate: ymd, endDate: ymd, projectId: 'p1', amount: 100,
+        observations: 'Visita a planta',
       });
     }
 
     it('marks all fields touched and warns when the form is invalid', () => {
       component.submit();
+      expect(notifications.show).toHaveBeenCalledWith('Complete los campos obligatorios', 'error');
+      expect(expenseReportsService.createViatico).not.toHaveBeenCalled();
+    });
+
+    it('rejects a solicitud without observations (VD-102)', () => {
+      fillValidForm();
+      component.form.patchValue({ observations: '   ' });
+      component.submit();
+      expect(component.form.get('observations')?.invalid).toBeTrue();
       expect(notifications.show).toHaveBeenCalledWith('Complete los campos obligatorios', 'error');
       expect(expenseReportsService.createViatico).not.toHaveBeenCalled();
     });
@@ -164,7 +174,7 @@ describe('SolicitudViaticosComponent', () => {
       earlier.setDate(earlier.getDate() + 1);
       component.form.patchValue({
         place: 'Lima', startDate: laterYmd, endDate: earlier.toISOString().slice(0, 10),
-        projectId: 'p1', amount: 100,
+        projectId: 'p1', amount: 100, observations: 'Visita a planta',
       });
       component.submit();
       expect(notifications.show).toHaveBeenCalledWith(
@@ -204,6 +214,7 @@ describe('SolicitudViaticosComponent', () => {
       const pastYmd = past.toISOString().slice(0, 10);
       component.form.patchValue({
         place: 'Lima', startDate: pastYmd, endDate: pastYmd, projectId: 'p1', amount: 100,
+        observations: 'Visita a planta',
       });
       component.submit();
       expect(notifications.show).toHaveBeenCalledWith(
@@ -221,6 +232,7 @@ describe('SolicitudViaticosComponent', () => {
       const pastYmd = past.toISOString().slice(0, 10);
       component.form.patchValue({
         place: 'Lima', startDate: pastYmd, endDate: pastYmd, projectId: 'p1', amount: 100,
+        observations: 'Visita a planta',
       });
       expenseReportsService.createViatico.and.returnValue(of({} as IExpenseReport));
       component.submit();
