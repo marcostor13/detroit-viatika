@@ -1619,3 +1619,80 @@ describe('ExpenseReportService — findExpensesPaginated (búsqueda por RUC, VD-
     })
   })
 })
+
+// La planilla de movilidad hereda la OT de su rendición y la OT es opcional
+// tanto al solicitar un viático como al crear una rendición directa. Este
+// método marca los casos en los que no hay ninguna que exigirle a la planilla.
+describe('ExpenseReportService — isReportSinOrdenTrabajo', () => {
+  let service: ExpenseReportService
+  let mockExpenseReportModel: Record<string, jest.Mock>
+
+  const reportId = new Types.ObjectId().toString()
+  const otId = new Types.ObjectId()
+
+  const conReporte = (report: Record<string, unknown> | null) => {
+    mockExpenseReportModel.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(report),
+        }),
+      }),
+    })
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    mockExpenseReportModel = { findById: jest.fn() }
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseReportService,
+        { provide: getModelToken(ExpenseReport.name), useValue: mockExpenseReportModel },
+        { provide: getModelToken(Expense.name), useValue: {} },
+        { provide: getModelToken(CajaChicaReport.name), useValue: { countDocuments: jest.fn() } },
+        { provide: EmailService, useValue: {} },
+        { provide: NotificationsService, useValue: { create: jest.fn() } },
+        { provide: UserService, useValue: {} },
+        { provide: AdvanceService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: CategoryService, useValue: {} },
+        { provide: CurrencyService, useValue: {} },
+      ],
+    }).compile()
+
+    service = module.get<ExpenseReportService>(ExpenseReportService)
+  })
+
+  it('viático sin OT en la solicitud: no hay OT que exigir', async () => {
+    conReporte({ type: 'viatico' })
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(true)
+  })
+
+  it('viático con OT: la planilla debe llevarla', async () => {
+    conReporte({ type: 'viatico', viaticoOrdenTrabajoId: otId })
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(false)
+  })
+
+  it('directa sin OT propia: no hay OT que exigir', async () => {
+    conReporte({ isDirecta: true })
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(true)
+  })
+
+  it('directa con OT propia: la planilla debe llevarla', async () => {
+    conReporte({ isDirecta: true, directaOrdenTrabajoId: otId })
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(false)
+  })
+
+  it('rendición común (ni viático ni directa): la OT se sigue exigiendo', async () => {
+    conReporte({})
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(false)
+  })
+
+  it('id inválido o rendición inexistente: no se exime a nadie', async () => {
+    await expect(service.isReportSinOrdenTrabajo('no-es-un-id')).resolves.toBe(false)
+    await expect(service.isReportSinOrdenTrabajo()).resolves.toBe(false)
+    conReporte(null)
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(false)
+  })
+})

@@ -15,8 +15,11 @@ export class CreateDirectaDepositDto {
   @IsMongoId()
   projectId: string // centro de costo: arma la cadena de aprobadores al enviar
 
+  // Opcional: hay centros de costo sin ninguna OT activa. Si se elige, la
+  // heredan los comprobantes de planilla de movilidad; si no, no se les exige.
   @IsMongoId()
-  ordenTrabajoId: string // heredada por los comprobantes de planilla de movilidad
+  @IsOptional()
+  ordenTrabajoId?: string
 
   @IsNumber()
   @Min(0.01)

@@ -1099,18 +1099,30 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * True cuando la rendición es un viático que no lleva OT. La OT es opcional al
-   * solicitar el viático y sus gastos la heredan de la solicitud (VD-28): si la
-   * solicitud no la tiene, no hay ninguna que exigirle a la planilla de movilidad.
+   * True cuando la rendición no puede aportar una OT a sus gastos, porque no la
+   * lleva. Los gastos de planilla de movilidad la heredan de la rendición y la
+   * OT es opcional en ambos orígenes:
+   *  - viático: opcional al solicitarlo (VD-28)
+   *  - directa: opcional al crear la rendición
+   * Si la rendición no la tiene, el formulario ni siquiera muestra el campo, así
+   * que no hay nada que exigirle a la planilla.
    */
-  async isViaticoSinOrdenTrabajo(reportId?: string): Promise<boolean> {
+  async isReportSinOrdenTrabajo(reportId?: string): Promise<boolean> {
     if (!reportId || !Types.ObjectId.isValid(reportId)) return false
     const report = await this.expenseReportModel
       .findById(reportId)
-      .select('type viaticoOrdenTrabajoId')
-      .lean<{ type?: string; viaticoOrdenTrabajoId?: Types.ObjectId }>()
+      .select('type isDirecta viaticoOrdenTrabajoId directaOrdenTrabajoId')
+      .lean<{
+        type?: string
+        isDirecta?: boolean
+        viaticoOrdenTrabajoId?: Types.ObjectId
+        directaOrdenTrabajoId?: Types.ObjectId
+      }>()
       .exec()
-    return !!report && report.type === 'viatico' && !report.viaticoOrdenTrabajoId
+    if (!report) return false
+    if (report.type === 'viatico') return !report.viaticoOrdenTrabajoId
+    if (report.isDirecta) return !report.directaOrdenTrabajoId
+    return false
   }
 
   async findOne(id: string) {

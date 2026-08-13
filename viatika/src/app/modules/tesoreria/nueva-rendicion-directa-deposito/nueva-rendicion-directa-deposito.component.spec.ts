@@ -196,23 +196,43 @@ describe('NuevaRendicionDirectaDepositoComponent', () => {
     });
   });
 
-  describe('otErrorMessage', () => {
-    it('prioritizes the "no active OT" message over the generic required error', () => {
+  describe('otHelperText', () => {
+    it('explains that the cost center has no active OT and that it can be skipped', () => {
       component.ngOnInit();
       component.form.patchValue({ projectId: 'p1' });
-      component.form.get('ordenTrabajoId')?.markAsTouched();
-      expect(component.otErrorMessage()).toContain('no tiene órdenes de trabajo activas');
+      expect(component.otHelperText()).toContain('no tiene órdenes de trabajo activas');
+      expect(component.otHelperText()).toContain('sin OT');
     });
 
-    it('shows the generic required message when no project is selected and the field is touched', () => {
+    it('asks for a cost center first when none is selected', () => {
       component.ngOnInit();
-      component.form.get('ordenTrabajoId')?.markAsTouched();
-      expect(component.otErrorMessage()).toBe('Seleccione una orden de trabajo');
+      expect(component.otHelperText()).toContain('centro de costo');
+    });
+  });
+
+  // Hay centros de costo sin ninguna OT activa: exigirla bloqueaba la creación.
+  describe('OT opcional', () => {
+    it('el formulario es válido sin orden de trabajo', () => {
+      component.ngOnInit();
+      component.form.patchValue({
+        userId: 'u1', projectId: 'p1', metodoPago: 'deposito', amount: 100,
+      });
+      expect(component.form.valid).toBeTrue();
     });
 
-    it('is empty when untouched', () => {
+    it('no manda ordenTrabajoId cuando no se eligió ninguna', () => {
       component.ngOnInit();
-      expect(component.otErrorMessage()).toBe('');
+      component.form.patchValue({
+        userId: 'u1', projectId: 'p1', metodoPago: 'deposito', amount: 100,
+      });
+      component.depositReceiptUrl = 'http://s3/file.pdf';
+      expenseReportsService.createDirectaDeposit.and.returnValue(of({ _id: 'r1' } as any));
+
+      component.submit();
+
+      const payload = expenseReportsService.createDirectaDeposit.calls.mostRecent().args[0];
+      expect(payload.ordenTrabajoId).toBeUndefined();
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'r1', 'detalle']);
     });
   });
 
