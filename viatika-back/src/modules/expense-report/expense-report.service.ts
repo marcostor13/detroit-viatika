@@ -919,6 +919,8 @@ export class ExpenseReportService implements OnModuleInit {
       type?: string
       status?: string
       search?: string
+      /** Quién consulta, para el filtro "me falta aprobar" (VD-114). */
+      actorUserId?: string
     }
   ) {
     const report = await this.expenseReportModel
@@ -944,11 +946,38 @@ export class ExpenseReportService implements OnModuleInit {
       filter['expenseType'] = opts.type
     }
     if (opts.status && opts.status !== 'all') {
-      // `status` en Expense refleja siempre computeCombinedStatus(cadena, contabilidad)
-      // desde cada mutación (approve/reject por documento, batch, resubmit), así
-      // que el filtro puede leerlo directo — ya no hace falta reconstruirlo desde
-      // los campos de aprobación dual (retirados, ver Expense.approverChain).
-      filter['status'] = opts.status
+      // VD-114: "Pendiente" no puede leer `status` directo. Un comprobante
+      // recién cargado guarda ahí el resultado de la validación SUNAT
+      // ('VALIDO_ACEPTADO', 'sunat_error', 'PENDING'…), así que los que estaban
+      // en 0/2 aprobaciones quedaban fuera del filtro. Pendiente = todo lo que
+      // no está aprobado ni rechazado; `status` solo vale 'approved'/'rejected'
+      // de forma fiable, porque cada aprobación recalcula el estado combinado.
+      if (opts.status === 'pending') {
+        and.push({ status: { $nin: ['approved', 'rejected'] } })
+        and.push({ contabilidadStatus: { $ne: 'rejected' } })
+      } else if (opts.status === 'rejected') {
+        and.push({
+          $or: [{ status: 'rejected' }, { contabilidadStatus: 'rejected' }],
+        })
+      } else if (opts.status === 'mine_pending') {
+        // Comprobantes en los que el usuario es aprobador de un paso que
+        // todavía no se resolvió (VD-114).
+        if (!opts.actorUserId || !Types.ObjectId.isValid(opts.actorUserId)) {
+          and.push({ _id: null })
+        } else {
+          and.push({
+            approverChain: {
+              $elemMatch: {
+                approved: { $ne: true },
+                approverIds: new Types.ObjectId(opts.actorUserId),
+              },
+            },
+          })
+          and.push({ status: { $ne: 'rejected' } })
+        }
+      } else {
+        filter['status'] = opts.status
+      }
     }
     if (opts.search?.trim()) {
       // VD-65: el buscador de comprobantes filtra por RUC del emisor (antes

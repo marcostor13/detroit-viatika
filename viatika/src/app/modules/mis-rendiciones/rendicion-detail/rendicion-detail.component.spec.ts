@@ -138,6 +138,26 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('filtro de comprobantes (VD-114)', () => {
+    it('ofrece "Me falta aprobar" a quien aprueba', () => {
+      userState.isApprover.and.returnValue(true);
+      expect(component.canFilterMyPendingApprovals()).toBeTrue();
+    });
+
+    it('no lo ofrece a un colaborador sin rol de aprobación', () => {
+      expect(component.canFilterMyPendingApprovals()).toBeFalse();
+    });
+
+    it('manda el filtro elegido al backend', () => {
+      component.expFilterStatus.set('mine_pending');
+      component.applyExpenseFilters();
+
+      const opts = expenseReportsService.findExpensesPaginated.calls.mostRecent().args[1] as any;
+      expect(opts.status).toBe('mine_pending');
+      expect(opts.page).toBe(1);
+    });
+  });
+
   describe('cabecera: centro de costo y OT (VD-113)', () => {
     it('toma el código del centro de costo y la OT desde la orden de trabajo del reporte', () => {
       component.report = makeReport({

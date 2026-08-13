@@ -341,6 +341,19 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * VD-114: la opción "Me falta aprobar" solo tiene sentido para quien aprueba
+   * comprobantes (aprobador de cadena, Contabilidad o Superadministrador).
+   */
+  canFilterMyPendingApprovals(): boolean {
+    return (
+      this.userStateService.isApprover() ||
+      this.userStateService.canApproveL1() ||
+      this.userStateService.canApproveL2() ||
+      this.userStateService.isSuperAdmin()
+    );
+  }
+
   applyExpenseFilters() {
     this.loadExpensesPage(1);
   }

@@ -988,6 +988,10 @@
               <option value="pending">Pendiente</option>
               <option value="approved">Aprobado</option>
               <option value="rejected">Rechazado</option>
+              <!-- VD-114: atajo para el aprobador, solo si le toca aprobar acá. -->
+              @if (canFilterMyPendingApprovals()) {
+              <option value="mine_pending">Me falta aprobar</option>
+              }
             </select>
             <input
               type="text"

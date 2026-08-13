@@ -276,6 +276,7 @@ export class ExpenseReportController {
   @UseGuards(AuthGuard('jwt'))
   @Get(':id/expenses')
   findExpensesPaginated(
+    @Request() req: any,
     @Param('id') id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -289,6 +290,8 @@ export class ExpenseReportController {
       type,
       status,
       search,
+      // VD-114: el filtro "Me falta aprobar" necesita saber quién consulta.
+      actorUserId: String(req.user._id || req.user.sub),
     })
   }
 
