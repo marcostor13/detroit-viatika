@@ -1960,6 +1960,65 @@ describe('AddInvoiceComponent', () => {
       );
     });
 
+    // La OT es opcional al crear la rendición directa: si no la lleva, tampoco se
+    // ofrece elegirla por comprobante.
+    it('does not ask for the OT when the rendicion directa has none', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({
+          _id: 'r1',
+          projectId: 'p1',
+          isDirecta: true,
+          expenseIds: [],
+          settlement: null,
+        } as any)
+      );
+      invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent({}, { rendicionId: 'r1', tipo: 'planilla_movilidad' });
+      component.ngOnInit();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+      component.form.patchValue({ categoryId: 'catMov' });
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-01',
+        total: 10,
+        proyectId: 'p1',
+        categoryId: 'catMov',
+        origen: 'A',
+        destino: 'B',
+        gestion: 'g1',
+      });
+
+      component.saveMobilitySheet();
+
+      expect(component.directaOrdenTrabajoInherited()).toBeFalse();
+      expect(component.directaSinOrdenTrabajo()).toBeTrue();
+      expect(invoicesService.createMobilitySheet).toHaveBeenCalled();
+      const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0] as any;
+      expect(payload.ordenTrabajoId).toBeUndefined();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'Planilla guardada correctamente',
+        'success'
+      );
+    });
+
+    it('keeps asking for the OT when the rendicion directa has one to inherit', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({
+          _id: 'r1',
+          projectId: 'p1',
+          isDirecta: true,
+          directaOrdenTrabajoId: { _id: 'ot1', nombre: 'OT-LIM-002' },
+          expenseIds: [],
+          settlement: null,
+        } as any)
+      );
+      const component = createComponent({}, { rendicionId: 'r1', tipo: 'planilla_movilidad' });
+      component.ngOnInit();
+
+      expect(component.directaSinOrdenTrabajo()).toBeFalse();
+      expect(component.form.get('ordenTrabajoId')?.value).toBe('ot1');
+    });
+
     it('computes rendicionSpent from report expenses and rendicionBudget from paid/settled advances of that report', () => {
       expenseReportsService.findOne.and.returnValue(
         of({

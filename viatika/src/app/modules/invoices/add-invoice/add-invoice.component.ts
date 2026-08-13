@@ -1259,10 +1259,12 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
-   * Rendiciones directas creadas antes de tener OT propia: no hay OT que heredar,
-   * así que se sigue pidiendo en el formulario del comprobante (fallback legado).
+   * Rendición directa sin OT propia: la OT es opcional al crear la rendición y
+   * las directas antiguas tampoco la tienen. No hay ninguna que heredar, así que
+   * el campo no se muestra ni se exige en el comprobante — igual que en el
+   * viático sin OT (ver viaticoSinOrdenTrabajo).
    */
-  needsFallbackOt(): boolean {
+  directaSinOrdenTrabajo(): boolean {
     return this.isDirectaPlanilla() && !this.directaOrdenTrabajoInherited();
   }
 
@@ -1858,9 +1860,12 @@ export default class AddInvoiceComponent implements OnInit {
     const categoryCtrl = this.form.get('categoryId');
     const categoryOk = !!(categoryCtrl?.disabled || categoryCtrl?.valid);
     // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de
-    // Costo. Excepción: viático sin OT en la solicitud — no hay ninguna que heredar
-    // ni que el colaborador pueda elegir aquí (ver viaticoSinOrdenTrabajo).
-    const otOk = this.viaticoSinOrdenTrabajo() || !!this.form.get('ordenTrabajoId')?.value;
+    // Costo. Excepciones: viático sin OT en la solicitud y rendición directa sin OT
+    // propia — no hay ninguna que heredar ni que el colaborador pueda elegir aquí.
+    const otOk =
+      this.viaticoSinOrdenTrabajo() ||
+      this.directaSinOrdenTrabajo() ||
+      !!this.form.get('ordenTrabajoId')?.value;
     if (!proyectOk || !categoryOk || !otOk) {
       this.notificationService.show(
         otOk
