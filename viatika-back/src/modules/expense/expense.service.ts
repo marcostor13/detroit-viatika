@@ -290,6 +290,28 @@ export class ExpenseService {
     }
   }
 
+  /**
+   * El estado de la RENDICIÓN manda sobre lo que se puede hacer con sus
+   * comprobantes: los aprobadores actúan solo con la rendición enviada, y
+   * Contabilidad solo cuando los aprobadores terminaron y la rendición llegó a
+   * `pending_accounting`. Sin esto cada gate mira únicamente su comprobante y
+   * el orden del flujo se puede saltar (aprobar un borrador que el colaborador
+   * todavía puede editar, o que Contabilidad revise antes que los aprobadores).
+   */
+  private async assertReportInStatus(
+    expense: Expense,
+    allowed: string[],
+    message: string
+  ): Promise<void> {
+    const reportId = this.expenseReportIdString(expense)
+    if (!reportId) return
+    const report = await this.expenseReportService.findOne(reportId)
+    const status = (report as unknown as { status?: string })?.status
+    if (!status || !allowed.includes(status)) {
+      throw new BadRequestException(message)
+    }
+  }
+
   private async loadExpenseOrThrow(id: string): Promise<Expense> {
     const expense = await this.findOne(id)
     if (!expense) {
@@ -3466,6 +3488,11 @@ export class ExpenseService {
   ): Promise<Expense> {
     const expense = await this.loadExpenseOrThrow(id)
     this.assertCompanyAccess(expense, actor)
+    await this.assertReportInStatus(
+      expense,
+      ['submitted'],
+      'Esta rendición todavía no fue enviada por el colaborador. Los aprobadores intervienen recién cuando la envía.'
+    )
     const existing = expense as any
     const chain: ChainStep[] = existing.approverChain ?? []
     if (chain.length === 0) {
@@ -3588,6 +3615,15 @@ export class ExpenseService {
   ): Promise<Expense> {
     const expense = await this.loadExpenseOrThrow(id)
     this.assertCompanyAccess(expense, actor)
+    // Contabilidad revisa recién cuando los aprobadores terminaron con TODA la
+    // rendición, no comprobante por comprobante mientras ellos siguen: la
+    // rendición llega a `pending_accounting` justamente cuando no queda ninguna
+    // cadena de centro de costo pendiente.
+    await this.assertReportInStatus(
+      expense,
+      ['pending_accounting'],
+      'Esta rendición todavía no llegó a Contabilidad. Los aprobadores del centro de costo deben terminar con todos sus comprobantes primero.'
+    )
     const existing = expense as any
     const coordStatus = this.chainCoordStatus(existing)
     if (coordStatus !== 'approved') {

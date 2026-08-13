@@ -376,11 +376,143 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
       }),
     }
 
-    await service.advanceToAccountingIfAllExpensesApproved(reportId)
+    const advanced =
+      await service.advanceToAccountingIfAllExpensesApproved(reportId)
 
     // Queda en 'submitted' hasta que se corrija el comprobante observado.
+    expect(advanced).toBe(false)
     expect(reportObj.status).toBe('submitted')
     expect(reportObj.save).not.toHaveBeenCalled()
+  })
+
+  it('advanceToAccountingIfAllExpensesApproved: avanza y devuelve true con toda la cadena completa', async () => {
+    const reportObj: { status: string; expenseIds: string[]; userId: string; save: jest.Mock } = {
+      status: 'submitted',
+      expenseIds: [expenseId1, expenseId2],
+      userId,
+      save: jest.fn().mockResolvedValue(undefined),
+    }
+    mockExpenseReportModel.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reportObj),
+      }),
+    })
+    ;(service as unknown as { expenseModel: Record<string, jest.Mock> }).expenseModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              { _id: expenseId1, status: 'approved', approverChain: [{ level: 1 }], approvalLevel: 1, requiredLevels: 1 },
+              { _id: expenseId2, status: 'approved', approverChain: [{ level: 2 }], approvalLevel: 1, requiredLevels: 1 },
+            ]),
+          }),
+        }),
+      }),
+    }
+    jest.spyOn(service, 'findOne').mockResolvedValue(fullReportDoc() as never)
+    const notify = jest
+      .spyOn(
+        service as unknown as {
+          notifyAccountingReportPendingApproval: (...a: unknown[]) => Promise<void>
+        },
+        'notifyAccountingReportPendingApproval'
+      )
+      .mockResolvedValue(undefined)
+
+    const advanced =
+      await service.advanceToAccountingIfAllExpensesApproved(reportId)
+
+    expect(advanced).toBe(true)
+    expect(reportObj.status).toBe('pending_accounting')
+    expect(reportObj.save).toHaveBeenCalled()
+    expect(notify).toHaveBeenCalled()
+  })
+
+  it('advanceToAccountingIfAllExpensesApproved: NO avanza un viático con su cadena de reporte incompleta', async () => {
+    const reportObj: {
+      status: string
+      expenseIds: string[]
+      userId: string
+      rendicionApproverChain: { level: number; approved: boolean }[]
+      save: jest.Mock
+    } = {
+      status: 'submitted',
+      expenseIds: [expenseId1],
+      userId,
+      // Al enviar, la cadena a nivel de reporte se reconstruye en nivel 0.
+      rendicionApproverChain: [
+        { level: 1, approved: false },
+        { level: 2, approved: false },
+      ],
+      save: jest.fn().mockResolvedValue(undefined),
+    }
+    mockExpenseReportModel.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reportObj),
+      }),
+    })
+    ;(service as unknown as { expenseModel: Record<string, jest.Mock> }).expenseModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              { _id: expenseId1, status: 'approved', approverChain: [{ level: 1 }], approvalLevel: 1, requiredLevels: 1 },
+            ]),
+          }),
+        }),
+      }),
+    }
+
+    const advanced =
+      await service.advanceToAccountingIfAllExpensesApproved(reportId)
+
+    // Espera a los N1/N2 del reporte (`approveRendicion`), no se los salta.
+    expect(advanced).toBe(false)
+    expect(reportObj.status).toBe('submitted')
+    expect(reportObj.save).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Regresión: los aprobadores pueden aprobar cada comprobante apenas se sube
+   * (su cadena se construye al registrarlo, no al enviar la rendición). Si
+   * terminan ANTES de que el colaborador haga clic en "Enviar", no queda ningún
+   * `approveByCoord` posterior que dispare el avance a Contabilidad y la
+   * rendición se quedaba atascada en `submitted` para siempre. El envío debe
+   * reevaluarlo.
+   */
+  it('update(submitted): reevalúa el avance a Contabilidad al enviar', async () => {
+    mockFindByIdSequence({
+      existingStatus: 'open',
+      submitPopulateResult: {
+        expenseIds: [{ _id: expenseId1, status: 'approved', file: '/f.pdf' }],
+      },
+    })
+    const advance = jest
+      .spyOn(service, 'advanceToAccountingIfAllExpensesApproved')
+      .mockResolvedValue(false)
+
+    await service.update(reportId, { status: 'submitted' })
+
+    expect(advance).toHaveBeenCalledWith(reportId)
+  })
+
+  it('update(submitted): si el envío ya la manda a Contabilidad, no convoca a los aprobadores', async () => {
+    mockFindByIdSequence({
+      existingStatus: 'open',
+      submitPopulateResult: {
+        expenseIds: [{ _id: expenseId1, status: 'approved', file: '/f.pdf' }],
+      },
+    })
+    jest
+      .spyOn(service, 'advanceToAccountingIfAllExpensesApproved')
+      .mockResolvedValue(true)
+
+    await service.update(reportId, { status: 'submitted' })
+
+    // El bloque de "rendición enviada" (correos/notificaciones a los
+    // aprobadores) se omite: acaban de aprobar todo, no tienen nada que hacer.
+    expect(mockNotificationsService.create).not.toHaveBeenCalled()
+    expect(mockUserService.findOne).not.toHaveBeenCalled()
   })
 
   describe('registerAffidavit — Fase 5 declaración jurada', () => {

@@ -768,9 +768,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         this.isApprovingReport.set(false);
         this.notificationService.show(successMsg, 'success');
       },
-      error: () => {
+      error: (e) => {
         this.isApprovingReport.set(false);
-        this.notificationService.show('Error al aprobar', 'error');
+        // El backend explica por qué no se puede aprobar (comprobantes sin
+        // revisar, alguno observado…): mostrar "Error al aprobar" a secas dejaba
+        // al usuario sin saber qué le falta hacer.
+        this.notificationService.show(e?.error?.message ?? 'Error al aprobar', 'error');
       },
     });
   }
@@ -904,11 +907,24 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /** Contabilidad/Admin/SuperAdmin puede hacer la aprobacion final (paso 2). */
+  /**
+   * Comprobantes que Contabilidad todavía no marcó como revisados. La rendición
+   * completa se aprueba recién cuando este contador llega a cero: el backend
+   * rechaza el intento anticipado (`assertAllExpensesApprovedByAccounting`).
+   */
+  get expensesPendingAccountingCount(): number {
+    const expenses = (this.report?.expenseIds ?? []) as any[];
+    return expenses.filter(
+      (e: any) => String(e?.contabilidadStatus ?? 'pending') !== 'approved'
+    ).length;
+  }
+
   get canContabilidadApprove(): boolean {
     const hasRole = this.userStateService.isContabilidad()
       || this.userStateService.isSuperAdmin()
       || this.userStateService.isAdmin();
-    return hasRole && this.report?.status === 'pending_accounting';
+    if (!hasRole || this.report?.status !== 'pending_accounting') return false;
+    return this.expensesPendingAccountingCount === 0;
   }
 
   /** Contabilidad ve la rendicion en submitted pero no puede actuar aun. */
@@ -3551,8 +3567,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     );
   }
 
-  /** ¿El usuario actual es aprobador de algún paso aún pendiente, o es Superadmin? */
+  /**
+   * ¿El usuario actual es aprobador de algún paso aún pendiente, o es Superadmin?
+   * Solo con la rendición ENVIADA: los aprobadores intervienen recién cuando el
+   * colaborador la envía, no sobre un borrador que todavía puede editar. El
+   * backend lo rechaza igual; acá se evita ofrecer un botón que va a fallar.
+   */
   canApproveExpenseAsCoord(expense: any): boolean {
+    if ((this.report?.status ?? '') !== 'submitted') return false;
     return this.actionableChainStepIndex(expense) !== -1;
   }
 
@@ -3569,6 +3591,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get canApproveExpenseAsCont(): boolean {
     if (this.isRendicionApprovedByContabilidad) return false;
+    // Contabilidad recién entra cuando los aprobadores del centro de costo
+    // terminaron con TODOS los comprobantes y la rendición llegó a
+    // `pending_accounting`. Antes de eso el backend rechaza la aprobación.
+    if ((this.report?.status ?? '') !== 'pending_accounting') return false;
     return this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
   }
 
