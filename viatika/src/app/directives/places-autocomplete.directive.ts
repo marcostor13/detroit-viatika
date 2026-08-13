@@ -32,6 +32,13 @@ declare const google: any;
 export class PlacesAutocompleteDirective implements AfterViewInit, OnDestroy {
   @Input() country = 'pe';
   @Output() placeSelected = new EventEmitter<PlaceResult>();
+  /**
+   * Emite una sola vez tras el primer intento de volcar el valor del form
+   * control dentro del buscador de Google: `true` si el texto quedó visible en
+   * el recuadro, `false` si el web component no expone su input (shadow DOM
+   * cerrado) y por tanto el recuadro se ve vacío aunque el dato exista.
+   */
+  @Output() valuePrefill = new EventEmitter<boolean>();
 
   private el = inject(ElementRef);
   private mapsLoader = inject(GoogleMapsLoaderService);
@@ -179,7 +186,10 @@ export class PlacesAutocompleteDirective implements AfterViewInit, OnDestroy {
 
     // Set initial value after view is settled
     setTimeout(() => {
-      if (ctrl.value) this.setPacValue(pac, ctrl.value);
+      if (!ctrl.value) return;
+      this.setPacValue(pac, ctrl.value, 0, (ok) =>
+        this.ngZone.run(() => this.valuePrefill.emit(ok))
+      );
     }, 0);
 
     this.ctrlSub = ctrl.valueChanges.subscribe((val: string | null) => {
@@ -187,17 +197,25 @@ export class PlacesAutocompleteDirective implements AfterViewInit, OnDestroy {
     });
   }
 
-  private setPacValue(pac: HTMLElement, value: string, attempts = 0) {
+  private setPacValue(
+    pac: HTMLElement,
+    value: string,
+    attempts = 0,
+    done?: (ok: boolean) => void
+  ) {
     // PlaceAutocompleteElement may use shadow DOM or open DOM depending on browser/version
     const shadow = (pac as any).shadowRoot;
     const inner: HTMLInputElement | null =
       shadow?.querySelector('input') ?? pac.querySelector('input');
     if (inner) {
       inner.value = value;
+      done?.(true);
     } else if (attempts < 20) {
       // El input interno del web component puede no haberse renderizado todavía
       // (p. ej. al precargar el formulario en modo edición). Reintentar brevemente.
-      setTimeout(() => this.setPacValue(pac, value, attempts + 1), 50);
+      setTimeout(() => this.setPacValue(pac, value, attempts + 1, done), 50);
+    } else {
+      done?.(false);
     }
   }
 

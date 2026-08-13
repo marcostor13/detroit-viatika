@@ -1229,6 +1229,88 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  describe('VD-104: referencia de la dirección guardada', () => {
+    const loadSavedSheet = () => {
+      invoicesService.getInvoiceById.and.returnValue(
+        of({
+          _id: 'inv1',
+          expenseType: 'planilla_movilidad',
+          proyectId: 'p1',
+          categoryId: 'cat1',
+          mobilityRows: [
+            {
+              fecha: '2026-02-01',
+              total: 20,
+              origen: 'Av. Javier Prado 123, Lima',
+              destino: 'Aeropuerto Jorge Chávez, Callao',
+              gestion: 'g1',
+              origenCoords: { lat: -12.1, lng: -77.0 },
+            },
+          ],
+        } as any)
+      );
+      const component = createComponent({ id: 'inv1' });
+      component.ngOnInit();
+      return component;
+    };
+
+    it('guarda la dirección cargada como referencia al editar', () => {
+      const row = loadSavedSheet().mobilityRowsArray.at(0);
+      expect(row.get('origenGuardado')?.value).toBe('Av. Javier Prado 123, Lima');
+      expect(row.get('destinoGuardado')?.value).toBe('Aeropuerto Jorge Chávez, Callao');
+    });
+
+    it('retira la referencia si el buscador de Google sí mostró el valor', () => {
+      const component = loadSavedSheet();
+
+      component.onPlacePrefill(true, 0, 'origen');
+
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origenGuardado')?.value).toBe('');
+      // El destino no se toca: cada campo reporta su propio volcado.
+      expect(row.get('destinoGuardado')?.value).toBe('Aeropuerto Jorge Chávez, Callao');
+    });
+
+    it('mantiene la referencia si el buscador no pudo mostrar el valor', () => {
+      const component = loadSavedSheet();
+
+      component.onPlacePrefill(false, 0, 'destino');
+
+      expect(component.mobilityRowsArray.at(0).get('destinoGuardado')?.value).toBe(
+        'Aeropuerto Jorge Chávez, Callao'
+      );
+    });
+
+    it('retira la referencia al escribir otra dirección', () => {
+      const component = loadSavedSheet();
+
+      component.onMobilityPlaceTyped(0, 'origen');
+
+      expect(component.mobilityRowsArray.at(0).get('origenGuardado')?.value).toBe('');
+    });
+
+    it('retira la referencia al elegir una dirección del buscador', () => {
+      const component = loadSavedSheet();
+
+      component.onOrigenSelected(
+        { address: 'Plaza San Martín, Lima', lat: -12.05, lng: -77.03 } as any,
+        0
+      );
+
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origen')?.value).toBe('Plaza San Martín, Lima');
+      expect(row.get('origenGuardado')?.value).toBe('');
+    });
+
+    it('la fila nueva nace sin referencia (se escribe desde cero)', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origenGuardado')?.value).toBe('');
+      expect(row.get('destinoGuardado')?.value).toBe('');
+    });
+  });
+
   describe('onMobilityPlaceTyped (VD-104: dirección editada a mano)', () => {
     it('descarta coordenadas y distancia cuando se reescribe el origen', () => {
       const component = createComponent();
