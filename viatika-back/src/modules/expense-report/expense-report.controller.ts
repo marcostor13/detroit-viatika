@@ -200,9 +200,29 @@ export class ExpenseReportController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get('client/:clientId')
-  async findAllByClient(@Param('clientId') clientId: string, @Request() req: any) {
+  async findAllByClient(
+    @Param('clientId') clientId: string,
+    @Request() req: any,
+    @Query('scope') scope?: string
+  ) {
     const role = req.user.roles[0]
     const userId = req.user._id || req.user.sub
+    // Este endpoint alimenta dos pantallas distintas: el listado administrativo
+    // (/rendiciones), que debe ver TODAS las rendiciones de la empresa, y la cola
+    // de aprobación del Inicio, que debe seguir acotada a la cadena propia. Por
+    // eso la visión global se pide explícitamente con `?scope=all` en vez de
+    // deducirse del rol: un Contabilidad que además es aprobador N1/N2 de algún
+    // centro de costo caía en la rama de aprobador y veía solo su cadena, a
+    // diferencia de sus pares de Contabilidad que no aprueban nada.
+    const canSeeAllReports = [
+      ROLES.ADMIN,
+      ROLES.SUPER_ADMIN,
+      ROLES.CONTABILIDAD,
+      ROLES.TESORERIA,
+    ].includes(role)
+    if (scope === 'all' && canSeeAllReports) {
+      return this.expenseReportService.findAllByClient(clientId)
+    }
     // El rol "Coordinador" casi nunca se asigna literalmente: en la práctica un
     // aprobador es un Colaborador asignado como N1/N2 en algún centro de costo.
     // Sin este chequeo, un aprobador-Colaborador nunca entraba a esta rama y no
