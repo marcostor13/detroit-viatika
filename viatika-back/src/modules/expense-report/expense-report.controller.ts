@@ -51,7 +51,9 @@ export class ExpenseReportController {
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos los roles, Tesorería incluida.
+    ROLES.TESORERIA
   )
   @Post()
   async create(
@@ -276,6 +278,7 @@ export class ExpenseReportController {
   @UseGuards(AuthGuard('jwt'))
   @Get(':id/expenses')
   findExpensesPaginated(
+    @Request() req: any,
     @Param('id') id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -289,6 +292,8 @@ export class ExpenseReportController {
       type,
       status,
       search,
+      // VD-114: el filtro "Me falta aprobar" necesita saber quién consulta.
+      actorUserId: String(req.user._id || req.user.sub),
     })
   }
 
@@ -304,7 +309,8 @@ export class ExpenseReportController {
     ROLES.SUPER_ADMIN,
     ROLES.COLABORADOR,
     ROLES.COORDINADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    ROLES.TESORERIA
   )
   @Patch(':id')
   async update(
@@ -429,7 +435,9 @@ export class ExpenseReportController {
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos los roles, Tesorería incluida.
+    ROLES.TESORERIA
   )
   @Patch(':id/cancel')
   async cancel(
@@ -455,7 +463,8 @@ export class ExpenseReportController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
+  // VD-115: el dueño de la rendición la elimina sin importar su rol.
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR, ROLES.TESORERIA)
   @Get(':id/deletion-preview')
   async getDeletionPreview(@Param('id') id: string, @Request() req: any) {
     return this.expenseReportService.getDeletionPreview(id, {
@@ -465,7 +474,8 @@ export class ExpenseReportController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
+  // VD-115: el dueño de la rendición la elimina sin importar su rol.
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR, ROLES.TESORERIA)
   @Delete(':id')
   async remove(@Param('id') id: string, @Request() req: any) {
     const result = await this.expenseReportService.remove(id, {

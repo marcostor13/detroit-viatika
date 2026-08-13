@@ -3,6 +3,31 @@ import { Document, Types } from 'mongoose'
 
 export interface ClientLimits {
   movilidadDiario?: number
+  /**
+   * Topes por comida de "Alimentación sin documentación" (VD-109). Se aplican
+   * a cada gasto cargado, no al acumulado del día. Vacío = sin tope.
+   */
+  alimentacionDesayuno?: number
+  alimentacionAlmuerzo?: number
+  alimentacionCena?: number
+}
+
+/** Comidas de "Alimentación sin documentación" (VD-109). */
+export const TIPOS_COMIDA = ['desayuno', 'almuerzo', 'cena'] as const
+export type TipoComida = (typeof TIPOS_COMIDA)[number]
+
+/** Tope configurado para cada comida, o `null` si la empresa no puso ninguno. */
+export function topeComida(
+  limits: ClientLimits | undefined,
+  tipo: TipoComida
+): number | null {
+  const valor =
+    tipo === 'desayuno'
+      ? limits?.alimentacionDesayuno
+      : tipo === 'almuerzo'
+        ? limits?.alimentacionAlmuerzo
+        : limits?.alimentacionCena
+  return typeof valor === 'number' && valor > 0 ? valor : null
 }
 
 export interface ClientNotificationSettings {
@@ -64,6 +89,9 @@ export class Client {
   @Prop({
     type: {
       movilidadDiario: { type: Number, default: null },
+      alimentacionDesayuno: { type: Number, default: null },
+      alimentacionAlmuerzo: { type: Number, default: null },
+      alimentacionCena: { type: Number, default: null },
     },
     default: {},
   })

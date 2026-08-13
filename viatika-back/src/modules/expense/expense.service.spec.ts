@@ -407,6 +407,41 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
     })
   })
 
+  describe('sanitizeComentario (VD-103: comentario breve, sin monto ni empresa)', () => {
+    const clean = (comentario?: string, razonSocial?: string): string | undefined =>
+      (service as any).sanitizeComentario(comentario, razonSocial)
+
+    it('quita el nombre del emisor y el importe', () => {
+      expect(
+        clean(
+          'Servicio de transporte de carga por Empresa de Transporte S.A. por S/ 1,000.00.',
+          'Empresa de Transporte S.A.'
+        )
+      ).toBe('Servicio de transporte de carga')
+    })
+
+    it('quita el importe aunque el emisor no venga en la extracción', () => {
+      expect(clean('Servicio de movilidad por S/ 90.00')).toBe('Servicio de movilidad')
+      expect(clean('Almuerzo de trabajo por $ 45')).toBe('Almuerzo de trabajo')
+    })
+
+    it('deja intacta una descripción que ya es breve y limpia', () => {
+      expect(clean('Compra de útiles de oficina')).toBe('Compra de útiles de oficina')
+    })
+
+    it('se queda con la primera oración y recorta a 60 caracteres', () => {
+      expect(
+        clean('Servicio de hospedaje. Incluye desayuno y traslado al aeropuerto.')
+      ).toBe('Servicio de hospedaje')
+      expect((clean('a'.repeat(80)) ?? '').length).toBeLessThanOrEqual(60)
+    })
+
+    it('tolera valores vacíos o ausentes', () => {
+      expect(clean(undefined)).toBeUndefined()
+      expect(clean('   ')).toBeUndefined()
+    })
+  })
+
   describe('approveByCoord', () => {
     it('deja que N2 apruebe antes que N1 (cualquier orden)', async () => {
       const expense = baseExpense()
@@ -1028,5 +1063,147 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
     )
     // No se consulta la rendición: con OT en el cuerpo no hace falta la excepción.
     expect(expenseReportService.isViaticoSinOrdenTrabajo).not.toHaveBeenCalled()
+  })
+})
+
+describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
+  let service: ExpenseService
+  const clientId = new Types.ObjectId().toHexString()
+  const userId = new Types.ObjectId().toHexString()
+  const proyectId = new Types.ObjectId().toHexString()
+  const categoryId = new Types.ObjectId().toHexString()
+
+  const expenseModel = { create: jest.fn(), aggregate: jest.fn().mockResolvedValue([]) }
+  const userService = {
+    findTransactionalProfile: jest.fn(),
+    findEmailNameClient: jest.fn(),
+  }
+  const expenseReportService = {
+    assertReportNotLockedByCajaChica: jest.fn(),
+    buildChainForNewExpense: jest.fn(),
+    addExpenseToReport: jest.fn(),
+    findCurrencyMeta: jest.fn().mockResolvedValue(null),
+  }
+  const clientModel = { findById: jest.fn() }
+
+  /** Topes que devuelve la empresa consultada. */
+  function conLimites(limits: Record<string, number> | null) {
+    clientModel.findById.mockReturnValue({
+      lean: () => ({ exec: () => Promise.resolve(limits ? { limits } : null) }),
+    })
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    conLimites({ alimentacionAlmuerzo: 30, alimentacionDesayuno: 15 })
+    expenseModel.create.mockImplementation((doc: any) =>
+      Promise.resolve({ ...doc, _id: new Types.ObjectId() })
+    )
+    userService.findTransactionalProfile.mockResolvedValue({
+      signature: 'data:image/png;base64,firma',
+    })
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue('sk-test') },
+        },
+        { provide: getModelToken(Expense.name), useValue: expenseModel },
+        { provide: getModelToken(Client.name), useValue: clientModel },
+        { provide: EmailService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: UserService, useValue: userService },
+        { provide: SunatConfigService, useValue: {} },
+        { provide: HttpService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ExpenseReportService, useValue: expenseReportService },
+        { provide: NotificationsService, useValue: {} },
+        { provide: CategoryService, useValue: { findOne: jest.fn() } },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            toBase: jest.fn().mockImplementation(async (monto: number) => ({
+              montoBase: monto,
+              tipoCambio: 1,
+              tcFecha: '2026-01-01',
+            })),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
+      ],
+    }).compile()
+    service = module.get<ExpenseService>(ExpenseService)
+  })
+
+  const alBody = (extra: Record<string, unknown> = {}) =>
+    ({
+      clientId,
+      userId,
+      proyectId,
+      categoryId,
+      total: 25,
+      subTipo: 'AL',
+      declaracionJurada: true,
+      declaracionJuradaFirmante: 'John Doe',
+      tipoComida: 'almuerzo',
+      ...extra,
+    }) as unknown as CreateExpenseDto
+
+  it('exige declarar la comida', async () => {
+    await expect(
+      service.createOtherExpense(alBody({ tipoComida: undefined }))
+    ).rejects.toThrow(/desayuno, almuerzo o cena/)
+    expect(expenseModel.create).not.toHaveBeenCalled()
+  })
+
+  it('rechaza el gasto que supera el tope de esa comida', async () => {
+    await expect(
+      service.createOtherExpense(alBody({ total: 45 }))
+    ).rejects.toThrow(/supera el tope de S\/ 30\.00/)
+    expect(expenseModel.create).not.toHaveBeenCalled()
+  })
+
+  it('acepta el gasto que llega justo al tope y guarda la comida como descripción', async () => {
+    await service.createOtherExpense(alBody({ total: 30 }))
+
+    const doc = expenseModel.create.mock.calls[0][0]
+    expect(doc.tipoComida).toBe('almuerzo')
+    expect(doc.description).toBe('Almuerzo')
+    expect(JSON.parse(doc.data).tipoComida).toBe('almuerzo')
+  })
+
+  it('sin tope configurado para esa comida no valida el monto', async () => {
+    await service.createOtherExpense(alBody({ tipoComida: 'cena', total: 500 }))
+
+    expect(expenseModel.create).toHaveBeenCalledTimes(1)
+    expect(expenseModel.create.mock.calls[0][0].description).toBe('Cena')
+  })
+
+  it('la empresa sin límites configurados no bloquea', async () => {
+    conLimites(null)
+
+    await service.createOtherExpense(alBody({ total: 999 }))
+
+    expect(expenseModel.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('los demás sub-tipos no piden comida ni tocan la descripción', async () => {
+    await service.createOtherExpense(
+      alBody({
+        subTipo: 'TK',
+        tipoComida: undefined,
+        declaracionJurada: false,
+        rucEmisor: '20123456789',
+        imageUrl: 'https://s3/doc.pdf',
+        data: 'Peaje de ida',
+      })
+    )
+
+    const doc = expenseModel.create.mock.calls[0][0]
+    expect(doc.tipoComida).toBeUndefined()
+    expect(doc.description).toBe('Peaje de ida')
   })
 })

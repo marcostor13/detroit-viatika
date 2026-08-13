@@ -375,13 +375,13 @@
     <div class="flex flex-col gap-1">
       <label for="comentarioOcr" class="text-xs font-medium text-secondary">
         Comentario <span class="text-error">*</span>
-        <span class="text-tertiary font-normal ml-1">(resumen del concepto del comprobante)</span>
+        <span class="text-tertiary font-normal ml-1">(descripción breve del concepto, sin montos ni nombres de empresas)</span>
       </label>
       <textarea
         id="comentarioOcr"
         formControlName="comentario"
-        rows="3"
-        placeholder="Ej: Servicio de transporte de carga por Empresa XYZ por S/ 1,000.00."
+        rows="2"
+        placeholder="Ej: Servicio de transporte de carga"
         class="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none text-sm"
         [class.border-error]="!form.get('comentario')?.value?.trim()"
       ></textarea>
@@ -612,14 +612,24 @@
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-secondary">
                 Dirección <span class="text-error">*</span>
-                <span class="text-tertiary font-normal ml-1">(busca y selecciona)</span>
+                <span class="text-tertiary font-normal ml-1">{{ id ? '(guardada al crear la planilla)' : '(busca y selecciona)' }}</span>
               </label>
+              <!-- VD-104: en edición se muestra el texto guardado. El buscador de
+                   Google renderiza su propio campo y no refleja el valor cargado. -->
+              @if (id) {
+              <input type="text" formControlName="origen"
+                  (input)="onMobilityPlaceTyped(i, 'origen')"
+                  placeholder="Ej: Av. Javier Prado 123, Lima"
+                  autocomplete="off"
+                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+              } @else {
               <input type="text" formControlName="origen"
                   appPlacesAutocomplete
                   (placeSelected)="onOrigenSelected($event, i)"
                   placeholder="Ej: Av. Javier Prado 123, Lima"
                   autocomplete="off"
                   class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+              }
               @if (row.get('origenLat')?.value) {
               <span class="text-xs text-success flex items-center gap-1 mt-0.5">
                 <app-icon name="check" size="sm" />
@@ -666,14 +676,23 @@
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-secondary">
                 Dirección <span class="text-error">*</span>
-                <span class="text-tertiary font-normal ml-1">(busca y selecciona)</span>
+                <span class="text-tertiary font-normal ml-1">{{ id ? '(guardada al crear la planilla)' : '(busca y selecciona)' }}</span>
               </label>
+              <!-- VD-104: ver nota en Origen. -->
+              @if (id) {
+              <input type="text" formControlName="destino"
+                  (input)="onMobilityPlaceTyped(i, 'destino')"
+                  placeholder="Ej: Aeropuerto Jorge Chávez, Callao"
+                  autocomplete="off"
+                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+              } @else {
               <input type="text" formControlName="destino"
                   appPlacesAutocomplete
                   (placeSelected)="onDestinoSelected($event, i)"
                   placeholder="Ej: Aeropuerto Jorge Chávez, Callao"
                   autocomplete="off"
                   class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
+              }
               @if (row.get('destinoLat')?.value) {
               <span class="text-xs text-success flex items-center gap-1 mt-0.5">
                 <app-icon name="check" size="sm" />
@@ -864,15 +883,16 @@
 
     <!-- Categoría del gasto (VD-100): va dentro del tipo de documento, debajo del
          RUC. En "Alimentación sin documentación" se asigna sola —como en la
-         planilla de movilidad— y solo se pide a mano si el colaborador no tiene
-         una única categoría de Alimentación. La DJ al extranjero no la usa: cada
-         rubro lleva la suya en su propio bloque. -->
+         planilla de movilidad— con la categoría "Gastos Reparables (gastos sin
+         factura)" (VD-108), y solo se pide a mano si el colaborador tiene las
+         dos (Servicios y Comercial). La DJ al extranjero no la usa: cada rubro
+         lleva la suya en su propio bloque. -->
     @if (!isDj()) {
     <div class="flex flex-col gap-2">
       <label for="otrosCategoryId" class="text-sm font-medium text-secondary">
         Categoría <span class="text-error">*</span>
       </label>
-      @if (alimentacionCategoryAuto(); as autoCategory) {
+      @if (gastosReparablesCategoryAuto(); as autoCategory) {
       <p class="text-sm font-semibold text-secondary">{{ autoCategory.name }}</p>
       } @else {
       <app-search-select
@@ -882,8 +902,8 @@
         searchPlaceholder="Buscar categoría o cuenta…"
         [invalid]="!!(categoryId?.invalid && categoryId?.touched)"
       />
-      @if (isAlimentacionSinDoc() && alimentacionCategories.length > 1) {
-      <p class="text-xs text-tertiary">Tienes más de una categoría de Alimentación asignada. Elige cuál corresponde.</p>
+      @if (isAlimentacionSinDoc() && gastosReparablesCategories.length > 1) {
+      <p class="text-xs text-tertiary">Tienes más de una categoría de Gastos Reparables asignada. Elige cuál corresponde.</p>
       }
       @if (categoryId?.invalid && categoryId?.touched) {
       <span class="text-sm text-error">La categoría es requerida</span>
@@ -895,24 +915,58 @@
     <!-- En la DJ al extranjero el monto sale del detalle diario por rubro y el
          adjunto es opcional: ambos viven en el bloque de más abajo. -->
     @if (!isDj()) {
+    <!-- VD-109: en "Alimentación sin documentación" la descripción libre se
+         reemplaza por la comida declarada, que además define el tope del monto. -->
+    @if (otrosSubTipo() === 'AL') {
+    <div class="flex flex-col gap-2">
+      <label for="tipoComida" class="text-sm font-medium text-secondary">Comida <span class="text-error">*</span></label>
+      <select id="tipoComida" formControlName="tipoComida"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+        <option value="">Seleccione</option>
+        @for (comida of comidasDisponibles; track comida.key) {
+        <option [value]="comida.key">{{ comida.label }}</option>
+        }
+      </select>
+      @if (topeComidaSeleccionada !== null) {
+      <p class="text-xs text-tertiary">Tope configurado: S/ {{ topeComidaSeleccionada | number:'1.2-2' }} por gasto.</p>
+      }
+    </div>
+    } @else {
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium text-secondary">Descripción del gasto</label>
       <input type="text" formControlName="description" placeholder="Ej: Refrigerio de trabajo, útiles de escritorio..."
         class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
     </div>
+    }
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium text-secondary">Monto Total S/. <span class="text-error">*</span></label>
       <input type="number" formControlName="totalOtros" placeholder="0.00" min="0" step="0.01"
+        [class.border-error]="montoSuperaTopeComida"
         class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      @if (montoSuperaTopeComida) {
+      <p class="text-xs text-error flex items-center gap-1">
+        <app-icon name="triangle-alert" size="sm" class="shrink-0" />
+        Supera el tope de S/ {{ topeComidaSeleccionada | number:'1.2-2' }} configurado para esta comida.
+      </p>
+      }
     </div>
     @if(!id) {
     <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Adjunto <span class="text-error">*</span></label>
+      <!-- VD-110: en "Alimentación sin documentación" el adjunto es opcional
+           (el gasto va sin comprobante, respaldado por la declaración jurada). -->
+      <label class="text-sm font-medium text-secondary">
+        Adjunto
+        @if (otrosSubTipo() === 'AL') {
+        <span class="text-tertiary font-normal">(opcional)</span>
+        } @else {
+        <span class="text-error">*</span>
+        }
+      </label>
       <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
         (click)="fileInputOtros.click()">
         <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">
-          {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar un comprobante' }}
+          {{ selectedFile ? selectedFile.name : (otrosSubTipo() === 'AL' ? 'Haz clic para adjuntar un respaldo, si lo tienes' : 'Haz clic para adjuntar un comprobante') }}
         </p>
         <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
         <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputOtros />

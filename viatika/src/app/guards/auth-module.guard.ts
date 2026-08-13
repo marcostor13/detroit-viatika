@@ -17,6 +17,8 @@ export function authModuleGuard(module: string, bypassForAdmin = false): CanActi
     }
 
     // VD-66/VD-49: Tesorería gestiona el listado de rendiciones para cerrarlas.
+    // Rendir lo suyo NO va por acá: manda el módulo asignado, igual que para
+    // cualquier rol (VD-115).
     if (module === 'rendiciones' && userState.isTesoreria()) {
       return true;
     }

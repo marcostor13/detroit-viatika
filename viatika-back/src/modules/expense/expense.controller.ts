@@ -77,7 +77,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   @UseInterceptors(FileInterceptor('file'))
@@ -100,7 +103,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   @UseInterceptors(FileInterceptor('file'))
@@ -124,7 +130,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createInvoice(@Body() body: CreateExpenseDto, @Request() req) {
@@ -152,7 +161,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async validateSunatStateless(
@@ -180,7 +192,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createMobilitySheet(@Body() body: CreateExpenseDto, @Request() req) {
@@ -206,7 +221,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createOtherExpense(@Body() body: CreateExpenseDto, @Request() req) {
@@ -237,7 +255,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createDeclaracionJurada(
@@ -266,7 +287,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   async createCashReceipt(@Body() body: CreateExpenseDto, @Request() req) {
@@ -292,7 +316,10 @@ export class ExpenseController {
     ROLES.SUPER_ADMIN,
     ROLES.ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
   create(@Body() createExpenseDto: CreateExpenseDto, @Request() req) {
@@ -306,7 +333,8 @@ export class ExpenseController {
 
   /** Rutas estáticas antes de `:clientId` para no capturar `invoice` como clientId */
   @Get('ruc-info/:ruc')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  // VD-115: Tesorería rinde como cualquier colaborador.
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @UseGuards(JwtAuthGuard, RolesGuard)
   async getRucInfo(@Param('ruc') ruc: string, @Request() req: any) {
     const clientId = req.user?.clientId
@@ -342,7 +370,8 @@ export class ExpenseController {
   }
 
   @Get('invoice/:id/sunat-validation')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  // VD-115: Tesorería rinde como cualquier colaborador.
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @UseGuards(JwtAuthGuard, RolesGuard)
   getSunatValidation(
     @Param('id') id: string,
@@ -356,7 +385,8 @@ export class ExpenseController {
   }
 
   @Get('invoice/:id')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  // VD-115: Tesorería rinde como cualquier colaborador.
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @UseGuards(JwtAuthGuard, RolesGuard)
   findOne(
     @Param('id') id: string,
@@ -371,7 +401,8 @@ export class ExpenseController {
 
   @Get('my-direct-expenses')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(ROLES.COLABORADOR, ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD)
+  // VD-115: Tesorería ve y envía sus propios gastos directos.
+  @Roles(ROLES.COLABORADOR, ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   getMyDirectExpenses(
     @Request() req: any,
     @Query('tipo') tipo?: string,
@@ -401,7 +432,9 @@ export class ExpenseController {
     ROLES.COLABORADOR,
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: Tesorería también tiene sus gastos directos.
+    ROLES.TESORERIA
   )
   async submitMyDirectExpenses(
     @Request() req: any,
@@ -421,7 +454,8 @@ export class ExpenseController {
   }
 
   @Get('stats')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  // VD-115: Tesorería rinde como cualquier colaborador.
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @UseGuards(JwtAuthGuard, RolesGuard)
   getStatusCounts(@Request() req) {
     const clientId = req.user?.clientId
@@ -430,7 +464,8 @@ export class ExpenseController {
   }
 
   @Get(':clientId')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  // VD-115: Tesorería rinde como cualquier colaborador.
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   @UseGuards(JwtAuthGuard, RolesGuard)
   findAll(
     @Param('clientId') clientId: string,

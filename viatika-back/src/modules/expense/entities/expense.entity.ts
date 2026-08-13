@@ -4,6 +4,7 @@ import { ApprovalEntry } from '../../advance/entities/advance.entity'
 import { ChainStep } from '../../advance/approval-chain.util'
 import { chainStepSchemaDefinition } from '../../expense-report/entities/expense-report.entity'
 import { DEFAULT_MONEDA } from '../../../common/moneda.constants'
+import { TIPOS_COMIDA, TipoComida } from '../../client/entities/client.entity'
 
 export type ExpenseStatus =
   | 'pending'
@@ -419,6 +420,10 @@ export class Expense {
   /** Sub-tipo para 'otros_gastos': TK (Ticket), RC (Recibos diversos), DJ (Declaración Jurada), DJE (DJ al exterior), OT (Otros) */
   @Prop({ type: String, required: false })
   subTipo?: string
+
+  /** Comida declarada en el sub-tipo AL (VD-109): desayuno, almuerzo o cena. */
+  @Prop({ type: String, enum: TIPOS_COMIDA, required: false })
+  tipoComida?: TipoComida
 
   // --- Multimoneda ---
   // Regla: `total` está en la moneda del comprobante (`moneda`). La conversión

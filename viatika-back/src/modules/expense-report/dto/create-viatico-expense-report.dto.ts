@@ -11,7 +11,7 @@ import {
   IsDateString,
   MaxLength,
 } from 'class-validator'
-import { Type } from 'class-transformer'
+import { Type, Transform } from 'class-transformer'
 import { CreateAdvanceLineDto } from '../../advance/dto/create-advance.dto'
 
 export class CreateViaticoExpenseReportDto {
@@ -60,9 +60,14 @@ export class CreateViaticoExpenseReportDto {
   @Type(() => CreateAdvanceLineDto)
   lines?: CreateAdvanceLineDto[]
 
+  /**
+   * Justificación de la solicitud (VD-102). Obligatoria: el cliente pide que
+   * ninguna solicitud de fondos llegue al aprobador sin motivo escrito.
+   */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @IsOptional()
-  observations?: string
+  @IsNotEmpty({ message: 'Las observaciones son obligatorias' })
+  observations: string
 
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   @IsString()

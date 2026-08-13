@@ -1061,6 +1061,8 @@ export class UserService {
         }
       case 'Tesoreria':
         return {
+          // Rendir lo suyo se habilita asignándole los módulos de rendición
+          // desde la pantalla de permisos, como a cualquier otro rol (VD-115).
           modules: ['tesoreria'],
           canApproveL1: false,
           canApproveL2: false,

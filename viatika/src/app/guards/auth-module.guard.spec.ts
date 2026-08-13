@@ -50,6 +50,23 @@ describe('authModuleGuard', () => {
     expect(run('rendiciones')).toBeTrue();
   });
 
+  // VD-115: rendir se habilita por permiso asignado, no por rol. El atajo de
+  // Tesorería vale solo para /rendiciones (su pantalla de cierre).
+  it('lets tesoreria into mis-rendiciones only with the module assigned (VD-115)', () => {
+    userState.isAuthenticated.and.returnValue(true);
+    userState.isTesoreria.and.returnValue(true);
+
+    userState.hasModulePermission.and.returnValue(true);
+    expect(run('mis-rendiciones')).toBeTrue();
+    expect(run('nueva-rendicion')).toBeTrue();
+
+    userState.hasModulePermission.and.returnValue(false);
+    userState.defaultRoute.and.returnValue('/rendiciones');
+    run('mis-rendiciones').subscribe(() => {
+      expect(router.createUrlTree).toHaveBeenCalledWith(['/rendiciones']);
+    });
+  });
+
   it('allows an approver into /rendiciones without the module permission', () => {
     userState.isAuthenticated.and.returnValue(true);
     userState.hasModulePermission.and.returnValue(false);

@@ -35,7 +35,8 @@ export interface ICreateViaticoPayload {
   projectId: string;
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
-  observations?: string;
+  /** Justificación de la solicitud. Obligatoria desde VD-102. */
+  observations: string;
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;
@@ -54,7 +55,8 @@ export interface IResubmitViaticoPayload {
   projectId: string;
   /** Orden de Trabajo (opcional) a la que se imputa el gasto del viático. */
   ordenTrabajoId?: string;
-  observations?: string;
+  /** Justificación de la solicitud. Obligatoria desde VD-102. */
+  observations: string;
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   bankName?: string;
   accountNumber?: string;

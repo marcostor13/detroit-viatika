@@ -49,6 +49,10 @@ export class ConfiguracionComponent implements OnInit {
   // Limits
   showLimitsForm = false;
   limitsMovilidadDiario: number | null = null;
+  /** Topes por comida de "Alimentación sin documentación" (VD-109), por gasto. */
+  limitsAlimentacionDesayuno: number | null = null;
+  limitsAlimentacionAlmuerzo: number | null = null;
+  limitsAlimentacionCena: number | null = null;
   isSavingLimits = false;
 
   // Cuenta de cargo para pagos BBVA (VD-7)
@@ -114,7 +118,7 @@ export class ConfiguracionComponent implements OnInit {
     this.companyConfigService.companyConfig$.subscribe(
       (config: ICompanyConfig | null) => {
         this.companyConfig = config;
-        this.limitsMovilidadDiario = config?.limits?.movilidadDiario ?? null;
+        this.readLimitsFromConfig();
         this.paymentAccount = config?.paymentAccount ?? '';
         this.notificationsEnabled = config?.notificationSettings?.enabled ?? false;
         this.notificationsFrequency = config?.notificationSettings?.frequency ?? 'semanal';
@@ -123,14 +127,38 @@ export class ConfiguracionComponent implements OnInit {
     );
   }
 
+  /** Comidas con tope configurable (VD-109), para pintar la lista y el formulario. */
+  readonly comidasConfig = [
+    { key: 'desayuno' as const, label: 'Desayuno' },
+    { key: 'almuerzo' as const, label: 'Almuerzo' },
+    { key: 'cena' as const, label: 'Cena' },
+  ];
+
+  /** Tope guardado para una comida, o `null` si la empresa no puso ninguno. */
+  limitComida(key: 'desayuno' | 'almuerzo' | 'cena'): number | null {
+    const limits = this.companyConfig?.limits;
+    if (key === 'desayuno') return limits?.alimentacionDesayuno ?? null;
+    if (key === 'almuerzo') return limits?.alimentacionAlmuerzo ?? null;
+    return limits?.alimentacionCena ?? null;
+  }
+
+  /** Vuelca los topes guardados a los campos del formulario. */
+  private readLimitsFromConfig() {
+    const limits = this.companyConfig?.limits;
+    this.limitsMovilidadDiario = limits?.movilidadDiario ?? null;
+    this.limitsAlimentacionDesayuno = limits?.alimentacionDesayuno ?? null;
+    this.limitsAlimentacionAlmuerzo = limits?.alimentacionAlmuerzo ?? null;
+    this.limitsAlimentacionCena = limits?.alimentacionCena ?? null;
+  }
+
   editLimits() {
-    this.limitsMovilidadDiario = this.companyConfig?.limits?.movilidadDiario ?? null;
+    this.readLimitsFromConfig();
     this.showLimitsForm = true;
   }
 
   cancelLimitsEdit() {
     this.showLimitsForm = false;
-    this.limitsMovilidadDiario = this.companyConfig?.limits?.movilidadDiario ?? null;
+    this.readLimitsFromConfig();
   }
 
   saveLimits() {
@@ -139,6 +167,9 @@ export class ConfiguracionComponent implements OnInit {
     this.isSavingLimits = true;
     this.companyConfigService.updateLimits(companyId, {
       movilidadDiario: this.limitsMovilidadDiario ?? undefined,
+      alimentacionDesayuno: this.limitsAlimentacionDesayuno ?? undefined,
+      alimentacionAlmuerzo: this.limitsAlimentacionAlmuerzo ?? undefined,
+      alimentacionCena: this.limitsAlimentacionCena ?? undefined,
     }).subscribe({
       next: () => {
         this.notificationService.show('Límites actualizados correctamente', 'success');

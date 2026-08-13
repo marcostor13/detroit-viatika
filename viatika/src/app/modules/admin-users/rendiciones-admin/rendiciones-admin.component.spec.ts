@@ -35,7 +35,8 @@ describe('RendicionesAdminComponent', () => {
     createdBy: 'u1',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    projectId: { _id: 'p1', name: 'Proyecto 1' },
+    projectId: { _id: 'p1', code: 'CC-01', name: 'Proyecto 1' },
+    viaticoOrdenTrabajoId: { _id: 'ot1', nombre: 'LIM-SMI-1946' },
     viaticoAmount: 100,
     viaticoApprovalLevel: 0,
     viaticoRequiredLevels: 1,
@@ -181,6 +182,38 @@ describe('RendicionesAdminComponent', () => {
       const advanceItem = component.filteredItems.find((i) => i._id === 'adv1')!;
       expect(advanceItem.userName).toBe('Bob');
       expect(advanceItem.source).toBe('advance');
+    });
+
+    // VD-113: en el desplegado salía solo el nombre del centro de costo.
+    it('muestra el centro de costo con su código', () => {
+      const reportItem = component.filteredItems.find((i) => i._id === 'rep1')!;
+      expect(reportItem.projectName).toBe('CC-01 — Proyecto 1');
+    });
+
+    it('cae al nombre solo cuando el centro de costo no tiene código', () => {
+      expenseReportsService.findAllByClient.and.returnValue(
+        of([{ ...mockReport, projectId: { _id: 'p1', name: 'Proyecto 1' } } as any])
+      );
+      component.ngOnInit();
+
+      expect(component.filteredItems.find((i) => i._id === 'rep1')!.projectName).toBe('Proyecto 1');
+    });
+
+    it('expone la orden de trabajo del viático y de la directa (VD-113)', () => {
+      const viatico = component.filteredItems.find((i) => i._id === 'rep1')!;
+      expect(component.itemOrdenTrabajo(viatico)).toBe('LIM-SMI-1946');
+
+      const directa = {
+        ...viatico,
+        raw: { ...(viatico.raw as any), viaticoOrdenTrabajoId: undefined, directaOrdenTrabajoId: { _id: 'ot2', nombre: 'LIM-COM-22' } },
+      } as any;
+      expect(component.itemOrdenTrabajo(directa)).toBe('LIM-COM-22');
+    });
+
+    it('devuelve un guion cuando la rendición no tiene orden de trabajo', () => {
+      const item = component.filteredItems.find((i) => i._id === 'rep1')!;
+      const sinOt = { ...item, raw: { ...(item.raw as any), viaticoOrdenTrabajoId: undefined } } as any;
+      expect(component.itemOrdenTrabajo(sinOt)).toBe('—');
     });
 
     it('filters by userId', () => {

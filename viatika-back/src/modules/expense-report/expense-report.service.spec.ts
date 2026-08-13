@@ -1559,4 +1559,63 @@ describe('ExpenseReportService — findExpensesPaginated (búsqueda por RUC, VD-
     }
     expect(filter.$and).toBeUndefined()
   })
+
+  // VD-114: "Pendiente" leía `status` directo, pero ahí se guarda el resultado
+  // de la validación SUNAT al cargar el comprobante ('VALIDO_ACEPTADO',
+  // 'sunat_error'…), así que los que estaban en 0/2 aprobaciones no salían.
+  describe('filtro por estado (VD-114)', () => {
+    const filtroDe = () =>
+      mockExpenseModel.find.mock.calls[0][0] as {
+        status?: unknown
+        $and?: Array<Record<string, any>>
+      }
+
+    it('pendiente = ni aprobado ni rechazado, sin leer el estado SUNAT', async () => {
+      await service.findExpensesPaginated(reportId, { page: 1, limit: 10, status: 'pending' })
+
+      const filter = filtroDe()
+      expect(filter.status).toBeUndefined()
+      expect(filter.$and).toEqual([
+        { status: { $nin: ['approved', 'rejected'] } },
+        { contabilidadStatus: { $ne: 'rejected' } },
+      ])
+    })
+
+    it('rechazado incluye el rechazo de Contabilidad', async () => {
+      await service.findExpensesPaginated(reportId, { page: 1, limit: 10, status: 'rejected' })
+
+      expect(filtroDe().$and).toEqual([
+        { $or: [{ status: 'rejected' }, { contabilidadStatus: 'rejected' }] },
+      ])
+    })
+
+    it('aprobado sigue leyendo el estado combinado', async () => {
+      await service.findExpensesPaginated(reportId, { page: 1, limit: 10, status: 'approved' })
+
+      expect(filtroDe().status).toBe('approved')
+    })
+
+    it('"me falta aprobar" trae los pasos sin resolver donde el actor es aprobador', async () => {
+      const actorUserId = new Types.ObjectId().toString()
+
+      await service.findExpensesPaginated(reportId, {
+        page: 1,
+        limit: 10,
+        status: 'mine_pending',
+        actorUserId,
+      })
+
+      const [chainClause, notRejected] = filtroDe().$and!
+      const elem = (chainClause['approverChain'] as any).$elemMatch
+      expect(elem.approved).toEqual({ $ne: true })
+      expect(String(elem.approverIds)).toBe(actorUserId)
+      expect(notRejected).toEqual({ status: { $ne: 'rejected' } })
+    })
+
+    it('"me falta aprobar" sin usuario identificado no devuelve nada', async () => {
+      await service.findExpensesPaginated(reportId, { page: 1, limit: 10, status: 'mine_pending' })
+
+      expect(filtroDe().$and).toEqual([{ _id: null }])
+    })
+  })
 })

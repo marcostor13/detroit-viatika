@@ -29,12 +29,8 @@ describe('AdvanceService', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('create sends POST', () => {
-    service.create({ amount: 100 } as any).subscribe();
-    const req = httpMock.expectOne(BASE);
-    expect(req.request.method).toBe('POST');
-    req.flush({});
-  });
+  // `create` se retiró del servicio: los anticipos ya no se crean desde acá,
+  // viven como ExpenseReport type='viatico'.
 
   it('findMy sends GET with userId and clientId', () => {
     service.findMy().subscribe();
@@ -117,13 +113,6 @@ describe('AdvanceService', () => {
     httpMock.expectOne(`${BASE}/pending-returns/client/c1`).flush([]);
   });
 
-  it('findForViaticosPage sends GET without params', () => {
-    service.findForViaticosPage().subscribe();
-    httpMock.expectOne(`${BASE}/viaticos/list`).flush([]);
-  });
-
-  it('findForViaticosPage appends status and dateFrom as query string', () => {
-    service.findForViaticosPage({ status: 'pending', dateFrom: '2026-01-01' }).subscribe();
-    httpMock.expectOne(`${BASE}/viaticos/list?status=pending&dateFrom=2026-01-01`).flush([]);
-  });
+  // `findForViaticosPage` también se retiró: la pantalla de viáticos se sirve
+  // de expense-report, no de la colección de anticipos.
 });

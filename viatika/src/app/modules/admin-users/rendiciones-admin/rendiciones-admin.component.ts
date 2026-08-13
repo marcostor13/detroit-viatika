@@ -523,13 +523,12 @@ export class RendicionesAdminComponent implements OnInit {
     return item.projectName || '—';
   }
 
-  /** Orden de Trabajo imputada (solo viáticos). Vacío si no aplica. */
+  /** Orden de Trabajo imputada (viático o directa). Vacío si no aplica. */
   detailOrdenTrabajo(): string {
     const item = this.detailItem();
-    if (!item || item.source !== 'report') return '';
-    const ot = (item.raw as IExpenseReport).viaticoOrdenTrabajoId;
-    if (!ot) return '';
-    return typeof ot === 'object' ? (ot.nombre ?? '') : '';
+    if (!item) return '';
+    const ot = this.itemOrdenTrabajo(item);
+    return ot === '—' ? '' : ot;
   }
 
   /** Observaciones del colaborador (viático o anticipo). */
@@ -813,11 +812,34 @@ export class RendicionesAdminComponent implements OnInit {
     return user?.name ?? '—';
   }
 
+  /**
+   * Centro de costo con su código (VD-113): en el listado salía solo el nombre,
+   * y el código es lo que Contabilidad usa para identificarlo. Mismo criterio
+   * que el modal de detalle: se toma del populate y, si no vino, del catálogo
+   * de centros de costo ya cargado.
+   */
   private getProjectName(report: IExpenseReport): string {
     if (!report.projectId) return '—';
-    if (typeof report.projectId === 'object' && report.projectId?.name) return report.projectId.name;
+    if (typeof report.projectId === 'object' && report.projectId?.name) {
+      const p = report.projectId as { code?: string; name: string };
+      return p.code ? `${p.code} — ${p.name}` : p.name;
+    }
     const project = this.projects.find(p => p._id === report.projectId);
-    return project?.name ?? '—';
+    if (!project) return '—';
+    return project.code ? `${project.code} — ${project.name}` : project.name;
+  }
+
+  /**
+   * Orden de Trabajo imputada a la rendición (VD-113), para mostrarla junto al
+   * centro de costo. Cubre viático y directa, que la guardan en campos propios.
+   */
+  itemOrdenTrabajo(item: UnifiedRendicionItem): string {
+    if (item.source !== 'report') return '—';
+    const report = item.raw as IExpenseReport;
+    // El listado la trae poblada (`nombre`); sin populate no hay nombre que mostrar.
+    const ot = report.viaticoOrdenTrabajoId ?? report.directaOrdenTrabajoId;
+    if (!ot || typeof ot !== 'object') return '—';
+    return ot.nombre || '—';
   }
 
   private initials(name: string): string {

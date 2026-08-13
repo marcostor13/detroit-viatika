@@ -17,7 +17,7 @@ export const PROMPT1 = `
       - direccionEmisor: normalmente es una direccion, por ejemplo Av. Lima 123, si hay 2, analiza cual es la direccion del emisor, normalmente la direccion del emisor está en la cabecera de la factura y puede venir sin el titulo de "Dirección".
       - fechaEmision: normalmente es una fecha, por ejemplo 2021-01-01 ó 01/01/2021 ó 01-01-2021, analiza el formato de la fecha, puede venir en diferentes formatos, el resultado debes devolverlo con un formato de fecha valido, así: dd-mm-yyyy ejemplo: 14-05-2025
       - placaVehiculo: si en el documento aparece una placa de vehículo (formato peruano u otro, ej: ABC-123, A1B-234, XYZ789), extráela tal como aparece. Si no hay placa de vehículo en el documento, omite este campo o devuelve null.
-      - comentario: escribe un resumen conciso (1 a 2 oraciones) del concepto o propósito del comprobante basándote en los datos del documento: tipo de bien o servicio, nombre del proveedor y monto si están disponibles. Este campo siempre debe tener un valor descriptivo, nunca lo dejes vacío.
+      - comentario: descripción breve del concepto del comprobante: una sola frase corta (máximo 60 caracteres), sin punto final. Escribe únicamente QUÉ se compró o contrató. PROHIBIDO incluir montos, cifras, símbolos de moneda, nombres o razones sociales de empresas o proveedores, RUC, serie, correlativo o fechas. Ejemplos correctos: "Servicio de transporte de carga", "Almuerzo de trabajo", "Compra de útiles de oficina", "Servicio de hospedaje". Ejemplos incorrectos: "Servicio de transporte de carga por Empresa de Transporte S.A. por S/ 1,000.00", "Factura E001-123 de ALTURA". Este campo siempre debe tener un valor descriptivo, nunca lo dejes vacío.
       # Campos del desglose contable (para asientos):
       - baseAfecta: base imponible gravada con IGV (valor venta afecto). Es el subtotal sobre el que se calcula el IGV. Número, sin símbolo de moneda. Si no aparece, déjalo en null.
       - igv: monto del IGV declarado en el comprobante (no la tasa, el monto en dinero). Número. Si el comprobante no tiene IGV (boleta sin IGV, inafecto), pon 0. Si no se puede determinar, null.
@@ -56,7 +56,7 @@ export const PROMPT1 = `
       "direccionEmisor": "Av. Lima 123",
       "fechaEmision": "14-05-2025",
       "placaVehiculo": "ABC-123",
-      "comentario": "Servicio de transporte de carga por Empresa de Transporte S.A. por S/ 1,000.00.",
+      "comentario": "Servicio de transporte de carga",
       "baseAfecta": 847.46,
       "igv": 152.54,
       "tasaIgv": 18,
@@ -90,7 +90,7 @@ export const PROMPT1 = `
       "moneda": "S/",
       "razonSocial": "ALTURA",
       "fechaEmision": "01-06-2026",
-      "comentario": "Servicio de movilidad por ALTURA por S/ 90.00.",
+      "comentario": "Servicio de movilidad",
       "baseAfecta": 0,
       "igv": 0,
       "tasaIgv": 0,
@@ -108,7 +108,7 @@ export const PROMPT1 = `
       - Debes usar el formato de salida especificado.
       - Debes usar la precisión y el contexto del texto de la factura para extraer los datos.
       - Si no encuentras todos los datos necesarios, responde igualmente con el objeto incluyendo los campos que sí pudiste extraer.
-      - El campo "comentario" es obligatorio: siempre debe contener una descripción del comprobante.
+      - El campo "comentario" es obligatorio: siempre debe contener una descripción breve del concepto, sin montos ni nombres de empresas.
       - Solo responde con el Objeto JSON, no agregues comentarios o explicaciones.
 
     # Salida:
