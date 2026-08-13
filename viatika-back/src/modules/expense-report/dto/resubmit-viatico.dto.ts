@@ -11,7 +11,7 @@ import {
   IsDateString,
   MaxLength,
 } from 'class-validator'
-import { Type } from 'class-transformer'
+import { Type, Transform } from 'class-transformer'
 import { CreateAdvanceLineDto } from '../../advance/dto/create-advance.dto'
 
 export class ResubmitViaticoDto {
@@ -60,9 +60,11 @@ export class ResubmitViaticoDto {
   @Type(() => CreateAdvanceLineDto)
   lines?: CreateAdvanceLineDto[]
 
+  /** Obligatoria igual que al crear (VD-102). */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
-  @IsOptional()
-  observations?: string
+  @IsNotEmpty({ message: 'Las observaciones son obligatorias' })
+  observations: string
 
   /** Cuenta bancaria alternativa para el depósito (opcional). */
   @IsString()

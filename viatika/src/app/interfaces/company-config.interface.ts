@@ -13,6 +13,10 @@ export interface ICompanyConfig {
   paymentAccount?: string;
   limits?: {
     movilidadDiario?: number | null;
+    /** Topes por comida de "Alimentación sin documentación" (VD-109), por gasto. */
+    alimentacionDesayuno?: number | null;
+    alimentacionAlmuerzo?: number | null;
+    alimentacionCena?: number | null;
   };
   notificationSettings?: {
     enabled: boolean;

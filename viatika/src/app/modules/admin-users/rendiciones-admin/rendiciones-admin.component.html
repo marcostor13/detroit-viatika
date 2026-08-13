@@ -281,10 +281,15 @@
         @if (isExpanded(item._id)) {
         <tr class="bg-background/60">
           <td class="px-4 pb-3.5 pt-0" colspan="7">
+            <!-- VD-113: el centro de costo va con su código y la OT al costado. -->
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 pl-8">
               <div>
                 <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Centro de Costo</span>
                 <span class="text-sm text-secondary break-words">{{ item.projectName }}</span>
+              </div>
+              <div>
+                <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Orden de Trabajo</span>
+                <span class="text-sm text-secondary break-words">{{ itemOrdenTrabajo(item) }}</span>
               </div>
               <div>
                 <span class="block text-tertiary uppercase tracking-wide text-[10px] font-semibold">Fecha</span>
@@ -325,7 +330,10 @@
                   </span>
                   <p class="text-xs text-secondary truncate font-medium" [title]="item.title">{{ item.title }}</p>
                 </div>
-                <p class="text-xs text-tertiary mt-0.5 truncate">{{ item.projectName }}</p>
+                <p class="text-xs text-tertiary mt-0.5 truncate">
+                  {{ item.projectName }}
+                  @if (itemOrdenTrabajo(item) !== '—') { · OT {{ itemOrdenTrabajo(item) }} }
+                </p>
               </div>
               <div class="flex flex-col items-end gap-0.5">
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 uppercase" [class]="item.statusColor">

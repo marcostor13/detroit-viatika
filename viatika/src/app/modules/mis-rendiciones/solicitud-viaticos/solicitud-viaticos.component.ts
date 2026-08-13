@@ -7,8 +7,10 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
+  AbstractControl,
   FormBuilder,
   ReactiveFormsModule,
+  ValidationErrors,
   Validators,
 } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -36,6 +38,12 @@ import {
 import { ICreateViaticoPayload, IResubmitViaticoPayload, IExpenseReport } from '../../../interfaces/expense-report.interface';
 import { AccountingConfigService } from '../../../services/accounting-config.service';
 import { MONEDA_CATALOG, DEFAULT_MONEDA, MonedaInfo, monedaSymbol } from '../../../constants/moneda';
+
+/** `required` que tampoco acepta un texto compuesto solo de espacios. */
+function requiredNonBlank(control: AbstractControl): ValidationErrors | null {
+  const value = control.value;
+  return typeof value === 'string' && value.trim().length > 0 ? null : { required: true };
+}
 
 @Component({
   selector: 'app-solicitud-viaticos',
@@ -94,7 +102,8 @@ export class SolicitudViaticosComponent implements OnInit {
     endDate: ['', Validators.required],
     projectId: ['', Validators.required],
     ordenTrabajoId: [''],
-    observations: [''],
+    // VD-102: la justificación es obligatoria en la solicitud de fondos.
+    observations: ['', requiredNonBlank],
     amount: [null as number | null, [Validators.required, Validators.min(0.01)]],
     moneda: [DEFAULT_MONEDA, Validators.required],
   });
@@ -357,7 +366,7 @@ export class SolicitudViaticosComponent implements OnInit {
         endDate: `${endStr}T12:00:00.000Z`,
         projectId,
         ordenTrabajoId,
-        observations: (this.form.value.observations || '').trim() || undefined,
+        observations: (this.form.value.observations || '').trim(),
       };
       this.expenseReportsService.resubmitViatico(viatico._id, resubmitPayload).subscribe({
         next: () => this.onSubmitSuccess(true),
@@ -400,7 +409,7 @@ export class SolicitudViaticosComponent implements OnInit {
       endDate: `${endStr}T12:00:00.000Z`,
       projectId,
       ordenTrabajoId,
-      observations: (this.form.value.observations || '').trim() || undefined,
+      observations: (this.form.value.observations || '').trim(),
     };
     this.expenseReportsService.createViatico(viaticoPayload).subscribe({
       next: () => this.onSubmitSuccess(false),

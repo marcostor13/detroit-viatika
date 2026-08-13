@@ -24,7 +24,7 @@ describe('AddInvoiceComponent', () => {
   let uploadService: jasmine.SpyObj<UploadService>;
   let expenseService: jasmine.SpyObj<ExpenseService>;
   let ordenTrabajoService: jasmine.SpyObj<OrdenTrabajoService>;
-  let companyConfigService: { companyConfig$: any };
+  let companyConfigService: { companyConfig$: any; getCompanyConfig?: () => any };
 
   const currentUser = {
     _id: 'u1',
@@ -101,7 +101,11 @@ describe('AddInvoiceComponent', () => {
     ordenTrabajoService = jasmine.createSpyObj('OrdenTrabajoService', ['getAll']);
     ordenTrabajoService.getAll.and.returnValue(of([]));
 
-    companyConfigService = { companyConfig$: of({ limits: { movilidadDiario: 500 } }) };
+    const limitsPorDefecto = { limits: { movilidadDiario: 500 } };
+    companyConfigService = {
+      companyConfig$: of(limitsPorDefecto),
+      getCompanyConfig: () => limitsPorDefecto,
+    };
   });
 
   function createComponent(routeParams: any = {}, queryParams: any = {}): AddInvoiceComponent {
@@ -587,6 +591,18 @@ describe('AddInvoiceComponent', () => {
   describe('categoría en Otros Gastos (VD-100)', () => {
     const catAli = { _id: 'cat-ali', name: 'Alimentacion', cuenta: '91.3.1.410' } as any;
     const catAliCom = { _id: 'cat-ali-com', name: 'Alimentacion COM', cuenta: '92.3.1.410' } as any;
+    // Nombre tal como está cargado en Detroit: el texto explicativo va dentro
+    // del propio nombre y menciona "alimentación" (VD-108).
+    const catRep = {
+      _id: 'cat-rep',
+      name: 'Gastos Reparables (gastos sin factura)\n- alimentación en lugares donde no existan proveedores que facturen\n- propinas',
+      cuenta: '915998',
+    } as any;
+    const catRepCom = {
+      _id: 'cat-rep-com',
+      name: 'Gastos Reparables (gastos sin factura)\n- alimentación en lugares donde no existan proveedores que facturen COM',
+      cuenta: '925998',
+    } as any;
 
     it('no muestra la categoría en el bloque superior para otros_gastos', () => {
       const component = createComponent();
@@ -598,46 +614,115 @@ describe('AddInvoiceComponent', () => {
       expect(component.showTopCategorySelect).toBeFalse();
     });
 
-    it('autoselecciona la categoría de Alimentación en AL cuando hay una sola', () => {
-      const component = createComponent();
-      component.categories = [catAli, { _id: 'c2', name: 'Viajes' } as any];
-      component.setExpenseType('otros_gastos');
-      component.selectOtrosSubTipo('AL');
+    describe('comida y tope en AL (VD-109)', () => {
+      function componentConTopes(): AddInvoiceComponent {
+        companyConfigService = {
+          companyConfig$: of({
+            limits: { movilidadDiario: 500, alimentacionDesayuno: 15, alimentacionAlmuerzo: 30 },
+          }),
+          getCompanyConfig: () => ({
+            limits: { movilidadDiario: 500, alimentacionDesayuno: 15, alimentacionAlmuerzo: 30 },
+          }),
+        };
+        const component = createComponent();
+        component.categories = [catRep];
+        component.setExpenseType('otros_gastos');
+        component.selectOtrosSubTipo('AL');
+        return component;
+      }
 
-      expect(component.alimentacionCategoryAuto()?._id).toBe('cat-ali');
-      expect(component.form.get('categoryId')?.value).toBe('cat-ali');
+      it('expone el tope de la comida elegida', () => {
+        const component = componentConTopes();
+        component.form.patchValue({ tipoComida: 'almuerzo' });
+
+        expect(component.topeComidaSeleccionada).toBe(30);
+        expect(component.comidasDisponibles.find((c) => c.key === 'cena')?.tope).toBeNull();
+      });
+
+      it('marca el monto que supera el tope y bloquea el guardado', () => {
+        const component = componentConTopes();
+        component.form.patchValue({ tipoComida: 'almuerzo', totalOtros: 45, declaracionJurada: true });
+
+        expect(component.montoSuperaTopeComida).toBeTrue();
+        expect(component.isFormValid()).toBeFalse();
+
+        component.saveOtherExpense();
+        expect(invoicesService.createOtherExpense).not.toHaveBeenCalled();
+      });
+
+      it('deja guardar el monto que llega justo al tope', () => {
+        const component = componentConTopes();
+        component.form.patchValue({ tipoComida: 'almuerzo', totalOtros: 30 });
+
+        expect(component.montoSuperaTopeComida).toBeFalse();
+      });
+
+      it('sin tope configurado para esa comida no bloquea', () => {
+        const component = componentConTopes();
+        component.form.patchValue({ tipoComida: 'cena', totalOtros: 500 });
+
+        expect(component.montoSuperaTopeComida).toBeFalse();
+      });
+
+      it('no guarda sin declarar la comida', () => {
+        const component = componentConTopes();
+        component.form.patchValue({ tipoComida: '', totalOtros: 20, declaracionJurada: true });
+
+        expect(component.isFormValid()).toBeFalse();
+        component.saveOtherExpense();
+        expect(invoicesService.createOtherExpense).not.toHaveBeenCalled();
+      });
     });
 
-    it('con varias categorías de Alimentación deja elegir entre ellas', () => {
+    it('autoselecciona Gastos Reparables en AL cuando hay una sola (VD-108)', () => {
       const component = createComponent();
-      component.categories = [catAli, catAliCom, { _id: 'c2', name: 'Viajes' } as any];
+      component.categories = [catRep, catAli, { _id: 'c2', name: 'Viajes' } as any];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()?._id).toBe('cat-rep');
+      expect(component.form.get('categoryId')?.value).toBe('cat-rep');
+    });
+
+    it('con las dos de Gastos Reparables (Servicios y COM) deja elegir entre ellas', () => {
+      const component = createComponent();
+      component.categories = [catRep, catRepCom, catAli, { _id: 'c2', name: 'Viajes' } as any];
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('AL');
+
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.form.get('categoryId')?.value).toBeFalsy();
-      expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['cat-ali', 'cat-ali-com']);
+      expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['cat-rep', 'cat-rep-com']);
     });
 
-    it('sin categoría de Alimentación cae al listado completo en vez de bloquear', () => {
+    it('sin categoría de Gastos Reparables cae al listado completo en vez de bloquear', () => {
       const component = createComponent();
       component.categories = [{ _id: 'c2', name: 'Viajes' } as any];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['c2']);
+    });
+
+    it('la DJ al extranjero conserva las de Alimentación y no toma Gastos Reparables (VD-108)', () => {
+      const component = createComponent();
+      component.categories = [catRep, catRepCom, catAli, catAliCom];
+
+      expect(component.djCategoriesFor('alimentacion').map((c) => c._id)).toEqual([
+        'cat-ali', 'cat-ali-com',
+      ]);
     });
 
     it('suelta la categoría autoasignada al cambiar de AL a otro tipo de documento', () => {
       const component = createComponent();
-      component.categories = [catAli];
+      component.categories = [catRep];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
-      expect(component.form.get('categoryId')?.value).toBe('cat-ali');
+      expect(component.form.get('categoryId')?.value).toBe('cat-rep');
 
       component.selectOtrosSubTipo('BV');
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.form.get('categoryId')?.value).toBeFalsy();
     });
 
@@ -654,12 +739,12 @@ describe('AddInvoiceComponent', () => {
 
     it('al editar respeta la categoría guardada y no autoasigna', () => {
       const component = createComponent({ id: 'inv1' });
-      component.categories = [catAli];
+      component.categories = [catRep];
       component.setExpenseType('otros_gastos');
       component.form.get('categoryId')?.setValue('otra-cat');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.form.get('categoryId')?.value).toBe('otra-cat');
     });
 
@@ -730,26 +815,49 @@ describe('AddInvoiceComponent', () => {
       });
 
       it('en AL muestra la categoría autoasignada como texto, sin selector ni leyenda', () => {
-        const fixture = renderComponent([catAli]);
+        const fixture = renderComponent([catRep]);
         fixture.componentInstance.selectOtrosSubTipo('AL');
         fixture.detectChanges();
 
         const texto: string = fixture.nativeElement.textContent;
-        expect(texto).toContain('Alimentacion');
+        expect(texto).toContain('Gastos Reparables');
         expect(texto).not.toContain('Asignada automáticamente');
         expect(
           fixture.nativeElement.querySelector('app-search-select[formControlName="categoryId"]')
         ).toBeNull();
       });
 
-      it('en AL con varias categorías de Alimentación sí muestra el selector', () => {
-        const fixture = renderComponent([catAli, catAliCom]);
+      it('en AL con las dos de Gastos Reparables sí muestra el selector', () => {
+        const fixture = renderComponent([catRep, catRepCom]);
         fixture.componentInstance.selectOtrosSubTipo('AL');
         fixture.detectChanges();
 
         expect(
           fixture.nativeElement.querySelector('app-search-select[formControlName="categoryId"]')
         ).toBeTruthy();
+      });
+
+      // VD-110: el adjunto de AL ya se guardaba sin archivo, pero la etiqueta
+      // lo pedía con asterisco y el colaborador lo leía como obligatorio.
+      it('en AL el adjunto se rotula como opcional', () => {
+        const fixture = renderComponent([catRep]);
+        fixture.componentInstance.selectOtrosSubTipo('AL');
+        fixture.detectChanges();
+
+        const texto: string = fixture.nativeElement.textContent;
+        expect(texto).toContain('Adjunto');
+        expect(texto).toContain('(opcional)');
+        expect(texto).toContain('Haz clic para adjuntar un respaldo, si lo tienes');
+      });
+
+      it('en los demás sub-tipos el adjunto sigue siendo obligatorio', () => {
+        const fixture = renderComponent([catRep]);
+        fixture.componentInstance.selectOtrosSubTipo('BV');
+        fixture.detectChanges();
+
+        const texto: string = fixture.nativeElement.textContent;
+        expect(texto).toContain('Haz clic para adjuntar un comprobante');
+        expect(fixture.componentInstance.isFormValid()).toBeFalse();
       });
 
       it('no deja el selector de categoría en el bloque de arriba', () => {
@@ -811,7 +919,11 @@ describe('AddInvoiceComponent', () => {
 
     it('AL (Alimentación sin documentación) is valid without an attached file (VD-91)', () => {
       const component = createComponent();
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true });
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true,
+        // VD-109: AL declara la comida.
+        tipoComida: 'almuerzo',
+      });
       component.setExpenseType('otros_gastos');
       component.otrosSubTipo.set('AL');
       // AL no requiere comprobante adjunto, pero sí el checkbox de declaración jurada.
@@ -984,7 +1096,7 @@ describe('AddInvoiceComponent', () => {
         categoryId: 'cat1',
         declaracionJurada: true,
         totalOtros: 40,
-        description: 'Almuerzo de trabajo',
+        tipoComida: 'almuerzo',
       });
       component.otrosSubTipo.set('AL');
       // Sin selectedFile: AL va sin adjunto.
@@ -992,6 +1104,7 @@ describe('AddInvoiceComponent', () => {
 
       const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
       expect(payload.subTipo).toBe('AL');
+      expect(payload.tipoComida).toBe('almuerzo');
       expect(payload.declaracionJurada).toBeTrue();
       expect(payload.declaracionJuradaFirmante).toBe('John Doe');
       expect(payload.imageUrl).toBeUndefined();
@@ -1113,6 +1226,37 @@ describe('AddInvoiceComponent', () => {
         jasmine.stringMatching(/firma digital/i),
         'error'
       );
+    });
+  });
+
+  describe('onMobilityPlaceTyped (VD-104: dirección editada a mano)', () => {
+    it('descarta coordenadas y distancia cuando se reescribe el origen', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        origen: 'A', origenLat: -12.1, origenLng: -77.0,
+        destino: 'B', destinoLat: -12.2, destinoLng: -77.1,
+        distanciaKm: 5.4,
+      });
+
+      component.onMobilityPlaceTyped(0, 'origen');
+
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origenLat')?.value).toBeNull();
+      expect(row.get('origenLng')?.value).toBeNull();
+      expect(row.get('distanciaKm')?.value).toBeNull();
+      // El destino no se toca.
+      expect(row.get('destinoLat')?.value).toBe(-12.2);
+    });
+
+    it('no hace nada en una fila sin coordenadas', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({ origen: 'A', distanciaKm: 3 });
+
+      component.onMobilityPlaceTyped(0, 'origen');
+
+      expect(component.mobilityRowsArray.at(0).get('distanciaKm')?.value).toBe(3);
     });
   });
 
@@ -1303,8 +1447,9 @@ describe('AddInvoiceComponent', () => {
       const component = setupEdit({
         _id: 'inv1',
         expenseType: 'otros_gastos',
+        subTipo: 'OT',
         total: 30,
-        data: JSON.stringify({ description: 'old', foo: 'bar' }),
+        data: JSON.stringify({ description: 'old', foo: 'bar', subTipo: 'OT' }),
       });
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 60, description: 'Peaje nuevo' });
       component.update();
@@ -1314,6 +1459,24 @@ describe('AddInvoiceComponent', () => {
       const data = JSON.parse(payload.data);
       expect(data.description).toBe('Peaje nuevo');
       expect(data.foo).toBe('bar');
+    });
+
+    it('al editar un AL manda la comida y la usa como descripción (VD-109)', () => {
+      invoicesService.updateInvoice.and.returnValue(of({}));
+      const component = setupEdit({
+        _id: 'inv1',
+        expenseType: 'otros_gastos',
+        subTipo: 'AL',
+        total: 20,
+        tipoComida: 'desayuno',
+        data: JSON.stringify({ description: 'Desayuno', subTipo: 'AL' }),
+      });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 12, tipoComida: 'desayuno' });
+      component.update();
+
+      const payload = invoicesService.updateInvoice.calls.mostRecent().args[1] as any;
+      expect(payload.tipoComida).toBe('desayuno');
+      expect(payload.description).toBe('Desayuno');
     });
 
     it('blocks the update when a mobility row is flagged as tercero without a selected worker', () => {

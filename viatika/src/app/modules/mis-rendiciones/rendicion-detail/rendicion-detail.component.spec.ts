@@ -138,6 +138,170 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('filtro de comprobantes (VD-114)', () => {
+    it('ofrece "Me falta aprobar" a quien aprueba', () => {
+      userState.isApprover.and.returnValue(true);
+      expect(component.canFilterMyPendingApprovals()).toBeTrue();
+    });
+
+    it('no lo ofrece a un colaborador sin rol de aprobación', () => {
+      expect(component.canFilterMyPendingApprovals()).toBeFalse();
+    });
+
+    it('manda el filtro elegido al backend', () => {
+      component.expFilterStatus.set('mine_pending');
+      component.applyExpenseFilters();
+
+      const opts = expenseReportsService.findExpensesPaginated.calls.mostRecent().args[1] as any;
+      expect(opts.status).toBe('mine_pending');
+      expect(opts.page).toBe(1);
+    });
+  });
+
+  describe('cabecera: centro de costo y OT (VD-113)', () => {
+    it('toma el código del centro de costo y la OT desde la orden de trabajo del reporte', () => {
+      component.report = makeReport({
+        viaticoOrdenTrabajoId: {
+          _id: 'ot1',
+          nombre: 'LIM-SMI-1946',
+          costCenterId: { _id: 'p1', code: '9101', name: 'Servicios' },
+        },
+      } as any);
+
+      expect(component.getHeaderCentroCostoCodigo()).toBe('9101');
+      expect(component.getHeaderCentroCosto()).toBe('Servicios');
+      expect(component.getHeaderOrdenTrabajo()).toBe('LIM-SMI-1946');
+    });
+
+    // Una rendición sin OT (directa) igual debe mostrar su centro de costo.
+    it('sin orden de trabajo cae al centro de costo del reporte', () => {
+      component.report = makeReport({
+        projectId: { _id: 'p2', code: '223', name: 'Comercial' },
+      } as any);
+
+      expect(component.getHeaderCentroCostoCodigo()).toBe('223');
+      expect(component.getHeaderCentroCosto()).toBe('Comercial');
+      expect(component.getHeaderOrdenTrabajo()).toBeUndefined();
+    });
+  });
+
+  describe('buildExportData — descripción de la planilla (VD-107)', () => {
+    it('la planilla de movilidad se describe siempre igual, no con la gestión de su primera fila', () => {
+      component.report = makeReport({
+        expenseIds: [{
+          _id: 'e1',
+          expenseType: 'planilla_movilidad',
+          internalCode: 'PM-001',
+          total: 60,
+          comentario: 'Comentario suelto',
+          mobilityRows: [
+            { fecha: '2026-02-01', total: 30, origen: 'A', destino: 'B', gestion: 'Visita a obra' },
+            { fecha: '2026-02-02', total: 30, origen: 'B', destino: 'C', gestion: 'Retorno' },
+          ],
+        }] as any,
+      });
+
+      const row = component.buildExportData()!.comprobantes[0];
+
+      // La columna DESCRIPCIÓN del formato se arma como `comentario || descripcion`.
+      expect(row.comentario || row.descripcion).toBe('Planilla de Movilidad');
+      expect(row.proveedor).toBe('Planilla de Movilidad');
+      expect(row.numeroDocumento).toBe('PM-001');
+    });
+
+    it('los demás comprobantes conservan su concepto y comentario', () => {
+      component.report = makeReport({
+        expenseIds: [{
+          _id: 'e2',
+          expenseType: 'factura',
+          total: 100,
+          comentario: 'Servicio de transporte de carga',
+          data: JSON.stringify({ razonSocial: 'ACME SAC' }),
+        }] as any,
+      });
+
+      const row = component.buildExportData()!.comprobantes[0];
+
+      expect(row.comentario).toBe('Servicio de transporte de carga');
+      expect(row.descripcion).toBe('ACME SAC');
+    });
+  });
+
+  describe('buildMobilityPagesByDailyCap (VD-106)', () => {
+    function pm(id: string, rows: Array<{ fecha: string; total: number; origen?: string; destino?: string; gestion?: string }>) {
+      return {
+        _id: id,
+        expenseType: 'planilla_movilidad',
+        internalCode: `PM-${id}`,
+        mobilityRows: rows.map(r => ({
+          fecha: r.fecha,
+          total: r.total,
+          origen: r.origen ?? 'A',
+          destino: r.destino ?? 'B',
+          gestion: r.gestion ?? 'g',
+        })),
+      } as Record<string, unknown>;
+    }
+
+    function build(expenses: Record<string, unknown>[]) {
+      return (component as any).buildMobilityPagesByDailyCap(expenses);
+    }
+
+    beforeEach(() => {
+      companyConfigService.getCompanyConfig.and.returnValue({ limits: { movilidadDiario: 40 } } as any);
+      (component as any).report = makeReport();
+    });
+
+    it('devuelve una planilla por cada PM y no mezcla sus gestiones', () => {
+      const pages = build([
+        pm('e1', [{ fecha: '2026-02-01', total: 50, gestion: 'uno' }]),
+        pm('e2', [{ fecha: '2026-02-02', total: 30, gestion: 'dos' }]),
+      ]);
+
+      expect(pages.length).toBe(2);
+      expect(pages[0].internalCode).toBe('PM-e1');
+      expect(pages[1].internalCode).toBe('PM-e2');
+      expect(pages[0].rows.every((r: any) => r.gestion === 'uno')).toBeTrue();
+      expect(pages[1].rows.every((r: any) => r.gestion === 'dos')).toBeTrue();
+    });
+
+    it('lista las gestiones repartidas por dia sin pasar del tope diario', () => {
+      const pages = build([pm('e1', [{ fecha: '2026-02-01', total: 100 }])]);
+
+      expect(pages.length).toBe(1);
+      const totals = pages[0].rows.map((r: any) => r.total);
+      expect(totals).toEqual([40, 40, 20]);
+      expect(pages[0].total).toBe(100);
+      // Un dia distinto por tramo.
+      expect(new Set(pages[0].rows.map((r: any) => r.fecha)).size).toBe(3);
+    });
+
+    it('parte una gestion entre dos dias y conserva el total de la planilla', () => {
+      const pages = build([
+        pm('e1', [
+          { fecha: '2026-02-01', total: 25, gestion: 'A' },
+          { fecha: '2026-02-01', total: 30, gestion: 'B' },
+          { fecha: '2026-02-01', total: 25, gestion: 'C' },
+        ]),
+      ]);
+
+      const rows = pages[0].rows;
+      expect(rows.map((r: any) => [r.gestion, r.total])).toEqual([
+        ['A', 25], ['B', 15], ['B', 15], ['C', 25],
+      ]);
+      // Primer dia: A 25 + B 15 = 40.
+      expect(rows[0].fecha).toBe(rows[1].fecha);
+      expect(rows[2].fecha).toBe(rows[3].fecha);
+      expect(rows[0].fecha).not.toBe(rows[2].fecha);
+      expect(pages[0].total).toBe(80);
+    });
+
+    it('ignora una planilla sin filas o sin importe', () => {
+      expect(build([pm('e1', [])]).length).toBe(0);
+      expect(build([pm('e1', [{ fecha: '2026-02-01', total: 0 }])]).length).toBe(0);
+    });
+  });
+
   describe('getExpenseConceptoColumn (VD-64)', () => {
     it('muestra el comentario del gasto cuando existe', () => {
       const expense = {
@@ -567,10 +731,20 @@ describe('RendicionDetailComponent', () => {
       expect(component.canMutateOwnExpense({ createdBy: 'u1', status: 'pending' })).toBeTrue();
     });
 
-    it('canMutateExpense allows admins to mutate pending expenses on non-finalized reports', () => {
+    // VD-69: editar o eliminar un comprobante es exclusivo de su dueño. El test
+    // anterior daba por válido que Contabilidad mutara comprobantes ajenos, que
+    // es justo lo que ese cambio quitó.
+    it('canMutateExpense bloquea a Contabilidad sobre comprobantes ajenos (VD-69)', () => {
       component.report = makeReport({ status: 'submitted', userId: { _id: 'other', name: 'x' } as any });
       userState.isContabilidad.and.returnValue(true);
-      expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeTrue();
+      expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeFalse();
+    });
+
+    it('canMutateExpense deja a Contabilidad editar sus propios comprobantes', () => {
+      component.report = makeReport({ status: 'open' });
+      component.advances = [makeAdvance({ status: 'paid' })];
+      userState.isContabilidad.and.returnValue(true);
+      expect(component.canMutateExpense({ createdBy: 'u1', status: 'pending' })).toBeTrue();
     });
 
     it('canMutateExpense bloquea al aprobador N1/N2 sobre comprobantes ajenos (VD-69)', () => {

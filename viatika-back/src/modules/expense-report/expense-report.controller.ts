@@ -51,7 +51,9 @@ export class ExpenseReportController {
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos los roles, Tesorería incluida.
+    ROLES.TESORERIA
   )
   @Post()
   async create(
@@ -198,9 +200,29 @@ export class ExpenseReportController {
 
   @UseGuards(AuthGuard('jwt'))
   @Get('client/:clientId')
-  async findAllByClient(@Param('clientId') clientId: string, @Request() req: any) {
+  async findAllByClient(
+    @Param('clientId') clientId: string,
+    @Request() req: any,
+    @Query('scope') scope?: string
+  ) {
     const role = req.user.roles[0]
     const userId = req.user._id || req.user.sub
+    // Este endpoint alimenta dos pantallas distintas: el listado administrativo
+    // (/rendiciones), que debe ver TODAS las rendiciones de la empresa, y la cola
+    // de aprobación del Inicio, que debe seguir acotada a la cadena propia. Por
+    // eso la visión global se pide explícitamente con `?scope=all` en vez de
+    // deducirse del rol: un Contabilidad que además es aprobador N1/N2 de algún
+    // centro de costo caía en la rama de aprobador y veía solo su cadena, a
+    // diferencia de sus pares de Contabilidad que no aprueban nada.
+    const canSeeAllReports = [
+      ROLES.ADMIN,
+      ROLES.SUPER_ADMIN,
+      ROLES.CONTABILIDAD,
+      ROLES.TESORERIA,
+    ].includes(role)
+    if (scope === 'all' && canSeeAllReports) {
+      return this.expenseReportService.findAllByClient(clientId)
+    }
     // El rol "Coordinador" casi nunca se asigna literalmente: en la práctica un
     // aprobador es un Colaborador asignado como N1/N2 en algún centro de costo.
     // Sin este chequeo, un aprobador-Colaborador nunca entraba a esta rama y no
@@ -276,6 +298,7 @@ export class ExpenseReportController {
   @UseGuards(AuthGuard('jwt'))
   @Get(':id/expenses')
   findExpensesPaginated(
+    @Request() req: any,
     @Param('id') id: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
@@ -289,6 +312,8 @@ export class ExpenseReportController {
       type,
       status,
       search,
+      // VD-114: el filtro "Me falta aprobar" necesita saber quién consulta.
+      actorUserId: String(req.user._id || req.user.sub),
     })
   }
 
@@ -304,7 +329,8 @@ export class ExpenseReportController {
     ROLES.SUPER_ADMIN,
     ROLES.COLABORADOR,
     ROLES.COORDINADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    ROLES.TESORERIA
   )
   @Patch(':id')
   async update(
@@ -429,7 +455,9 @@ export class ExpenseReportController {
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN,
     ROLES.COLABORADOR,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos los roles, Tesorería incluida.
+    ROLES.TESORERIA
   )
   @Patch(':id/cancel')
   async cancel(
@@ -455,7 +483,8 @@ export class ExpenseReportController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
+  // VD-115: el dueño de la rendición la elimina sin importar su rol.
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR, ROLES.TESORERIA)
   @Get(':id/deletion-preview')
   async getDeletionPreview(@Param('id') id: string, @Request() req: any) {
     return this.expenseReportService.getDeletionPreview(id, {
@@ -465,7 +494,8 @@ export class ExpenseReportController {
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR)
+  // VD-115: el dueño de la rendición la elimina sin importar su rol.
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.COLABORADOR, ROLES.TESORERIA)
   @Delete(':id')
   async remove(@Param('id') id: string, @Request() req: any) {
     const result = await this.expenseReportService.remove(id, {

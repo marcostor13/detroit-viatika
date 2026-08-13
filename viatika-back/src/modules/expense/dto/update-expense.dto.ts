@@ -6,10 +6,17 @@ import {
   IsArray,
   IsBoolean,
   IsObject,
+  IsIn,
 } from 'class-validator'
 import { ExpenseStatus, MobilityRow } from '../entities/expense.entity'
+import { TIPOS_COMIDA, TipoComida } from '../../client/entities/client.entity'
 
 export class UpdateExpenseDto {
+  /** Comida declarada en el sub-tipo AL (VD-109). */
+  @IsIn(TIPOS_COMIDA)
+  @IsOptional()
+  tipoComida?: TipoComida
+
   @IsString()
   @IsOptional()
   proyectId?: string

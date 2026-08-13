@@ -157,7 +157,11 @@ describe('TesoreriaComponent', () => {
       userState.isContabilidad.and.returnValue(true);
       component.pendingReturns = [makeAdvance()];
       const tabs = component.tabsList;
-      expect(tabs.map(t => t.value)).toEqual(['pendientes', 'aprobados', 'devoluciones', 'rendiciones-directas']);
+      // VD-37: "Reembolsos" (lo que se le paga al colaborador) y "Devoluciones"
+      // (lo que él devuelve) son pestañas separadas.
+      expect(tabs.map(t => t.value)).toEqual([
+        'pendientes', 'aprobados', 'reembolsos', 'devoluciones', 'rendiciones-directas',
+      ]);
       expect(tabs.find(t => t.value === 'devoluciones')?.badge).toBe(1);
     });
 
@@ -677,10 +681,8 @@ describe('TesoreriaComponent', () => {
       expect(component.directaReports()).toEqual([{ _id: 'd1' }]);
     });
 
-    it('goToNuevaRendicionDirecta navigates to the creation route', () => {
-      component.goToNuevaRendicionDirecta();
-      expect(router.navigate).toHaveBeenCalledWith(['/tesoreria/rendicion-directa/nueva']);
-    });
+    // `goToNuevaRendicionDirecta` se retiró del componente: Tesorería ya no
+    // crea la rendición directa desde esta pantalla.
 
     it('directaUserName resolves populated user name or email', () => {
       expect(component.directaUserName({ userId: { name: 'Luis' } })).toBe('Luis');

@@ -583,6 +583,8 @@ export default class AddInvoiceComponent implements OnInit {
               rucEmisor: dataObj.rucEmisor || '',
               serie: dataObj.serie || '',
               correlativo: dataObj.correlativo || '',
+              // VD-109: comida declarada en AL.
+              tipoComida: (res as any).tipoComida || dataObj.tipoComida || '',
             });
           } else if (type === 'recibo_caja') {
             this.form.patchValue({
@@ -911,16 +913,22 @@ export default class AddInvoiceComponent implements OnInit {
     return this.showTopCategorySelect || this.showMovilidadCategoryBlock;
   }
 
-  /** Categorías de Alimentación asignadas al colaborador (mismo criterio por nombre que la DJ al extranjero). */
-  get alimentacionCategories(): ICategory[] {
-    return this.djCategoriesFor('alimentacion');
+  /**
+   * Categorías de "Gastos Reparables (gastos sin factura)" asignadas al
+   * colaborador: las que corresponden a Alimentación sin documentación
+   * (VD-108). En Detroit son dos, la de Servicios y la Comercial (" COM").
+   */
+  get gastosReparablesCategories(): ICategory[] {
+    return this.categories.filter((c) =>
+      this.normalizeStr(c.name || '').includes('gastos reparables')
+    );
   }
 
   /**
-   * Categoría de Alimentación puesta automáticamente en el gasto AL. `null`
-   * cuando hay 0 o 2+ coincidencias: ahí se muestra el selector manual.
+   * Categoría puesta automáticamente en el gasto AL. `null` cuando hay 0 o 2+
+   * coincidencias: ahí se muestra el selector manual.
    */
-  alimentacionCategoryAuto = signal<ICategory | null>(null);
+  gastosReparablesCategoryAuto = signal<ICategory | null>(null);
 
   /**
    * AL = Alimentación sin documentación. Solo al crear: al editar se respeta la
@@ -934,40 +942,69 @@ export default class AddInvoiceComponent implements OnInit {
     );
   }
 
+  /**
+   * Comidas de "Alimentación sin documentación" (VD-109) con el tope que la
+   * empresa configuró para cada una. Sin tope configurado, `tope` es null.
+   */
+  get comidasDisponibles(): { key: 'desayuno' | 'almuerzo' | 'cena'; label: string; tope: number | null }[] {
+    const limits = this.companyConfigService.getCompanyConfig()?.limits;
+    const tope = (v: number | null | undefined) => (typeof v === 'number' && v > 0 ? v : null);
+    return [
+      { key: 'desayuno', label: 'Desayuno', tope: tope(limits?.alimentacionDesayuno) },
+      { key: 'almuerzo', label: 'Almuerzo', tope: tope(limits?.alimentacionAlmuerzo) },
+      { key: 'cena', label: 'Cena', tope: tope(limits?.alimentacionCena) },
+    ];
+  }
+
+  /** Tope de la comida elegida, o null si no hay comida o no tiene tope. */
+  get topeComidaSeleccionada(): number | null {
+    const key = this.form?.get('tipoComida')?.value;
+    return this.comidasDisponibles.find((c) => c.key === key)?.tope ?? null;
+  }
+
+  /** El monto cargado pasa del tope de la comida elegida (VD-109). */
+  get montoSuperaTopeComida(): boolean {
+    const tope = this.topeComidaSeleccionada;
+    if (tope === null) return false;
+    const total = Number(this.form?.get('totalOtros')?.value) || 0;
+    return total > tope;
+  }
+
   /** Opciones del selector de categoría dentro de Otros Gastos. */
   get otrosCategoryOptions(): SearchSelectOption[] {
-    // Con varias categorías de Alimentación (Servicios 91x y Comercial 92x) se
+    // Con las dos de Gastos Reparables (Servicios 91x y Comercial 92x) se
     // acotan a esas; si el colaborador no tiene ninguna se cae al listado
     // completo para no dejarlo sin poder registrar el gasto.
-    if (this.isAlimentacionSinDoc() && this.alimentacionCategories.length > 1) {
-      return this.toCategoryOptions(this.alimentacionCategories);
+    if (this.isAlimentacionSinDoc() && this.gastosReparablesCategories.length > 1) {
+      return this.toCategoryOptions(this.gastosReparablesCategories);
     }
     return this.categoryOptions;
   }
 
   /**
    * "Alimentación sin documentación" no pide categoría: se le asigna la de
-   * Alimentación del colaborador, igual que la planilla de movilidad resuelve
-   * la suya (VD-100). Con 0 o 2+ coincidencias queda el selector manual.
-   * Idempotente: se llama al cargar categorías y al cambiar de sub-tipo.
+   * "Gastos Reparables (gastos sin factura)" del colaborador (VD-108), igual
+   * que la planilla de movilidad resuelve la suya (VD-100). Con 0 o 2+
+   * coincidencias queda el selector manual. Idempotente: se llama al cargar
+   * categorías y al cambiar de sub-tipo.
    */
   private applyAlimentacionCategoryDefault(): void {
     const catCtrl = this.form?.get('categoryId');
     if (!catCtrl || catCtrl.disabled) return;
-    const previous = this.alimentacionCategoryAuto();
+    const previous = this.gastosReparablesCategoryAuto();
     // Al salir de AL se retira la categoría que pusimos nosotros, para que el
-    // nuevo tipo de documento no herede la de alimentación sin que se note.
+    // nuevo tipo de documento no la herede sin que se note.
     const dropAuto = () => {
       if (previous && catCtrl.value === previous._id) catCtrl.setValue('');
     };
     if (!this.isAlimentacionSinDoc()) {
       dropAuto();
-      this.alimentacionCategoryAuto.set(null);
+      this.gastosReparablesCategoryAuto.set(null);
       return;
     }
-    const matches = this.alimentacionCategories;
+    const matches = this.gastosReparablesCategories;
     const auto = matches.length === 1 ? matches[0] : null;
-    this.alimentacionCategoryAuto.set(auto);
+    this.gastosReparablesCategoryAuto.set(auto);
     if (auto) catCtrl.setValue(auto._id);
     else dropAuto();
   }
@@ -1030,6 +1067,8 @@ export default class AddInvoiceComponent implements OnInit {
       // Otros gastos
       totalOtros: [null],
       description: [''],
+      // VD-109: en AL reemplaza a la descripción libre.
+      tipoComida: [''],
       declaracionJurada: [false],
       declaracionJuradaFirmante: [''],
       // Declaración Jurada al extranjero (DJE): datos del viaje + filas por rubro
@@ -1075,7 +1114,14 @@ export default class AddInvoiceComponent implements OnInit {
    */
   djCategoriesFor(rubro: 'alimentacion' | 'movilidad'): ICategory[] {
     const needle = rubro === 'alimentacion' ? 'alimentacion' : 'movilidad';
-    return this.categories.filter((c) => this.normalizeStr(c.name || '').includes(needle));
+    return this.categories.filter((c) => {
+      const name = this.normalizeStr(c.name || '');
+      // "Gastos Reparables (gastos sin factura)" nombra la alimentación dentro
+      // de su propio texto, así que caía en este filtro y ensuciaba el rubro.
+      // Esa categoría es solo para Alimentación sin documentación (VD-108).
+      if (name.includes('gastos reparables')) return false;
+      return name.includes(needle);
+    });
   }
 
   /**
@@ -1538,6 +1584,21 @@ export default class AddInvoiceComponent implements OnInit {
     this.mobilityRowsArray.removeAt(index);
   }
 
+  /**
+   * VD-104: en edición la dirección se escribe a mano (el buscador de Google no
+   * refleja el valor guardado). Si el texto cambia, las coordenadas y la
+   * distancia calculadas al crear la planilla dejan de corresponder.
+   */
+  onMobilityPlaceTyped(index: number, field: 'origen' | 'destino') {
+    const row = this.mobilityRowsArray.at(index);
+    if (row.get(`${field}Lat`)?.value == null) return;
+    row.patchValue({
+      [`${field}Lat`]: null,
+      [`${field}Lng`]: null,
+      distanciaKm: null,
+    });
+  }
+
   onOrigenDepartamentoChange(i: number) {
     this.mobilityRowsArray.at(i).patchValue({ origenProvincia: '', origenDistrito: '' });
   }
@@ -1655,6 +1716,11 @@ export default class AddInvoiceComponent implements OnInit {
         );
         // RUC Emisor obligatorio para TK, BV y RC (todos los sub-tipos con documento físico)
         const rucOk = !this.otrosSubTipoMuestraDocumento() || rucEmisorOk;
+        // VD-109: AL declara siempre la comida y no puede pasar de su tope,
+        // tanto al crear como al editar.
+        const comidaOk =
+          sub !== 'AL' ||
+          (!!this.form.get('tipoComida')?.value && !this.montoSuperaTopeComida);
         return (
           proyectOk &&
           this.form.get('categoryId')?.valid === true &&
@@ -1663,6 +1729,7 @@ export default class AddInvoiceComponent implements OnInit {
           (this.form.get('totalOtros')?.value > 0) &&
           // Adjunto obligatorio al crear, salvo AL (Alimentación sin documentación)
           (!!this.id || sub === 'AL' || !!this.selectedFile) &&
+          comidaOk &&
           bvDocOk &&
           rucOk
         );
@@ -2004,6 +2071,8 @@ export default class AddInvoiceComponent implements OnInit {
     const total = this.form.get('totalOtros')?.value;
     const description = this.form.get('description')?.value;
     const subTipo = this.otrosSubTipo();
+    // VD-109: en AL la comida reemplaza a la descripción y define el tope.
+    const tipoComida = subTipo === 'AL' ? this.form.get('tipoComida')?.value : '';
     // AL (Alimentación sin documentación) y DJE requieren declaración jurada + firma (VD-91).
     const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(subTipo);
 
@@ -2036,6 +2105,21 @@ export default class AddInvoiceComponent implements OnInit {
       return;
     }
 
+    if (subTipo === 'AL') {
+      if (!tipoComida) {
+        this.notificationService.show('Indica si el gasto es desayuno, almuerzo o cena', 'error');
+        return;
+      }
+      const tope = this.topeComidaSeleccionada;
+      if (tope !== null && total > tope) {
+        this.notificationService.show(
+          `El monto supera el tope de S/ ${tope.toFixed(2)} configurado para ${tipoComida}`,
+          'error'
+        );
+        return;
+      }
+    }
+
     // El adjunto es obligatorio salvo AL (Alimentación sin documentación)
     if (subTipo !== 'AL' && !this.selectedFile) {
       this.notificationService.show('Debes adjuntar el comprobante', 'error');
@@ -2063,6 +2147,7 @@ export default class AddInvoiceComponent implements OnInit {
         total,
         data: description,
         subTipo,
+        ...(tipoComida ? { tipoComida } : {}),
         declaracionJurada: requiereDeclaracion,
         declaracionJuradaFirmante: requiereDeclaracion ? firmante : undefined,
         imageUrl,
@@ -2174,14 +2259,21 @@ export default class AddInvoiceComponent implements OnInit {
       payload.total = finalTotal;
       payload.placaVehiculo = (formValue.placaVehiculo || '').trim() || undefined;
     } else if (type === 'otros_gastos') {
-      const description = (formValue.description || '').trim();
+      // VD-109: en AL la descripción es la comida declarada.
+      const esAl = this.otrosSubTipo() === 'AL';
+      const tipoComida = esAl ? (formValue.tipoComida || '') : '';
+      const description = esAl
+        ? (this.comidasDisponibles.find((c) => c.key === tipoComida)?.label || '')
+        : (formValue.description || '').trim();
       payload.description = description;
       payload.total = Number(formValue.totalOtros) || 0;
+      if (tipoComida) payload.tipoComida = tipoComida;
       const muestraDoc = this.otrosSubTipoMuestraDocumento();
       const { serie: _s, correlativo: _c, rucEmisor: _r, ...prevWithoutDoc } = previousData || {};
       const dataObj = {
         ...prevWithoutDoc,
         description,
+        ...(tipoComida ? { tipoComida } : {}),
         ...(muestraDoc ? {
           serie: (formValue.serie || '').trim() || undefined,
           correlativo: (formValue.correlativo || '').trim() || undefined,

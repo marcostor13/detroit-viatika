@@ -266,6 +266,23 @@ describe('UserStateService — empty localStorage', () => {
       expect(service.hasModulePermission('tesoreria')).toBeFalse();
     });
 
+    // VD-115: rendir depende del módulo asignado, no del rol. A Tesorería se le
+    // habilita marcándole el permiso, igual que a cualquier otro rol.
+    it('canCreateRendicion() returns true for Tesoreria with the module assigned', () => {
+      const role = { _id: 'rt', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({
+        role,
+        permissions: { modules: ['tesoreria', 'nueva-rendicion'], canApproveL1: false, canApproveL2: false },
+      }));
+      expect(service.canCreateRendicion()).toBeTrue();
+    });
+
+    it('canCreateRendicion() returns false for Tesoreria without the module', () => {
+      const role = { _id: 'rt', name: 'Tesoreria', active: true, createdAt: new Date(), updatedAt: new Date() };
+      service.setUser(makeUser({ role, permissions: { modules: ['tesoreria'], canApproveL1: false, canApproveL2: false } }));
+      expect(service.canCreateRendicion()).toBeFalse();
+    });
+
     // Contabilidad tampoco ve módulos que no tiene asignados (antes VD-77 solo
     // lo garantizaba en hasModuleStrict; ahora vale para las dos funciones).
     it('hasModuleStrict() returns false for Contabilidad without the module', () => {

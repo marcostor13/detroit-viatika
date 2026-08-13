@@ -35,7 +35,11 @@ import { ExpenseReportService } from '../expense-report/expense-report.service'
 import { ROLES } from '../auth/enums/roles.enum'
 import { NotificationsService } from '../notifications/notifications.service'
 import { CategoryService } from '../category/category.service'
-import { Client } from '../client/entities/client.entity'
+import {
+  Client,
+  TipoComida,
+  topeComida,
+} from '../client/entities/client.entity'
 import { CurrencyService } from '../exchange-rate/currency.service'
 import { AccountingConfigDocument } from '../accounting-config/entities/accounting-config.entity'
 import { DEFAULT_MONEDA, normalizeMoneda } from '../../common/moneda.constants'
@@ -376,7 +380,12 @@ export class ExpenseService {
       .replace(/\s*```$/i, '')
       .trim()
     try {
-      return JSON.parse(safe)
+      const parsed = JSON.parse(safe) as ExtractedInvoiceData
+      parsed.comentario = this.sanitizeComentario(
+        parsed.comentario,
+        parsed.razonSocial
+      )
+      return parsed
     } catch (error) {
       this.logger.error('No se pudo parsear la respuesta de OpenAI', error)
       throw new HttpException(
@@ -384,6 +393,54 @@ export class ExpenseService {
         HttpStatus.BAD_GATEWAY
       )
     }
+  }
+
+  /**
+   * VD-103: el comentario que propone el OCR debe ser una descripción breve del
+   * concepto, sin montos ni nombres de empresas. El prompt ya lo pide, pero el
+   * modelo reincide, así que se limpia también aquí (determinista).
+   */
+  private sanitizeComentario(
+    comentario?: string,
+    razonSocial?: string
+  ): string | undefined {
+    if (typeof comentario !== 'string') return comentario
+    let text = comentario.trim()
+    if (!text) return undefined
+
+    // Nombre del emisor tal como lo devolvió el OCR ("... por ACME S.A.C.").
+    const emisor = (razonSocial ?? '').trim()
+    if (emisor.length > 2) {
+      const escaped = emisor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      text = text.replace(
+        // Sin `\b` al final: la razón social suele terminar en punto ("S.A.").
+        new RegExp(`\\s*(?:\\b(?:por|de|a|en)\\s+)?${escaped}\\.?(?!\\w)`, 'gi'),
+        ' '
+      )
+    }
+    // Formas societarias sueltas que queden colgando (S.A., S.A.C., E.I.R.L.).
+    text = text.replace(/\s*\b(?:S\.?A\.?C?\.?|E\.?I\.?R\.?L\.?|S\.?R\.?L\.?)\b\.?/gi, ' ')
+    // Importes: "S/ 1,000.00", "$ 90", "PEN 1000", "por 1,000.00".
+    text = text.replace(
+      /\s*(?:\bpor\s+)?(?:S\/\.?|\$|US\$|PEN|USD|soles?|d[oó]lares?)\s*\d[\d.,]*/gi,
+      ' '
+    )
+    text = text.replace(/\s*\bpor\s+\d[\d.,]*\b/gi, ' ')
+    // Restos: conectores o puntuación al final tras los recortes.
+    text = text.replace(/\s{2,}/g, ' ').trim()
+    text = text.replace(/[\s,;:.]*(?:\b(?:por|de|del|para|con|a|en)\b)?[\s,;:.]*$/i, '')
+    text = text.trim()
+    if (!text) return undefined
+
+    // Una sola frase corta.
+    const firstSentence = text.split(/(?<=[.!?])\s+/)[0] ?? text
+    text = firstSentence.replace(/[.\s]+$/, '')
+    if (text.length > 60) {
+      const cut = text.slice(0, 60)
+      const lastSpace = cut.lastIndexOf(' ')
+      text = (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim()
+    }
+    return text || undefined
   }
 
   private determineCodComp(tipo?: string): string {
@@ -1432,6 +1489,32 @@ export class ExpenseService {
     return expense
   }
 
+  /** Etiqueta de la comida para la descripción del gasto (VD-109). */
+  private readonly ETIQUETA_COMIDA: Record<TipoComida, string> = {
+    desayuno: 'Desayuno',
+    almuerzo: 'Almuerzo',
+    cena: 'Cena',
+  }
+
+  /**
+   * VD-109: el monto de un gasto de Alimentación sin documentación no puede
+   * pasar del tope que la empresa configuró para esa comida. El tope se mide
+   * por gasto, no por el acumulado del día. Sin tope configurado no valida.
+   */
+  private async assertTopeComida(
+    clientId: string,
+    tipo: TipoComida,
+    total: number
+  ): Promise<void> {
+    const client = await this.clientModel.findById(clientId).lean().exec()
+    const tope = topeComida(client?.limits, tipo)
+    if (tope === null || total <= tope) return
+    throw new HttpException(
+      `El monto de ${this.ETIQUETA_COMIDA[tipo].toLowerCase()} (S/ ${total.toFixed(2)}) supera el tope de S/ ${tope.toFixed(2)}`,
+      HttpStatus.BAD_REQUEST
+    )
+  }
+
   async createOtherExpense(body: CreateExpenseDto): Promise<Expense> {
     if (!body.clientId) {
       throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
@@ -1471,6 +1554,20 @@ export class ExpenseService {
         'Usa el endpoint de Declaración Jurada (declaracion-jurada) para este sub-tipo',
         HttpStatus.BAD_REQUEST
       )
+    }
+
+    // VD-109: AL declara qué comida es (reemplaza a la descripción libre) y su
+    // monto no puede pasar del tope que la empresa configuró para esa comida.
+    let tipoComida: TipoComida | undefined
+    if (subTipo === 'AL') {
+      tipoComida = body.tipoComida
+      if (!tipoComida) {
+        throw new HttpException(
+          'Indica si el gasto es desayuno, almuerzo o cena',
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      await this.assertTopeComida(body.clientId, tipoComida, body.total)
     }
 
     // RUC Emisor obligatorio para los sub-tipos con documento físico (TK, BV, RC)
@@ -1524,9 +1621,11 @@ export class ExpenseService {
         : undefined,
       total: body.total,
       ...fx,
-      description: body.data,
+      // En AL la descripción es la comida declarada (VD-109).
+      description: tipoComida ? this.ETIQUETA_COMIDA[tipoComida] : body.data,
       expenseType: 'otros_gastos',
       subTipo,
+      tipoComida,
       declaracionJurada: requiereDeclaracion,
       declaracionJuradaFirmante: requiereDeclaracion
         ? body.declaracionJuradaFirmante
@@ -1543,9 +1642,10 @@ export class ExpenseService {
       data: JSON.stringify({
         type: 'otros_gastos',
         subTipo,
+        tipoComida,
         declaracionJurada: requiereDeclaracion,
         firmante: requiereDeclaracion ? body.declaracionJuradaFirmante : undefined,
-        description: body.data,
+        description: tipoComida ? this.ETIQUETA_COMIDA[tipoComida] : body.data,
         serie: body.serie || undefined,
         correlativo: body.correlativo || undefined,
         rucEmisor: body.rucEmisor || undefined,
@@ -2554,6 +2654,27 @@ export class ExpenseService {
     const dto = { ...updateExpenseDto }
     this.sanitizeFechaEmisionOnWrite(dto)
     this.syncComentarioPlacaFromData(dto)
+
+    // VD-109: editar un gasto de Alimentación sin documentación tampoco puede
+    // dejarlo por encima del tope de su comida.
+    const existingAsRecord = existing as unknown as {
+      subTipo?: string
+      tipoComida?: TipoComida
+      total?: number
+      clientId?: string
+    }
+    if (existingAsRecord.subTipo === 'AL') {
+      const tipo = dto.tipoComida ?? existingAsRecord.tipoComida
+      if (!tipo) {
+        throw new HttpException(
+          'Indica si el gasto es desayuno, almuerzo o cena',
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      const total = dto.total ?? existingAsRecord.total ?? 0
+      await this.assertTopeComida(String(existingAsRecord.clientId), tipo, total)
+      dto.description = this.ETIQUETA_COMIDA[tipo]
+    }
 
     if (dto.mobilityRows && dto.mobilityRows.length > 0) {
       const client = await this.clientModel

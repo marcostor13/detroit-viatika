@@ -169,7 +169,15 @@ export class CompanyConfigService {
     });
   }
 
-  updateLimits(companyId: string, limits: { movilidadDiario?: number }): Observable<ICompanyConfig> {
+  updateLimits(
+    companyId: string,
+    limits: {
+      movilidadDiario?: number;
+      alimentacionDesayuno?: number;
+      alimentacionAlmuerzo?: number;
+      alimentacionCena?: number;
+    }
+  ): Observable<ICompanyConfig> {
     return new Observable((observer) => {
       this.invoicesService
         .updateCompanyConfig(companyId, { limits })

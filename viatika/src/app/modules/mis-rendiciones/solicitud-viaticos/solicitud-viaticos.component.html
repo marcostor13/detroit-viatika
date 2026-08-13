@@ -215,18 +215,24 @@
           </app-form-field>
 
 
-          <!-- Observaciones -->
-          <div class="md:col-span-2 flex flex-col gap-1.5">
-            <label class="text-sm font-medium text-gray-700">
-              Observaciones
-              <span class="text-gray-400 font-normal text-xs ml-1">(opcional)</span>
-            </label>
-            <textarea
-              formControlName="observations"
-              rows="3"
-              placeholder="Justificacion del viaje (opcional)."
-              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow resize-none"
-            ></textarea>
+          <!-- Observaciones (VD-102: obligatorias) -->
+          <div class="md:col-span-2">
+            <app-form-field
+              #observacionesField
+              label="Observaciones"
+              [required]="true"
+              [error]="form.get('observations')?.invalid && form.get('observations')?.touched ? 'Indique la justificación de la solicitud' : ''"
+            >
+              <textarea
+                [id]="observacionesField.fieldId"
+                [attr.aria-describedby]="observacionesField.describedBy()"
+                formControlName="observations"
+                rows="3"
+                placeholder="Justificacion del viaje."
+                class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow resize-none"
+                [class.border-red-400]="form.get('observations')?.invalid && form.get('observations')?.touched"
+              ></textarea>
+            </app-form-field>
           </div>
 
           <!-- VD-78: se quitó la opción de elegir otra cuenta para el depósito.
