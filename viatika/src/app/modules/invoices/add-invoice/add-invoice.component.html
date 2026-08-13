@@ -171,23 +171,8 @@
   </div>
   }
 
-  <!-- Fallback: rendiciones directas creadas antes de tener OT propia (sin OT que heredar) -->
-  @if (needsFallbackOt()) {
-  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
-    <div class="flex flex-col gap-2">
-      <label for="ordenTrabajoIdFallback" class="text-sm font-medium text-secondary">
-        Orden de Trabajo <span class="text-error">*</span>
-      </label>
-      <app-search-select
-        formControlName="ordenTrabajoId"
-        [options]="ordenTrabajoOptions"
-        placeholder="Seleccione una OT"
-        searchPlaceholder="Buscar OT…"
-      />
-      <p class="text-xs text-tertiary">Esta rendición directa no tiene una OT propia asignada. Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005).</p>
-    </div>
-  </div>
-  }
+  <!-- Una rendición directa sin OT propia no ofrece elegirla por comprobante:
+       la OT es opcional al crear la rendición (ver directaSinOrdenTrabajo). -->
 
   @if(!id && expenseType() === 'factura') {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">

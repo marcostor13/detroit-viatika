@@ -1481,12 +1481,12 @@ export class ExpenseService {
       )
     }
     // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de
-    // Costo. Excepción: la planilla de un viático hereda la OT de la solicitud
-    // (VD-28) y esa OT es opcional al solicitarlo; si la solicitud no la lleva no
-    // hay nada que heredar ni que el colaborador pueda elegir en el formulario.
+    // Costo. Excepción: la planilla hereda la OT de la rendición (viático VD-28 o
+    // directa) y en ambas la OT es opcional; si la rendición no la lleva no hay
+    // nada que heredar ni que el colaborador pueda elegir en el formulario.
     if (
       !body.ordenTrabajoId &&
-      !(await this.expenseReportService.isViaticoSinOrdenTrabajo(
+      !(await this.expenseReportService.isReportSinOrdenTrabajo(
         body.expenseReportId
       ))
     ) {

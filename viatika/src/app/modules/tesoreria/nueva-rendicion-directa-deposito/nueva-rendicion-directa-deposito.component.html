@@ -72,23 +72,21 @@
         </app-form-field>
       </div>
 
-      <!-- Orden de Trabajo -->
+      <!-- Orden de Trabajo (opcional) -->
       <div class="p-5">
         <app-form-field
           #otField
           label="Orden de Trabajo"
-          [required]="true"
-          [error]="otErrorMessage()"
-          [helperText]="!form.get('projectId')?.value ? 'Seleccione primero un centro de costo.' : ''"
+          [required]="false"
+          [helperText]="otHelperText()"
         >
           <select
             [id]="otField.fieldId"
             [attr.aria-describedby]="otField.describedBy()"
             formControlName="ordenTrabajoId"
-            class="w-full h-[42px] px-3.5 rounded-xl border bg-quaternary text-secondary text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
-            [class]="(form.get('ordenTrabajoId')?.invalid && form.get('ordenTrabajoId')?.touched) ? 'border-error' : 'border-tertiary/30'"
+            class="w-full h-[42px] px-3.5 rounded-xl border border-tertiary/30 bg-quaternary text-secondary text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
           >
-            <option value="">Seleccione una OT</option>
+            <option value="">Sin orden de trabajo</option>
             @for (ot of filteredOrdenesTrabajo(); track ot._id) {
               <option [value]="ot._id">{{ ot.nombre }}</option>
             }

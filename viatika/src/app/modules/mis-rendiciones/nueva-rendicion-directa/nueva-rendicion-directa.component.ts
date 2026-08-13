@@ -57,7 +57,10 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   form: FormGroup = this.fb.group({
     gestion: ['', [Validators.required, Validators.minLength(3)]],
     projectId: ['', Validators.required],
-    ordenTrabajoId: ['', Validators.required],
+    // La OT es opcional: hay centros de costo sin ninguna OT activa y exigirla
+    // dejaba al colaborador sin poder crear la rendición. Si no se elige aquí,
+    // la planilla de movilidad la pide por comprobante (formato ADF-FOR-005).
+    ordenTrabajoId: [''],
   });
 
   ngOnInit(): void {
@@ -124,7 +127,11 @@ export class NuevaRendicionDirectaComponent implements OnInit {
         userId,
         clientId,
         projectId: this.form.value.projectId,
-        ordenTrabajoId: this.form.value.ordenTrabajoId,
+        // Solo se manda si se eligió: el backend valida que sea un ObjectId y
+        // una cadena vacía le haría rechazar la creación.
+        ...(this.form.value.ordenTrabajoId
+          ? { ordenTrabajoId: this.form.value.ordenTrabajoId }
+          : {}),
       })
       .subscribe({
         next: (report) => {
@@ -147,17 +154,15 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   }
 
   /**
-   * Mensaje de error de la OT: si el centro de costo elegido no tiene ninguna
-   * OT activa, se prioriza esa explicación por sobre el error genérico de
-   * "campo requerido" (que aparece apenas se toca el select y, si no, tapaba
-   * la razón real de por qué el desplegable está vacío).
+   * Nota bajo el select de OT. Ya no es un error —la OT es opcional—, solo
+   * explica por qué el desplegable puede verse vacío.
    */
-  otErrorMessage(): string {
+  otHelperText(): string {
     const projectId = this.form.get('projectId')?.value;
-    if (projectId && this.filteredOrdenesTrabajo().length === 0) {
-      return 'El centro de costo elegido no tiene órdenes de trabajo activas. Créalas en Configuración → Órdenes de Trabajo.';
+    if (!projectId) return 'Seleccione primero un centro de costo.';
+    if (this.filteredOrdenesTrabajo().length === 0) {
+      return 'El centro de costo elegido no tiene órdenes de trabajo activas. Puedes crear la rendición sin OT.';
     }
-    const ctrl = this.form.get('ordenTrabajoId');
-    return ctrl?.invalid && ctrl?.touched ? 'Seleccione una orden de trabajo' : '';
+    return 'Opcional. Si la eliges, los comprobantes de la rendición la heredan.';
   }
 }

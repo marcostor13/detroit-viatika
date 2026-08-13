@@ -113,7 +113,7 @@ describe('NuevaRendicionDirectaComponent', () => {
     });
   });
 
-  describe('goBack / isInvalid / otErrorMessage', () => {
+  describe('goBack / isInvalid / otHelperText', () => {
     it('goBack navigates to mis-rendiciones', () => {
       component.goBack();
       expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones']);
@@ -126,10 +126,47 @@ describe('NuevaRendicionDirectaComponent', () => {
       expect(component.isInvalid('gestion')).toBeTrue();
     });
 
-    it('otErrorMessage warns when the chosen project has no active ordenes', () => {
+    it('otHelperText warns when the chosen project has no active ordenes', () => {
       component.ngOnInit();
       component.form.get('projectId')?.setValue('p-without-ot');
-      expect(component.otErrorMessage()).toContain('no tiene órdenes de trabajo activas');
+      expect(component.otHelperText()).toContain('no tiene órdenes de trabajo activas');
+    });
+
+    it('otHelperText asks for a project first when none is selected', () => {
+      component.ngOnInit();
+      expect(component.otHelperText()).toContain('centro de costo');
+    });
+  });
+
+  describe('OT opcional', () => {
+    it('la rendición es válida sin orden de trabajo', () => {
+      component.ngOnInit();
+      component.form.patchValue({ gestion: 'Compras', projectId: 'p1' });
+      expect(component.form.valid).toBeTrue();
+    });
+
+    it('no manda ordenTrabajoId cuando no se eligió ninguna', () => {
+      component.ngOnInit();
+      component.form.patchValue({ gestion: 'Compras', projectId: 'p1' });
+      expenseReportsService.create.and.returnValue(of({ _id: 'r1' } as IExpenseReport));
+
+      component.submit();
+
+      const payload = expenseReportsService.create.calls.mostRecent().args[0] as unknown as Record<string, unknown>;
+      expect('ordenTrabajoId' in payload).toBeFalse();
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'r1', 'detalle']);
+    });
+
+    it('manda ordenTrabajoId cuando sí se eligió', () => {
+      component.ngOnInit();
+      component.form.patchValue({ gestion: 'Compras', projectId: 'p1', ordenTrabajoId: 'ot1' });
+      expenseReportsService.create.and.returnValue(of({ _id: 'r1' } as IExpenseReport));
+
+      component.submit();
+
+      expect(expenseReportsService.create).toHaveBeenCalledWith(
+        jasmine.objectContaining({ ordenTrabajoId: 'ot1' })
+      );
     });
   });
 });

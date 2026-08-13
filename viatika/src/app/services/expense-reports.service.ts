@@ -81,7 +81,7 @@ export class ExpenseReportsService {
   createDirectaDeposit(payload: {
     userId: string;
     projectId: string;
-    ordenTrabajoId: string;
+    ordenTrabajoId?: string;
     gestion?: string;
     amount: number;
     metodoPago?: 'deposito' | 'efectivo';

@@ -1439,6 +1439,15 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return null;
   }
 
+  /**
+   * El bloque de validación SUNAT se pintaba con `primary`, que en Detroit es
+   * rojo: un comprobante aceptado parecía un error. Se colorea por resultado
+   * (verde aceptado / ámbar el resto).
+   */
+  sunatIsAccepted(sunat: Record<string, unknown>): boolean {
+    return String(sunat['status'] ?? '') === 'VALIDO_ACEPTADO';
+  }
+
   reviewHistory(exp: Record<string, unknown>): Record<string, unknown>[] {
     const raw = exp['reviewHistory'];
     if (!Array.isArray(raw)) return [];

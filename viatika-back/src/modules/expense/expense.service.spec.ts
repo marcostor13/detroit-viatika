@@ -950,7 +950,7 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
   const userService = { findOne: jest.fn().mockResolvedValue({ name: 'John Doe' }) }
   const expenseReportService = {
     assertReportNotLockedByCajaChica: jest.fn(),
-    isViaticoSinOrdenTrabajo: jest.fn().mockResolvedValue(false),
+    isReportSinOrdenTrabajo: jest.fn().mockResolvedValue(false),
     findCurrencyMeta: jest.fn().mockResolvedValue(null),
     findOne: jest.fn().mockResolvedValue({ userId }),
     buildChainForNewExpense: jest.fn(),
@@ -975,7 +975,7 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
     expenseModel.create.mockImplementation((doc: any) =>
       Promise.resolve({ ...doc, _id: new Types.ObjectId() })
     )
-    expenseReportService.isViaticoSinOrdenTrabajo.mockResolvedValue(false)
+    expenseReportService.isReportSinOrdenTrabajo.mockResolvedValue(false)
     clientModel.findById.mockReturnValue({
       lean: () => ({ exec: () => Promise.resolve(null) }),
     })
@@ -1038,10 +1038,11 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
     expect(expenseModel.create).not.toHaveBeenCalled()
   })
 
-  // La OT es opcional al solicitar el viático y la planilla la hereda de ahí:
-  // si la solicitud no la lleva, no hay ninguna que exigir ni que elegir.
-  it('acepta la planilla sin OT cuando el viático no la tiene', async () => {
-    expenseReportService.isViaticoSinOrdenTrabajo.mockResolvedValue(true)
+  // La OT es opcional al solicitar el viático y al crear la rendición directa, y
+  // la planilla la hereda de la rendición: si la rendición no la lleva, no hay
+  // ninguna que exigir ni que el colaborador pueda elegir.
+  it('acepta la planilla sin OT cuando la rendición no la tiene', async () => {
+    expenseReportService.isReportSinOrdenTrabajo.mockResolvedValue(true)
 
     await service.createMobilitySheet(baseBody())
 
@@ -1062,7 +1063,7 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
       ordenTrabajoId
     )
     // No se consulta la rendición: con OT en el cuerpo no hace falta la excepción.
-    expect(expenseReportService.isViaticoSinOrdenTrabajo).not.toHaveBeenCalled()
+    expect(expenseReportService.isReportSinOrdenTrabajo).not.toHaveBeenCalled()
   })
 })
 
