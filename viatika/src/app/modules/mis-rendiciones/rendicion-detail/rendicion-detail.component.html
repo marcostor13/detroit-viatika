@@ -27,6 +27,11 @@
               <span class="font-semibold text-secondary">{{ getHeaderCentroCostoCodigo() }}</span>
             }
             {{ getHeaderCentroCosto() }}
+            <!-- VD-113: la OT va al costado del centro de costo. -->
+            @if (getHeaderOrdenTrabajo()) {
+              <span class="text-tertiary/60">·</span>
+              <span class="whitespace-nowrap">OT <span class="font-semibold text-secondary">{{ getHeaderOrdenTrabajo() }}</span></span>
+            }
           </p>
         }
         @if (report) {

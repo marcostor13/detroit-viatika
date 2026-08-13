@@ -138,6 +138,33 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('cabecera: centro de costo y OT (VD-113)', () => {
+    it('toma el código del centro de costo y la OT desde la orden de trabajo del reporte', () => {
+      component.report = makeReport({
+        viaticoOrdenTrabajoId: {
+          _id: 'ot1',
+          nombre: 'LIM-SMI-1946',
+          costCenterId: { _id: 'p1', code: '9101', name: 'Servicios' },
+        },
+      } as any);
+
+      expect(component.getHeaderCentroCostoCodigo()).toBe('9101');
+      expect(component.getHeaderCentroCosto()).toBe('Servicios');
+      expect(component.getHeaderOrdenTrabajo()).toBe('LIM-SMI-1946');
+    });
+
+    // Una rendición sin OT (directa) igual debe mostrar su centro de costo.
+    it('sin orden de trabajo cae al centro de costo del reporte', () => {
+      component.report = makeReport({
+        projectId: { _id: 'p2', code: '223', name: 'Comercial' },
+      } as any);
+
+      expect(component.getHeaderCentroCostoCodigo()).toBe('223');
+      expect(component.getHeaderCentroCosto()).toBe('Comercial');
+      expect(component.getHeaderOrdenTrabajo()).toBeUndefined();
+    });
+  });
+
   describe('buildExportData — descripción de la planilla (VD-107)', () => {
     it('la planilla de movilidad se describe siempre igual, no con la gestión de su primera fila', () => {
       component.report = makeReport({

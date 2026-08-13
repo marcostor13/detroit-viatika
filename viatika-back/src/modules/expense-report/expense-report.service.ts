@@ -727,6 +727,9 @@ export class ExpenseReportService implements OnModuleInit {
       })
       .populate('userId', 'name email signature bankAccount')
       .populate('createdBy', 'name email')
+      // Centro de costo con su código (VD-113): el listado lo muestra como
+      // "código — nombre" y sin este populate dependía del catálogo del front.
+      .populate('projectId', 'code name')
       // Nombre de la categoría de cada línea de viático, para mostrar el detalle
       // por categoría al aprobar (la list no traía categoryId poblado).
       .populate('viaticoLines.categoryId', 'name')

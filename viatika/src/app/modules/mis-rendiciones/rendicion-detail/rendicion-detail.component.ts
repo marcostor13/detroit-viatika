@@ -1815,12 +1815,28 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
   getHeaderCentroCosto(): string | undefined {
-    return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCosto || undefined;
+    const desdeOt = this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCosto;
+    if (desdeOt) return desdeOt;
+    // VD-113: rendiciones sin OT (p. ej. directas) muestran el del reporte.
+    const nombre = this.getProjectName();
+    return nombre && nombre !== '—' ? nombre : undefined;
   }
 
   /** Código del centro de costo de cabecera (ej. "9101"), si está disponible. */
   getHeaderCentroCostoCodigo(): string | undefined {
-    return this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCostoCodigo || undefined;
+    const desdeOt = this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCostoCodigo;
+    if (desdeOt) return desdeOt;
+    // VD-113: sin OT el centro de costo sale del propio reporte, para que el
+    // código esté igual en la cabecera.
+    const p = this.report?.projectId;
+    return p && typeof p === 'object' && 'code' in p
+      ? String((p as { code?: string }).code ?? '') || undefined
+      : undefined;
+  }
+
+  /** Orden de Trabajo de la cabecera (VD-113), al costado del centro de costo. */
+  getHeaderOrdenTrabajo(): string | undefined {
+    return this.extractOtAndCc(this.getReportOrdenTrabajo()).ot || undefined;
   }
 
   /**
