@@ -492,6 +492,36 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Contabilidad aprueba la rendición completa recién cuando aprobó cada uno de
+   * sus comprobantes. El gate del reporte cierra el trabajo hecho comprobante
+   * por comprobante, no lo reemplaza: sin este control la rendición podía
+   * quedar aprobada (y por lo tanto pagable) con comprobantes que Contabilidad
+   * nunca revisó, porque el único requisito era que ninguno estuviera observado.
+   */
+  private async assertAllExpensesApprovedByAccounting(
+    reportId: string
+  ): Promise<void> {
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .populate('expenseIds')
+      .select('expenseIds')
+      .lean()
+      .exec()
+    const expenses = Array.isArray((report as any)?.expenseIds)
+      ? (report as any).expenseIds
+      : []
+    const pendientes = expenses.filter(
+      (e: any) =>
+        String(e?.contabilidadStatus || 'pending').toLowerCase() !== 'approved'
+    )
+    if (pendientes.length > 0) {
+      throw new BadRequestException(
+        `Falta que Contabilidad apruebe ${pendientes.length} comprobante(s) de esta rendición. Revísalos uno por uno antes de aprobar la rendición completa.`
+      )
+    }
+  }
+
+  /**
    * Genera un código autoincremental único por empresa de forma atómica
    * usando una colección `counters` (a prueba de concurrencia). Ej: RD-0001.
    */
@@ -1099,18 +1129,30 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * True cuando la rendición es un viático que no lleva OT. La OT es opcional al
-   * solicitar el viático y sus gastos la heredan de la solicitud (VD-28): si la
-   * solicitud no la tiene, no hay ninguna que exigirle a la planilla de movilidad.
+   * True cuando la rendición no puede aportar una OT a sus gastos, porque no la
+   * lleva. Los gastos de planilla de movilidad la heredan de la rendición y la
+   * OT es opcional en ambos orígenes:
+   *  - viático: opcional al solicitarlo (VD-28)
+   *  - directa: opcional al crear la rendición
+   * Si la rendición no la tiene, el formulario ni siquiera muestra el campo, así
+   * que no hay nada que exigirle a la planilla.
    */
-  async isViaticoSinOrdenTrabajo(reportId?: string): Promise<boolean> {
+  async isReportSinOrdenTrabajo(reportId?: string): Promise<boolean> {
     if (!reportId || !Types.ObjectId.isValid(reportId)) return false
     const report = await this.expenseReportModel
       .findById(reportId)
-      .select('type viaticoOrdenTrabajoId')
-      .lean<{ type?: string; viaticoOrdenTrabajoId?: Types.ObjectId }>()
+      .select('type isDirecta viaticoOrdenTrabajoId directaOrdenTrabajoId')
+      .lean<{
+        type?: string
+        isDirecta?: boolean
+        viaticoOrdenTrabajoId?: Types.ObjectId
+        directaOrdenTrabajoId?: Types.ObjectId
+      }>()
       .exec()
-    return !!report && report.type === 'viatico' && !report.viaticoOrdenTrabajoId
+    if (!report) return false
+    if (report.type === 'viatico') return !report.viaticoOrdenTrabajoId
+    if (report.isDirecta) return !report.directaOrdenTrabajoId
+    return false
   }
 
   async findOne(id: string) {
@@ -1434,6 +1476,7 @@ export class ExpenseReportService implements OnModuleInit {
     // así que la rendición podría llegar aquí con uno observado sin corregir.
     if (dto.status === 'approved') {
       await this.assertNoRejectedExpenses(id)
+      await this.assertAllExpensesApprovedByAccounting(id)
     }
     // Un viático con pago parcial SÍ puede aprobarse aunque quede saldo del anticipo
     // sin depositar: la liquidación reconcilia con lo realmente pagado
@@ -1557,6 +1600,29 @@ export class ExpenseReportService implements OnModuleInit {
 
     // findByIdAndUpdate no hace populate: la UI necesita expenseIds como documentos
     const fullyUpdatedReport = await this.findOne(id)
+
+    // La cadena de cada comprobante se construye al SUBIRLO, no al enviar la
+    // rendición (ver `buildExpenseChains`), justamente para que los aprobadores
+    // puedan revisar sin esperar al colaborador. El efecto secundario es que
+    // pueden terminar de aprobar TODO antes de que él haga clic en "Enviar": en
+    // ese caso no queda ningún `approveByCoord` posterior que dispare el avance
+    // automático a Contabilidad (VD-87) y la rendición se queda atascada en
+    // `submitted` de forma definitiva — desde VD-87 los aprobadores ya no tienen
+    // botón a nivel de reporte y Contabilidad solo puede actuar desde
+    // `pending_accounting`. Reevaluar aquí cierra esa ventana: al enviar, si
+    // todo está ya aprobado, la rendición pasa de largo a Contabilidad.
+    // Idempotente: si falta alguna aprobación no hace nada y el flujo sigue
+    // dependiendo de `approveByCoord`, como siempre.
+    let autoAdvancedToAccounting = false
+    if (dto.status === 'submitted') {
+      autoAdvancedToAccounting =
+        await this.advanceToAccountingIfAllExpensesApproved(id).catch(err => {
+          this.logger.error(
+            `No se pudo evaluar el avance a Contabilidad al enviar la rendición ${id}: ${err instanceof Error ? err.message : String(err)}`
+          )
+          return false
+        })
+    }
 
     // Si la rendición solicitada fue editada sin cambio de estado, re-notificar admins
     if (existing.status === 'solicited' && dto.status === undefined) {
@@ -1794,8 +1860,11 @@ export class ExpenseReportService implements OnModuleInit {
       }
     }
 
-    // Rendición enviada (submitted)
-    if (dto.status === 'submitted') {
+    // Rendición enviada (submitted). Si el envío la mandó directo a Contabilidad
+    // (todo ya venía aprobado), se omite: `advanceToAccountingIfAllExpensesApproved`
+    // ya avisó a Contabilidad, y convocar a los aprobadores a revisar algo que
+    // acaban de aprobar solo genera correos y notificaciones sin acción posible.
+    if (dto.status === 'submitted' && !autoAdvancedToAccounting) {
       try {
         const ownerRef2 = fullyUpdatedReport.userId as any
         const ownerId2 = ownerRef2?._id
@@ -2072,6 +2141,13 @@ export class ExpenseReportService implements OnModuleInit {
           error
         )
       }
+    }
+
+    // `fullyUpdatedReport` se leyó cuando la rendición todavía estaba en
+    // `submitted`: si el envío la avanzó a Contabilidad, la UI debe recibir el
+    // estado nuevo o mostraría "pendiente de aprobadores" hasta el próximo refresh.
+    if (autoAdvancedToAccounting) {
+      return (await this.findOne(id)) as ExpenseReportDocument
     }
 
     return fullyUpdatedReport
@@ -2392,7 +2468,10 @@ export class ExpenseReportService implements OnModuleInit {
     const directReports = await this.expenseReportModel
       .find(reportQuery)
       .select(
-        '_id userId title motivo gestion budget createdAt createdBy directaDeposit'
+        // `status` va para que la pantalla sepa si la rendición ya llegó a
+        // Contabilidad: los botones de aprobación por comprobante solo aplican
+        // desde `pending_accounting`.
+        '_id userId title motivo gestion budget createdAt createdBy directaDeposit status'
       )
       .populate('userId', 'name email dni bankAccount')
       .populate({
@@ -2685,9 +2764,19 @@ export class ExpenseReportService implements OnModuleInit {
       $push: { expenseIds: new Types.ObjectId(expenseId) },
     }
     const wasRejected = (existing as any)?.status === 'rejected'
+    // Un comprobante agregado a una rendición que YA estaba con Contabilidad la
+    // devuelve al tramo de aprobadores: ese gasto no lo revisó nadie todavía y
+    // Contabilidad solo actúa sobre comprobantes con su cadena completa. Sin
+    // esto la rendición quedaba trabada — nadie podía aprobar el comprobante
+    // nuevo (los aprobadores solo actúan en `submitted`) y sin él aprobado la
+    // rendición tampoco se puede cerrar.
+    const wasPendingAccounting =
+      (existing as any)?.status === 'pending_accounting'
     if (wasRejected) {
       updateOp.$set = { status: 'submitted' }
       updateOp.$unset = { rejectionReason: '', rejectedByRole: '' }
+    } else if (wasPendingAccounting) {
+      updateOp.$set = { status: 'submitted' }
     }
 
     const updated = await this.expenseReportModel
@@ -2707,7 +2796,7 @@ export class ExpenseReportService implements OnModuleInit {
           new Types.ObjectId(expenseId),
         ] as Types.ObjectId[]
         await this.buildExpenseChains(expenseIds, ownerId, reportClientId, { force: true })
-      } else if (wasSubmitted) {
+      } else if (wasSubmitted || wasPendingAccounting) {
         // Rendición ya enviada y en curso de aprobación: solo se construye la
         // cadena del comprobante NUEVO — no se toca la de los existentes, que
         // pueden tener aprobaciones N1/N2 ya en curso.
@@ -2756,6 +2845,18 @@ export class ExpenseReportService implements OnModuleInit {
         $pull: { expenseIds: new Types.ObjectId(expenseId) },
       })
       .exec()
+
+    // Quitar un comprobante puede completar la aprobación de la rendición: si el
+    // que se va era el único sin aprobar (típico: el colaborador borra el
+    // comprobante observado en vez de corregirlo), los que quedan ya están
+    // aprobados y nadie más va a disparar el avance a Contabilidad — no queda
+    // ningún `approveByCoord` por delante. Sin esto la rendición se queda en
+    // `submitted` sin salida, igual que cuando se aprueba todo antes de enviar.
+    await this.advanceToAccountingIfAllExpensesApproved(reportId).catch(err => {
+      this.logger.error(
+        `No se pudo evaluar el avance a Contabilidad al quitar el comprobante ${expenseId} de la rendición ${reportId}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    })
   }
 
   async addAdvanceToReport(reportId: string, advanceId: string) {
@@ -4340,9 +4441,22 @@ export class ExpenseReportService implements OnModuleInit {
 
   /**
    * Construye la cadena de aprobación de UN comprobante recién creado —
-   * público, lo llama `ExpenseService` justo después de guardarlo. Aprobación
-   * en paralelo desde el momento del registro: N1/N2/[N2 sel] pueden empezar
-   * a aprobar de inmediato, sin esperar a que se envíe la rendición completa.
+   * público, lo llama `ExpenseService` justo después de guardarlo.
+   *
+   * Solo actúa si la rendición YA fue enviada (comprobante agregado a una
+   * rendición en curso de aprobación). Mientras siga abierta no se construye
+   * nada: sin cadena no hay a quién le toque aprobar, así que el comprobante no
+   * aparece en la bandeja de ningún aprobador hasta que el colaborador envía.
+   *
+   * Antes se construía desde el registro, para que N1/N2 pudieran ir aprobando
+   * en paralelo sin esperar al colaborador. Eso abría dos huecos: la rendición
+   * podía quedar con todo aprobado antes del envío y entonces ningún
+   * `approveByCoord` posterior la avanzaba a Contabilidad (se quedaba en
+   * `submitted` sin salida), y el colaborador podía editar un comprobante ya
+   * aprobado — las aprobaciones no se reinician al editar y el envío no
+   * reconstruye cadenas existentes, así que el monto revisado y el enviado
+   * podían no ser el mismo. La cadena de todos los comprobantes se construye
+   * ahora al enviar (ver `update()`).
    */
   async buildChainForNewExpense(
     expenseId: string,
@@ -4350,6 +4464,24 @@ export class ExpenseReportService implements OnModuleInit {
     clientId: string
   ): Promise<void> {
     if (!ownerUserId || !clientId) return
+    const expense = await this.expenseModel
+      .findById(expenseId)
+      .select('expenseReportId')
+      .lean<{ expenseReportId?: unknown }>()
+      .exec()
+    const reportId = expense?.expenseReportId
+      ? String(
+        (expense.expenseReportId as { _id?: unknown })?._id ??
+        expense.expenseReportId
+      )
+      : null
+    if (!reportId) return
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('status')
+      .lean<{ status?: string }>()
+      .exec()
+    if (report?.status !== 'submitted') return
     await this.buildExpenseChains([new Types.ObjectId(expenseId)], ownerUserId, clientId)
   }
 
@@ -4666,25 +4798,50 @@ export class ExpenseReportService implements OnModuleInit {
    * pasa automáticamente a Contabilidad (`pending_accounting`) y se avisa a
    * Contabilidad por correo — sin el paso extra de "aprobar la rendición
    * completa" (antes se requería una segunda ronda de aprobadores + contabilidad).
-   * Lo llama `ExpenseService.approveByCoord` tras aprobar cada comprobante.
-   * Idempotente: solo actúa si el reporte sigue en `submitted`, hay al menos un
+   * Lo llaman `ExpenseService.approveByCoord` tras aprobar cada comprobante y
+   * `update()` al enviar la rendición (ver ahí por qué el segundo punto es
+   * imprescindible y no una redundancia).
+   * Idempotente: solo actúa si el reporte sigue en `submitted`, su cadena a
+   * nivel de reporte (viáticos) está completa o no existe, hay al menos un
    * comprobante, NINGUNO está observado (rechazado) y TODOS están aprobados por
    * su cadena. Si queda un comprobante rechazado, la rendición espera a que el
    * colaborador lo corrija (no avanza a Contabilidad con observaciones pendientes).
+   *
+   * Devuelve `true` solo si ESTA llamada movió la rendición a Contabilidad, para
+   * que el llamador ajuste sus notificaciones (no tiene sentido avisar a los
+   * aprobadores de una rendición que ya pasó de largo).
    */
   async advanceToAccountingIfAllExpensesApproved(
     reportId: string
-  ): Promise<void> {
+  ): Promise<boolean> {
     const report = await this.expenseReportModel
       .findById(reportId)
-      .select('status expenseIds userId')
+      .select('status expenseIds userId rendicionApproverChain')
       .exec()
-    if (!report || report.status !== 'submitted') return
+    if (!report || report.status !== 'submitted') return false
+
+    // Un viático lleva además su propia cadena a nivel de reporte (N1/N2 del
+    // centro de costo, ver `approveRendicion`): mientras siga incompleta la
+    // rendición no está atascada, está esperando a esos aprobadores, y avanzar
+    // aquí se los saltaría — el mismo gate que `update()` aplica al intento
+    // manual. Importa sobre todo en el envío: la cadena se reconstruye ahí en
+    // nivel 0, así que sin este guard todo viático con sus comprobantes ya
+    // aprobados pasaría de largo hacia Contabilidad.
+    const reportChain = (report as any).rendicionApproverChain as
+      | ChainStep[]
+      | undefined
+    if (
+      Array.isArray(reportChain) &&
+      reportChain.length > 0 &&
+      !isChainFullyApproved(reportChain)
+    ) {
+      return false
+    }
 
     const expenseIds = (report.expenseIds ?? []).map((x: any) =>
       x && typeof x === 'object' && '_id' in x ? x._id : x
     )
-    if (!expenseIds.length) return
+    if (!expenseIds.length) return false
 
     const expenses = await this.expenseModel
       .find({ _id: { $in: expenseIds } })
@@ -4706,10 +4863,10 @@ export class ExpenseReportService implements OnModuleInit {
     const hasRejected = expenses.some(
       e => String(e.status ?? '').toLowerCase() === 'rejected'
     )
-    if (hasRejected) return
+    if (hasRejected) return false
 
     const active = expenses.filter(e => e.status !== 'rejected')
-    if (active.length === 0) return
+    if (active.length === 0) return false
 
     // Un comprobante está aprobado por los aprobadores cuando su cadena de
     // centro de costo se completó (mismo criterio que `chainCoordStatus`):
@@ -4723,7 +4880,7 @@ export class ExpenseReportService implements OnModuleInit {
       const required = e.requiredLevels ?? e.approverChain.length ?? 0
       return (e.approvalLevel ?? 0) >= required
     }
-    if (!active.every(coordApproved)) return
+    if (!active.every(coordApproved)) return false
 
     // Todos los gastos aprobados por los aprobadores → gate de Contabilidad.
     report.status = 'pending_accounting'
@@ -4734,6 +4891,7 @@ export class ExpenseReportService implements OnModuleInit {
     await this.notifyAccountingReportPendingApproval(reportId, fresh).catch(
       () => {}
     )
+    return true
   }
 
   /**

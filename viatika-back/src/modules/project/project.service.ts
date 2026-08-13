@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { CreateProjectDto } from './dto/create-project.dto'
@@ -17,8 +19,84 @@ export interface IBulkImportResult {
   errors: string[]
 }
 
+/** Referencias vivas a un centro de costo, desglosadas por origen. */
+export interface ProjectReferenceCount {
+  usuarios: number
+  comprobantes: number
+  rendiciones: number
+  solicitudes: number
+  facturasLegado: number
+  ordenesTrabajo: number
+  total: number
+}
+
+/**
+ * Sitios del modelo que referencian un centro de costo. La lista completa vive
+ * SOLO acá: cualquier campo nuevo que apunte a un `Project` se agrega en este
+ * lugar y queda cubierto por `countReferences` y por su test.
+ *
+ * Ojo con dos trampas del modelo, que son las que hicieron pasar por alto
+ * referencias colgadas en el incidente del 2026-08-13:
+ * - dos grafías: `proyectId` en comprobantes, `projectId` en rendiciones.
+ * - dos tipos: string en los permisos de usuario y en las filas anidadas de un
+ *   comprobante, ObjectId en el resto.
+ */
+type OrigenDeReferencia = keyof Omit<ProjectReferenceCount, 'total'>
+
+interface SitioDeReferencia {
+  /** Nombre del modelo Mongoose, tal como lo registra su módulo. */
+  modelo: string
+  origen: OrigenDeReferencia
+  campos: Array<{ path: string; tipo: 'string' | 'objectId' }>
+}
+
+const SITIOS_DE_REFERENCIA: SitioDeReferencia[] = [
+  {
+    modelo: 'User',
+    origen: 'usuarios',
+    campos: [
+      { path: 'permissions.projectIds', tipo: 'string' },
+      { path: 'permissions.primaryProjectId', tipo: 'string' },
+    ],
+  },
+  {
+    modelo: 'Expense',
+    origen: 'comprobantes',
+    campos: [
+      { path: 'proyectId', tipo: 'objectId' },
+      { path: 'detalleAnalitico.proyectId', tipo: 'string' },
+      { path: 'movilidadRows.proyectId', tipo: 'string' },
+    ],
+  },
+  {
+    modelo: 'ExpenseReport',
+    origen: 'rendiciones',
+    campos: [{ path: 'projectId', tipo: 'objectId' }],
+  },
+  {
+    modelo: 'Advance',
+    origen: 'solicitudes',
+    campos: [{ path: 'projectId', tipo: 'objectId' }],
+  },
+  {
+    modelo: 'Invoice',
+    origen: 'facturasLegado',
+    campos: [{ path: 'projectId', tipo: 'objectId' }],
+  },
+  {
+    modelo: 'OrdenTrabajo',
+    origen: 'ordenesTrabajo',
+    campos: [
+      { path: 'costCenterId', tipo: 'objectId' },
+      { path: 'costCenterIds', tipo: 'objectId' },
+    ],
+  },
+]
+
 @Injectable()
 export class ProjectService {
+  private readonly logger = new Logger(ProjectService.name)
+
   constructor(
     @InjectModel(Project.name) private projectModel: Model<ProjectDocument>,
     @InjectModel('LineaNegocio')
@@ -333,21 +411,14 @@ export class ProjectService {
       await this.ensureUniqueCode(updatePayload.code, clientIdObject, id)
     }
 
-    if (updatePayload.isActive === false) {
-      const activeExpenses = await (
-        this.projectModel.db.model('Expense') as any
-      )
-        .countDocuments({
-          proyectId: new Types.ObjectId(id),
-          status: { $nin: ['rejected'] },
-        })
-        .catch(() => 0)
-      if (activeExpenses > 0) {
-        throw new BadRequestException(
-          `Este proyecto tiene ${activeExpenses} comprobante(s) activo(s). Puede desactivarlo, pero los gastos existentes se conservarán.`
-        )
-      }
-    }
+    // Desactivar SIEMPRE se permite. Antes se rechazaba cuando el centro de
+    // costo tenía comprobantes activos, con un mensaje que además se
+    // contradecía ("Puede desactivarlo, pero los gastos existentes se
+    // conservarán") siendo una excepción que lo impedía. La guarda estaba en la
+    // operación equivocada: desactivar conservando historial es justamente el
+    // caso de uso, y bloquearlo empujaba a eliminar el centro de costo, que sí
+    // es destructivo e irreversible (ver `remove`). El aviso sobre los
+    // comprobantes existentes corresponde a una confirmación en la interfaz.
 
     let project: ProjectDocument | null
     try {
@@ -525,8 +596,122 @@ export class ProjectService {
     return { created, skipped, errors }
   }
 
+  /**
+   * Cuenta las referencias vivas a un centro de costo en todo el modelo.
+   *
+   * Los modelos se resuelven por la conexión (`projectModel.db.model`) y no por
+   * inyección para no crear dependencias circulares entre módulos; es el mismo
+   * recurso que ya usaba la validación de desactivación. Si un modelo no está
+   * registrado (tests unitarios con mocks), ese origen cuenta 0 en vez de
+   * romper.
+   */
+  async countReferences(
+    id: string,
+    clientId: string
+  ): Promise<ProjectReferenceCount> {
+    const asString = String(id)
+    let asObjectId: Types.ObjectId | null = null
+    try {
+      asObjectId = new Types.ObjectId(asString)
+    } catch {
+      asObjectId = null
+    }
+    const clientIdObject = new Types.ObjectId(clientId)
+
+    // Una consulta por modelo con todos sus campos en un `$or`, para contar cada
+    // documento una sola vez aunque lo referencie desde dos campos distintos.
+    const contar = async (sitio: SitioDeReferencia): Promise<number> => {
+      try {
+        const model = this.projectModel.db.model(
+          sitio.modelo
+        ) as unknown as Model<unknown>
+        if (!model) return 0
+        const condiciones = sitio.campos
+          .map(campo => ({
+            path: campo.path,
+            valor: campo.tipo === 'string' ? asString : asObjectId,
+          }))
+          .filter(c => c.valor != null)
+          .map(c => ({ [c.path]: c.valor }))
+        if (!condiciones.length) return 0
+        return await model.countDocuments({
+          clientId: clientIdObject,
+          $or: condiciones,
+        })
+      } catch (error) {
+        this.logger.warn(
+          `No se pudo contar referencias en ${sitio.modelo}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        )
+        return 0
+      }
+    }
+
+    const porOrigen: Omit<ProjectReferenceCount, 'total'> = {
+      usuarios: 0,
+      comprobantes: 0,
+      rendiciones: 0,
+      solicitudes: 0,
+      facturasLegado: 0,
+      ordenesTrabajo: 0,
+    }
+
+    for (const sitio of SITIOS_DE_REFERENCIA) {
+      porOrigen[sitio.origen] += await contar(sitio)
+    }
+
+    const total = Object.values(porOrigen).reduce((a, b) => a + b, 0)
+    return { ...porOrigen, total }
+  }
+
+  /** Texto legible del desglose, para el mensaje de error. */
+  private describeReferences(refs: ProjectReferenceCount): string {
+    const partes: string[] = []
+    const etiquetas: Array<[keyof ProjectReferenceCount, string, string]> = [
+      ['usuarios', 'usuario', 'usuarios'],
+      ['comprobantes', 'comprobante', 'comprobantes'],
+      ['rendiciones', 'rendición', 'rendiciones'],
+      ['solicitudes', 'solicitud', 'solicitudes'],
+      ['facturasLegado', 'factura', 'facturas'],
+      ['ordenesTrabajo', 'orden de trabajo', 'órdenes de trabajo'],
+    ]
+    for (const [key, singular, plural] of etiquetas) {
+      const n = refs[key]
+      if (n > 0) partes.push(`${n} ${n === 1 ? singular : plural}`)
+    }
+    return partes.join(', ')
+  }
+
+  /**
+   * Elimina un centro de costo SOLO si nadie lo referencia.
+   *
+   * Antes borraba sin verificar nada, y como todo el modelo referencia el
+   * centro de costo por `_id`, el borrado dejaba usuarios que ya no podían
+   * registrar gastos ("Su centro de costo principal no fue encontrado") y
+   * comprobantes imputados a un centro de costo inexistente. Recrearlo con el
+   * mismo nombre o código NO reconecta nada, porque el `_id` es otro: el
+   * borrado es irreversible desde la interfaz. De ahí que ante cualquier
+   * referencia se rechace y se ofrezca desactivar, que conserva el historial.
+   */
   async remove(id: string, clientId: string) {
     const clientIdObject = new Types.ObjectId(clientId)
+    const existing = await this.projectModel
+      .findOne({ _id: new Types.ObjectId(id), clientId: clientIdObject })
+      .exec()
+    if (!existing) {
+      throw new NotFoundException('Proyecto no encontrado')
+    }
+
+    const refs = await this.countReferences(id, clientId)
+    if (refs.total > 0) {
+      throw new ConflictException(
+        `No se puede eliminar el centro de costo "${existing.name}" porque está en uso: ` +
+          `${this.describeReferences(refs)}. Desactívalo en lugar de eliminarlo: ` +
+          `los registros existentes se conservan y deja de ofrecerse al cargar gastos.`
+      )
+    }
+
     const result = await this.projectModel
       .findOneAndDelete({
         _id: new Types.ObjectId(id),

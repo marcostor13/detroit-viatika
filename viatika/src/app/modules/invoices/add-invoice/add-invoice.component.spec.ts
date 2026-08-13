@@ -1229,6 +1229,88 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  describe('VD-104: referencia de la dirección guardada', () => {
+    const loadSavedSheet = () => {
+      invoicesService.getInvoiceById.and.returnValue(
+        of({
+          _id: 'inv1',
+          expenseType: 'planilla_movilidad',
+          proyectId: 'p1',
+          categoryId: 'cat1',
+          mobilityRows: [
+            {
+              fecha: '2026-02-01',
+              total: 20,
+              origen: 'Av. Javier Prado 123, Lima',
+              destino: 'Aeropuerto Jorge Chávez, Callao',
+              gestion: 'g1',
+              origenCoords: { lat: -12.1, lng: -77.0 },
+            },
+          ],
+        } as any)
+      );
+      const component = createComponent({ id: 'inv1' });
+      component.ngOnInit();
+      return component;
+    };
+
+    it('guarda la dirección cargada como referencia al editar', () => {
+      const row = loadSavedSheet().mobilityRowsArray.at(0);
+      expect(row.get('origenGuardado')?.value).toBe('Av. Javier Prado 123, Lima');
+      expect(row.get('destinoGuardado')?.value).toBe('Aeropuerto Jorge Chávez, Callao');
+    });
+
+    it('retira la referencia si el buscador de Google sí mostró el valor', () => {
+      const component = loadSavedSheet();
+
+      component.onPlacePrefill(true, 0, 'origen');
+
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origenGuardado')?.value).toBe('');
+      // El destino no se toca: cada campo reporta su propio volcado.
+      expect(row.get('destinoGuardado')?.value).toBe('Aeropuerto Jorge Chávez, Callao');
+    });
+
+    it('mantiene la referencia si el buscador no pudo mostrar el valor', () => {
+      const component = loadSavedSheet();
+
+      component.onPlacePrefill(false, 0, 'destino');
+
+      expect(component.mobilityRowsArray.at(0).get('destinoGuardado')?.value).toBe(
+        'Aeropuerto Jorge Chávez, Callao'
+      );
+    });
+
+    it('retira la referencia al escribir otra dirección', () => {
+      const component = loadSavedSheet();
+
+      component.onMobilityPlaceTyped(0, 'origen');
+
+      expect(component.mobilityRowsArray.at(0).get('origenGuardado')?.value).toBe('');
+    });
+
+    it('retira la referencia al elegir una dirección del buscador', () => {
+      const component = loadSavedSheet();
+
+      component.onOrigenSelected(
+        { address: 'Plaza San Martín, Lima', lat: -12.05, lng: -77.03 } as any,
+        0
+      );
+
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origen')?.value).toBe('Plaza San Martín, Lima');
+      expect(row.get('origenGuardado')?.value).toBe('');
+    });
+
+    it('la fila nueva nace sin referencia (se escribe desde cero)', () => {
+      const component = createComponent();
+      component.addMobilityRow();
+      const row = component.mobilityRowsArray.at(0);
+      expect(row.get('origenGuardado')?.value).toBe('');
+      expect(row.get('destinoGuardado')?.value).toBe('');
+    });
+  });
+
   describe('onMobilityPlaceTyped (VD-104: dirección editada a mano)', () => {
     it('descarta coordenadas y distancia cuando se reescribe el origen', () => {
       const component = createComponent();
@@ -1876,6 +1958,65 @@ describe('AddInvoiceComponent', () => {
         'Planilla guardada correctamente',
         'success'
       );
+    });
+
+    // La OT es opcional al crear la rendición directa: si no la lleva, tampoco se
+    // ofrece elegirla por comprobante.
+    it('does not ask for the OT when the rendicion directa has none', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({
+          _id: 'r1',
+          projectId: 'p1',
+          isDirecta: true,
+          expenseIds: [],
+          settlement: null,
+        } as any)
+      );
+      invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent({}, { rendicionId: 'r1', tipo: 'planilla_movilidad' });
+      component.ngOnInit();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+      component.form.patchValue({ categoryId: 'catMov' });
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-01',
+        total: 10,
+        proyectId: 'p1',
+        categoryId: 'catMov',
+        origen: 'A',
+        destino: 'B',
+        gestion: 'g1',
+      });
+
+      component.saveMobilitySheet();
+
+      expect(component.directaOrdenTrabajoInherited()).toBeFalse();
+      expect(component.directaSinOrdenTrabajo()).toBeTrue();
+      expect(invoicesService.createMobilitySheet).toHaveBeenCalled();
+      const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0] as any;
+      expect(payload.ordenTrabajoId).toBeUndefined();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'Planilla guardada correctamente',
+        'success'
+      );
+    });
+
+    it('keeps asking for the OT when the rendicion directa has one to inherit', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({
+          _id: 'r1',
+          projectId: 'p1',
+          isDirecta: true,
+          directaOrdenTrabajoId: { _id: 'ot1', nombre: 'OT-LIM-002' },
+          expenseIds: [],
+          settlement: null,
+        } as any)
+      );
+      const component = createComponent({}, { rendicionId: 'r1', tipo: 'planilla_movilidad' });
+      component.ngOnInit();
+
+      expect(component.directaSinOrdenTrabajo()).toBeFalse();
+      expect(component.form.get('ordenTrabajoId')?.value).toBe('ot1');
     });
 
     it('computes rendicionSpent from report expenses and rendicionBudget from paid/settled advances of that report', () => {

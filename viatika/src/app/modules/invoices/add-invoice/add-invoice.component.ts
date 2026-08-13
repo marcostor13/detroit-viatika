@@ -610,12 +610,19 @@ export default class AddInvoiceComponent implements OnInit {
                 colaboradorEsTercero: [!!(row.colaboradorId && String(row.colaboradorId) !== this.currentUserId)],
                 colaboradorId: [row.colaboradorId && String(row.colaboradorId) !== this.currentUserId ? String(row.colaboradorId) : ''],
                 origen: [row.origen || '', Validators.required],
+                // VD-104: referencia visible de la dirección ya guardada. El
+                // buscador de Google no siempre puede precargarse (ver
+                // `onPlacePrefill`), así que se muestra debajo del campo hasta
+                // que se confirme que el recuadro sí quedó relleno o el usuario
+                // escriba otra dirección. No viaja al backend.
+                origenGuardado: [row.origen || ''],
                 origenLat: [row.origenCoords?.lat ?? null],
                 origenLng: [row.origenCoords?.lng ?? null],
                 origenDepartamento: [row.origenDepartamento || ''],
                 origenProvincia: [row.origenProvincia || ''],
                 origenDistrito: [row.origenDistrito || ''],
                 destino: [row.destino || '', Validators.required],
+                destinoGuardado: [row.destino || ''],
                 destinoLat: [row.destinoCoords?.lat ?? null],
                 destinoLng: [row.destinoCoords?.lng ?? null],
                 destinoDepartamento: [row.destinoDepartamento || ''],
@@ -1252,10 +1259,12 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
-   * Rendiciones directas creadas antes de tener OT propia: no hay OT que heredar,
-   * así que se sigue pidiendo en el formulario del comprobante (fallback legado).
+   * Rendición directa sin OT propia: la OT es opcional al crear la rendición y
+   * las directas antiguas tampoco la tienen. No hay ninguna que heredar, así que
+   * el campo no se muestra ni se exige en el comprobante — igual que en el
+   * viático sin OT (ver viaticoSinOrdenTrabajo).
    */
-  needsFallbackOt(): boolean {
+  directaSinOrdenTrabajo(): boolean {
     return this.isDirectaPlanilla() && !this.directaOrdenTrabajoInherited();
   }
 
@@ -1348,12 +1357,16 @@ export default class AddInvoiceComponent implements OnInit {
       colaboradorEsTercero: [false],
       colaboradorId: [''],
       origen: ['', Validators.required],
+      // VD-104: la fila nueva se escribe desde cero, no hay dirección guardada
+      // que referenciar. Ver el grupo equivalente en la carga de edición.
+      origenGuardado: [''],
       origenLat: [null],
       origenLng: [null],
       origenDepartamento: [''],
       origenProvincia: [''],
       origenDistrito: [''],
       destino: ['', Validators.required],
+      destinoGuardado: [''],
       destinoLat: [null],
       destinoLng: [null],
       destinoDepartamento: [''],
@@ -1373,6 +1386,8 @@ export default class AddInvoiceComponent implements OnInit {
     // Patch dep first; options for prov/dist depend on dep being set
     row.patchValue({
       origen: result.address,
+      // La dirección elegida ya se ve en el recuadro: sobra la referencia.
+      origenGuardado: '',
       origenLat: result.lat,
       origenLng: result.lng,
       origenDepartamento: dep,
@@ -1399,6 +1414,7 @@ export default class AddInvoiceComponent implements OnInit {
     const row = this.mobilityRowsArray.at(index);
     row.patchValue({
       destino: result.address,
+      destinoGuardado: '',
       destinoLat: result.lat,
       destinoLng: result.lng,
       destinoDepartamento: dep,
@@ -1585,18 +1601,35 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
-   * VD-104: en edición la dirección se escribe a mano (el buscador de Google no
-   * refleja el valor guardado). Si el texto cambia, las coordenadas y la
-   * distancia calculadas al crear la planilla dejan de corresponder.
+   * VD-104: el buscador de Google sigue activo también en edición, pero su
+   * recuadro puede aparecer vacío (ver `onPlacePrefill`). En cuanto el usuario
+   * escribe, lo que manda es lo que se ve: se retira la referencia a la
+   * dirección guardada y se descartan las coordenadas y la distancia
+   * calculadas al crear la planilla, que ya no corresponden al texto nuevo.
    */
   onMobilityPlaceTyped(index: number, field: 'origen' | 'destino') {
     const row = this.mobilityRowsArray.at(index);
+    const guardado = row.get(`${field}Guardado`);
+    if (guardado?.value) guardado.setValue('');
     if (row.get(`${field}Lat`)?.value == null) return;
     row.patchValue({
       [`${field}Lat`]: null,
       [`${field}Lng`]: null,
       distanciaKm: null,
     });
+  }
+
+  /**
+   * VD-104: el componente de Google (`PlaceAutocompleteElement`) dibuja su
+   * propio campo y no admite que se le cargue un valor desde afuera cuando
+   * monta su DOM en modo cerrado. Si el volcado del valor guardado no llegó al
+   * recuadro, se deja debajo la dirección en verde como referencia de que el
+   * origen y el destino sí están guardados; si sí llegó, la referencia sobra.
+   */
+  onPlacePrefill(ok: boolean, index: number, field: 'origen' | 'destino') {
+    if (!ok) return;
+    const guardado = this.mobilityRowsArray.at(index)?.get(`${field}Guardado`);
+    if (guardado?.value) guardado.setValue('');
   }
 
   onOrigenDepartamentoChange(i: number) {
@@ -1827,9 +1860,12 @@ export default class AddInvoiceComponent implements OnInit {
     const categoryCtrl = this.form.get('categoryId');
     const categoryOk = !!(categoryCtrl?.disabled || categoryCtrl?.valid);
     // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de
-    // Costo. Excepción: viático sin OT en la solicitud — no hay ninguna que heredar
-    // ni que el colaborador pueda elegir aquí (ver viaticoSinOrdenTrabajo).
-    const otOk = this.viaticoSinOrdenTrabajo() || !!this.form.get('ordenTrabajoId')?.value;
+    // Costo. Excepciones: viático sin OT en la solicitud y rendición directa sin OT
+    // propia — no hay ninguna que heredar ni que el colaborador pueda elegir aquí.
+    const otOk =
+      this.viaticoSinOrdenTrabajo() ||
+      this.directaSinOrdenTrabajo() ||
+      !!this.form.get('ordenTrabajoId')?.value;
     if (!proyectOk || !categoryOk || !otOk) {
       this.notificationService.show(
         otOk

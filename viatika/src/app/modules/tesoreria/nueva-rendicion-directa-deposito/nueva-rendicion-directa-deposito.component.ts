@@ -69,7 +69,9 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
   form: FormGroup = this.fb.group({
     userId: ['', Validators.required],
     projectId: ['', Validators.required],
-    ordenTrabajoId: ['', Validators.required],
+    // Opcional, igual que en la rendición directa del colaborador: hay centros
+    // de costo sin ninguna OT activa y exigirla bloqueaba la creación.
+    ordenTrabajoId: [''],
     metodoPago: ['deposito', Validators.required],
     gestion: [''],
     amount: [null, [Validators.required, Validators.min(0.01)]],
@@ -230,18 +232,16 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
   }
 
   /**
-   * Mensaje de error de la OT: si el centro de costo elegido no tiene ninguna
-   * OT activa, se prioriza esa explicación por sobre el error genérico de
-   * "campo requerido" (que aparece apenas se toca el select y, si no, tapaba
-   * la razón real de por qué el desplegable está vacío).
+   * Nota bajo el select de OT. Ya no es un error —la OT es opcional—, solo
+   * explica por qué el desplegable puede verse vacío.
    */
-  otErrorMessage(): string {
+  otHelperText(): string {
     const projectId = this.form.get('projectId')?.value;
-    if (projectId && this.filteredOrdenesTrabajo().length === 0) {
-      return 'El centro de costo elegido no tiene órdenes de trabajo activas. Créalas en Configuración → Órdenes de Trabajo.';
+    if (!projectId) return 'Seleccione primero un centro de costo.';
+    if (this.filteredOrdenesTrabajo().length === 0) {
+      return 'El centro de costo elegido no tiene órdenes de trabajo activas. Puedes crear la rendición sin OT.';
     }
-    const ctrl = this.form.get('ordenTrabajoId');
-    return ctrl?.invalid && ctrl?.touched ? 'Seleccione una orden de trabajo' : '';
+    return 'Opcional. Si la eliges, los comprobantes de la rendición la heredan.';
   }
 
   get hasDetectedData(): boolean {
@@ -262,7 +262,9 @@ export class NuevaRendicionDirectaDepositoComponent implements OnInit {
     this.expenseReportsService.createDirectaDeposit({
       userId: v.userId,
       projectId: v.projectId,
-      ordenTrabajoId: v.ordenTrabajoId,
+      // Solo si se eligió: el backend la valida como ObjectId y una cadena
+      // vacía haría rechazar la creación.
+      ordenTrabajoId: v.ordenTrabajoId || undefined,
       gestion: v.gestion?.trim() || undefined,
       amount: Number(v.amount),
       metodoPago: v.metodoPago,

@@ -70,14 +70,23 @@ export class RendicionesTabsComponent implements OnInit {
 
   activeTab = signal<Tab>('rendiciones');
 
+  /**
+   * Tesorería ve las mismas tres pestañas que Contabilidad. Las directas solo se
+   * listan acá (la de "Solicitud de Fondos" las oculta salvo a los aprobadores de
+   * su cadena) y Tesorería no es aprobador de nadie, así que sin estas pestañas
+   * no tenía dónde ver ni abrir una directa: solo llegaba pegando el URL del
+   * detalle a mano, justo cuando el cierre definitivo es suyo (VD-66/VD-49).
+   */
   showExtraTabs(): boolean {
-    return this.userState.isContabilidadInCompany();
+    return this.userState.isContabilidadInCompany() || this.userState.isTesoreria();
   }
 
   ngOnInit(): void {
     this.route.queryParamMap.subscribe((params) => {
       const tab = params.get('tab') as Tab | null;
-      if (tab === 'directas' || tab === 'caja-chica') {
+      // El ?tab= se respeta solo si el usuario tiene esas pestañas; si no, cae en
+      // la principal en vez de dejar el contenido sin pestaña visible.
+      if ((tab === 'directas' || tab === 'caja-chica') && this.showExtraTabs()) {
         this.activeTab.set(tab);
       } else {
         this.activeTab.set('rendiciones');
