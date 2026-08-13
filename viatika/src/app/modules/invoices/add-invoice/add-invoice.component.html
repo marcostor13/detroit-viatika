@@ -612,25 +612,25 @@
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-secondary">
                 Dirección <span class="text-error">*</span>
-                <span class="text-tertiary font-normal ml-1">{{ id ? '(guardada al crear la planilla)' : '(busca y selecciona)' }}</span>
+                <span class="text-tertiary font-normal ml-1">(busca y selecciona)</span>
               </label>
-              <!-- VD-104: en edición se muestra el texto guardado. El buscador de
-                   Google renderiza su propio campo y no refleja el valor cargado. -->
-              @if (id) {
+              <!-- VD-104: el buscador de Google va en todas las filas, también al
+                   editar. Si no logra mostrar la dirección ya guardada, esta
+                   aparece debajo en verde como referencia. -->
               <input type="text" formControlName="origen"
+                  appPlacesAutocomplete
+                  (placeSelected)="onOrigenSelected($event, i)"
+                  (valuePrefill)="onPlacePrefill($event, i, 'origen')"
                   (input)="onMobilityPlaceTyped(i, 'origen')"
                   placeholder="Ej: Av. Javier Prado 123, Lima"
                   autocomplete="off"
                   class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
-              } @else {
-              <input type="text" formControlName="origen"
-                  appPlacesAutocomplete
-                  (placeSelected)="onOrigenSelected($event, i)"
-                  placeholder="Ej: Av. Javier Prado 123, Lima"
-                  autocomplete="off"
-                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
-              }
-              @if (row.get('origenLat')?.value) {
+              @if (row.get('origenGuardado')?.value) {
+              <span class="text-xs text-success flex items-start gap-1 mt-0.5">
+                <app-icon name="check" size="sm" class="shrink-0" />
+                <span>Origen guardado: <strong>{{ row.get('origenGuardado')?.value }}</strong></span>
+              </span>
+              } @else if (row.get('origenLat')?.value) {
               <span class="text-xs text-success flex items-center gap-1 mt-0.5">
                 <app-icon name="check" size="sm" />
                 Ubicación confirmada
@@ -676,24 +676,23 @@
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-secondary">
                 Dirección <span class="text-error">*</span>
-                <span class="text-tertiary font-normal ml-1">{{ id ? '(guardada al crear la planilla)' : '(busca y selecciona)' }}</span>
+                <span class="text-tertiary font-normal ml-1">(busca y selecciona)</span>
               </label>
               <!-- VD-104: ver nota en Origen. -->
-              @if (id) {
               <input type="text" formControlName="destino"
+                  appPlacesAutocomplete
+                  (placeSelected)="onDestinoSelected($event, i)"
+                  (valuePrefill)="onPlacePrefill($event, i, 'destino')"
                   (input)="onMobilityPlaceTyped(i, 'destino')"
                   placeholder="Ej: Aeropuerto Jorge Chávez, Callao"
                   autocomplete="off"
                   class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
-              } @else {
-              <input type="text" formControlName="destino"
-                  appPlacesAutocomplete
-                  (placeSelected)="onDestinoSelected($event, i)"
-                  placeholder="Ej: Aeropuerto Jorge Chávez, Callao"
-                  autocomplete="off"
-                  class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-sm" />
-              }
-              @if (row.get('destinoLat')?.value) {
+              @if (row.get('destinoGuardado')?.value) {
+              <span class="text-xs text-success flex items-start gap-1 mt-0.5">
+                <app-icon name="check" size="sm" class="shrink-0" />
+                <span>Destino guardado: <strong>{{ row.get('destinoGuardado')?.value }}</strong></span>
+              </span>
+              } @else if (row.get('destinoLat')?.value) {
               <span class="text-xs text-success flex items-center gap-1 mt-0.5">
                 <app-icon name="check" size="sm" />
                 Ubicación confirmada

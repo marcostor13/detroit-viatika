@@ -1370,6 +1370,11 @@ export class ExpenseService {
     }
     const status = body.status || validation.status || 'pending'
 
+    // El escaneo ya valida duplicados, pero confirmar es un endpoint aparte: sin
+    // esta comprobación, dos clics en "Confirmar" (o un reintento tras un error
+    // posterior al alta) creaban dos comprobantes idénticos.
+    await this.validateDuplicateInvoiceIfAny(extraction, body.clientId)
+
     const expense = await this.createExpenseDocument(
       body,
       extraction,
@@ -1377,20 +1382,56 @@ export class ExpenseService {
       status
     )
 
-    if (body.userId) {
-      await this.expenseReportService.buildChainForNewExpense(
-        expense._id.toString(),
-        body.userId,
-        body.clientId
-      )
+    // Todo lo que sigue al alta se compensa si falla. Sin esto, un error acá
+    // (por ejemplo un centro de costo borrado, que hace fallar la construcción
+    // de la cadena) dejaba el comprobante creado pero nunca enganchado a la
+    // rendición: invisible en la tabla, imposible de borrar desde la interfaz, y
+    // bloqueando la recarga del mismo archivo por duplicado.
+    try {
+      if (body.userId) {
+        await this.expenseReportService.buildChainForNewExpense(
+          expense._id.toString(),
+          body.userId,
+          body.clientId
+        )
+      }
+      if (body.expenseReportId) {
+        await this.expenseReportService.addExpenseToReport(
+          body.expenseReportId,
+          expense._id.toString()
+        )
+      }
+    } catch (error) {
+      await this.deleteOrphanExpense(expense._id.toString(), error)
+      throw error
     }
-    if (body.expenseReportId) {
-      await this.expenseReportService.addExpenseToReport(
-        body.expenseReportId,
-        expense._id.toString()
-      )
-    }
+
     return expense
+  }
+
+  /**
+   * Borra un comprobante que quedó a medio crear y deja rastro. Si el borrado
+   * mismo falla se registra el id en el log: es la única forma de encontrarlo
+   * después, porque un comprobante sin rendición no aparece en ninguna pantalla.
+   */
+  private async deleteOrphanExpense(
+    expenseId: string,
+    causa: unknown
+  ): Promise<void> {
+    const motivo = causa instanceof Error ? causa.message : String(causa)
+    try {
+      await this.expenseRepository.findByIdAndDelete(expenseId).exec()
+      this.logger.warn(
+        `Comprobante ${expenseId} eliminado tras fallar el alta: ${motivo}`
+      )
+    } catch (deleteError) {
+      this.logger.error(
+        `HUÉRFANO: no se pudo eliminar el comprobante ${expenseId} tras fallar el alta ` +
+          `(${motivo}). Error al borrar: ${
+            deleteError instanceof Error ? deleteError.message : String(deleteError)
+          }`
+      )
+    }
   }
 
   /**
