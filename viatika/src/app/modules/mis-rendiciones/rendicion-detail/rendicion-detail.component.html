@@ -405,7 +405,9 @@
         <div class="flex flex-col gap-2 items-end">
           @if (!canContabilidadApprove) {
             <p class="text-sm text-primary bg-primary/10 border border-primary/30 px-3 py-2 rounded-lg max-w-xs leading-snug">
-              @if (report.isDirecta) {
+              @if (expensesPendingAccountingCount > 0) {
+                Falta revisar {{ expensesPendingAccountingCount }} comprobante(s). Aprueba cada uno desde su ficha y se habilita la aprobacion de la rendicion completa.
+              } @else if (report.isDirecta) {
                 Esta rendicion esta en espera de aprobacion de contabilidad.
               } @else {
                 Esta rendicion fue aprobada por los aprobadores y esta en espera de aprobacion de contabilidad.

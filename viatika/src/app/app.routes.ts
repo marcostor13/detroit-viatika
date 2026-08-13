@@ -8,6 +8,7 @@ import { AuthTesoreroGuard } from './guards/auth-tesorero.guard';
 import { AuthViaticosGuard } from './guards/auth-viaticos.guard';
 import { defaultRedirectGuard } from './guards/default-redirect.guard';
 import { authModuleGuard } from './guards/auth-module.guard';
+import { cajaChicaDetalleGuard } from './guards/auth-caja-chica-detalle.guard';
 import { MainComponent } from './layouts/main/main.component';
 import AdminUsersComponent from './modules/admin-users/admin-users.component';
 import { CreateUserComponent } from './modules/admin-users/create-user/create-user.component';
@@ -413,7 +414,7 @@ export const routes: Routes = [
           import('./modules/rendiciones-caja-chica/rendicion-caja-chica-detalle/rendicion-caja-chica-detalle.component').then(
             (m) => m.RendicionCajaChicaDetalleComponent
           ),
-        canActivate: [AuthAdmin2Guard],
+        canActivate: [cajaChicaDetalleGuard],
       },
     ],
   },

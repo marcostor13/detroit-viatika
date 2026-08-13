@@ -84,6 +84,16 @@ export class RendicionesDirectasComponent implements OnInit {
 
   get isContabilidad(): boolean { return this.userState.isContabilidad(); }
 
+  /**
+   * La sub-pestaña "Gastos" (listado por comprobante) nunca se le mostró a
+   * Contabilidad, y Tesorería debe ver esta pantalla igual que ella, así que
+   * tampoco la ve. Hoy son los dos únicos roles que abren /rendiciones?tab=directas;
+   * la sección se conserva por si la pantalla vuelve a abrirse a otro rol.
+   */
+  get showGastosTab(): boolean {
+    return !this.isContabilidad && !this.userState.isTesoreria();
+  }
+
   toggleSelectAll(): void {
     const all = this.data();
     const sel = this.selectedIds();
@@ -136,7 +146,11 @@ export class RendicionesDirectasComponent implements OnInit {
     const cid = this.clientId;
     if (!cid) return;
     this.invoicesService.getProjects(cid).subscribe({ next: list => this.projects.set(list ?? []) });
-    this.invoicesService.getCategories().subscribe({ next: list => this.categories.set(list ?? []) });
+    // Sin el clientId la URL queda en /category/flat, que en el backend no es la
+    // ruta ":clientId/flat" sino ":clientId" con clientId="flat": devolvía basura
+    // para Contabilidad (filtro de categorías siempre vacío, error silencioso) y
+    // 403 "Forbidden resource" para Tesorería, que no está en los roles de esa ruta.
+    this.invoicesService.getCategories(cid).subscribe({ next: list => this.categories.set(list ?? []) });
     this.adminUsersService.getUsers().subscribe({ next: list => this.users.set(list ?? []) });
   }
 
@@ -498,6 +512,15 @@ export class RendicionesDirectasComponent implements OnInit {
   getEstadoCont(e: any): string { return e.contabilidadStatus === 'approved' ? 'Revisado' : 'Pendiente'; }
   getEstadoContClass(e: any): string { return e.contabilidadStatus === 'approved' ? 'bg-teal-100 text-teal-700' : 'bg-yellow-100 text-yellow-700'; }
   isRevisado(e: any): boolean { return e.contabilidadStatus === 'approved'; }
+  /**
+   * Contabilidad marca "revisado" un comprobante recién cuando su rendición
+   * llegó a `pending_accounting`, o sea cuando los aprobadores del centro de
+   * costo terminaron con TODOS los comprobantes. Antes de eso el backend
+   * rechaza la aprobación, así que el botón no se ofrece.
+   */
+  enContabilidad(e: any): boolean {
+    return String(e?._report?.status ?? '') === 'pending_accounting';
+  }
   getTotal(e: any): number { const t = e?.total; if (typeof t === 'number') return t; const n = Number(t); return Number.isNaN(n) ? 0 : n; }
   get totalMonto(): number { return this.data().reduce((sum, e) => sum + (this.isDeposito(e) ? 0 : this.getTotal(e)), 0); }
 

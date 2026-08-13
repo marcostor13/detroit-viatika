@@ -10,9 +10,11 @@ describe('RendicionesTabsComponent', () => {
   let router: jasmine.SpyObj<Router>;
   let queryParamMap$: any;
 
-  function setup(initialTab: string | null = null) {
+  function setup(initialTab: string | null = null, role: 'contabilidad' | 'tesoreria' | 'otro' = 'contabilidad') {
     TestBed.resetTestingModule();
-    userState = jasmine.createSpyObj('UserStateService', ['isContabilidadInCompany']);
+    userState = jasmine.createSpyObj('UserStateService', ['isContabilidadInCompany', 'isTesoreria']);
+    userState.isContabilidadInCompany.and.returnValue(role === 'contabilidad');
+    userState.isTesoreria.and.returnValue(role === 'tesoreria');
     router = jasmine.createSpyObj('Router', ['navigate']);
     queryParamMap$ = of({ get: (key: string) => (key === 'tab' ? initialTab : null) });
 
@@ -35,11 +37,19 @@ describe('RendicionesTabsComponent', () => {
     expect(component.activeTab()).toBe('rendiciones');
   });
 
-  describe('showExtraTabs', () => {
-    it('is true only when Contabilidad has an active company', () => {
-      userState.isContabilidadInCompany.and.returnValue(true);
+  describe('visibilidad de pestañas', () => {
+    it('Contabilidad con empresa activa ve las pestañas extra', () => {
+      setup(null, 'contabilidad');
       expect(component.showExtraTabs()).toBeTrue();
-      userState.isContabilidadInCompany.and.returnValue(false);
+    });
+
+    it('Tesorería ve las mismas pestañas que Contabilidad', () => {
+      setup(null, 'tesoreria');
+      expect(component.showExtraTabs()).toBeTrue();
+    });
+
+    it('el resto de roles no ve pestañas extra', () => {
+      setup(null, 'otro');
       expect(component.showExtraTabs()).toBeFalse();
     });
   });
@@ -51,10 +61,28 @@ describe('RendicionesTabsComponent', () => {
       expect(component.activeTab()).toBe('directas');
     });
 
+    it('activates "directas" for Tesorería too', () => {
+      setup('directas', 'tesoreria');
+      component.ngOnInit();
+      expect(component.activeTab()).toBe('directas');
+    });
+
     it('activates "caja-chica" when the query param requests it', () => {
       setup('caja-chica');
       component.ngOnInit();
       expect(component.activeTab()).toBe('caja-chica');
+    });
+
+    it('activates "caja-chica" for Tesorería too', () => {
+      setup('caja-chica', 'tesoreria');
+      component.ngOnInit();
+      expect(component.activeTab()).toBe('caja-chica');
+    });
+
+    it('ignora un ?tab= extra en un rol sin esas pestañas', () => {
+      setup('directas', 'otro');
+      component.ngOnInit();
+      expect(component.activeTab()).toBe('rendiciones');
     });
 
     it('falls back to "rendiciones" for an unrecognized tab param', () => {
