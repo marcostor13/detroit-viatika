@@ -25,6 +25,14 @@ import { Roles } from '../auth/decorators/roles.decorador'
 import { ROLES } from '../auth/enums/roles.enum'
 import { AuditLogService } from '../audit-log/audit-log.service'
 
+/**
+ * Tope de tamaño del archivo a analizar, igual al que ya aplican
+ * `invoice.controller` y `upload.controller`. Sin tope, multer bufferea el
+ * archivo completo en memoria y la API corre con `--max-old-space-size=1400`:
+ * una subida grande la tumba.
+ */
+const MAX_ARCHIVO_ANALISIS = 10 * 1024 * 1024
+
 @Controller('expense')
 export class ExpenseController {
   private readonly logger = new Logger(ExpenseController.name)
@@ -83,7 +91,9 @@ export class ExpenseController {
     ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_ARCHIVO_ANALISIS } })
+  )
   async analyzeImage(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: CreateExpenseDto,
@@ -109,7 +119,9 @@ export class ExpenseController {
     ROLES.TESORERIA
   )
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: MAX_ARCHIVO_ANALISIS } })
+  )
   async analyzePdf(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: CreateExpenseDto,
