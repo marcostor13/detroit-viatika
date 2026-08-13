@@ -40,7 +40,7 @@
       [class.hover:text-gray-700]="activeTab() !== 'rendiciones'">
       Rendiciones directas
     </button>
-    @if (!isContabilidad) {
+    @if (showGastosTab) {
     <button type="button" (click)="setTab('gastos')"
       class="px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors"
       [class.border-primary]="activeTab() === 'gastos'" [class.text-primary]="activeTab() === 'gastos'"
@@ -189,6 +189,10 @@
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="w-3 h-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                       Revisado
                     </span>
+                  } @else if (!enContabilidad(e)) {
+                    <!-- Los aprobadores del centro de costo siguen revisando: Contabilidad
+                         todavía no puede marcar revisado (el backend lo rechaza). -->
+                    <span class="text-[10px] text-gray-400 font-medium whitespace-nowrap">En aprobadores</span>
                   } @else {
                     <!-- Pendiente: botón icono teal igual que rendicion-detail -->
                     <div class="flex items-center gap-0.5">

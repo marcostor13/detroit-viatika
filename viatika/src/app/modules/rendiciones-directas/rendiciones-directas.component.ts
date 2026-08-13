@@ -84,6 +84,16 @@ export class RendicionesDirectasComponent implements OnInit {
 
   get isContabilidad(): boolean { return this.userState.isContabilidad(); }
 
+  /**
+   * La sub-pestaña "Gastos" (listado por comprobante) nunca se le mostró a
+   * Contabilidad, y Tesorería debe ver esta pantalla igual que ella, así que
+   * tampoco la ve. Hoy son los dos únicos roles que abren /rendiciones?tab=directas;
+   * la sección se conserva por si la pantalla vuelve a abrirse a otro rol.
+   */
+  get showGastosTab(): boolean {
+    return !this.isContabilidad && !this.userState.isTesoreria();
+  }
+
   toggleSelectAll(): void {
     const all = this.data();
     const sel = this.selectedIds();

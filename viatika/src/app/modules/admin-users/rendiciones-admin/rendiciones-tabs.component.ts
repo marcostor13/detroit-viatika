@@ -26,7 +26,6 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Solicitud de Fondos
         </button>
-        @if (showDirectasTab()) {
         <button
           (click)="setTab('directas')"
           class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
@@ -37,8 +36,6 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Rendiciones Directas
         </button>
-        }
-        @if (showCajaChicaTab()) {
         <button
           (click)="setTab('caja-chica')"
           class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
@@ -49,7 +46,6 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Caja Chica
         </button>
-        }
       </div>
       }
 
@@ -75,33 +71,22 @@ export class RendicionesTabsComponent implements OnInit {
   activeTab = signal<Tab>('rendiciones');
 
   /**
-   * Las rendiciones directas solo se listan en esta pestaña: la de "Solicitud de
-   * Fondos" las oculta salvo a los aprobadores de su cadena. Tesorería, que es
-   * quien cierra definitivamente las rendiciones (VD-66/VD-49), no es aprobador
-   * de nadie, así que sin esta pestaña no tenía dónde ver ni abrir una directa
-   * -- solo llegaba a ella pegando el URL del detalle a mano.
+   * Tesorería ve las mismas tres pestañas que Contabilidad. Las directas solo se
+   * listan acá (la de "Solicitud de Fondos" las oculta salvo a los aprobadores de
+   * su cadena) y Tesorería no es aprobador de nadie, así que sin estas pestañas
+   * no tenía dónde ver ni abrir una directa: solo llegaba pegando el URL del
+   * detalle a mano, justo cuando el cierre definitivo es suyo (VD-66/VD-49).
    */
-  showDirectasTab(): boolean {
-    return this.userState.isContabilidadInCompany() || this.userState.isTesoreria();
-  }
-
-  /** Caja chica sigue siendo de Contabilidad: Tesorería no interviene en su flujo. */
-  showCajaChicaTab(): boolean {
-    return this.userState.isContabilidadInCompany();
-  }
-
   showExtraTabs(): boolean {
-    return this.showDirectasTab() || this.showCajaChicaTab();
+    return this.userState.isContabilidadInCompany() || this.userState.isTesoreria();
   }
 
   ngOnInit(): void {
     this.route.queryParamMap.subscribe((params) => {
       const tab = params.get('tab') as Tab | null;
-      // El ?tab= se respeta solo si esa pestaña existe para el usuario; si no,
-      // cae en la principal en vez de dejar el contenido sin pestaña visible.
-      if (tab === 'directas' && this.showDirectasTab()) {
-        this.activeTab.set(tab);
-      } else if (tab === 'caja-chica' && this.showCajaChicaTab()) {
+      // El ?tab= se respeta solo si el usuario tiene esas pestañas; si no, cae en
+      // la principal en vez de dejar el contenido sin pestaña visible.
+      if ((tab === 'directas' || tab === 'caja-chica') && this.showExtraTabs()) {
         this.activeTab.set(tab);
       } else {
         this.activeTab.set('rendiciones');

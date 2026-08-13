@@ -107,9 +107,13 @@ export class ExpenseReportController {
     return this.expenseReportService.findMyCajaChica(userId, clientId)
   }
 
-  /** Contabilidad: todas las rendiciones de caja chica disponibles del cliente. */
+  /**
+   * Contabilidad: todas las rendiciones de caja chica disponibles del cliente.
+   * Tesorería incluida: ve las mismas pantallas de /rendiciones que Contabilidad,
+   * y el detalle de una caja chica pide esta lista al abrirse.
+   */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(ROLES.CONTABILIDAD, ROLES.ADMIN, ROLES.SUPER_ADMIN)
+  @Roles(ROLES.CONTABILIDAD, ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.TESORERIA)
   @Get('caja-chica/available')
   findAllCajaChicaAvailable(@Request() req: any) {
     const clientId = this.resolveClientId(req)

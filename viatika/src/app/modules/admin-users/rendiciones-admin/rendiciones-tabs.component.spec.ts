@@ -38,24 +38,18 @@ describe('RendicionesTabsComponent', () => {
   });
 
   describe('visibilidad de pestañas', () => {
-    it('Contabilidad con empresa activa ve directas y caja chica', () => {
+    it('Contabilidad con empresa activa ve las pestañas extra', () => {
       setup(null, 'contabilidad');
-      expect(component.showDirectasTab()).toBeTrue();
-      expect(component.showCajaChicaTab()).toBeTrue();
       expect(component.showExtraTabs()).toBeTrue();
     });
 
-    it('Tesorería ve directas (las cierra) pero no caja chica', () => {
+    it('Tesorería ve las mismas pestañas que Contabilidad', () => {
       setup(null, 'tesoreria');
-      expect(component.showDirectasTab()).toBeTrue();
-      expect(component.showCajaChicaTab()).toBeFalse();
       expect(component.showExtraTabs()).toBeTrue();
     });
 
     it('el resto de roles no ve pestañas extra', () => {
       setup(null, 'otro');
-      expect(component.showDirectasTab()).toBeFalse();
-      expect(component.showCajaChicaTab()).toBeFalse();
       expect(component.showExtraTabs()).toBeFalse();
     });
   });
@@ -79,8 +73,14 @@ describe('RendicionesTabsComponent', () => {
       expect(component.activeTab()).toBe('caja-chica');
     });
 
-    it('ignora un ?tab= que el usuario no tiene habilitado', () => {
+    it('activates "caja-chica" for Tesorería too', () => {
       setup('caja-chica', 'tesoreria');
+      component.ngOnInit();
+      expect(component.activeTab()).toBe('caja-chica');
+    });
+
+    it('ignora un ?tab= extra en un rol sin esas pestañas', () => {
+      setup('directas', 'otro');
       component.ngOnInit();
       expect(component.activeTab()).toBe('rendiciones');
     });

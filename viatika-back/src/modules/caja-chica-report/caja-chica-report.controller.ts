@@ -18,9 +18,17 @@ import { Roles } from '../auth/decorators/roles.decorador'
 import { ROLES } from '../auth/enums/roles.enum'
 import { AuditLogService } from '../audit-log/audit-log.service'
 
+// Tesorería entra con los mismos permisos que Contabilidad: ve las mismas tres
+// pestañas de /rendiciones y es quien cierra las rendiciones (VD-66/VD-49), así
+// que sin esto la pestaña de Caja Chica le responde 403 al cargar el listado.
 @Controller('caja-chica-report')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(ROLES.CONTABILIDAD, ROLES.ADMIN, ROLES.SUPER_ADMIN)
+@Roles(
+  ROLES.CONTABILIDAD,
+  ROLES.ADMIN,
+  ROLES.SUPER_ADMIN,
+  ROLES.TESORERIA
+)
 export class CajaChicaReportController {
   constructor(
     private readonly service: CajaChicaReportService,

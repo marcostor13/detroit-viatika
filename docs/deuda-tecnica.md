@@ -3,17 +3,21 @@
 Lo que queda pendiente de verificar o de limpiar, con su motivo. Cuando algo de
 acá se cierra, se borra la entrada.
 
-## Tests sin correr de "Tesorería ve las rendiciones directas" (2026-08-13)
+## Tests sin correr de "Tesorería ve /rendiciones igual que Contabilidad" (2026-08-13)
 
 **Qué:** `viatika/src/app/modules/admin-users/rendiciones-admin/rendiciones-tabs.component.spec.ts`
-pasa a cubrir la visibilidad por rol de las pestañas (`showDirectasTab` /
-`showCajaChicaTab`) y el `?tab=` que el usuario no tiene habilitado. **No se
-ejecutaron:** la suite de Karma cuelga la máquina de desarrollo.
+pasa a cubrir la visibilidad de las pestañas extra por rol y el `?tab=` de un rol
+que no las tiene. **Sin spec propio** quedan: el `cajaChicaDetalleGuard` nuevo
+(`viatika/src/app/guards/auth-caja-chica-detalle.guard.ts`), el `showGastosTab`
+de `rendiciones-directas.component.ts` y los dos `@Roles` del backend que suman
+TESORERIA (`caja-chica-report.controller.ts` y `caja-chica/available` en
+`expense-report.controller.ts`). **No se ejecutó nada:** la suite de Karma cuelga
+la máquina de desarrollo.
 
-**Qué sí se verificó:** `npx tsc --noEmit -p tsconfig.json` — sin errores nuevos
-(quedan los preexistentes de `playwright.config.ts` y
+**Qué sí se verificó:** `npx tsc --noEmit -p tsconfig.json` en front y back — sin
+errores nuevos (quedan los preexistentes de `playwright.config.ts` y
 `rendicion-export.service.ts:1956`). El tipado no prueba comportamiento ni
-plantillas.
+plantillas, y las rutas del backend no se probaron con una petición real.
 
 **Cómo saldarla:** correr acotado en una máquina que lo aguante:
 
@@ -22,10 +26,14 @@ cd viatika
 npx ng test --include='**/rendiciones-tabs.component.spec.ts' --watch=false --browsers=ChromeHeadless
 ```
 
-**Riesgo si no se salda:** el spec ahora inyecta un `UserStateService` con dos
-espías (`isContabilidadInCompany` e `isTesoreria`); si el componente pasara a
-consultar un tercer método, los tests fallan por espía faltante y no por la
-regla de negocio. Nadie se enteraría hasta que la suite vuelva a correr.
+Y una pasada manual como Tesorería por las tres pestañas de `/rendiciones`,
+entrando al detalle de una caja chica (es la ruta que cambió de guard).
+
+**Riesgo si no se salda:** el spec inyecta un `UserStateService` con dos espías
+(`isContabilidadInCompany` e `isTesoreria`); si el componente pasara a consultar
+un tercer método, los tests fallan por espía faltante y no por la regla de
+negocio. Del lado del backend, nada cubre que Tesorería siga sin poder entrar a
+los endpoints que no se tocaron.
 
 ## Tests sin correr del fix "rendición atascada en submitted" (2026-08-13)
 
@@ -55,3 +63,30 @@ más. La baseline del backend es **0 fallos**: cualquier rojo ahí es del cambio
 **Sin test todavía:** `removeExpenseFromReport` también reevalúa el avance ahora
 (quitar el último comprobante sin aprobar dejaba la rendición colgada igual que
 aprobar antes del envío). No tiene spec propio; entra en la misma deuda.
+
+## Flujo secuencial de aprobación, sin tests (2026-08-13)
+
+**Qué:** cuatro candados nuevos, ninguno con spec. Solo se verificó que compila
+(backend `tsc --noEmit` limpio, front `ng build` limpio):
+
+1. `buildChainForNewExpense` construye la cadena solo si la rendición ya está
+   enviada. Antes se construía al registrar el comprobante.
+2. `ExpenseService.approveByCoord` exige la rendición en `submitted`.
+3. `ExpenseService.approveByContabilidad` exige la rendición en
+   `pending_accounting`.
+4. `update(status: 'approved')` exige que Contabilidad haya aprobado todos los
+   comprobantes (`assertAllExpensesApprovedByAccounting`).
+
+Además, agregar un comprobante a una rendición que ya estaba en
+`pending_accounting` la devuelve a `submitted` (si no, ese comprobante no lo
+podía aprobar nadie y la rendición quedaba trabada).
+
+**Qué probar cuando se pueda correr jest:** que un comprobante recién creado en
+una rendición abierta NO tenga `approverChain`; que al enviar sí la tenga; que
+aprobar como coordinador falle con la rendición abierta; que Contabilidad no
+pueda aprobar en `submitted`; y que la rendición no pase a `approved` con un
+comprobante sin aprobar por Contabilidad.
+
+**Riesgo si no se salda:** son gates que cortan flujos en producción. Un
+allowlist de estados mal puesto (por ejemplo olvidar `partially_paid` o `paid` en
+la rendición de un viático) bloquea a un usuario real sin que ningún test avise.
