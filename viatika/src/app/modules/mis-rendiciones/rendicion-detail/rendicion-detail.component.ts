@@ -2365,45 +2365,105 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Suma los montos reales de todas las filas de movilidad de la rendición en un
-   * solo total y lo reparte en tramos del tope diario, uno por día empezando en la
-   * fecha de solicitud del viático/rendición. Cada tramo es una planilla física
-   * completa con una única fila: se muestra con los datos (origen/destino/gestión)
-   * de la última gestión real que aporta a ese tramo. Cada planilla lleva además un
-   * código correlativo único.
+   * Una planilla por cada planilla de movilidad cargada (VD-106): las planillas
+   * distintas no se mezclan entre sí. Dentro de cada una las gestiones se listan
+   * repartidas por día al tope diario, empezando en la fecha de solicitud del
+   * viático/rendición, en vez de abrir una hoja por día.
    */
   private buildMobilityPagesByDailyCap(
     mobilityExpenses: Record<string, unknown>[],
   ): MobilitySheetExportData[] {
-    if (!mobilityExpenses.length) return [];
+    return mobilityExpenses
+      .map(exp => this.buildMobilityPageByDailyCap(exp))
+      .filter((page): page is MobilitySheetExportData => page !== null);
+  }
 
-    const sourceRows: MobilitySheetExportData['rows'] = [];
-    for (const exp of mobilityExpenses) {
-      for (const r of this.mobilityRows(exp)) {
-        sourceRows.push({
-          fecha: String(r['fecha'] || ''),
-          origen: String(r['origen'] || ''),
-          destino: String(r['destino'] || ''),
-          gestion: String(r['gestion'] || ''),
-          total: this.mobilityRowTotal(r),
-          proyecto: this.resolveRowProjectLabel(r['proyectId']),
-          colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
-        });
-      }
-    }
-    if (!sourceRows.length) return [];
+  /**
+   * Reparte las gestiones de una planilla en días de como máximo el tope diario.
+   * Una gestión que no entra completa en un día se parte y continúa en el
+   * siguiente, así que un mismo día puede listar varias gestiones y una gestión
+   * grande puede aparecer en varios días. El total de la planilla no cambia.
+   */
+  private buildMobilityPageByDailyCap(
+    expense: Record<string, unknown>,
+  ): MobilitySheetExportData | null {
+    const sourceRows: MobilitySheetExportData['rows'] = this.mobilityRows(expense).map(r => ({
+      fecha: String(r['fecha'] || ''),
+      origen: String(r['origen'] || ''),
+      destino: String(r['destino'] || ''),
+      gestion: String(r['gestion'] || ''),
+      total: this.mobilityRowTotal(r),
+      proyecto: this.resolveRowProjectLabel(r['proyectId']),
+      colaborador: String(r['colaboradorNombre'] || this.getCollaboratorDisplayName() || ''),
+    }));
+    if (!sourceRows.length) return null;
     // Orden cronológico según la fecha que el usuario ingresó en cada fila, para
-    // que el reparto en tramos consuma las gestiones en ese mismo orden.
+    // que el reparto en días consuma las gestiones en ese mismo orden.
     this.sortMobilityExportRows(sourceRows);
 
     const totalAmount = Math.round(sourceRows.reduce((s, r) => s + r.total, 0) * 100) / 100;
-    if (totalAmount <= 0) return [];
+    if (totalAmount <= 0) return null;
 
     const dailyCap = this.mobilityDailyCap();
-    const nPages = Math.ceil((totalAmount - 1e-6) / dailyCap);
+    const nDays = Math.ceil((totalAmount - 1e-6) / dailyCap);
+    const firstDay = this.mobilityCapStartDate(nDays, sourceRows[0].fecha);
 
-    // Las rendiciones de anticipo guardan las fechas en startDate/endDate, pero las
-    // de viatico unificado las guardan en viaticoStartDate/viaticoEndDate.
+    // Puntero que recorre las gestiones reales en orden; cada día consume del
+    // puntero hasta llenar el tope y deja una fila por porción consumida.
+    let rowIdx = 0;
+    let rowRemaining = sourceRows[0].total;
+
+    const rows: MobilitySheetExportData['rows'] = [];
+    for (let i = 0; i < nDays; i++) {
+      const dayTotal = Math.round(Math.min(dailyCap, totalAmount - i * dailyCap) * 100) / 100;
+      const dayDate = new Date(firstDay);
+      dayDate.setDate(dayDate.getDate() + i);
+      const dayYmd = this.dateToYmd(dayDate);
+
+      let remainingToConsume = dayTotal;
+      while (remainingToConsume > 0.005) {
+        const take = Math.round(Math.min(rowRemaining, remainingToConsume) * 100) / 100;
+        // Si el día deja de consumir (última gestión agotada o con importe no
+        // positivo) el bucle no avanzaría nunca y colgaría la pestaña.
+        if (take <= 0 && rowIdx >= sourceRows.length - 1) break;
+        if (take > 0) {
+          rows.push({ ...sourceRows[rowIdx], fecha: dayYmd, total: take });
+        }
+        rowRemaining = Math.round((rowRemaining - take) * 100) / 100;
+        remainingToConsume = Math.round((remainingToConsume - take) * 100) / 100;
+        if (rowRemaining <= 0.005 && rowIdx < sourceRows.length - 1) {
+          rowIdx++;
+          rowRemaining = sourceRows[rowIdx].total;
+        }
+      }
+    }
+    if (!rows.length) return null;
+
+    return {
+      fileBaseName: `planilla_movilidad_${String(expense['_id'] || this.dateToYmd(firstDay))}`,
+      collaborator: this.getCollaboratorDisplayName(),
+      collaboratorDni: this.collaboratorDniForPdf(),
+      internalCode: typeof expense['internalCode'] === 'string' ? expense['internalCode'] : undefined,
+      location: this.report?.location,
+      generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }),
+      periodo: firstDay.toLocaleString('es-PE', { month: 'long' }).toUpperCase(),
+      proyecto: this.getExpenseProjectName(expense),
+      rows,
+      total: totalAmount,
+      signature: this.getCollaboratorSignature(),
+      coordinator: this.getCoordinatorName(),
+      coordinatorDni: this.getCoordinatorDni(),
+      coordinatorSignature: this.getCoordinatorSignature(),
+    };
+  }
+
+  /**
+   * Primer día del reparto: el segundo día del viaje cuando los días declarados
+   * alcanzan para todos los tramos, y si no la fecha de inicio. Las rendiciones
+   * de anticipo guardan las fechas en startDate/endDate y las de viático
+   * unificado en viaticoStartDate/viaticoEndDate.
+   */
+  private mobilityCapStartDate(nDays: number, firstRowFecha: string): Date {
     const startDate = this.parseDateSafe(
       (this.report?.startDate ?? this.report?.viaticoStartDate) as string ?? '',
     );
@@ -2411,69 +2471,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       (this.report?.endDate ?? this.report?.viaticoEndDate) as string ?? '',
     );
 
-    let cur: Date;
     if (startDate && endDate) {
       const day2 = new Date(startDate);
       day2.setDate(day2.getDate() + 1);
       const msPerDay = 24 * 60 * 60 * 1000;
       const daysFromDay2 = Math.max(0, Math.round((endDate.getTime() - day2.getTime()) / msPerDay) + 1);
-      cur = nPages <= daysFromDay2 ? day2 : new Date(startDate);
-    } else {
-      cur = startDate ?? this.parseDateSafe(sourceRows[0].fecha) ?? new Date();
+      return nDays <= daysFromDay2 ? day2 : new Date(startDate);
     }
-
-    // Base del código correlativo: el número de la planilla física más antigua
-    // (o "PM" si ninguna lo tiene), sufijado con un correlativo por página.
-    const codeBase = (mobilityExpenses.find(
-      e => typeof e['internalCode'] === 'string' && e['internalCode'],
-    )?.['internalCode'] as string | undefined) || 'PM';
-
-    // Puntero que recorre las filas reales en orden; cada tramo avanza el puntero
-    // y se queda con los datos de la última gestión que le aportó monto.
-    let rowIdx = 0;
-    let rowRemaining = sourceRows[0].total;
-
-    const pages: MobilitySheetExportData[] = [];
-    for (let i = 0; i < nPages; i++) {
-      const total = Math.round(Math.min(dailyCap, totalAmount - i * dailyCap) * 100) / 100;
-      let remainingToConsume = total;
-      let representative = sourceRows[rowIdx];
-      while (remainingToConsume > 0.005) {
-        const take = Math.round(Math.min(rowRemaining, remainingToConsume) * 100) / 100;
-        // Si el tramo deja de consumir (última fila agotada o con importe no
-        // positivo) el bucle no avanzaría nunca y colgaría la pestaña.
-        if (take <= 0 && rowIdx >= sourceRows.length - 1) break;
-        rowRemaining = Math.round((rowRemaining - take) * 100) / 100;
-        remainingToConsume = Math.round((remainingToConsume - take) * 100) / 100;
-        representative = sourceRows[rowIdx];
-        if (rowRemaining <= 0.005 && rowIdx < sourceRows.length - 1) {
-          rowIdx++;
-          rowRemaining = sourceRows[rowIdx].total;
-        }
-      }
-
-      const pageDate = new Date(cur);
-      pageDate.setDate(pageDate.getDate() + i);
-
-      pages.push({
-        fileBaseName: `planilla_movilidad_${this.dateToYmd(pageDate)}`,
-        collaborator: this.getCollaboratorDisplayName(),
-        collaboratorDni: this.collaboratorDniForPdf(),
-        internalCode: `${codeBase}-${String(i + 1).padStart(2, '0')}`,
-        location: this.report?.location,
-        generatedAt: new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' }),
-        periodo: pageDate.toLocaleString('es-PE', { month: 'long' }).toUpperCase(),
-        proyecto: this.getProjectName(),
-        rows: [{ ...representative, fecha: this.dateToYmd(pageDate), total }],
-        total,
-        signature: this.getCollaboratorSignature(),
-        coordinator: this.getCoordinatorName(),
-        coordinatorDni: this.getCoordinatorDni(),
-        coordinatorSignature: this.getCoordinatorSignature(),
-      });
-    }
-
-    return pages;
+    return startDate ?? this.parseDateSafe(firstRowFecha) ?? new Date();
   }
 
   async exportRendicionFullPdf(): Promise<void> {

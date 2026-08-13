@@ -138,6 +138,81 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('buildMobilityPagesByDailyCap (VD-106)', () => {
+    function pm(id: string, rows: Array<{ fecha: string; total: number; origen?: string; destino?: string; gestion?: string }>) {
+      return {
+        _id: id,
+        expenseType: 'planilla_movilidad',
+        internalCode: `PM-${id}`,
+        mobilityRows: rows.map(r => ({
+          fecha: r.fecha,
+          total: r.total,
+          origen: r.origen ?? 'A',
+          destino: r.destino ?? 'B',
+          gestion: r.gestion ?? 'g',
+        })),
+      } as Record<string, unknown>;
+    }
+
+    function build(expenses: Record<string, unknown>[]) {
+      return (component as any).buildMobilityPagesByDailyCap(expenses);
+    }
+
+    beforeEach(() => {
+      companyConfigService.getCompanyConfig.and.returnValue({ limits: { movilidadDiario: 40 } } as any);
+      (component as any).report = makeReport();
+    });
+
+    it('devuelve una planilla por cada PM y no mezcla sus gestiones', () => {
+      const pages = build([
+        pm('e1', [{ fecha: '2026-02-01', total: 50, gestion: 'uno' }]),
+        pm('e2', [{ fecha: '2026-02-02', total: 30, gestion: 'dos' }]),
+      ]);
+
+      expect(pages.length).toBe(2);
+      expect(pages[0].internalCode).toBe('PM-e1');
+      expect(pages[1].internalCode).toBe('PM-e2');
+      expect(pages[0].rows.every((r: any) => r.gestion === 'uno')).toBeTrue();
+      expect(pages[1].rows.every((r: any) => r.gestion === 'dos')).toBeTrue();
+    });
+
+    it('lista las gestiones repartidas por dia sin pasar del tope diario', () => {
+      const pages = build([pm('e1', [{ fecha: '2026-02-01', total: 100 }])]);
+
+      expect(pages.length).toBe(1);
+      const totals = pages[0].rows.map((r: any) => r.total);
+      expect(totals).toEqual([40, 40, 20]);
+      expect(pages[0].total).toBe(100);
+      // Un dia distinto por tramo.
+      expect(new Set(pages[0].rows.map((r: any) => r.fecha)).size).toBe(3);
+    });
+
+    it('parte una gestion entre dos dias y conserva el total de la planilla', () => {
+      const pages = build([
+        pm('e1', [
+          { fecha: '2026-02-01', total: 25, gestion: 'A' },
+          { fecha: '2026-02-01', total: 30, gestion: 'B' },
+          { fecha: '2026-02-01', total: 25, gestion: 'C' },
+        ]),
+      ]);
+
+      const rows = pages[0].rows;
+      expect(rows.map((r: any) => [r.gestion, r.total])).toEqual([
+        ['A', 25], ['B', 15], ['B', 15], ['C', 25],
+      ]);
+      // Primer dia: A 25 + B 15 = 40.
+      expect(rows[0].fecha).toBe(rows[1].fecha);
+      expect(rows[2].fecha).toBe(rows[3].fecha);
+      expect(rows[0].fecha).not.toBe(rows[2].fecha);
+      expect(pages[0].total).toBe(80);
+    });
+
+    it('ignora una planilla sin filas o sin importe', () => {
+      expect(build([pm('e1', [])]).length).toBe(0);
+      expect(build([pm('e1', [{ fecha: '2026-02-01', total: 0 }])]).length).toBe(0);
+    });
+  });
+
   describe('getExpenseConceptoColumn (VD-64)', () => {
     it('muestra el comentario del gasto cuando existe', () => {
       const expense = {
