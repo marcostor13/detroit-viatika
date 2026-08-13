@@ -66,6 +66,7 @@ describe('MisRendicionesComponent', () => {
     ]);
     userState = jasmine.createSpyObj('UserStateService', [
       'getUser', 'canCreateRendicion', 'isColaborador', 'hasModulePermission', 'canAccessCajaChica',
+      'isTesoreria',
     ]);
     notification = jasmine.createSpyObj('NotificationService', ['show']);
     advanceService = jasmine.createSpyObj('AdvanceService', ['findMy', 'delete']);
@@ -79,6 +80,7 @@ describe('MisRendicionesComponent', () => {
     userState.canCreateRendicion.and.returnValue(true);
     userState.isColaborador.and.returnValue(true);
     userState.hasModulePermission.and.returnValue(false);
+    userState.isTesoreria.and.returnValue(false);
     userState.canAccessCajaChica.and.returnValue(true);
 
     expenseReportsService.findAllByUser.and.returnValue(of([]));

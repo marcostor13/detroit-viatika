@@ -170,7 +170,9 @@ export class OrdenTrabajoController {
   }
 
   @Get(':clientId')
-  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD)
+  // VD-115: el selector de OT aparece en los formularios de rendición, que
+  // cualquier rol puede usar.
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.COLABORADOR, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   findAll(
     @Param('clientId') clientId: string,
     @Query('page') page?: string,

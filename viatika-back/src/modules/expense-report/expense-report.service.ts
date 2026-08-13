@@ -2125,7 +2125,10 @@ export class ExpenseReportService implements OnModuleInit {
     const role = actor?.role ?? ''
     const isSuperAdmin = role === ROLES.SUPER_ADMIN
     const isContabilidad = role === ROLES.CONTABILIDAD
-    const isColaborador = role === ROLES.COLABORADOR
+    // VD-115: Tesorería, cuando le habilitan rendir, borra sus propias
+    // solicitudes con la misma regla del colaborador (solo las suyas), sin
+    // heredar el borrado amplio de Contabilidad.
+    const isColaborador = role === ROLES.COLABORADOR || role === ROLES.TESORERIA
 
     // "Aprobado por alguien" = aprobación a nivel comprobante O a nivel reporte.
     const reportLevelApproved =
