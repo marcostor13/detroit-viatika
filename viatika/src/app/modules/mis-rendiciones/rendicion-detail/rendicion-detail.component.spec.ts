@@ -731,10 +731,20 @@ describe('RendicionDetailComponent', () => {
       expect(component.canMutateOwnExpense({ createdBy: 'u1', status: 'pending' })).toBeTrue();
     });
 
-    it('canMutateExpense allows admins to mutate pending expenses on non-finalized reports', () => {
+    // VD-69: editar o eliminar un comprobante es exclusivo de su dueño. El test
+    // anterior daba por válido que Contabilidad mutara comprobantes ajenos, que
+    // es justo lo que ese cambio quitó.
+    it('canMutateExpense bloquea a Contabilidad sobre comprobantes ajenos (VD-69)', () => {
       component.report = makeReport({ status: 'submitted', userId: { _id: 'other', name: 'x' } as any });
       userState.isContabilidad.and.returnValue(true);
-      expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeTrue();
+      expect(component.canMutateExpense({ createdBy: 'other', status: 'pending' })).toBeFalse();
+    });
+
+    it('canMutateExpense deja a Contabilidad editar sus propios comprobantes', () => {
+      component.report = makeReport({ status: 'open' });
+      component.advances = [makeAdvance({ status: 'paid' })];
+      userState.isContabilidad.and.returnValue(true);
+      expect(component.canMutateExpense({ createdBy: 'u1', status: 'pending' })).toBeTrue();
     });
 
     it('canMutateExpense bloquea al aprobador N1/N2 sobre comprobantes ajenos (VD-69)', () => {

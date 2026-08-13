@@ -356,10 +356,19 @@ describe('MisRendicionesComponent', () => {
       expect(component.canDeleteReport(report)).toBeFalse();
     });
 
-    it('blocks deletion of a directa with inherited balance and existing expenses', () => {
+    // El saldo heredado dejó de bloquear el borrado: lo que manda es que la
+    // rendición no tenga ninguna aprobación, igual que valida el backend.
+    it('allows deleting an own directa with expenses while it has no approvals', () => {
       const report = makeReport({
-        status: 'open', isDirecta: true, inheritedBalance: true, expenseIds: [{ _id: 'e1' }],
-      });
+        status: 'open', isDirecta: true, expenseIds: [{ _id: 'e1' }],
+      } as any);
+      expect(component.canDeleteReport(report)).toBeTrue();
+    });
+
+    it('blocks deleting that same directa once an expense was approved', () => {
+      const report = makeReport({
+        status: 'open', isDirecta: true, hasApprovedExpense: true, expenseIds: [{ _id: 'e1' }],
+      } as any);
       expect(component.canDeleteReport(report)).toBeFalse();
     });
 
@@ -541,10 +550,15 @@ describe('MisRendicionesComponent', () => {
       expect(list[2].source).toBe('rendicion');
     });
 
+    // VD-30: el filtro compara contra la etiqueta visible de la columna Estado,
+    // no contra el status crudo, para que coincida 1:1 con lo que se ve.
     it('filters by status across all sources', () => {
       component.myViaticoReports.set([makeReport({ _id: 'v1', type: 'viatico', status: 'approved' })]);
       component.myAdvances = [makeAdvance({ _id: 'a1', status: 'pending_l1' })];
-      component.viaticosStatusFilter.set('approved');
+
+      const etiquetaAprobado = component.unifiedViaticoList.find(i => i._id === 'v1')!.statusLabel;
+      component.viaticosStatusFilter.set(etiquetaAprobado);
+
       expect(component.unifiedViaticoList.map(i => i._id)).toEqual(['v1']);
     });
   });
