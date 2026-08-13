@@ -107,6 +107,15 @@ const LECTURA_CON_RUC_MALO = JSON.stringify({
   rucEmisor: '20601212538',
 })
 
+const EXPENSE_ID = '507f1f77bcf86cd799439099'
+
+// Colaboradores del alta de comprobantes, para poder verificar el rollback.
+const expenseCreate = jest.fn()
+const expenseFind = jest.fn()
+const findByIdAndDelete = jest.fn()
+const buildChainForNewExpense = jest.fn()
+const addExpenseToReport = jest.fn()
+
 describe('ExpenseService — escaneo OCR de comprobantes', () => {
   let service: ExpenseService
 
@@ -124,6 +133,13 @@ describe('ExpenseService — escaneo OCR de comprobantes', () => {
   beforeEach(async () => {
     jest.clearAllMocks()
     preparePdfVisionInput.mockResolvedValue(visionInput())
+    expenseFind.mockReturnValue({ exec: jest.fn().mockResolvedValue([]) })
+    expenseCreate.mockResolvedValue({ _id: EXPENSE_ID, total: 80 })
+    findByIdAndDelete.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(undefined),
+    })
+    buildChainForNewExpense.mockResolvedValue(undefined)
+    addExpenseToReport.mockResolvedValue(undefined)
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -135,9 +151,9 @@ describe('ExpenseService — escaneo OCR de comprobantes', () => {
         {
           provide: getModelToken(Expense.name),
           useValue: {
-            find: jest.fn().mockReturnValue({
-              exec: jest.fn().mockResolvedValue([]),
-            }),
+            find: expenseFind,
+            create: expenseCreate,
+            findByIdAndDelete,
             aggregate: jest.fn().mockResolvedValue([]),
           },
         },
@@ -160,11 +176,25 @@ describe('ExpenseService — escaneo OCR de comprobantes', () => {
             assertReportNotLockedByCajaChica: jest
               .fn()
               .mockResolvedValue(undefined),
+            findCurrencyMeta: jest.fn().mockResolvedValue(null),
+            buildChainForNewExpense,
+            addExpenseToReport,
           },
         },
         { provide: NotificationsService, useValue: {} },
-        { provide: CategoryService, useValue: {} },
-        { provide: CurrencyService, useValue: {} },
+        { provide: CategoryService, useValue: { findOne: jest.fn() } },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            resolveRate: jest.fn().mockResolvedValue(1),
+            toBase: jest.fn().mockResolvedValue({
+              montoBase: 80,
+              tipoCambio: 1,
+              tcFecha: '2026-06-28',
+            }),
+          },
+        },
       ],
     }).compile()
 
@@ -276,6 +306,70 @@ describe('ExpenseService — escaneo OCR de comprobantes', () => {
           undefined as unknown as Express.Multer.File
         )
       ).rejects.toThrow(HttpException)
+    })
+  })
+
+  describe('createInvoiceFromScan', () => {
+    const bodyConfirmar = {
+      ...body,
+      userId: '507f1f77bcf86cd799439013',
+      categoryId: '507f1f77bcf86cd799439014',
+      proyectId: '507f1f77bcf86cd799439015',
+      total: 80,
+      data: LECTURA_CORRECTA,
+    } as CreateExpenseDto
+
+    it('borra el comprobante si falla la construcción de la cadena', async () => {
+      // Es el caso del incidente: el centro de costo del usuario fue eliminado,
+      // la cadena no se puede construir y el comprobante quedaba huérfano,
+      // invisible en la tabla y bloqueando la recarga por duplicado.
+      buildChainForNewExpense.mockRejectedValue(
+        new Error('Su centro de costo principal no fue encontrado.')
+      )
+
+      await expect(service.createInvoiceFromScan(bodyConfirmar)).rejects.toThrow(
+        /centro de costo principal/
+      )
+
+      expect(findByIdAndDelete).toHaveBeenCalledWith(EXPENSE_ID)
+      expect(addExpenseToReport).not.toHaveBeenCalled()
+    })
+
+    it('borra el comprobante si falla el enganche a la rendición', async () => {
+      addExpenseToReport.mockRejectedValue(new Error('rendición inaccesible'))
+
+      await expect(service.createInvoiceFromScan(bodyConfirmar)).rejects.toThrow(
+        /rendición inaccesible/
+      )
+
+      expect(findByIdAndDelete).toHaveBeenCalledWith(EXPENSE_ID)
+    })
+
+    it('no borra nada cuando el alta termina bien', async () => {
+      const result = await service.createInvoiceFromScan(bodyConfirmar)
+
+      expect(result).toBeDefined()
+      expect(findByIdAndDelete).not.toHaveBeenCalled()
+      expect(addExpenseToReport).toHaveBeenCalled()
+    })
+
+    it('rechaza un comprobante duplicado antes de crearlo', async () => {
+      // El escaneo ya validaba duplicados, pero confirmar era un endpoint
+      // aparte: dos clics creaban dos comprobantes idénticos.
+      expenseFind.mockReturnValue({
+        exec: jest.fn().mockResolvedValue([
+          {
+            _id: 'ya-existe',
+            data: LECTURA_CORRECTA,
+            clientId: body.clientId,
+          },
+        ]),
+      })
+
+      await expect(service.createInvoiceFromScan(bodyConfirmar)).rejects.toThrow(
+        /[Yy]a existe/
+      )
+      expect(expenseCreate).not.toHaveBeenCalled()
     })
   })
 

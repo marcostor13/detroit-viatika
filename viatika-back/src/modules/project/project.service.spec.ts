@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { getModelToken } from '@nestjs/mongoose'
-import { BadRequestException, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common'
 import { Types } from 'mongoose'
 import { ProjectService } from './project.service'
 import { Project } from './entities/project.entity'
@@ -258,11 +262,22 @@ describe('ProjectService', () => {
       ).rejects.toThrow(NotFoundException)
     })
 
-    it('checks for active expenses when deactivating', async () => {
+    it('permite desactivar aunque el centro de costo tenga comprobantes', async () => {
+      // Antes esto lanzaba BadRequestException. La guarda estaba en la operación
+      // equivocada: desactivar conserva el historial y es el caso de uso; al
+      // bloquearla, el admin terminaba eliminando el centro de costo, que sí es
+      // destructivo e irreversible.
       mockExpenseModel.countDocuments.mockReturnValue(Promise.resolve(3))
-      await expect(
-        service.update(projectId, { isActive: false }, clientId)
-      ).rejects.toThrow(BadRequestException)
+      const updated = { ...mockProject, isActive: false }
+      mockProjectModel.findOneAndUpdate.mockReturnValue(makeQuery(updated))
+
+      const result = await service.update(
+        projectId,
+        { isActive: false },
+        clientId
+      )
+
+      expect(result).toEqual({ ...expectedResponse, isActive: false })
     })
 
     it('proceeds with deactivation when no active expenses exist', async () => {
@@ -294,17 +309,113 @@ describe('ProjectService', () => {
   })
 
   describe('remove', () => {
-    it('returns deleted project', async () => {
+    /** Cuenta distinta por modelo, para verificar el desglose del mensaje. */
+    const conReferencias = (porModelo: Record<string, number>) => {
+      mockProjectModel.db.model.mockImplementation((nombre: string) => ({
+        countDocuments: jest
+          .fn()
+          .mockResolvedValue(porModelo[nombre] ?? 0),
+      }))
+    }
+
+    it('elimina el centro de costo cuando nadie lo referencia', async () => {
+      mockProjectModel.findOne.mockReturnValue(makeQuery(mockProject))
+      conReferencias({})
       mockProjectModel.findOneAndDelete.mockReturnValue(makeQuery(mockProject))
+
       const result = await service.remove(projectId, clientId)
+
       expect(result).toEqual(mockProject)
+      expect(mockProjectModel.findOneAndDelete).toHaveBeenCalled()
     })
 
     it('throws NotFoundException when project not found for delete', async () => {
-      mockProjectModel.findOneAndDelete.mockReturnValue(makeQuery(null))
+      mockProjectModel.findOne.mockReturnValue(makeQuery(null))
       await expect(service.remove(projectId, clientId)).rejects.toThrow(
         NotFoundException
       )
+    })
+
+    it('rechaza el borrado si algún usuario lo tiene asignado', async () => {
+      // Es el caso del incidente: borrar el centro de costo dejaba a esos
+      // usuarios sin poder registrar gastos, y no se puede deshacer recreándolo
+      // porque el `_id` sería otro.
+      mockProjectModel.findOne.mockReturnValue(makeQuery(mockProject))
+      conReferencias({ User: 3 })
+
+      await expect(service.remove(projectId, clientId)).rejects.toThrow(
+        ConflictException
+      )
+      expect(mockProjectModel.findOneAndDelete).not.toHaveBeenCalled()
+    })
+
+    it('rechaza el borrado si hay comprobantes, rendiciones u OTs', async () => {
+      for (const modelo of [
+        'Expense',
+        'ExpenseReport',
+        'Advance',
+        'Invoice',
+        'OrdenTrabajo',
+      ]) {
+        jest.clearAllMocks()
+        mockProjectModel.findOne.mockReturnValue(makeQuery(mockProject))
+        conReferencias({ [modelo]: 1 })
+
+        await expect(service.remove(projectId, clientId)).rejects.toThrow(
+          ConflictException
+        )
+        expect(mockProjectModel.findOneAndDelete).not.toHaveBeenCalled()
+      }
+    })
+
+    it('el mensaje nombra el centro de costo, el desglose y sugiere desactivar', async () => {
+      mockProjectModel.findOne.mockReturnValue(makeQuery(mockProject))
+      conReferencias({ User: 3, Expense: 1, OrdenTrabajo: 1 })
+
+      await expect(service.remove(projectId, clientId)).rejects.toThrow(
+        /Test Project.*3 usuarios.*1 comprobante.*1 orden de trabajo.*Desactívalo/s
+      )
+    })
+  })
+
+  describe('countReferences', () => {
+    it('cuenta cada documento una sola vez, aunque lo referencie por dos campos', async () => {
+      const consultas: Record<string, unknown> = {}
+      mockProjectModel.db.model.mockImplementation((nombre: string) => ({
+        countDocuments: jest.fn().mockImplementation((filtro: unknown) => {
+          consultas[nombre] = filtro
+          return Promise.resolve(
+            { User: 2, Expense: 1, OrdenTrabajo: 4 }[nombre] ?? 0
+          )
+        }),
+      }))
+
+      const refs = await service.countReferences(projectId, clientId)
+
+      expect(refs.usuarios).toBe(2)
+      expect(refs.comprobantes).toBe(1)
+      expect(refs.ordenesTrabajo).toBe(4)
+      expect(refs.rendiciones).toBe(0)
+      expect(refs.total).toBe(7)
+
+      // Los tres campos del comprobante viajan en un solo $or.
+      expect((consultas['Expense'] as { $or: unknown[] }).$or).toHaveLength(3)
+    })
+
+    it('devuelve todo en cero si no hay referencias', async () => {
+      mockProjectModel.db.model.mockImplementation(() => ({
+        countDocuments: jest.fn().mockResolvedValue(0),
+      }))
+      const refs = await service.countReferences(projectId, clientId)
+      expect(refs.total).toBe(0)
+    })
+
+    it('no explota si un modelo no está registrado', async () => {
+      mockProjectModel.db.model.mockImplementation(() => {
+        throw new Error('Schema hasn\'t been registered for model')
+      })
+      const refs = await service.countReferences(projectId, clientId)
+      expect(refs.total).toBe(0)
     })
   })
 

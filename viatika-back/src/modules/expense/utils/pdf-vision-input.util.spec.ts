@@ -20,9 +20,10 @@ import {
 const runPopplerMock = runPoppler as jest.MockedFunction<typeof runPoppler>
 
 // Estos casos escriben de verdad en un directorio temporal (el PDF, el XHTML y
-// una imagen por banda). Con la suite completa en paralelo el I/O de Windows se
-// pasa del timeout por defecto de 5 s.
-jest.setTimeout(30_000)
+// una imagen por banda). Con la suite completa en paralelo, el I/O de Windows se
+// pasa largamente del timeout por defecto de 5 s: se midió una corrida de 80 s
+// para este archivo, así que el margen es amplio a propósito.
+jest.setTimeout(60_000)
 
 const XHTML_FACTURA = readFileSync(
   join(__dirname, '__fixtures__', 'factura-hotel-bolognesi.bbox.xhtml'),
