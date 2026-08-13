@@ -282,7 +282,10 @@ export class TesoreriaComponent implements OnInit {
       this.resetPaymentAggregates();
       return;
     }
-    this.expenseReportsService.findAllByClient(cid).subscribe({
+    // scope 'all': Tesorería paga los viáticos de toda la empresa. Sin esto, un
+    // tesorero/contable que además es aprobador de algún centro de costo recibía
+    // solo su cadena y la cola de pagos le salía incompleta.
+    this.expenseReportsService.findAllByClient(cid, 'all').subscribe({
       next: reports => {
         const all = reports ?? [];
         const viaticos = all.filter(r => r.type === 'viatico');

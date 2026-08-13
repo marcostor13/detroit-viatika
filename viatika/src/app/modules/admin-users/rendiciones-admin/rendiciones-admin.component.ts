@@ -208,7 +208,10 @@ export class RendicionesAdminComponent implements OnInit {
     if (!clientId) { this.isLoading = false; return; }
 
     forkJoin({
-      reports: this.expenseReportsService.findAllByClient(clientId),
+      // scope 'all' = listado administrativo completo. El backend solo lo concede
+      // a Admin/Superadmin/Contabilidad/Tesorería; para los demás roles (y para el
+      // Inicio, que no lo manda) la respuesta sigue acotada como antes.
+      reports: this.expenseReportsService.findAllByClient(clientId, 'all'),
       advances: this.advanceService.findOrphaned(clientId),
     }).subscribe({
       next: ({ reports, advances }) => {

@@ -37,8 +37,15 @@ export class ExpenseReportsService {
     return this.http.post<IExpenseReport>(`${this.apiUrl}/expense-report`, data);
   }
 
-  findAllByClient(clientId: string): Observable<IExpenseReport[]> {
-    return this.http.get<IExpenseReport[]>(`${this.apiUrl}/expense-report/client/${clientId}`);
+  /**
+   * `scope: 'all'` pide el listado completo de la empresa (listado administrativo
+   * de /rendiciones). Solo lo concede el backend a Admin/Superadmin/Contabilidad/
+   * Tesorería; para el resto, y sin el parámetro, la respuesta sigue acotada a la
+   * cadena de aprobación o a las rendiciones propias.
+   */
+  findAllByClient(clientId: string, scope?: 'all'): Observable<IExpenseReport[]> {
+    const params = scope ? { params: { scope } } : {};
+    return this.http.get<IExpenseReport[]>(`${this.apiUrl}/expense-report/client/${clientId}`, params);
   }
 
   findAllByUser(userId: string, clientId: string): Observable<IExpenseReport[]> {
