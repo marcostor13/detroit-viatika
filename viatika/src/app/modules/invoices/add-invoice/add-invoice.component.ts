@@ -911,16 +911,22 @@ export default class AddInvoiceComponent implements OnInit {
     return this.showTopCategorySelect || this.showMovilidadCategoryBlock;
   }
 
-  /** Categorías de Alimentación asignadas al colaborador (mismo criterio por nombre que la DJ al extranjero). */
-  get alimentacionCategories(): ICategory[] {
-    return this.djCategoriesFor('alimentacion');
+  /**
+   * Categorías de "Gastos Reparables (gastos sin factura)" asignadas al
+   * colaborador: las que corresponden a Alimentación sin documentación
+   * (VD-108). En Detroit son dos, la de Servicios y la Comercial (" COM").
+   */
+  get gastosReparablesCategories(): ICategory[] {
+    return this.categories.filter((c) =>
+      this.normalizeStr(c.name || '').includes('gastos reparables')
+    );
   }
 
   /**
-   * Categoría de Alimentación puesta automáticamente en el gasto AL. `null`
-   * cuando hay 0 o 2+ coincidencias: ahí se muestra el selector manual.
+   * Categoría puesta automáticamente en el gasto AL. `null` cuando hay 0 o 2+
+   * coincidencias: ahí se muestra el selector manual.
    */
-  alimentacionCategoryAuto = signal<ICategory | null>(null);
+  gastosReparablesCategoryAuto = signal<ICategory | null>(null);
 
   /**
    * AL = Alimentación sin documentación. Solo al crear: al editar se respeta la
@@ -936,38 +942,39 @@ export default class AddInvoiceComponent implements OnInit {
 
   /** Opciones del selector de categoría dentro de Otros Gastos. */
   get otrosCategoryOptions(): SearchSelectOption[] {
-    // Con varias categorías de Alimentación (Servicios 91x y Comercial 92x) se
+    // Con las dos de Gastos Reparables (Servicios 91x y Comercial 92x) se
     // acotan a esas; si el colaborador no tiene ninguna se cae al listado
     // completo para no dejarlo sin poder registrar el gasto.
-    if (this.isAlimentacionSinDoc() && this.alimentacionCategories.length > 1) {
-      return this.toCategoryOptions(this.alimentacionCategories);
+    if (this.isAlimentacionSinDoc() && this.gastosReparablesCategories.length > 1) {
+      return this.toCategoryOptions(this.gastosReparablesCategories);
     }
     return this.categoryOptions;
   }
 
   /**
    * "Alimentación sin documentación" no pide categoría: se le asigna la de
-   * Alimentación del colaborador, igual que la planilla de movilidad resuelve
-   * la suya (VD-100). Con 0 o 2+ coincidencias queda el selector manual.
-   * Idempotente: se llama al cargar categorías y al cambiar de sub-tipo.
+   * "Gastos Reparables (gastos sin factura)" del colaborador (VD-108), igual
+   * que la planilla de movilidad resuelve la suya (VD-100). Con 0 o 2+
+   * coincidencias queda el selector manual. Idempotente: se llama al cargar
+   * categorías y al cambiar de sub-tipo.
    */
   private applyAlimentacionCategoryDefault(): void {
     const catCtrl = this.form?.get('categoryId');
     if (!catCtrl || catCtrl.disabled) return;
-    const previous = this.alimentacionCategoryAuto();
+    const previous = this.gastosReparablesCategoryAuto();
     // Al salir de AL se retira la categoría que pusimos nosotros, para que el
-    // nuevo tipo de documento no herede la de alimentación sin que se note.
+    // nuevo tipo de documento no la herede sin que se note.
     const dropAuto = () => {
       if (previous && catCtrl.value === previous._id) catCtrl.setValue('');
     };
     if (!this.isAlimentacionSinDoc()) {
       dropAuto();
-      this.alimentacionCategoryAuto.set(null);
+      this.gastosReparablesCategoryAuto.set(null);
       return;
     }
-    const matches = this.alimentacionCategories;
+    const matches = this.gastosReparablesCategories;
     const auto = matches.length === 1 ? matches[0] : null;
-    this.alimentacionCategoryAuto.set(auto);
+    this.gastosReparablesCategoryAuto.set(auto);
     if (auto) catCtrl.setValue(auto._id);
     else dropAuto();
   }
@@ -1075,7 +1082,14 @@ export default class AddInvoiceComponent implements OnInit {
    */
   djCategoriesFor(rubro: 'alimentacion' | 'movilidad'): ICategory[] {
     const needle = rubro === 'alimentacion' ? 'alimentacion' : 'movilidad';
-    return this.categories.filter((c) => this.normalizeStr(c.name || '').includes(needle));
+    return this.categories.filter((c) => {
+      const name = this.normalizeStr(c.name || '');
+      // "Gastos Reparables (gastos sin factura)" nombra la alimentación dentro
+      // de su propio texto, así que caía en este filtro y ensuciaba el rubro.
+      // Esa categoría es solo para Alimentación sin documentación (VD-108).
+      if (name.includes('gastos reparables')) return false;
+      return name.includes(needle);
+    });
   }
 
   /**

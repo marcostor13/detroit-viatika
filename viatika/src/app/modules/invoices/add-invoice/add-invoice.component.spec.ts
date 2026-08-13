@@ -587,6 +587,18 @@ describe('AddInvoiceComponent', () => {
   describe('categoría en Otros Gastos (VD-100)', () => {
     const catAli = { _id: 'cat-ali', name: 'Alimentacion', cuenta: '91.3.1.410' } as any;
     const catAliCom = { _id: 'cat-ali-com', name: 'Alimentacion COM', cuenta: '92.3.1.410' } as any;
+    // Nombre tal como está cargado en Detroit: el texto explicativo va dentro
+    // del propio nombre y menciona "alimentación" (VD-108).
+    const catRep = {
+      _id: 'cat-rep',
+      name: 'Gastos Reparables (gastos sin factura)\n- alimentación en lugares donde no existan proveedores que facturen\n- propinas',
+      cuenta: '915998',
+    } as any;
+    const catRepCom = {
+      _id: 'cat-rep-com',
+      name: 'Gastos Reparables (gastos sin factura)\n- alimentación en lugares donde no existan proveedores que facturen COM',
+      cuenta: '925998',
+    } as any;
 
     it('no muestra la categoría en el bloque superior para otros_gastos', () => {
       const component = createComponent();
@@ -598,46 +610,55 @@ describe('AddInvoiceComponent', () => {
       expect(component.showTopCategorySelect).toBeFalse();
     });
 
-    it('autoselecciona la categoría de Alimentación en AL cuando hay una sola', () => {
+    it('autoselecciona Gastos Reparables en AL cuando hay una sola (VD-108)', () => {
       const component = createComponent();
-      component.categories = [catAli, { _id: 'c2', name: 'Viajes' } as any];
+      component.categories = [catRep, catAli, { _id: 'c2', name: 'Viajes' } as any];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()?._id).toBe('cat-ali');
-      expect(component.form.get('categoryId')?.value).toBe('cat-ali');
+      expect(component.gastosReparablesCategoryAuto()?._id).toBe('cat-rep');
+      expect(component.form.get('categoryId')?.value).toBe('cat-rep');
     });
 
-    it('con varias categorías de Alimentación deja elegir entre ellas', () => {
+    it('con las dos de Gastos Reparables (Servicios y COM) deja elegir entre ellas', () => {
       const component = createComponent();
-      component.categories = [catAli, catAliCom, { _id: 'c2', name: 'Viajes' } as any];
+      component.categories = [catRep, catRepCom, catAli, { _id: 'c2', name: 'Viajes' } as any];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.form.get('categoryId')?.value).toBeFalsy();
-      expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['cat-ali', 'cat-ali-com']);
+      expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['cat-rep', 'cat-rep-com']);
     });
 
-    it('sin categoría de Alimentación cae al listado completo en vez de bloquear', () => {
+    it('sin categoría de Gastos Reparables cae al listado completo en vez de bloquear', () => {
       const component = createComponent();
       component.categories = [{ _id: 'c2', name: 'Viajes' } as any];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.otrosCategoryOptions.map((o) => o.value)).toEqual(['c2']);
+    });
+
+    it('la DJ al extranjero conserva las de Alimentación y no toma Gastos Reparables (VD-108)', () => {
+      const component = createComponent();
+      component.categories = [catRep, catRepCom, catAli, catAliCom];
+
+      expect(component.djCategoriesFor('alimentacion').map((c) => c._id)).toEqual([
+        'cat-ali', 'cat-ali-com',
+      ]);
     });
 
     it('suelta la categoría autoasignada al cambiar de AL a otro tipo de documento', () => {
       const component = createComponent();
-      component.categories = [catAli];
+      component.categories = [catRep];
       component.setExpenseType('otros_gastos');
       component.selectOtrosSubTipo('AL');
-      expect(component.form.get('categoryId')?.value).toBe('cat-ali');
+      expect(component.form.get('categoryId')?.value).toBe('cat-rep');
 
       component.selectOtrosSubTipo('BV');
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.form.get('categoryId')?.value).toBeFalsy();
     });
 
@@ -654,12 +675,12 @@ describe('AddInvoiceComponent', () => {
 
     it('al editar respeta la categoría guardada y no autoasigna', () => {
       const component = createComponent({ id: 'inv1' });
-      component.categories = [catAli];
+      component.categories = [catRep];
       component.setExpenseType('otros_gastos');
       component.form.get('categoryId')?.setValue('otra-cat');
       component.selectOtrosSubTipo('AL');
 
-      expect(component.alimentacionCategoryAuto()).toBeNull();
+      expect(component.gastosReparablesCategoryAuto()).toBeNull();
       expect(component.form.get('categoryId')?.value).toBe('otra-cat');
     });
 
@@ -730,20 +751,20 @@ describe('AddInvoiceComponent', () => {
       });
 
       it('en AL muestra la categoría autoasignada como texto, sin selector ni leyenda', () => {
-        const fixture = renderComponent([catAli]);
+        const fixture = renderComponent([catRep]);
         fixture.componentInstance.selectOtrosSubTipo('AL');
         fixture.detectChanges();
 
         const texto: string = fixture.nativeElement.textContent;
-        expect(texto).toContain('Alimentacion');
+        expect(texto).toContain('Gastos Reparables');
         expect(texto).not.toContain('Asignada automáticamente');
         expect(
           fixture.nativeElement.querySelector('app-search-select[formControlName="categoryId"]')
         ).toBeNull();
       });
 
-      it('en AL con varias categorías de Alimentación sí muestra el selector', () => {
-        const fixture = renderComponent([catAli, catAliCom]);
+      it('en AL con las dos de Gastos Reparables sí muestra el selector', () => {
+        const fixture = renderComponent([catRep, catRepCom]);
         fixture.componentInstance.selectOtrosSubTipo('AL');
         fixture.detectChanges();
 

@@ -883,15 +883,16 @@
 
     <!-- Categoría del gasto (VD-100): va dentro del tipo de documento, debajo del
          RUC. En "Alimentación sin documentación" se asigna sola —como en la
-         planilla de movilidad— y solo se pide a mano si el colaborador no tiene
-         una única categoría de Alimentación. La DJ al extranjero no la usa: cada
-         rubro lleva la suya en su propio bloque. -->
+         planilla de movilidad— con la categoría "Gastos Reparables (gastos sin
+         factura)" (VD-108), y solo se pide a mano si el colaborador tiene las
+         dos (Servicios y Comercial). La DJ al extranjero no la usa: cada rubro
+         lleva la suya en su propio bloque. -->
     @if (!isDj()) {
     <div class="flex flex-col gap-2">
       <label for="otrosCategoryId" class="text-sm font-medium text-secondary">
         Categoría <span class="text-error">*</span>
       </label>
-      @if (alimentacionCategoryAuto(); as autoCategory) {
+      @if (gastosReparablesCategoryAuto(); as autoCategory) {
       <p class="text-sm font-semibold text-secondary">{{ autoCategory.name }}</p>
       } @else {
       <app-search-select
@@ -901,8 +902,8 @@
         searchPlaceholder="Buscar categoría o cuenta…"
         [invalid]="!!(categoryId?.invalid && categoryId?.touched)"
       />
-      @if (isAlimentacionSinDoc() && alimentacionCategories.length > 1) {
-      <p class="text-xs text-tertiary">Tienes más de una categoría de Alimentación asignada. Elige cuál corresponde.</p>
+      @if (isAlimentacionSinDoc() && gastosReparablesCategories.length > 1) {
+      <p class="text-xs text-tertiary">Tienes más de una categoría de Gastos Reparables asignada. Elige cuál corresponde.</p>
       }
       @if (categoryId?.invalid && categoryId?.touched) {
       <span class="text-sm text-error">La categoría es requerida</span>
