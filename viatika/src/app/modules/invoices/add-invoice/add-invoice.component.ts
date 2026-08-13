@@ -583,6 +583,8 @@ export default class AddInvoiceComponent implements OnInit {
               rucEmisor: dataObj.rucEmisor || '',
               serie: dataObj.serie || '',
               correlativo: dataObj.correlativo || '',
+              // VD-109: comida declarada en AL.
+              tipoComida: (res as any).tipoComida || dataObj.tipoComida || '',
             });
           } else if (type === 'recibo_caja') {
             this.form.patchValue({
@@ -940,6 +942,34 @@ export default class AddInvoiceComponent implements OnInit {
     );
   }
 
+  /**
+   * Comidas de "Alimentación sin documentación" (VD-109) con el tope que la
+   * empresa configuró para cada una. Sin tope configurado, `tope` es null.
+   */
+  get comidasDisponibles(): { key: 'desayuno' | 'almuerzo' | 'cena'; label: string; tope: number | null }[] {
+    const limits = this.companyConfigService.getCompanyConfig()?.limits;
+    const tope = (v: number | null | undefined) => (typeof v === 'number' && v > 0 ? v : null);
+    return [
+      { key: 'desayuno', label: 'Desayuno', tope: tope(limits?.alimentacionDesayuno) },
+      { key: 'almuerzo', label: 'Almuerzo', tope: tope(limits?.alimentacionAlmuerzo) },
+      { key: 'cena', label: 'Cena', tope: tope(limits?.alimentacionCena) },
+    ];
+  }
+
+  /** Tope de la comida elegida, o null si no hay comida o no tiene tope. */
+  get topeComidaSeleccionada(): number | null {
+    const key = this.form?.get('tipoComida')?.value;
+    return this.comidasDisponibles.find((c) => c.key === key)?.tope ?? null;
+  }
+
+  /** El monto cargado pasa del tope de la comida elegida (VD-109). */
+  get montoSuperaTopeComida(): boolean {
+    const tope = this.topeComidaSeleccionada;
+    if (tope === null) return false;
+    const total = Number(this.form?.get('totalOtros')?.value) || 0;
+    return total > tope;
+  }
+
   /** Opciones del selector de categoría dentro de Otros Gastos. */
   get otrosCategoryOptions(): SearchSelectOption[] {
     // Con las dos de Gastos Reparables (Servicios 91x y Comercial 92x) se
@@ -1037,6 +1067,8 @@ export default class AddInvoiceComponent implements OnInit {
       // Otros gastos
       totalOtros: [null],
       description: [''],
+      // VD-109: en AL reemplaza a la descripción libre.
+      tipoComida: [''],
       declaracionJurada: [false],
       declaracionJuradaFirmante: [''],
       // Declaración Jurada al extranjero (DJE): datos del viaje + filas por rubro
@@ -1684,6 +1716,11 @@ export default class AddInvoiceComponent implements OnInit {
         );
         // RUC Emisor obligatorio para TK, BV y RC (todos los sub-tipos con documento físico)
         const rucOk = !this.otrosSubTipoMuestraDocumento() || rucEmisorOk;
+        // VD-109: AL declara siempre la comida y no puede pasar de su tope,
+        // tanto al crear como al editar.
+        const comidaOk =
+          sub !== 'AL' ||
+          (!!this.form.get('tipoComida')?.value && !this.montoSuperaTopeComida);
         return (
           proyectOk &&
           this.form.get('categoryId')?.valid === true &&
@@ -1692,6 +1729,7 @@ export default class AddInvoiceComponent implements OnInit {
           (this.form.get('totalOtros')?.value > 0) &&
           // Adjunto obligatorio al crear, salvo AL (Alimentación sin documentación)
           (!!this.id || sub === 'AL' || !!this.selectedFile) &&
+          comidaOk &&
           bvDocOk &&
           rucOk
         );
@@ -2033,6 +2071,8 @@ export default class AddInvoiceComponent implements OnInit {
     const total = this.form.get('totalOtros')?.value;
     const description = this.form.get('description')?.value;
     const subTipo = this.otrosSubTipo();
+    // VD-109: en AL la comida reemplaza a la descripción y define el tope.
+    const tipoComida = subTipo === 'AL' ? this.form.get('tipoComida')?.value : '';
     // AL (Alimentación sin documentación) y DJE requieren declaración jurada + firma (VD-91).
     const requiereDeclaracion = ['AL', 'DJ', 'DJE'].includes(subTipo);
 
@@ -2065,6 +2105,21 @@ export default class AddInvoiceComponent implements OnInit {
       return;
     }
 
+    if (subTipo === 'AL') {
+      if (!tipoComida) {
+        this.notificationService.show('Indica si el gasto es desayuno, almuerzo o cena', 'error');
+        return;
+      }
+      const tope = this.topeComidaSeleccionada;
+      if (tope !== null && total > tope) {
+        this.notificationService.show(
+          `El monto supera el tope de S/ ${tope.toFixed(2)} configurado para ${tipoComida}`,
+          'error'
+        );
+        return;
+      }
+    }
+
     // El adjunto es obligatorio salvo AL (Alimentación sin documentación)
     if (subTipo !== 'AL' && !this.selectedFile) {
       this.notificationService.show('Debes adjuntar el comprobante', 'error');
@@ -2092,6 +2147,7 @@ export default class AddInvoiceComponent implements OnInit {
         total,
         data: description,
         subTipo,
+        ...(tipoComida ? { tipoComida } : {}),
         declaracionJurada: requiereDeclaracion,
         declaracionJuradaFirmante: requiereDeclaracion ? firmante : undefined,
         imageUrl,
@@ -2203,14 +2259,21 @@ export default class AddInvoiceComponent implements OnInit {
       payload.total = finalTotal;
       payload.placaVehiculo = (formValue.placaVehiculo || '').trim() || undefined;
     } else if (type === 'otros_gastos') {
-      const description = (formValue.description || '').trim();
+      // VD-109: en AL la descripción es la comida declarada.
+      const esAl = this.otrosSubTipo() === 'AL';
+      const tipoComida = esAl ? (formValue.tipoComida || '') : '';
+      const description = esAl
+        ? (this.comidasDisponibles.find((c) => c.key === tipoComida)?.label || '')
+        : (formValue.description || '').trim();
       payload.description = description;
       payload.total = Number(formValue.totalOtros) || 0;
+      if (tipoComida) payload.tipoComida = tipoComida;
       const muestraDoc = this.otrosSubTipoMuestraDocumento();
       const { serie: _s, correlativo: _c, rucEmisor: _r, ...prevWithoutDoc } = previousData || {};
       const dataObj = {
         ...prevWithoutDoc,
         description,
+        ...(tipoComida ? { tipoComida } : {}),
         ...(muestraDoc ? {
           serie: (formValue.serie || '').trim() || undefined,
           correlativo: (formValue.correlativo || '').trim() || undefined,

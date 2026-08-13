@@ -7,12 +7,14 @@ import {
   IsArray,
   IsNumber,
   IsObject,
+  IsIn,
 } from 'class-validator'
 import {
   ExpenseStatus,
   ExpenseType,
   MobilityRow,
 } from '../entities/expense.entity'
+import { TIPOS_COMIDA, TipoComida } from '../../client/entities/client.entity'
 
 export class CreateExpenseDto {
   @IsString()
@@ -116,6 +118,14 @@ export class CreateExpenseDto {
   @IsString()
   @IsOptional()
   subTipo?: string
+
+  /**
+   * Comida declarada en "Alimentación sin documentación" (VD-109). Reemplaza a
+   * la descripción libre en ese sub-tipo y define contra qué tope se compara.
+   */
+  @IsIn(TIPOS_COMIDA)
+  @IsOptional()
+  tipoComida?: TipoComida
 
   @IsString()
   @IsOptional()

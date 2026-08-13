@@ -15,6 +15,22 @@ class ClientLimitsDto {
   @IsNumber()
   @Min(0)
   movilidadDiario?: number
+
+  /** Topes por comida de Alimentación sin documentación (VD-109). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  alimentacionDesayuno?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  alimentacionAlmuerzo?: number
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  alimentacionCena?: number
 }
 
 export class CreateClientDto {

@@ -915,15 +915,40 @@
     <!-- En la DJ al extranjero el monto sale del detalle diario por rubro y el
          adjunto es opcional: ambos viven en el bloque de más abajo. -->
     @if (!isDj()) {
+    <!-- VD-109: en "Alimentación sin documentación" la descripción libre se
+         reemplaza por la comida declarada, que además define el tope del monto. -->
+    @if (otrosSubTipo() === 'AL') {
+    <div class="flex flex-col gap-2">
+      <label for="tipoComida" class="text-sm font-medium text-secondary">Comida <span class="text-error">*</span></label>
+      <select id="tipoComida" formControlName="tipoComida"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm">
+        <option value="">Seleccione</option>
+        @for (comida of comidasDisponibles; track comida.key) {
+        <option [value]="comida.key">{{ comida.label }}</option>
+        }
+      </select>
+      @if (topeComidaSeleccionada !== null) {
+      <p class="text-xs text-tertiary">Tope configurado: S/ {{ topeComidaSeleccionada | number:'1.2-2' }} por gasto.</p>
+      }
+    </div>
+    } @else {
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium text-secondary">Descripción del gasto</label>
       <input type="text" formControlName="description" placeholder="Ej: Refrigerio de trabajo, útiles de escritorio..."
         class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
     </div>
+    }
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium text-secondary">Monto Total S/. <span class="text-error">*</span></label>
       <input type="number" formControlName="totalOtros" placeholder="0.00" min="0" step="0.01"
+        [class.border-error]="montoSuperaTopeComida"
         class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      @if (montoSuperaTopeComida) {
+      <p class="text-xs text-error flex items-center gap-1">
+        <app-icon name="triangle-alert" size="sm" class="shrink-0" />
+        Supera el tope de S/ {{ topeComidaSeleccionada | number:'1.2-2' }} configurado para esta comida.
+      </p>
+      }
     </div>
     @if(!id) {
     <div class="flex flex-col gap-2">
