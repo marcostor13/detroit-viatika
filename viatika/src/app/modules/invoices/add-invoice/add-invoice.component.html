@@ -952,12 +952,21 @@
     </div>
     @if(!id) {
     <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Adjunto <span class="text-error">*</span></label>
+      <!-- VD-110: en "Alimentación sin documentación" el adjunto es opcional
+           (el gasto va sin comprobante, respaldado por la declaración jurada). -->
+      <label class="text-sm font-medium text-secondary">
+        Adjunto
+        @if (otrosSubTipo() === 'AL') {
+        <span class="text-tertiary font-normal">(opcional)</span>
+        } @else {
+        <span class="text-error">*</span>
+        }
+      </label>
       <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
         (click)="fileInputOtros.click()">
         <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">
-          {{ selectedFile ? selectedFile.name : 'Haz clic para adjuntar un comprobante' }}
+          {{ selectedFile ? selectedFile.name : (otrosSubTipo() === 'AL' ? 'Haz clic para adjuntar un respaldo, si lo tienes' : 'Haz clic para adjuntar un comprobante') }}
         </p>
         <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
         <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputOtros />

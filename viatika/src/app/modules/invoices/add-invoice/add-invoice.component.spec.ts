@@ -837,6 +837,29 @@ describe('AddInvoiceComponent', () => {
         ).toBeTruthy();
       });
 
+      // VD-110: el adjunto de AL ya se guardaba sin archivo, pero la etiqueta
+      // lo pedía con asterisco y el colaborador lo leía como obligatorio.
+      it('en AL el adjunto se rotula como opcional', () => {
+        const fixture = renderComponent([catRep]);
+        fixture.componentInstance.selectOtrosSubTipo('AL');
+        fixture.detectChanges();
+
+        const texto: string = fixture.nativeElement.textContent;
+        expect(texto).toContain('Adjunto');
+        expect(texto).toContain('(opcional)');
+        expect(texto).toContain('Haz clic para adjuntar un respaldo, si lo tienes');
+      });
+
+      it('en los demás sub-tipos el adjunto sigue siendo obligatorio', () => {
+        const fixture = renderComponent([catRep]);
+        fixture.componentInstance.selectOtrosSubTipo('BV');
+        fixture.detectChanges();
+
+        const texto: string = fixture.nativeElement.textContent;
+        expect(texto).toContain('Haz clic para adjuntar un comprobante');
+        expect(fixture.componentInstance.isFormValid()).toBeFalse();
+      });
+
       it('no deja el selector de categoría en el bloque de arriba', () => {
         const fixture = renderComponent([catAli, catAliCom]);
         fixture.componentInstance.selectOtrosSubTipo('BV');
