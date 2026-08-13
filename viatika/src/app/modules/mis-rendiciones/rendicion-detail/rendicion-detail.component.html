@@ -274,7 +274,7 @@
         @if (canResendSolicitud) {
         <div class="flex flex-row flex-wrap gap-2">
           <app-button
-            label="Volver a enviar solicitud"
+            [label]="resendSolicitudLabel"
             variant="secondary"
             size="sm"
             [fullWidth]="false"
@@ -459,11 +459,11 @@
             <p id="rejection-heading" class="font-semibold text-error">
               {{
                 (isSolicitudPhase ? 'Solicitud rechazada por ' : 'Rendición rechazada por ') +
-                (report.rejectedByRole === 'contabilidad' ? 'Contabilidad' : 'un aprobador')
+                rejectedByLabel
               }}
             </p>
-            @if (report.rejectionReason) {
-              <p class="mt-2 text-base text-error whitespace-pre-wrap break-words font-medium">{{ report.rejectionReason }}</p>
+            @if (rejectionReasonText) {
+              <p class="mt-2 text-base text-error whitespace-pre-wrap break-words font-medium">{{ rejectionReasonText }}</p>
             } @else {
               <p class="mt-2 text-error/90">No se registró un motivo en el sistema. Contacta a tu administrador si necesitas más detalle.</p>
             }

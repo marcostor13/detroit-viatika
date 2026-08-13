@@ -660,6 +660,23 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return false;
   }
 
+  /**
+   * Motivo del rechazo. La solicitud de fondos (type='viatico') lo guarda en
+   * `viaticoRejectionReason`; la rendición normal en `rejectionReason`.
+   */
+  get rejectionReasonText(): string {
+    const r = this.report as any;
+    return ((r?.rejectionReason || r?.viaticoRejectionReason || '') as string).trim();
+  }
+
+  /** Quién rechazó, contemplando ambos campos (rendición y solicitud de fondos). */
+  get rejectedByLabel(): string {
+    const r = this.report as any;
+    return r?.rejectedByRole === 'contabilidad' || r?.viaticoRejectedByRole === 'contabilidad'
+      ? 'Contabilidad'
+      : 'un aprobador';
+  }
+
   /** Colaborador puede agregar gastos (rendición ya aprobada/abierta, o rechazada en fase de gastos). */
   get canAddExpenses(): boolean {
     if (!this.report || this.isAdminView) return false;
@@ -780,7 +797,22 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   isResendingSolicitud = signal(false);
 
+  /** Etiqueta del botón de reenvío: el viático se corrige en su propio formulario. */
+  get resendSolicitudLabel(): string {
+    return this.report?.type === 'viatico'
+      ? 'Corregir y reenviar solicitud'
+      : 'Volver a enviar solicitud';
+  }
+
   reenviarSolicitudDirecto(): void {
+    // Solicitud de Fondos (type='viatico'): el reenvío pasa por
+    // PATCH /viatico/resubmit, que recalcula la cadena de aprobadores y deja la
+    // solicitud en pending_l1. El PATCH genérico la dejaría en 'solicited', un
+    // estado que el flujo de viáticos no puede aprobar ni reenviar.
+    if (this.report?.type === 'viatico') {
+      this.router.navigate(['/mis-rendiciones/solicitud-viaticos', this.id, 'editar']);
+      return;
+    }
     this.isResendingSolicitud.set(true);
     this.expenseReportsService.update(this.id, { status: 'solicited', rejectionReason: '' }).subscribe({
       next: (res) => {
