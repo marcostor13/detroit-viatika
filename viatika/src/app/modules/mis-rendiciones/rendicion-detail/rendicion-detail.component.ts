@@ -1945,8 +1945,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const comprobantes = (this.report.expenseIds || []).map((exp: Record<string, unknown>) => {
       const dataObj = this.getExpenseDataObject(exp);
       const expType = exp['expenseType'] as string;
+      const esPlanillaMovilidad = expType === 'planilla_movilidad';
       let provider = exp['provider'] as string || dataObj['razonSocial'] as string || '';
-      if (!provider && this.getExpenseTypeLabel(exp) === 'Planilla movilidad') {
+      // La comparación era contra 'Planilla movilidad' y getExpenseTypeLabel
+      // devuelve 'Planilla Movilidad', así que el proveedor salía vacío.
+      if (!provider && esPlanillaMovilidad) {
         provider = 'Planilla de Movilidad';
       }
       let numDoc = '';
@@ -1965,9 +1968,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
           : '';
       }
 
-      const comentario = this.getExpenseComentario(exp);
+      // VD-107: en la columna DESCRIPCIÓN del reporte (PDF y Excel) la planilla
+      // de movilidad se identifica siempre igual, en vez de la gestión de su
+      // primera fila. El detalle por gestión sigue en la planilla misma.
+      const comentario = esPlanillaMovilidad ? '' : this.getExpenseComentario(exp);
       const placaVehiculo = this.getExpensePlaca(exp);
-      const concepto = this.getExpenseConcepto(exp);
+      const concepto = esPlanillaMovilidad
+        ? 'Planilla de Movilidad'
+        : this.getExpenseConcepto(exp);
       // Rendición directa: el proyecto es individual por gasto. En el reporte solo va el código.
       const proyecto = this.resolveRowProjectLabel(exp['proyectId']);
       // Columnas contables del formato ADF-FOR-004.

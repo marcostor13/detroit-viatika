@@ -138,6 +138,48 @@ describe('RendicionDetailComponent', () => {
     expect(component.id).toBe('r1');
   });
 
+  describe('buildExportData — descripción de la planilla (VD-107)', () => {
+    it('la planilla de movilidad se describe siempre igual, no con la gestión de su primera fila', () => {
+      component.report = makeReport({
+        expenseIds: [{
+          _id: 'e1',
+          expenseType: 'planilla_movilidad',
+          internalCode: 'PM-001',
+          total: 60,
+          comentario: 'Comentario suelto',
+          mobilityRows: [
+            { fecha: '2026-02-01', total: 30, origen: 'A', destino: 'B', gestion: 'Visita a obra' },
+            { fecha: '2026-02-02', total: 30, origen: 'B', destino: 'C', gestion: 'Retorno' },
+          ],
+        }] as any,
+      });
+
+      const row = component.buildExportData()!.comprobantes[0];
+
+      // La columna DESCRIPCIÓN del formato se arma como `comentario || descripcion`.
+      expect(row.comentario || row.descripcion).toBe('Planilla de Movilidad');
+      expect(row.proveedor).toBe('Planilla de Movilidad');
+      expect(row.numeroDocumento).toBe('PM-001');
+    });
+
+    it('los demás comprobantes conservan su concepto y comentario', () => {
+      component.report = makeReport({
+        expenseIds: [{
+          _id: 'e2',
+          expenseType: 'factura',
+          total: 100,
+          comentario: 'Servicio de transporte de carga',
+          data: JSON.stringify({ razonSocial: 'ACME SAC' }),
+        }] as any,
+      });
+
+      const row = component.buildExportData()!.comprobantes[0];
+
+      expect(row.comentario).toBe('Servicio de transporte de carga');
+      expect(row.descripcion).toBe('ACME SAC');
+    });
+  });
+
   describe('buildMobilityPagesByDailyCap (VD-106)', () => {
     function pm(id: string, rows: Array<{ fecha: string; total: number; origen?: string; destino?: string; gestion?: string }>) {
       return {
