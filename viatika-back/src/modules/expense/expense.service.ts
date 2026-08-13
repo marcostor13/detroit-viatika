@@ -14,10 +14,6 @@ import {
 } from './dto/create-declaracion-jurada.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
-import { execFile } from 'child_process'
-import { mkdtemp, writeFile, readdir, readFile, rm } from 'fs/promises'
-import * as os from 'os'
-import * as path from 'path'
 import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
@@ -50,6 +46,18 @@ import {
   normalizeFechaEmisionInDataJson,
   parseFechaEmisionInput,
 } from './utils/fecha-emision.util'
+import {
+  PdfSinContenidoLegibleError,
+  PdfVisionInput,
+  buildTextoParaPrompt,
+  preparePdfVisionInput,
+} from './utils/pdf-vision-input.util'
+import { normalizeExtraccionOcr } from './utils/ocr-normalize.util'
+import {
+  OcrGuardResult,
+  describeOcrIssues,
+  runOcrGuards,
+} from './utils/ocr-guards.util'
 
 /** Usuario autenticado para autorización de gastos (PATCH/DELETE/GET). */
 export interface ExpenseActorContext {
@@ -100,9 +108,13 @@ export class ExpenseService {
   private readonly openai: OpenAI
   private readonly visionModel = 'gpt-5.4-mini'
   /**
-   * Máximo de páginas de un PDF que se rasterizan y envían al modelo de
-   * visión. Las facturas/boletas peruanas casi siempre son de 1 página; el
-   * límite evita costos descontrolados en PDFs largos o malformados.
+   * Máximo de páginas de un PDF que se analizan. Las facturas/boletas peruanas
+   * casi siempre son de 1 página; el límite evita costos descontrolados en PDFs
+   * largos o malformados. Cuando el PDF tiene más páginas que este tope se
+   * priorizan las que contienen anclas de comprobante (RUC, IMPORTE TOTAL, IGV,
+   * serie), porque en un escaneo agrupado la factura puede no estar en la
+   * primera. El tope real de costo lo pone `MAX_IMAGENES_VISION`: una página
+   * escaneada aporta varias bandas.
    */
   private readonly PDF_MAX_PAGES = 5
 
@@ -287,14 +299,23 @@ export class ExpenseService {
   }
 
   // Construcción del mensaje para Vision. Acepta una o varias imágenes (PDF
-  // multi-página rasterizado): el modelo las lee en el orden dado.
-  private buildVisionMessages(prompt: string, imageUrls: string | string[]) {
+  // multi-página o rasterizado en bandas): el modelo las lee en el orden dado.
+  // `textoExtra` es la capa de texto del PDF, que va antes de las imágenes con
+  // su regla de precedencia (ver buildTextoParaPrompt).
+  private buildVisionMessages(
+    prompt: string,
+    imageUrls: string | string[],
+    textoExtra?: string | null
+  ) {
     const urls = Array.isArray(imageUrls) ? imageUrls : [imageUrls]
     return [
       {
         role: 'user' as const,
         content: [
           { type: 'text' as const, text: prompt },
+          ...(textoExtra
+            ? [{ type: 'text' as const, text: textoExtra }]
+            : []),
           ...urls.map(url => ({
             type: 'image_url' as const,
             image_url: { url },
@@ -305,94 +326,81 @@ export class ExpenseService {
   }
 
   /**
-   * Rasteriza cada página de un PDF a PNG (data URL base64) con `pdftoppm`
-   * (poppler-utils), para que el modelo de visión lea el documento con su
-   * layout real (tablas, columnas, cabecera) en vez de una extracción de
-   * texto plano que puede desordenar los campos de facturas peruanas.
+   * Parseo robusto del contenido JSON devuelto por OpenAI.
    *
-   * Se usó antes pdfjs-dist + @napi-rs/canvas in-process, pero el binario
-   * nativo de @napi-rs/canvas (Skia) requiere AVX2 y crashea con SIGILL en
-   * CPUs que no lo soportan (confirmado en el servidor de QA). `pdftoppm` es
-   * un binario de sistema (instalado vía apk en el Dockerfile) sin ese
-   * requisito, y al correr como proceso propio via execFile ya está aislado:
-   * si crashea, solo muere ese proceso, no la API.
+   * Antes cualquier respuesta que no fuera JSON exacto terminaba en un 502
+   * genérico sin dejar rastro de qué había llegado, así que no se podía
+   * distinguir una respuesta vacía de una truncada o de una con preámbulo. Ahora
+   * se recorta el bloque markdown, se intenta extraer el objeto por llaves (el
+   * mismo respaldo que ya tenía el escaneo de depósitos) y, si igual falla, se
+   * loguea el contenido crudo recortado.
    */
-  private async renderPdfPagesToImages(buffer: Buffer): Promise<string[]> {
-    const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'expense-pdf-'))
-    const pdfPath = path.join(tmpDir, 'input.pdf')
-    const outPrefix = path.join(tmpDir, 'page')
-    try {
-      await writeFile(pdfPath, buffer)
-      await this.runPdftoppm(pdfPath, outPrefix)
-      const pageFiles = (await readdir(tmpDir))
-        .filter(f => f.startsWith('page') && f.endsWith('.png'))
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-      const images: string[] = []
-      for (const file of pageFiles) {
-        const pngBuffer = await readFile(path.join(tmpDir, file))
-        images.push(`data:image/png;base64,${pngBuffer.toString('base64')}`)
-      }
-      return images
-    } finally {
-      await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined)
-    }
-  }
-
-  private runPdftoppm(pdfPath: string, outPrefix: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      execFile(
-        'pdftoppm',
-        [
-          '-png',
-          '-r',
-          '150',
-          '-l',
-          String(this.PDF_MAX_PAGES),
-          pdfPath,
-          outPrefix,
-        ],
-        { timeout: 60_000 },
-        (error, _stdout, stderr) => {
-          if (error) {
-            this.logger.error(
-              `pdftoppm terminó con error (code=${error.code}, signal=${(error as any).signal}): ${stderr || error.message}`
-            )
-            reject(
-              new HttpException(
-                'No se pudo renderizar el PDF.',
-                HttpStatus.BAD_REQUEST
-              )
-            )
-            return
-          }
-          resolve()
-        }
-      )
-    })
-  }
-
-  // Parseo robusto del contenido JSON devuelto por OpenAI
   private parseOpenAiJsonContent(
-    content?: string | null
+    content?: string | null,
+    contexto = 'comprobante'
   ): ExtractedInvoiceData {
     const safe = (content || '')
-      .replace(/^```json\s*/i, '')
-      .replace(/\s*```$/i, '')
+      .replace(/^\s*```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
       .trim()
-    try {
-      const parsed = JSON.parse(safe) as ExtractedInvoiceData
-      parsed.comentario = this.sanitizeComentario(
-        parsed.comentario,
-        parsed.razonSocial
-      )
-      return parsed
-    } catch (error) {
-      this.logger.error('No se pudo parsear la respuesta de OpenAI', error)
-      throw new HttpException(
-        'Respuesta inválida del analizador de imagen.',
-        HttpStatus.BAD_GATEWAY
-      )
+
+    const candidatos = [safe]
+    // Respaldo: el objeto más externo entre la primera { y la última }.
+    const primera = safe.indexOf('{')
+    const ultima = safe.lastIndexOf('}')
+    if (primera > 0 || (ultima > -1 && ultima < safe.length - 1)) {
+      if (primera > -1 && ultima > primera) {
+        candidatos.push(safe.slice(primera, ultima + 1))
+      }
     }
+
+    for (const candidato of candidatos) {
+      if (!candidato) continue
+      try {
+        const parsed = JSON.parse(candidato) as ExtractedInvoiceData
+        parsed.comentario = this.sanitizeComentario(
+          parsed.comentario,
+          parsed.razonSocial
+        )
+        return parsed
+      } catch {
+        /* se prueba el siguiente candidato */
+      }
+    }
+
+    this.logger.error(
+      `No se pudo parsear la respuesta de OpenAI (${contexto}). ` +
+        `Longitud=${safe.length}. Contenido recortado: ${safe.slice(0, 1500) || '(vacío)'}`
+    )
+    throw new HttpException(
+      safe.length === 0
+        ? 'El analizador no devolvió contenido. Reintenta el escaneo.'
+        : 'Respuesta inválida del analizador de comprobantes.',
+      HttpStatus.BAD_GATEWAY
+    )
+  }
+
+  /**
+   * Deja en el log lo necesario para diagnosticar un escaneo sin datos:
+   * el motivo de corte (`finish_reason`) y el consumo de tokens. Un
+   * `finish_reason = 'length'` significa JSON truncado, que es una causa de
+   * campos vacíos distinta de una lectura mala y no se podía distinguir.
+   */
+  private logCompletionDiagnostics(
+    contexto: string,
+    completion: OpenAI.Chat.Completions.ChatCompletion
+  ): void {
+    const choice = completion.choices?.[0]
+    const usage = completion.usage
+    const mensaje =
+      `OCR ${contexto}: modelo=${completion.model} finish_reason=${choice?.finish_reason ?? 'n/d'} ` +
+      `tokens(prompt=${usage?.prompt_tokens ?? '?'}, completion=${usage?.completion_tokens ?? '?'}) ` +
+      `chars=${choice?.message?.content?.length ?? 0}`
+    if (choice?.finish_reason && choice.finish_reason !== 'stop') {
+      this.logger.warn(`${mensaje} <- la respuesta no terminó normalmente`)
+      return
+    }
+    this.logger.log(mensaje)
   }
 
   /**
@@ -1113,32 +1121,65 @@ export class ExpenseService {
    */
   private async runOcrScan(
     extraction: ExtractedInvoiceData,
-    clientId: string
+    clientId: string,
+    contexto = 'comprobante'
   ): Promise<{ data: string; total: number; status: string }> {
-    await this.validateDuplicateInvoiceIfAny(extraction, clientId)
     // findOne lanza si la empresa no tiene config SUNAT; para el escaneo se
     // tolera (queda como PENDING) en vez de romper el análisis.
     const configSunat = await this.sunatConfigService
       .findOne(clientId)
       .catch(() => null)
+
+    // 1. El prompt pide los datos planos y anidados; si el modelo sólo llenó
+    // `comprobanteDetallado`, los campos planos se recuperan de ahí. Antes ese
+    // caso llegaba al formulario en blanco y con total 0 aunque el dato viniera.
+    const { extraccion: normalizada, camposRecuperados } =
+      normalizeExtraccionOcr(extraction)
+    if (camposRecuperados.length) {
+      this.logger.warn(
+        `OCR ${contexto}: campos recuperados de comprobanteDetallado: ${camposRecuperados.join(', ')}`
+      )
+    }
+
+    // 2. Guardas deterministas antes de validar contra SUNAT: un RUC con un
+    // dígito mal leído hace fallar la validación sin explicar por qué.
+    const guards = runOcrGuards(normalizada, { rucEmpresa: configSunat?.ruc })
+    if (guards.issues.length) {
+      const nivel = guards.hasErrors ? 'error' : 'warn'
+      this.logger[nivel === 'error' ? 'error' : 'warn'](
+        `OCR ${contexto}: ${describeOcrIssues(guards)}`
+      )
+    }
+
+    await this.validateDuplicateInvoiceIfAny(normalizada, clientId)
     const { validation, expenseStatus } = await this.validateWithSunatIfPossible(
-      extraction,
+      normalizada,
       clientId,
       configSunat?.ruc
     )
     const normalizedFecha = this.normalizeFechaEmisionValue(
-      extraction.fechaEmision
+      normalizada.fechaEmision
     )
     const dataPayload = {
-      ...extraction,
-      fechaEmision: normalizedFecha ?? extraction.fechaEmision,
+      ...normalizada,
+      fechaEmision: normalizedFecha ?? normalizada.fechaEmision,
       sunatValidation: validation,
+      // Viaja al panel post-OCR para poder marcar los campos en conflicto en vez
+      // de aceptar en silencio una lectura incoherente.
+      ocrIssues: guards.issues,
+      ocrRequiereRevision: guards.requiereRevision,
     }
     return {
       data: JSON.stringify(dataPayload),
-      total: Number(extraction.montoTotal ?? 0),
+      total: Number(normalizada.montoTotal ?? 0),
       status: expenseStatus,
     }
+  }
+
+  /** Guardas del último intento, para decidir si vale reintentar el escaneo. */
+  private evaluarGuardas(extraction: ExtractedInvoiceData): OcrGuardResult {
+    const { extraccion } = normalizeExtraccionOcr(extraction)
+    return runOcrGuards(extraccion)
   }
 
   /**
@@ -1164,10 +1205,12 @@ export class ExpenseService {
         temperature: 0,
         max_completion_tokens: 8192,
       })
+      this.logCompletionDiagnostics('imagen', completion)
       const extraction = this.parseOpenAiJsonContent(
-        completion.choices[0]?.message?.content
+        completion.choices[0]?.message?.content,
+        'imagen'
       )
-      return await this.runOcrScan(extraction, body.clientId)
+      return await this.runOcrScan(extraction, body.clientId, 'imagen')
     } catch (error) {
       if (error instanceof HttpException) throw error
       this.logger.error('OpenAI API Error Response:', error)
@@ -1181,6 +1224,13 @@ export class ExpenseService {
   /**
    * Escanea (OCR + SUNAT) un PDF de factura SIN subirlo a storage ni crear el
    * gasto (VD-70 Parte B).
+   *
+   * Se le mandan al modelo dos señales: la capa de texto del PDF (exacta, con
+   * las palabras reagrupadas en su orden visual) y las imágenes rasterizadas
+   * (contexto de layout en páginas digitales, bandas de alta resolución en
+   * páginas escaneadas). Si las guardas deterministas encuentran errores en la
+   * lectura y el PDF era digital, se reintenta una vez con las páginas en
+   * bandas, que es la lectura más cara y más nítida.
    */
   async scanInvoicePdf(
     body: CreateExpenseDto,
@@ -1193,32 +1243,72 @@ export class ExpenseService {
       body.expenseReportId
     )
     try {
-      const pageImages = await this.renderPdfPagesToImages(file.buffer)
-      if (pageImages.length === 0) {
-        throw new HttpException(
-          'No se pudo renderizar el PDF.',
-          HttpStatus.BAD_REQUEST
-        )
+      const input = await preparePdfVisionInput(file.buffer, {
+        maxPaginas: this.PDF_MAX_PAGES,
+      })
+      this.logger.log(`OCR pdf: ${input.resumen}`)
+      for (const warning of input.warnings) {
+        this.logger.warn(`OCR pdf: ${warning}`)
       }
 
-      const completion = await this.openai.chat.completions.create({
-        model: this.visionModel,
-        messages: this.buildVisionMessages(PROMPT1, pageImages),
-        temperature: 0,
-        max_completion_tokens: 8192,
-      })
-      const extraction = this.parseOpenAiJsonContent(
-        completion.choices[0]?.message?.content
-      )
-      return await this.runOcrScan(extraction, body.clientId)
+      let extraction = await this.extractFromPdfInput(input, 'pdf')
+
+      // Reintento único: si la lectura no pasa las guardas y todavía no se
+      // mandaron bandas, se vuelve a intentar forzándolas. Sube el costo sólo en
+      // el caso que ya venía mal.
+      const guards = this.evaluarGuardas(extraction)
+      if (guards.hasErrors && !input.tieneEscaneos) {
+        this.logger.warn(
+          `OCR pdf: reintento en bandas por ${describeOcrIssues(guards)}`
+        )
+        const reintento = await preparePdfVisionInput(file.buffer, {
+          maxPaginas: this.PDF_MAX_PAGES,
+          forzarBandas: true,
+        })
+        const extraccionReintento = await this.extractFromPdfInput(
+          reintento,
+          'pdf (bandas)'
+        )
+        if (!this.evaluarGuardas(extraccionReintento).hasErrors) {
+          extraction = extraccionReintento
+        }
+      }
+
+      return await this.runOcrScan(extraction, body.clientId, 'pdf')
     } catch (error) {
       if (error instanceof HttpException) throw error
+      if (error instanceof PdfSinContenidoLegibleError) {
+        this.logger.error(`OCR pdf: ${error.message}`)
+        throw new HttpException(error.message, HttpStatus.BAD_REQUEST)
+      }
       this.logger.error('Error al analizar PDF:', error)
       throw new HttpException(
         'Error al analizar el PDF.',
         HttpStatus.INTERNAL_SERVER_ERROR
       )
     }
+  }
+
+  /** Una pasada de lectura del PDF con las señales ya preparadas. */
+  private async extractFromPdfInput(
+    input: PdfVisionInput,
+    contexto: string
+  ): Promise<ExtractedInvoiceData> {
+    const completion = await this.openai.chat.completions.create({
+      model: this.visionModel,
+      messages: this.buildVisionMessages(
+        PROMPT1,
+        input.imagenes,
+        buildTextoParaPrompt(input)
+      ),
+      temperature: 0,
+      max_completion_tokens: 8192,
+    })
+    this.logCompletionDiagnostics(contexto, completion)
+    return this.parseOpenAiJsonContent(
+      completion.choices[0]?.message?.content,
+      contexto
+    )
   }
 
   /**
