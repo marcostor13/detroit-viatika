@@ -109,3 +109,28 @@ comprobante sin aprobar por Contabilidad.
 **Riesgo si no se salda:** son gates que cortan flujos en producción. Un
 allowlist de estados mal puesto (por ejemplo olvidar `partially_paid` o `paid` en
 la rendición de un viático) bloquea a un usuario real sin que ningún test avise.
+
+## Sellado de la cadena de reporte del viático, sin correr jest (2026-08-14)
+
+**Qué:** `advanceToAccountingIfAllExpensesApproved` ya no se detiene ante una
+`rendicionApproverChain` incompleta: la sella (pasos aprobados + historial, con
+el aprobador que firmó ese nivel en los comprobantes) y avanza a
+`pending_accounting`. El guard anterior dejaba **toda** rendición de viático
+atascada en `submitted`, porque VD-87 quitó el botón "Aprobar Rendición" que era
+lo único que completaba esa cadena.
+
+**Qué se verificó:** `tsc --noEmit` limpio. El spec
+`expense-report.service.spec.ts` se actualizó ("sella la cadena de reporte del
+viático y avanza", antes "NO avanza un viático con su cadena de reporte
+incompleta") pero **no se pudo correr**: jest está bloqueado en este entorno.
+
+**Qué probar cuando se pueda correr jest:**
+
+```bash
+npx jest --runInBand -t "advanceToAccountingIfAllExpensesApproved"
+```
+
+**Riesgo si no se salda:** el sellado escribe en `rendicionApproverChain`,
+`rendicionApprovalLevel` y `rendicionApprovalHistory` de todos los viáticos que
+llegan a Contabilidad. Un error ahí no rompe el flujo (el estado avanza igual)
+pero deja el historial de aprobación en falso.
