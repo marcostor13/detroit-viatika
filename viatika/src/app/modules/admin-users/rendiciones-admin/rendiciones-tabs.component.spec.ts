@@ -10,11 +10,19 @@ describe('RendicionesTabsComponent', () => {
   let router: jasmine.SpyObj<Router>;
   let queryParamMap$: any;
 
-  function setup(initialTab: string | null = null, role: 'contabilidad' | 'tesoreria' | 'otro' = 'contabilidad') {
+  function setup(
+    initialTab: string | null = null,
+    role: 'contabilidad' | 'tesoreria' | 'admin' | 'aprobador' = 'contabilidad'
+  ) {
     TestBed.resetTestingModule();
-    userState = jasmine.createSpyObj('UserStateService', ['isContabilidadInCompany', 'isTesoreria']);
+    userState = jasmine.createSpyObj('UserStateService', [
+      'isContabilidadInCompany',
+      'isTesoreria',
+      'isAdminInCompany',
+    ]);
     userState.isContabilidadInCompany.and.returnValue(role === 'contabilidad');
     userState.isTesoreria.and.returnValue(role === 'tesoreria');
+    userState.isAdminInCompany.and.returnValue(role === 'admin');
     router = jasmine.createSpyObj('Router', ['navigate']);
     queryParamMap$ = of({ get: (key: string) => (key === 'tab' ? initialTab : null) });
 
@@ -37,20 +45,17 @@ describe('RendicionesTabsComponent', () => {
     expect(component.activeTab()).toBe('rendiciones');
   });
 
-  describe('visibilidad de pestañas', () => {
-    it('Contabilidad con empresa activa ve las pestañas extra', () => {
-      setup(null, 'contabilidad');
-      expect(component.showExtraTabs()).toBeTrue();
+  describe('visibilidad de la pestaña Caja Chica', () => {
+    it('la ven Contabilidad, Tesorería y Administrador', () => {
+      for (const role of ['contabilidad', 'tesoreria', 'admin'] as const) {
+        setup(null, role);
+        expect(component.showCajaChicaTab()).toBeTrue();
+      }
     });
 
-    it('Tesorería ve las mismas pestañas que Contabilidad', () => {
-      setup(null, 'tesoreria');
-      expect(component.showExtraTabs()).toBeTrue();
-    });
-
-    it('el resto de roles no ve pestañas extra', () => {
-      setup(null, 'otro');
-      expect(component.showExtraTabs()).toBeFalse();
+    it('no la ve un aprobador (no tiene nada que aprobar ahí)', () => {
+      setup(null, 'aprobador');
+      expect(component.showCajaChicaTab()).toBeFalse();
     });
   });
 
@@ -61,10 +66,12 @@ describe('RendicionesTabsComponent', () => {
       expect(component.activeTab()).toBe('directas');
     });
 
-    it('activates "directas" for Tesorería too', () => {
-      setup('directas', 'tesoreria');
-      component.ngOnInit();
-      expect(component.activeTab()).toBe('directas');
+    it('activa "directas" para Tesorería y para un aprobador', () => {
+      for (const role of ['tesoreria', 'aprobador'] as const) {
+        setup('directas', role);
+        component.ngOnInit();
+        expect(component.activeTab()).toBe('directas');
+      }
     });
 
     it('activates "caja-chica" when the query param requests it', () => {
@@ -79,8 +86,8 @@ describe('RendicionesTabsComponent', () => {
       expect(component.activeTab()).toBe('caja-chica');
     });
 
-    it('ignora un ?tab= extra en un rol sin esas pestañas', () => {
-      setup('directas', 'otro');
+    it('ignora ?tab=caja-chica en un aprobador, que no tiene esa pestaña', () => {
+      setup('caja-chica', 'aprobador');
       component.ngOnInit();
       expect(component.activeTab()).toBe('rendiciones');
     });

@@ -2436,8 +2436,28 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * IDs de las rendiciones directas donde el usuario figura como aprobador de
+   * algún comprobante — mismo criterio que `findAllByCoordinator`, que es como
+   * se acota la pestaña "Solicitud de Fondos". Sirve para que las pantallas de
+   * directas muestren a cada aprobador lo que le toca aprobar y nada más.
+   */
+  private async directaReportIdsForApprover(
+    userId: string
+  ): Promise<Types.ObjectId[]> {
+    if (!Types.ObjectId.isValid(userId)) return []
+    return this.expenseModel
+      .find({ 'approverChain.approverIds': new Types.ObjectId(userId) })
+      .distinct('expenseReportId')
+      .exec()
+  }
+
+  /**
    * Devuelve los gastos de todas las rendiciones directas de un cliente,
    * con filtros opcionales de fecha, proyecto, categoría y número de documento.
+   *
+   * `approverUserId` acota el resultado a las rendiciones que ese usuario debe
+   * aprobar. Lo manda el controlador para todos menos Contabilidad, Tesorería y
+   * los administradores, que son los únicos que ven la empresa completa.
    */
   async findDirectRendicionExpenses(
     clientId: string,
@@ -2451,6 +2471,7 @@ export class ExpenseReportService implements OnModuleInit {
       docNumber?: string
       tipo?: string
       userId?: string
+      approverUserId?: string
     } = {}
   ) {
     const page = Math.max(1, filters.page ?? 1)
@@ -2464,6 +2485,11 @@ export class ExpenseReportService implements OnModuleInit {
     }
     if (filters.userId && /^[0-9a-fA-F]{24}$/.test(filters.userId)) {
       reportQuery.userId = new Types.ObjectId(filters.userId)
+    }
+    if (filters.approverUserId) {
+      reportQuery._id = {
+        $in: await this.directaReportIdsForApprover(filters.approverUserId),
+      }
     }
     const directReports = await this.expenseReportModel
       .find(reportQuery)
@@ -2675,10 +2701,18 @@ export class ExpenseReportService implements OnModuleInit {
    * rendición), con su total gastado, depósito/saldo y quién la generó. Alimenta
    * la pestaña "Rendiciones directas" (vista por rendición), separada de la
    * pestaña "Gastos" (vista por comprobante, ver findDirectRendicionExpenses).
+   *
+   * `approverUserId` acota la lista a las rendiciones que ese usuario debe
+   * aprobar (ver `directaReportIdsForApprover`).
    */
   async findDirectRendicionReports(
     clientId: string,
-    filters: { dateFrom?: string; dateTo?: string; userId?: string } = {}
+    filters: {
+      dateFrom?: string
+      dateTo?: string
+      userId?: string
+      approverUserId?: string
+    } = {}
   ) {
     const query: any = {
       clientId: new Types.ObjectId(clientId),
@@ -2686,6 +2720,11 @@ export class ExpenseReportService implements OnModuleInit {
     }
     if (filters.userId && /^[0-9a-fA-F]{24}$/.test(filters.userId)) {
       query.userId = new Types.ObjectId(filters.userId)
+    }
+    if (filters.approverUserId) {
+      query._id = {
+        $in: await this.directaReportIdsForApprover(filters.approverUserId),
+      }
     }
     if (filters.dateFrom || filters.dateTo) {
       query.createdAt = {}
