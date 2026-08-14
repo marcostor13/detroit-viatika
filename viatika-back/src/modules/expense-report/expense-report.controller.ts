@@ -160,10 +160,29 @@ export class ExpenseReportController {
     return this.expenseReportService.findDirectaDepositReports(clientId)
   }
 
+  /**
+   * Las pantallas de rendiciones directas las abre cualquiera que entre a
+   * /rendiciones (el módulo o ser aprobador), no solo Contabilidad. Ver la
+   * empresa completa siguen siendo Contabilidad, Tesorería y los administradores
+   * (los que revisan, pagan y cierran); al resto se le devuelve `approverUserId`
+   * para que la consulta se acote a lo que le toca aprobar.
+   */
+  private directasApproverScope(req: any): string | undefined {
+    const role = req.user?.roles?.[0]
+    const seesAll = [
+      ROLES.ADMIN,
+      ROLES.SUPER_ADMIN,
+      ROLES.CONTABILIDAD,
+      ROLES.TESORERIA,
+    ].includes(role)
+    return seesAll ? undefined : String(req.user._id || req.user.sub)
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Get('directas/expenses/:clientId')
   findDirectRendicionExpenses(
     @Param('clientId') clientId: string,
+    @Request() req: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('dateFrom') dateFrom?: string,
@@ -184,6 +203,7 @@ export class ExpenseReportController {
       docNumber,
       tipo,
       userId,
+      approverUserId: this.directasApproverScope(req),
     })
   }
 
@@ -191,6 +211,7 @@ export class ExpenseReportController {
   @Get('directas/reports/:clientId')
   findDirectRendicionReports(
     @Param('clientId') clientId: string,
+    @Request() req: any,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('userId') userId?: string
@@ -199,6 +220,7 @@ export class ExpenseReportController {
       dateFrom,
       dateTo,
       userId,
+      approverUserId: this.directasApproverScope(req),
     })
   }
 
