@@ -428,12 +428,25 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
     expect(notify).toHaveBeenCalled()
   })
 
-  it('advanceToAccountingIfAllExpensesApproved: NO avanza un viático con su cadena de reporte incompleta', async () => {
+  /**
+   * Regresión: un viático llega a Contabilidad con las aprobaciones por
+   * comprobante, sin esperar un segundo clic a nivel de reporte. Desde VD-87 no
+   * existe el botón que completaba `rendicionApproverChain`, así que exigirla
+   * dejaba la rendición atascada en `submitted` para siempre.
+   */
+  it('advanceToAccountingIfAllExpensesApproved: sella la cadena de reporte del viático y avanza', async () => {
+    const approverN1 = new Types.ObjectId().toString()
     const reportObj: {
       status: string
       expenseIds: string[]
       userId: string
-      rendicionApproverChain: { level: number; approved: boolean }[]
+      rendicionApproverChain: {
+        level: number
+        approved: boolean
+        approvedBy?: Types.ObjectId
+      }[]
+      rendicionApprovalLevel?: number
+      rendicionApprovalHistory?: { level: number; approvedBy: string }[]
       save: jest.Mock
     } = {
       status: 'submitted',
@@ -456,20 +469,41 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
         select: jest.fn().mockReturnValue({
           lean: jest.fn().mockReturnValue({
             exec: jest.fn().mockResolvedValue([
-              { _id: expenseId1, status: 'approved', approverChain: [{ level: 1 }], approvalLevel: 1, requiredLevels: 1 },
+              {
+                _id: expenseId1,
+                status: 'approved',
+                approverChain: [
+                  { level: 1, approved: true, approvedBy: approverN1 },
+                ],
+                approvalLevel: 1,
+                requiredLevels: 1,
+              },
             ]),
           }),
         }),
       }),
     }
+    jest.spyOn(service, 'findOne').mockResolvedValue(fullReportDoc() as never)
+    jest
+      .spyOn(
+        service as unknown as {
+          notifyAccountingReportPendingApproval: (...a: unknown[]) => Promise<void>
+        },
+        'notifyAccountingReportPendingApproval'
+      )
+      .mockResolvedValue(undefined)
 
     const advanced =
       await service.advanceToAccountingIfAllExpensesApproved(reportId)
 
-    // Espera a los N1/N2 del reporte (`approveRendicion`), no se los salta.
-    expect(advanced).toBe(false)
-    expect(reportObj.status).toBe('submitted')
-    expect(reportObj.save).not.toHaveBeenCalled()
+    expect(advanced).toBe(true)
+    expect(reportObj.status).toBe('pending_accounting')
+    // La cadena del reporte queda sellada con quien aprobó cada nivel en los
+    // comprobantes; el nivel sin equivalente se sella sin firmante.
+    expect(reportObj.rendicionApproverChain.every(s => s.approved)).toBe(true)
+    expect(String(reportObj.rendicionApproverChain[0].approvedBy)).toBe(approverN1)
+    expect(reportObj.rendicionApprovalLevel).toBe(2)
+    expect(reportObj.rendicionApprovalHistory).toHaveLength(2)
   })
 
   /**

@@ -4840,11 +4840,12 @@ export class ExpenseReportService implements OnModuleInit {
    * Lo llaman `ExpenseService.approveByCoord` tras aprobar cada comprobante y
    * `update()` al enviar la rendición (ver ahí por qué el segundo punto es
    * imprescindible y no una redundancia).
-   * Idempotente: solo actúa si el reporte sigue en `submitted`, su cadena a
-   * nivel de reporte (viáticos) está completa o no existe, hay al menos un
+   * Idempotente: solo actúa si el reporte sigue en `submitted`, hay al menos un
    * comprobante, NINGUNO está observado (rechazado) y TODOS están aprobados por
    * su cadena. Si queda un comprobante rechazado, la rendición espera a que el
    * colaborador lo corrija (no avanza a Contabilidad con observaciones pendientes).
+   * La cadena a nivel de reporte del viático no bloquea el avance: se sella con
+   * estas mismas aprobaciones (ver abajo).
    *
    * Devuelve `true` solo si ESTA llamada movió la rendición a Contabilidad, para
    * que el llamador ajuste sus notificaciones (no tiene sentido avisar a los
@@ -4855,27 +4856,11 @@ export class ExpenseReportService implements OnModuleInit {
   ): Promise<boolean> {
     const report = await this.expenseReportModel
       .findById(reportId)
-      .select('status expenseIds userId rendicionApproverChain')
+      .select(
+        'status expenseIds userId rendicionApproverChain rendicionApprovalLevel rendicionApprovalHistory'
+      )
       .exec()
     if (!report || report.status !== 'submitted') return false
-
-    // Un viático lleva además su propia cadena a nivel de reporte (N1/N2 del
-    // centro de costo, ver `approveRendicion`): mientras siga incompleta la
-    // rendición no está atascada, está esperando a esos aprobadores, y avanzar
-    // aquí se los saltaría — el mismo gate que `update()` aplica al intento
-    // manual. Importa sobre todo en el envío: la cadena se reconstruye ahí en
-    // nivel 0, así que sin este guard todo viático con sus comprobantes ya
-    // aprobados pasaría de largo hacia Contabilidad.
-    const reportChain = (report as any).rendicionApproverChain as
-      | ChainStep[]
-      | undefined
-    if (
-      Array.isArray(reportChain) &&
-      reportChain.length > 0 &&
-      !isChainFullyApproved(reportChain)
-    ) {
-      return false
-    }
 
     const expenseIds = (report.expenseIds ?? []).map((x: any) =>
       x && typeof x === 'object' && '_id' in x ? x._id : x
@@ -4920,6 +4905,55 @@ export class ExpenseReportService implements OnModuleInit {
       return (e.approvalLevel ?? 0) >= required
     }
     if (!active.every(coordApproved)) return false
+
+    // La cadena a nivel de reporte del viático (N1/N2 del centro de costo, ver
+    // `approveRendicion`) la firman los MISMOS aprobadores que acaban de
+    // pronunciarse comprobante por comprobante, y desde VD-87 ya no existe el
+    // botón "Aprobar Rendición" con el que la completaban. Bloquear el avance
+    // mientras siguiera pendiente dejaba a TODA rendición de viático atascada
+    // en `submitted` de forma definitiva: nadie tenía cómo cerrar esa cadena y
+    // Contabilidad solo puede actuar desde `pending_accounting`. Se da por
+    // cumplida con esas aprobaciones y se sella aquí — ya con la certeza de que
+    // ningún comprobante quedó sin aprobar — para que el detalle y el historial
+    // no muestren pendiente la cadena de una rendición que ya está en
+    // Contabilidad.
+    const reportChain = (report.rendicionApproverChain ?? []) as ChainStep[]
+    if (reportChain.length > 0 && !isChainFullyApproved(reportChain)) {
+      // Quién firma cada nivel sale de las cadenas de los comprobantes: son los
+      // aprobadores que realmente aprobaron ese nivel, no un sello anónimo.
+      const approverByLevel = new Map<number, Types.ObjectId>()
+      for (const e of expenses) {
+        for (const step of (e.approverChain ?? []) as ChainStep[]) {
+          if (step.approved && step.approvedBy && !approverByLevel.has(step.level)) {
+            approverByLevel.set(
+              step.level,
+              new Types.ObjectId(String(step.approvedBy))
+            )
+          }
+        }
+      }
+      const sealedAt = new Date()
+      const history = report.rendicionApprovalHistory ?? []
+      report.rendicionApproverChain = reportChain.map(step => {
+        if (step.approved) return step
+        const approvedBy = approverByLevel.get(step.level)
+        history.push({
+          level: step.level,
+          approvedBy: String(approvedBy ?? ''),
+          action: 'approved',
+          notes: 'Aprobada al quedar aprobados todos sus comprobantes.',
+          date: sealedAt,
+        })
+        return {
+          ...plainChainStep(step),
+          approved: true,
+          approvedBy,
+          approvedAt: sealedAt,
+        }
+      })
+      report.rendicionApprovalHistory = history
+      report.rendicionApprovalLevel = reportChain.length
+    }
 
     // Todos los gastos aprobados por los aprobadores → gate de Contabilidad.
     report.status = 'pending_accounting'
