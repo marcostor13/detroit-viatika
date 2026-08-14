@@ -34,10 +34,11 @@ npm run test         # Karma/Jasmine (all tests)
 ```bash
 npm run start:dev    # watch mode on :3016
 npm run build        # nest build
-npm run test         # jest (all tests)
+npm run test         # jest en paralelo: cuelga la maquina de desarrollo, no usarlo
+npx jest --runInBand --silent                            # suite completa serializada (63 suites / 872 tests, ~31 s)
+npx jest --runInBand --testPathPattern=expense-report    # acotado a un modulo
 npm run test:watch   # jest --watch
 npm run test:cov     # jest --coverage
-npx jest --testPathPattern=expense-report   # single test file
 npm run lint         # eslint --fix
 npm run seed         # seed initial data
 ```

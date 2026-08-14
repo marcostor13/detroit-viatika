@@ -507,6 +507,25 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
 
       await expect(service.rejectByCoord(expenseId, stranger, 'motivo cualquiera')).rejects.toThrow(ForbiddenException)
     })
+
+    /**
+     * Regresión: observar un comprobante con la rendición ya en Contabilidad lo
+     * dejaba en tierra de nadie. Al corregirlo se reinicia su cadena y entonces
+     * no puede aprobarlo ni un aprobador (la rendición salió de `submitted`) ni
+     * Contabilidad (exige la cadena completa).
+     */
+    it('no deja observar cuando la rendición ya pasó a Contabilidad', async () => {
+      const expense = baseExpense({ expenseReportId: new Types.ObjectId().toHexString() })
+      mockLoadExpense(expense)
+      ;(service as unknown as { expenseReportService: { findOne: jest.Mock } }).expenseReportService = {
+        findOne: jest.fn().mockResolvedValue({ status: 'pending_accounting' }),
+      }
+
+      await expect(
+        service.rejectByCoord(expenseId, actorN2, 'Falta sustento suficiente')
+      ).rejects.toThrow(BadRequestException)
+      expect(mockExpenseModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
   })
 })
 

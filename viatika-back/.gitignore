@@ -56,3 +56,12 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Scripts de diagnostico/reparacion puntuales: se corren a mano contra la base
+# (dry-run + respaldo) y no se comparten. El commit 4c1652b ya saco del repo la
+# primera tanda; esto evita que la siguiente vuelva a aparecer en git status.
+# Los que si forman parte del repo van como excepcion.
+/scripts/*
+!/scripts/inspeccionar-ot-smi.mjs
+!/scripts/migrar-ot-varios-centros-costo.mjs
+!/scripts/test-smtp.js
