@@ -3561,6 +3561,19 @@ export class ExpenseService {
       throw new BadRequestException('El motivo de rechazo es obligatorio.')
     const expense = await this.loadExpenseOrThrow(id)
     this.assertCompanyAccess(expense, actor)
+    // Mismo candado que `approveByCoord`: los aprobadores actúan solo con la
+    // rendición enviada. Sin él, un rechazo con la rendición ya en
+    // `pending_accounting` dejaba el comprobante en tierra de nadie: al
+    // corregirlo se reinicia su cadena de centro de costo, y entonces no puede
+    // aprobarlo ni un aprobador (la rendición ya no está en `submitted`) ni
+    // Contabilidad (exige esa cadena completa). Contabilidad tiene su propia
+    // vía para observar en esa fase: `rejectByContabilidad`, que devuelve la
+    // rendición entera al colaborador.
+    await this.assertReportInStatus(
+      expense,
+      ['submitted'],
+      'Esta rendición ya no está en revisión de los aprobadores. Solo se puede observar un comprobante mientras la rendición está enviada.'
+    )
     const existing = expense as any
     const chain: ChainStep[] = existing.approverChain ?? []
     const isAdminOverride = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD].includes(actor.roleName as any)

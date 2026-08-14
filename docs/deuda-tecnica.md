@@ -54,83 +54,42 @@ un tercer método, los tests fallan por espía faltante y no por la regla de
 negocio. Del lado del backend, nada cubre que Tesorería siga sin poder entrar a
 los endpoints que no se tocaron.
 
-## Tests sin correr del fix "rendición atascada en submitted" (2026-08-13)
+## Candados del flujo secuencial sin cubrir (2026-08-13/14)
 
-**Qué:** `viatika-back/src/modules/expense-report/expense-report.service.spec.ts`
-suma 4 tests nuevos (avance a Contabilidad al enviar, el `true`/`false` de
-`advanceToAccountingIfAllExpensesApproved`, el guard de la cadena de reporte del
-viático y la omisión de la convocatoria a aprobadores). **No se ejecutaron.**
-
-**Por qué:** la suite completa de jest cuelga la máquina de desarrollo. Se
-verificó solamente el tipado (`npx tsc --noEmit -p tsconfig.json`, sin errores),
-que compila specs y fuente pero no prueba comportamiento.
-
-**Cómo saldarla:** correr acotado en una máquina que lo aguante, antes del deploy:
+**Cómo correr jest acá:** `npm run test` lanza workers en paralelo y cuelga la
+máquina de desarrollo. Serializado corre sin problema — la suite entera son 63
+suites / 872 tests en ~31 s:
 
 ```bash
 cd viatika-back
-npx jest --runInBand modules/expense-report/expense-report.service.spec.ts
+npx jest --runInBand --silent                              # suite completa
+npx jest --runInBand --testPathPattern="modules/expense"   # acotado a un módulo
 ```
 
-Si `--runInBand` tampoco alcanza, `npx jest -w 1 -t "advanceToAccounting"` acota
-más. La baseline del backend es **0 fallos**: cualquier rojo ahí es del cambio.
+Baseline al 2026-08-14: **872/872 en verde**. Cualquier rojo es del cambio.
 
-**Riesgo si no se salda:** el fix toca el envío de TODAS las rendiciones
-(`update()` con `status: 'submitted'`), no solo las directas. Los tests son la
-única red que cubre que un envío normal siga convocando a los aprobadores.
+**Qué SÍ quedó cubierto** de los candados que introdujo el fix del orden
+envío → aprobadores → contabilidad: `buildChainForNewExpense` (construye solo con
+la rendición enviada, y no pisa una cadena existente), el `true`/`false` de
+`advanceToAccountingIfAllExpensesApproved` con sus casos de comprobante
+observado y de cadena de reporte del viático, y `rejectByCoord` fuera de
+`submitted`.
 
-**Sin test todavía:** `removeExpenseFromReport` también reevalúa el avance ahora
-(quitar el último comprobante sin aprobar dejaba la rendición colgada igual que
-aprobar antes del envío). No tiene spec propio; entra en la misma deuda.
+**Qué sigue SIN spec:**
 
-## Flujo secuencial de aprobación, sin tests (2026-08-13)
-
-**Qué:** cuatro candados nuevos, ninguno con spec. Solo se verificó que compila
-(backend `tsc --noEmit` limpio, front `ng build` limpio):
-
-1. `buildChainForNewExpense` construye la cadena solo si la rendición ya está
-   enviada. Antes se construía al registrar el comprobante.
-2. `ExpenseService.approveByCoord` exige la rendición en `submitted`.
-3. `ExpenseService.approveByContabilidad` exige la rendición en
+1. `ExpenseService.approveByContabilidad` exige la rendición en
    `pending_accounting`.
-4. `update(status: 'approved')` exige que Contabilidad haya aprobado todos los
+2. `update(status: 'approved')` exige que Contabilidad haya aprobado todos los
    comprobantes (`assertAllExpensesApprovedByAccounting`).
-
-Además, agregar un comprobante a una rendición que ya estaba en
-`pending_accounting` la devuelve a `submitted` (si no, ese comprobante no lo
-podía aprobar nadie y la rendición quedaba trabada).
-
-**Qué probar cuando se pueda correr jest:** que un comprobante recién creado en
-una rendición abierta NO tenga `approverChain`; que al enviar sí la tenga; que
-aprobar como coordinador falle con la rendición abierta; que Contabilidad no
-pueda aprobar en `submitted`; y que la rendición no pase a `approved` con un
-comprobante sin aprobar por Contabilidad.
+3. `removeExpenseFromReport` reevalúa el avance a Contabilidad (quitar el último
+   comprobante sin aprobar dejaba la rendición colgada).
+4. Agregar un comprobante a una rendición que ya estaba en `pending_accounting`
+   la devuelve a `submitted`.
+5. `rejectByContabilidad` NO valida el estado de la rendición, al revés que su
+   contraparte `approveByContabilidad`. No se llega desde la interfaz, pero por
+   API observaría un comprobante fuera de fase y devolvería la rendición entera
+   al colaborador desde `submitted`.
 
 **Riesgo si no se salda:** son gates que cortan flujos en producción. Un
 allowlist de estados mal puesto (por ejemplo olvidar `partially_paid` o `paid` en
 la rendición de un viático) bloquea a un usuario real sin que ningún test avise.
-
-## Sellado de la cadena de reporte del viático, sin correr jest (2026-08-14)
-
-**Qué:** `advanceToAccountingIfAllExpensesApproved` ya no se detiene ante una
-`rendicionApproverChain` incompleta: la sella (pasos aprobados + historial, con
-el aprobador que firmó ese nivel en los comprobantes) y avanza a
-`pending_accounting`. El guard anterior dejaba **toda** rendición de viático
-atascada en `submitted`, porque VD-87 quitó el botón "Aprobar Rendición" que era
-lo único que completaba esa cadena.
-
-**Qué se verificó:** `tsc --noEmit` limpio. El spec
-`expense-report.service.spec.ts` se actualizó ("sella la cadena de reporte del
-viático y avanza", antes "NO avanza un viático con su cadena de reporte
-incompleta") pero **no se pudo correr**: jest está bloqueado en este entorno.
-
-**Qué probar cuando se pueda correr jest:**
-
-```bash
-npx jest --runInBand -t "advanceToAccountingIfAllExpensesApproved"
-```
-
-**Riesgo si no se salda:** el sellado escribe en `rendicionApproverChain`,
-`rendicionApprovalLevel` y `rendicionApprovalHistory` de todos los viáticos que
-llegan a Contabilidad. Un error ahí no rompe el flujo (el estado avanza igual)
-pero deja el historial de aprobación en falso.
