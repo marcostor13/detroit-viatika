@@ -1498,13 +1498,26 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     }
   }
 
-  it('buildChainForNewExpense construye la cadena N1/N2 de un comprobante recién creado (chain-at-upload)', async () => {
+  /** `expenseModel.findById(id).select('expenseReportId').lean().exec()` */
+  function mockExpenseFindById(result: unknown) {
+    mockExpenseModel.findById = jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(result),
+        }),
+      }),
+    })
+  }
+
+  it('buildChainForNewExpense construye la cadena N1/N2 de un comprobante agregado a una rendición YA ENVIADA', async () => {
     mockProjectWithOneLevel()
     const expenseDoc = mockExpenseDoc()
     mockExpenseModel.find.mockReturnValue({
       select: jest.fn().mockReturnThis(),
       exec: jest.fn().mockResolvedValue([expenseDoc]),
     })
+    mockExpenseFindById({ expenseReportId: addReportId })
+    mockFindByIdSelect(reportSelectResult({ status: 'submitted' }))
 
     await service.buildChainForNewExpense(newExpenseId, addUserId, addClientId)
 
@@ -1512,6 +1525,22 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     expect(expenseDoc.approverChain).toHaveLength(1)
     expect(expenseDoc.approverChain?.[0].approved).toBeFalsy()
     expect(expenseDoc.requiredLevels).toBe(1)
+  })
+
+  /**
+   * La cadena se construye al ENVIAR, no al registrar el comprobante: mientras
+   * la rendición siga abierta el colaborador todavía puede editar el monto, y
+   * un comprobante ya aprobado antes del envío dejaba la rendición sin nadie
+   * que la avanzara a Contabilidad.
+   */
+  it('buildChainForNewExpense NO construye nada mientras la rendición siga abierta', async () => {
+    mockProjectWithOneLevel()
+    mockExpenseFindById({ expenseReportId: addReportId })
+    mockFindByIdSelect(reportSelectResult({ status: 'open' }))
+
+    await service.buildChainForNewExpense(newExpenseId, addUserId, addClientId)
+
+    expect(mockExpenseModel.find).not.toHaveBeenCalled()
   })
 
   it('buildChainForNewExpense no hace nada si falta ownerUserId o clientId', async () => {
@@ -1537,6 +1566,8 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
       select: jest.fn().mockReturnThis(),
       exec: jest.fn().mockResolvedValue([expenseDoc]),
     })
+    mockExpenseFindById({ expenseReportId: addReportId })
+    mockFindByIdSelect(reportSelectResult({ status: 'submitted' }))
 
     // Reenvío normal (rama wasSubmitted de addExpenseToReport): solo agrega un
     // comprobante nuevo, pero si el motor volviera a mirar uno ya chained no
