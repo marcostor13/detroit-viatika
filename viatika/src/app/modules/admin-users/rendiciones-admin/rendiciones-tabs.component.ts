@@ -14,7 +14,6 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
   imports: [CommonModule, RendicionesAdminComponent, RendicionesDirectasComponent, RendicionesCajaChicaComponent],
   template: `
     <div class="flex flex-col h-full">
-      @if (showExtraTabs()) {
       <div class="flex gap-1 px-6 pt-4 border-b border-gray-200 bg-white">
         <button
           (click)="setTab('rendiciones')"
@@ -36,6 +35,7 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Rendiciones Directas
         </button>
+        @if (showCajaChicaTab()) {
         <button
           (click)="setTab('caja-chica')"
           class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
@@ -46,8 +46,8 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Caja Chica
         </button>
+        }
       </div>
-      }
 
       <div class="flex-1 overflow-auto">
         @if (activeTab() === 'rendiciones') {
@@ -71,22 +71,32 @@ export class RendicionesTabsComponent implements OnInit {
   activeTab = signal<Tab>('rendiciones');
 
   /**
-   * Tesorería ve las mismas tres pestañas que Contabilidad. Las directas solo se
-   * listan acá (la de "Solicitud de Fondos" las oculta salvo a los aprobadores de
-   * su cadena) y Tesorería no es aprobador de nadie, así que sin estas pestañas
-   * no tenía dónde ver ni abrir una directa: solo llegaba pegando el URL del
-   * detalle a mano, justo cuando el cierre definitivo es suyo (VD-66/VD-49).
+   * "Solicitud de Fondos" y "Rendiciones Directas" las ve cualquiera que llegue
+   * acá: quien abre /rendiciones ya pasó el guard del módulo (o entró por ser
+   * aprobador), y cada pestaña acota su contenido a lo que le compete — solo
+   * Contabilidad, Tesorería y los administradores ven la empresa completa.
+   * Antes las directas eran exclusivas de Contabilidad, así que un aprobador no
+   * tenía dónde verlas y Tesorería, que es quien cierra las rendiciones
+   * (VD-66/VD-49), solo llegaba pegando el URL del detalle a mano.
+   *
+   * Caja Chica se queda fuera: es el agrupador contable de las rendiciones de
+   * caja chica, sus endpoints son de Contabilidad/Admin/Tesorería y un aprobador
+   * no tiene nada que aprobar ahí, así que la pestaña le saldría vacía o en 403.
    */
-  showExtraTabs(): boolean {
-    return this.userState.isContabilidadInCompany() || this.userState.isTesoreria();
+  showCajaChicaTab(): boolean {
+    return (
+      this.userState.isContabilidadInCompany() ||
+      this.userState.isTesoreria() ||
+      this.userState.isAdminInCompany()
+    );
   }
 
   ngOnInit(): void {
     this.route.queryParamMap.subscribe((params) => {
       const tab = params.get('tab') as Tab | null;
-      // El ?tab= se respeta solo si el usuario tiene esas pestañas; si no, cae en
+      // El ?tab= se respeta solo si el usuario tiene esa pestaña; si no, cae en
       // la principal en vez de dejar el contenido sin pestaña visible.
-      if ((tab === 'directas' || tab === 'caja-chica') && this.showExtraTabs()) {
+      if (tab === 'directas' || (tab === 'caja-chica' && this.showCajaChicaTab())) {
         this.activeTab.set(tab);
       } else {
         this.activeTab.set('rendiciones');

@@ -85,14 +85,16 @@ export class RendicionesDirectasComponent implements OnInit {
   get isContabilidad(): boolean { return this.userState.isContabilidad(); }
 
   /**
-   * La sub-pestaña "Gastos" (listado por comprobante) nunca se le mostró a
-   * Contabilidad, y Tesorería debe ver esta pantalla igual que ella, así que
-   * tampoco la ve. Hoy son los dos únicos roles que abren /rendiciones?tab=directas;
-   * la sección se conserva por si la pantalla vuelve a abrirse a otro rol.
+   * La sub-pestaña "Gastos" (listado por comprobante, con las acciones de
+   * revisión contable) nunca se le mostró a Contabilidad, y la pantalla debe
+   * salir igual para todos los que entran a /rendiciones, así que hoy no la ve
+   * nadie. Sus botones ("Marcar como revisado por Contabilidad", eliminar) no
+   * están acotados por rol, así que a un aprobador le responderían 403.
+   * La sección se conserva por ser la única vista por comprobante de las
+   * directas; si no se rehabilita, se puede borrar junto con
+   * `findDirectRendicionExpenses`.
    */
-  get showGastosTab(): boolean {
-    return !this.isContabilidad && !this.userState.isTesoreria();
-  }
+  readonly showGastosTab = false;
 
   toggleSelectAll(): void {
     const all = this.data();
@@ -155,6 +157,9 @@ export class RendicionesDirectasComponent implements OnInit {
   }
 
   loadData(): void {
+    // Alimenta solo la sub-pestaña "Gastos"; si está oculta, la petición no
+    // tiene destino en pantalla.
+    if (!this.showGastosTab) return;
     const cid = this.clientId;
     if (!cid) return;
     this.loading.set(true);
