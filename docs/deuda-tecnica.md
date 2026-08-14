@@ -124,10 +124,16 @@ lo único que completaba esa cadena.
 viático y avanza", antes "NO avanza un viático con su cadena de reporte
 incompleta") pero **no se pudo correr**: jest está bloqueado en este entorno.
 
+Junto con esto, `ExpenseService.rejectByCoord` recibió el mismo
+`assertReportInStatus(['submitted'])` que ya tenía `approveByCoord`: sin él, un
+rechazo con la rendición en `pending_accounting` dejaba el comprobante sin nadie
+que pudiera aprobarlo tras la corrección. Su test tampoco se pudo correr.
+
 **Qué probar cuando se pueda correr jest:**
 
 ```bash
 npx jest --runInBand -t "advanceToAccountingIfAllExpensesApproved"
+npx jest --runInBand -t "no deja observar cuando la rendición ya pasó a Contabilidad"
 ```
 
 **Riesgo si no se salda:** el sellado escribe en `rendicionApproverChain`,
