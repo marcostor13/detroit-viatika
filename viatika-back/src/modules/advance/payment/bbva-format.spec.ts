@@ -145,6 +145,36 @@ describe('bbva-format · cabecera y archivo completo', () => {
     expect(lines[0].slice(76, 82)).toBe('000001')
   })
 
+  it('no agrega salto de línea final (el archivo real termina en el último detalle)', () => {
+    // El fixture aceptado por el banco no trae CRLF de cierre; un salto final
+    // deja una línea vacía que el validador puede leer como registro malformado.
+    expect(FIXTURE.endsWith('\r\n')).toBe(false)
+
+    const txt = buildBbvaTxt(
+      [
+        {
+          documentType: 'L',
+          documentNumber: '75162447',
+          accountType: 'I',
+          accountNumber: '00257011449545903106',
+          beneficiaryName: 'RAUL CUBA CRUZ',
+          amountCents: 30400,
+          concepto: 'RENDICIÓN DE VIÁTICOS',
+          email: 'NOTIFICACIONESDEPAGO@DETROIT.PE',
+        },
+      ],
+      { chargeAccount: '000110380350100056833', description: 'PROVEEDORES SOL 02 JUNIO' }
+    )
+    expect(txt.endsWith('\r\n')).toBe(false)
+    expect(txt.split('\r\n')).toHaveLength(2) // cabecera + 1 detalle, sin línea vacía
+  })
+
+  it('el flag E de correo (pos 147) está presente en las 18 líneas del archivo aceptado', () => {
+    // El archivo rechazado por el banco el 13-ago traía 3 registros con este
+    // flag en blanco por usuarios sin correo registrado.
+    for (const d of DETAILS) expect(d.slice(146, 147)).toBe('E')
+  })
+
   it('el Buffer Latin-1 codifica Ñ como 0xD1 (no UTF-8)', () => {
     const line = buildDetailLine({
       documentType: 'L',

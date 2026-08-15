@@ -163,6 +163,10 @@ export function buildHeaderLine(meta: BbvaHeaderMeta): string {
  * Construye el contenido completo del archivo (cabecera + detalles), unido con
  * CRLF. El total y el conteo de la cabecera se calculan de los registros, salvo
  * que se pasen explícitos en `metaOverride`.
+ *
+ * SIN salto de línea final: el archivo real que el banco acepta termina en el
+ * último carácter del último detalle. Un CRLF de cierre deja una línea vacía
+ * que algunos validadores de Net Cash cuentan como registro malformado.
  */
 export function buildBbvaTxt(
   records: BbvaDetailRecord[],
@@ -175,7 +179,7 @@ export function buildBbvaTxt(
   const recordCount = metaOverride.recordCount ?? records.length
   const header = buildHeaderLine({ ...metaOverride, totalCents, recordCount })
   const details = records.map(buildDetailLine)
-  return [header, ...details].join('\r\n') + '\r\n'
+  return [header, ...details].join('\r\n')
 }
 
 /** Codifica el texto del archivo a un Buffer Latin-1 (Windows-1252). */

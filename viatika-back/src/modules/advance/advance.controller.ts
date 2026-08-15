@@ -5,6 +5,7 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   Request,
   UseGuards,
@@ -37,23 +38,27 @@ export class AdvanceController {
   // ─── Pagos por lote BBVA (VD-7) ──────────────────────────────────────────
 
   /**
-   * Genera el archivo TXT de pagos masivos BBVA con TODOS los pendientes
+   * Genera el archivo TXT de pagos masivos BBVA con los pendientes
    * (anticipos + viáticos + reembolsos) que tengan datos bancarios válidos.
    * Devuelve el archivo Latin-1 en base64 + los excluidos por datos incompletos.
+   *
+   * `?moneda=USD` emite la planilla de esa moneda. El formato BBVA solo admite
+   * una moneda por archivo; sin el parámetro se emite la moneda base.
    */
   @Get('payments/txt/client/:clientId')
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA)
   async generatePaymentsTxt(
     @Param('clientId') clientId: string,
-    @Request() req
+    @Request() req,
+    @Query('moneda') moneda?: string
   ) {
-    const result = await this.paymentBatchService.generateTxt(clientId)
+    const result = await this.paymentBatchService.generateTxt(clientId, moneda)
     this.auditLogService.log({
       userId: req.user._id || req.user.sub,
       userName: req.user.name || req.user.email,
       action: 'generate_payments_txt',
       module: 'tesoreria',
-      details: `${result.count} pagos · S/ ${result.totalSoles.toFixed(2)}`,
+      details: `${result.count} pagos · ${result.moneda} ${result.totalSoles.toFixed(2)}`,
       clientId: req.user.clientId,
     })
     return result
@@ -74,7 +79,8 @@ export class AdvanceController {
   async reconcilePayments(
     @Param('clientId') clientId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Request() req
+    @Request() req,
+    @Query('moneda') moneda?: string
   ) {
     if (!file?.buffer) {
       throw new BadRequestException('Debes adjuntar el PDF de BBVA.')
@@ -83,17 +89,19 @@ export class AdvanceController {
       role: req.user?.roles?.[0] || req.user?.role,
       permissions: req.user?.permissions,
     }
+    // El PDF no declara la moneda: hay que decirle de qué planilla viene.
     const result = await this.paymentBatchService.reconcileFromPdf(
       clientId,
       file.buffer,
-      actor
+      actor,
+      moneda
     )
     this.auditLogService.log({
       userId: req.user._id || req.user.sub,
       userName: req.user.name || req.user.email,
       action: 'reconcile_payments',
       module: 'tesoreria',
-      details: `conciliados: ${result.conciliados.length}, sin conciliar: ${result.sinConciliar.length}`,
+      details: `${result.moneda} · conciliados: ${result.conciliados.length}, sin conciliar: ${result.sinConciliar.length}`,
       clientId: req.user.clientId,
     })
     return result

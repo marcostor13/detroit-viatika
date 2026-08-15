@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import {
@@ -1040,21 +1040,40 @@ export class TesoreriaComponent implements OnInit {
     return this.canPayAndSettle;
   }
 
+  /**
+   * Moneda de la última planilla generada. El PDF de retorno del banco no
+   * declara la moneda, así que hay que decirle al conciliar de qué planilla
+   * viene; sin esto, un PDF de la planilla en dólares no cruzaría con nada.
+   */
+  monedaPlanilla = signal<string | null>(null);
+
+  /**
+   * Monedas con pagos pendientes distintas a la de la planilla recién generada.
+   * El formato BBVA admite una sola moneda por archivo, así que estas quedan
+   * fuera y hay que emitirlas en su propia planilla.
+   */
+  monedasPorEmitir = computed(() => {
+    const res = this.generateResult();
+    if (!res) return [];
+    return (res.monedasPendientes ?? []).filter((m) => m.moneda !== res.moneda);
+  });
+
   /** Genera el TXT, lo descarga y muestra el resumen (excluidos por datos incompletos). */
-  generatePaymentsTxt(): void {
+  generatePaymentsTxt(moneda?: string): void {
     if (this.isGeneratingTxt()) return;
     this.isGeneratingTxt.set(true);
     this.reconcileResult.set(null);
-    this.advanceService.generatePaymentsTxt().subscribe({
+    this.advanceService.generatePaymentsTxt(moneda).subscribe({
       next: (res) => {
         this.isGeneratingTxt.set(false);
         this.generateResult.set(res);
+        this.monedaPlanilla.set(res.moneda);
         this.batchMode.set('generate');
         this.showBatchModal.set(true);
         if (res.count > 0) {
           this.downloadTxtFile(res.fileBase64, res.fileName);
           this.notificationService.show(
-            `Archivo generado: ${res.count} pago(s) por S/ ${res.totalSoles.toFixed(2)}.`,
+            `Archivo generado: ${res.count} pago(s) por ${res.moneda} ${res.totalSoles.toFixed(2)}.`,
             'success'
           );
         } else {
@@ -1105,8 +1124,12 @@ export class TesoreriaComponent implements OnInit {
   /** Envía el PDF (real o simulado) a conciliación y procesa el resultado. */
   private reconcileFile(file: File): void {
     this.isReconciling.set(true);
+    // Se concilia contra la moneda de la última planilla generada. Sin este
+    // dato el backend asume la moneda base y un PDF de la planilla en dólares
+    // no cruzaría con ningún pendiente.
+    const moneda = this.monedaPlanilla() ?? undefined;
     this.generateResult.set(null);
-    this.advanceService.reconcilePayments(file).subscribe({
+    this.advanceService.reconcilePayments(file, moneda).subscribe({
       next: (res) => {
         this.isReconciling.set(false);
         this.reconcileResult.set(res);

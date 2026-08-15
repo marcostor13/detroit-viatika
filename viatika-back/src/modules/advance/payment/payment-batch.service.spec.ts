@@ -14,6 +14,7 @@ describe('PaymentBatchService', () => {
   let advanceService: any
   let expenseReportService: any
   let clientService: any
+  let accountingConfigService: any
 
   beforeEach(async () => {
     advanceService = {
@@ -32,6 +33,10 @@ describe('PaymentBatchService', () => {
         .mockResolvedValue({ comercialName: 'DETROIT', paymentAccount: '000110380350100056833' }),
     }
 
+    accountingConfigService = {
+      getEffective: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+    }
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         PaymentBatchService,
@@ -39,11 +44,7 @@ describe('PaymentBatchService', () => {
         { provide: ExpenseReportService, useValue: expenseReportService },
         {
           provide: AccountingConfigService,
-          useValue: {
-            getEffective: jest
-              .fn()
-              .mockResolvedValue({ monedaBase: 'PEN' }),
-          },
+          useValue: accountingConfigService,
         },
         { provide: ClientService, useValue: clientService },
       ],
@@ -108,6 +109,20 @@ describe('PaymentBatchService', () => {
       expect(excluded[0].reason).toMatch(/DNI/)
       expect(excluded[1].reason).toMatch(/CCI/)
     })
+
+    it('excluye al beneficiario sin correo en vez de mandarlo con el campo en blanco', async () => {
+      // El archivo rechazado por BBVA el 13-ago traía 3 registros sin el flag E
+      // ni correo, por usuarios sin correo registrado.
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        { advanceId: 'a1', user: { name: 'SIN CORREO', dni: '75005529', documentType: 'L' }, remaining: 238.5, cci: CCI_OTRO },
+        { advanceId: 'a2', user: { name: 'CORREO VACIO', dni: '75650854', documentType: 'L', email: '   ' }, remaining: 206.25, cci: CCI_OTRO },
+      ])
+      const { payable, excluded } = await service.collectPendingPayments('c1')
+      expect(payable).toHaveLength(0)
+      expect(excluded).toHaveLength(2)
+      expect(excluded[0].reason).toMatch(/correo/i)
+      expect(excluded[1].reason).toMatch(/correo/i)
+    })
   })
 
   describe('generateTxt', () => {
@@ -142,8 +157,98 @@ describe('PaymentBatchService', () => {
       await expect(service.generateTxt('c1')).rejects.toThrow(/cuenta de cargo/)
     })
 
+    it('falla si la cuenta de cargo no tiene 20 dígitos (evita el rechazo del banco)', async () => {
+      // Una cuenta corta la rellenaría padLeftZeros en silencio y el banco
+      // responde "Cuenta de cargo no existe para este servicio" (fila 1, col 4).
+      clientService.findOne.mockResolvedValue({ comercialName: 'X', paymentAccount: '0100056833' })
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        { advanceId: 'a1', user: { name: 'X', dni: '75162447', documentType: 'L', email: 'x@x.pe' }, remaining: 10, cci: CCI_OTRO },
+      ])
+      await expect(service.generateTxt('c1')).rejects.toThrow(/20 dígitos/)
+    })
+
+    it('acepta la cuenta de cargo con 20 dígitos y con 21 (ya rellenada)', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        { advanceId: 'a1', user: { name: 'X', dni: '75162447', documentType: 'L', email: 'x@x.pe' }, remaining: 10, cci: CCI_OTRO },
+      ])
+      for (const cuenta of ['00110380350100056833', '000110380350100056833', '0011-0380-35-0100056833']) {
+        clientService.findOne.mockResolvedValue({ comercialName: 'X', paymentAccount: cuenta })
+        const res = await service.generateTxt('c1')
+        const cabecera = Buffer.from(res.fileBase64, 'base64').toString('latin1').split('\r\n')[0]
+        expect(cabecera.slice(3, 23)).toBe('00110380350100056833') // pos 4-23
+        expect(cabecera.slice(23, 26)).toBe('PEN') // pos 24-26
+      }
+    })
+
     it('falla si no hay pagos pagables', async () => {
       await expect(service.generateTxt('c1')).rejects.toThrow(/No hay pagos/)
+    })
+  })
+
+  describe('generateTxt · planilla por moneda', () => {
+    // Antes, `generateTxt` fijaba la moneda base: un pago en dólares salía
+    // excluido con "genera una planilla aparte para USD" y no existía forma de
+    // pedirla, así que nunca se podía pagar.
+    const PAGO_PEN = {
+      advanceId: 'pen1',
+      user: { name: 'RAUL CUBA CRUZ', dni: '75162447', documentType: 'L', email: 'r@x.pe' },
+      remaining: 304,
+      cci: CCI_OTRO,
+      moneda: 'PEN',
+    }
+    const PAGO_USD = {
+      advanceId: 'usd1',
+      user: { name: 'ASTRID PENA', dni: '09831083', documentType: 'L', email: 'a@x.pe' },
+      remaining: 150,
+      cci: CCI_OTRO,
+      moneda: 'USD',
+    }
+
+    beforeEach(() => {
+      accountingConfigService.getEffective.mockResolvedValue({
+        monedaBase: 'PEN',
+        bankAccounts: [
+          { nroCuenta: '00110380350100056833', moneda: 'PEN', activo: true },
+          { nroCuenta: '00110380350100099999', moneda: 'USD', activo: true },
+        ],
+      })
+      advanceService.findBatchPayableAdvances.mockResolvedValue([PAGO_PEN, PAGO_USD])
+    })
+
+    it('sin moneda emite la base y deja el resto como pendiente de su planilla', async () => {
+      const res = await service.generateTxt('c1')
+      expect(res.moneda).toBe('PEN')
+      expect(res.fileName).toBe('BBVAREND.txt')
+      expect(res.count).toBe(1)
+      expect(res.totalSoles).toBe(304)
+      expect(res.excluded.some(e => /USD/.test(e.reason))).toBe(true)
+      // Ahora informa que quedan pagos en otra moneda, para poder pedirla.
+      expect(res.monedasPendientes).toEqual([
+        { moneda: 'PEN', count: 1, total: 304 },
+        { moneda: 'USD', count: 1, total: 150 },
+      ])
+    })
+
+    it('con moneda USD emite la planilla en dólares contra la cuenta en dólares', async () => {
+      const res = await service.generateTxt('c1', 'USD')
+      expect(res.moneda).toBe('USD')
+      expect(res.fileName).toBe('BBVAREND-USD.txt') // no pisa la de soles al descargar
+      expect(res.count).toBe(1)
+      expect(res.totalSoles).toBe(150)
+
+      const cabecera = Buffer.from(res.fileBase64, 'base64').toString('latin1').split('\r\n')[0]
+      expect(cabecera.slice(23, 26)).toBe('USD') // divisa, pos 24-26
+      expect(cabecera.slice(3, 23)).toBe('00110380350100099999') // cuenta en USD, pos 4-23
+      // El pago en soles queda fuera de la planilla en dólares.
+      expect(res.excluded.some(e => /PEN/.test(e.reason))).toBe(true)
+    })
+
+    it('falla si no hay cuenta de cargo en esa moneda', async () => {
+      accountingConfigService.getEffective.mockResolvedValue({
+        monedaBase: 'PEN',
+        bankAccounts: [{ nroCuenta: '00110380350100056833', moneda: 'PEN', activo: true }],
+      })
+      await expect(service.generateTxt('c1', 'USD')).rejects.toThrow(/cuenta de cargo en USD/)
     })
   })
 
@@ -198,6 +303,111 @@ describe('PaymentBatchService', () => {
       expect(res.noAbonados).toHaveLength(1)
       expect(res.sinConciliar).toHaveLength(1) // el de 500 no tiene pendiente
       expect(advanceService.registerPayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('reconcileFromPdf · empates de documento + monto', () => {
+    // Caso real: en el archivo del 13-ago el mismo colaborador aparecía dos
+    // veces por el mismo importe (Carlos Zamudio S/ 785.69 x2). El PDF trae
+    // solo documento e importe, así que hay que decidir con cuidado.
+    const dosPendientesIguales = () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'CARLOS ZAMUDIO', dni: '46563417', documentType: 'L', email: 'c@x.pe' },
+          remaining: 785.69,
+          cci: CCI_OTRO,
+        },
+      ])
+      expenseReportService.findBatchPayableViaticos.mockResolvedValue([
+        {
+          reportId: 'r1',
+          user: { name: 'CARLOS ZAMUDIO', dni: '46563417', documentType: 'L', email: 'c@x.pe' },
+          remaining: 785.69,
+          cci: CCI_OTRO,
+        },
+      ])
+    }
+
+    it('concilia los dos cuando el banco abonó las dos veces', async () => {
+      dosPendientesIguales()
+      const pdfText = [
+        'No. Movimiento de Cargo 000025041 Fecha y Hora de Ejecución 02/06/2026 10:15',
+        'CARLOS ZAMUDIO L - 46563417 785.69 ABONO ENVIADO',
+        'CARLOS ZAMUDIO L - 46563417 785.69 ABONO ENVIADO',
+      ].join('\n')
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(pdfText)
+
+      const res = await service.reconcileFromPdf('c1', Buffer.from('x'), { role: 'TESORERIA' })
+      expect(res.conciliados).toHaveLength(2)
+      expect(res.sinConciliar).toHaveLength(0)
+    })
+
+    it('NO adivina cuando el banco abonó solo una de las dos', async () => {
+      dosPendientesIguales()
+      const pdfText = [
+        'No. Movimiento de Cargo 000025041 Fecha y Hora de Ejecución 02/06/2026 10:15',
+        'CARLOS ZAMUDIO L - 46563417 785.69 ABONO ENVIADO',
+      ].join('\n')
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(pdfText)
+
+      const res = await service.reconcileFromPdf('c1', Buffer.from('x'), { role: 'TESORERIA' })
+      // Antes marcaba pagado el primero de la lista, que podía ser el equivocado.
+      expect(res.conciliados).toHaveLength(0)
+      expect(res.sinConciliar).toHaveLength(1)
+      expect(res.sinConciliar[0].reason).toMatch(/no permite saber cuál se abonó/i)
+      expect(advanceService.registerPayment).not.toHaveBeenCalled()
+      expect(expenseReportService.registerViaticoPayment).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('reconcileFromPdf · fecha y avisos', () => {
+    const unPendiente = () =>
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'RAUL CUBA CRUZ', dni: '75162447', documentType: 'L', email: 'r@x.pe' },
+          remaining: 304,
+          cci: CCI_OTRO,
+        },
+      ])
+    const hoy = () => new Date().toISOString().slice(0, 10)
+    const fechaUsada = () =>
+      advanceService.registerPayment.mock.calls[0][1].transferDate
+
+    it('usa la fecha de ejecución del PDF', async () => {
+      unPendiente()
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(
+        [
+          'No. Movimiento de Cargo 000025041 Fecha y Hora de Ejecución 02/06/2026 10:15',
+          'RAUL CUBA CRUZ L - 75162447 304.00 ABONO ENVIADO',
+        ].join('\n')
+      )
+      await service.reconcileFromPdf('c1', Buffer.from('x'), { role: 'TESORERIA' })
+      expect(fechaUsada()).toBe('2026-06-02')
+    })
+
+    it('descarta una fecha que no existe en el calendario y usa la de hoy', async () => {
+      unPendiente()
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(
+        [
+          'No. Movimiento de Cargo 000025041 Fecha y Hora de Ejecución 31/02/2026 10:15',
+          'RAUL CUBA CRUZ L - 75162447 304.00 ABONO ENVIADO',
+        ].join('\n')
+      )
+      await service.reconcileFromPdf('c1', Buffer.from('x'), { role: 'TESORERIA' })
+      expect(fechaUsada()).toBe(hoy())
+    })
+
+    it('avisa cuando el PDF no trae N° de movimiento de cargo', async () => {
+      unPendiente()
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(
+        'RAUL CUBA CRUZ L - 75162447 304.00 ABONO ENVIADO'
+      )
+      const res = await service.reconcileFromPdf('c1', Buffer.from('x'), { role: 'TESORERIA' })
+      expect(res.conciliados).toHaveLength(1) // concilia igual
+      expect(res.advertencias.join(' ')).toMatch(/N° de movimiento de cargo/i)
+      expect(res.advertencias.join(' ')).toMatch(/fecha de ejecución/i)
     })
   })
 
