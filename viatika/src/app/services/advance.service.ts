@@ -103,10 +103,15 @@ export class AdvanceService {
 
   // ─── Pagos por lote BBVA (VD-7) ─────────────────────────────────────────────
 
-  /** Genera el archivo TXT de pagos masivos BBVA con todos los pendientes. */
-  generatePaymentsTxt(): Observable<IGeneratePaymentsTxt> {
+  /**
+   * Genera el archivo TXT de pagos masivos BBVA. El formato admite UNA moneda
+   * por archivo: sin `moneda` se emite la base, y los pendientes en otra moneda
+   * llegan en `monedasPendientes` para pedir su planilla aparte.
+   */
+  generatePaymentsTxt(moneda?: string): Observable<IGeneratePaymentsTxt> {
+    const params = moneda ? `?moneda=${encodeURIComponent(moneda)}` : '';
     return this.http.get<IGeneratePaymentsTxt>(
-      `${this.url}/payments/txt/client/${this.clientId}`
+      `${this.url}/payments/txt/client/${this.clientId}${params}`
     );
   }
 
@@ -121,12 +126,17 @@ export class AdvanceService {
     );
   }
 
-  /** Sube el PDF de "Consulta de Pagos Masivos" de BBVA y concilia los abonos. */
-  reconcilePayments(file: File): Observable<IReconcileResult> {
+  /**
+   * Sube el PDF de "Consulta de Pagos Masivos" de BBVA y concilia los abonos.
+   * `moneda` es la de la planilla que se subió al banco: el PDF no la declara,
+   * y sin ese dato un PDF de la planilla en dólares no cruzaría con nada.
+   */
+  reconcilePayments(file: File, moneda?: string): Observable<IReconcileResult> {
     const form = new FormData();
     form.append('file', file);
+    const params = moneda ? `?moneda=${encodeURIComponent(moneda)}` : '';
     return this.http.post<IReconcileResult>(
-      `${this.url}/payments/reconcile/client/${this.clientId}`,
+      `${this.url}/payments/reconcile/client/${this.clientId}${params}`,
       form
     );
   }
@@ -159,11 +169,18 @@ export interface IGeneratePaymentsTxt {
   count: number;
   totalSoles: number;
   excluded: IExcludedPayment[];
+  /** Moneda de esta planilla: el archivo BBVA admite una sola. */
+  moneda: string;
+  /** Pendientes por moneda, para poder pedir la planilla que falta. */
+  monedasPendientes: Array<{ moneda: string; count: number; total: number }>;
 }
 
 export interface IReconcileResult {
   operationNumber?: string;
   executedAt?: string;
+  moneda: string;
+  /** Avisos que no impiden conciliar pero que Tesorería debe ver. */
+  advertencias: string[];
   conciliados: Array<{
     kind: PaymentKind;
     id: string;
