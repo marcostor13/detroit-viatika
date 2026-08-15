@@ -71,6 +71,14 @@ export interface GenerateTxtResult {
   count: number
   totalSoles: number
   excluded: ExcludedPayment[]
+  /** Moneda de ESTA planilla. El archivo BBVA admite una sola. */
+  moneda: string
+  /**
+   * Pendientes agrupados por moneda, para que Tesorería sepa que quedan pagos
+   * en otra moneda y pueda pedir su planilla. Sin esto, un pago en dólares
+   * quedaba excluido para siempre y no había forma de emitirlo.
+   */
+  monedasPendientes: Array<{ moneda: string; count: number; total: number }>
 }
 
 export interface BatchActor {
@@ -81,6 +89,13 @@ export interface BatchActor {
 export interface ReconcileResult {
   operationNumber?: string
   executedAt?: string
+  /** Moneda de la planilla contra la que se concilió. */
+  moneda: string
+  /**
+   * Avisos que no impiden conciliar pero que Tesorería debe ver (falta el N° de
+   * operación, falta la fecha de ejecución y se usó la de hoy…).
+   */
+  advertencias: string[]
   conciliados: Array<{
     kind: PaymentKind
     id: string
@@ -146,6 +161,20 @@ export class PaymentBatchService {
         reason: 'CCI inválido o incompleto (se requieren 20 dígitos)',
       }
     }
+    // El campo de aviso (flag `E` + correo, pos 147-227) es obligatorio en el
+    // archivo real. Sin correo el registro sale en blanco y el banco rechaza el
+    // archivo por estructura, así que se excluye para que Tesorería lo corrija.
+    const email = String(user?.email ?? '').trim()
+    if (!email) {
+      return {
+        kind,
+        id,
+        beneficiaryName,
+        amount,
+        reason:
+          'Sin correo registrado (el archivo BBVA exige el correo de aviso)',
+      }
+    }
     return {
       kind,
       id,
@@ -155,7 +184,7 @@ export class PaymentBatchService {
       accountType: this.resolveAccountType(digitsCci),
       cci: digitsCci,
       bankName: bankName ?? '',
-      email: user?.email ?? '',
+      email,
       amount,
       moneda: normalizeMoneda(moneda),
       concepto: CONCEPTO[kind],
@@ -245,18 +274,35 @@ export class PaymentBatchService {
 
   // ── Generación del TXT ─────────────────────────────────────────────────────
 
-  async generateTxt(clientId: string): Promise<GenerateTxtResult> {
+  /**
+   * Genera la planilla de UNA moneda. El formato BBVA declara la moneda una
+   * sola vez, en la cabecera, así que no admite mezclar soles y dólares en el
+   * mismo archivo: los pagos de otra moneda salen como excluidos y se emiten en
+   * su propia planilla llamando otra vez con esa moneda.
+   *
+   * Sin `moneda` se emite la base, que es el comportamiento de siempre.
+   */
+  async generateTxt(
+    clientId: string,
+    moneda?: string
+  ): Promise<GenerateTxtResult> {
     const { payable, excluded } = await this.collectPendingPayments(clientId)
+    const config = await this.accountingConfigService.getEffective(clientId)
+    const monedaArchivo = normalizeMoneda(moneda || config.monedaBase)
+    const nombreArchivo = this.buildFileName(monedaArchivo, config.monedaBase)
+
     if (payable.length === 0) {
       // Si hay pendientes pero todos con datos incompletos, no lanzamos error:
       // devolvemos el detalle de los excluidos para que Tesorería sepa qué corregir.
       if (excluded.length > 0) {
         return {
-          fileName: 'BBVAREND.txt',
+          fileName: nombreArchivo,
           fileBase64: '',
           count: 0,
           totalSoles: 0,
           excluded,
+          moneda: monedaArchivo,
+          monedasPendientes: this.resumirMonedas(payable),
         }
       }
       throw new BadRequestException(
@@ -265,13 +311,6 @@ export class PaymentBatchService {
     }
 
     const client = await this.clientService.findOne(clientId)
-
-    // El formato BBVA declara la moneda UNA vez, en la cabecera: no admite
-    // mezclar soles y dólares en la misma planilla. Se emite la de la moneda
-    // base y el resto sale como excluido, para que Tesorería genere su propio
-    // archivo en vez de pagar dólares como si fueran soles.
-    const config = await this.accountingConfigService.getEffective(clientId)
-    const monedaArchivo = config.monedaBase || DEFAULT_MONEDA
 
     const chargeAccount = this.resolveChargeAccount(
       client,
@@ -292,6 +331,22 @@ export class PaymentBatchService {
           : `La empresa no tiene una cuenta de cargo en ${monedaArchivo}. Regístrala en Configuración → Plan de Cuentas y Bancos, o en Configuración → Empresa si opera en una sola moneda.`
       )
     }
+
+    // La cuenta de cargo ocupa las posiciones 4-23 de la cabecera y BBVA la
+    // busca tal cual entre las cuentas afiliadas al servicio. `padLeftZeros`
+    // rellenaría en silencio una cuenta corta (ej. el número sin el CCI) con
+    // ceros a la izquierda, produciendo una cuenta inexistente y el rechazo
+    // "Cuenta de cargo no existe para este servicio" (fila 1, columna 4).
+    // Se admiten 20 dígitos (la cuenta) o 21 (ya con el relleno de la pos. 3).
+    const digitosCargo = chargeAccount.replace(/\D/g, '')
+    const cargoValido =
+      digitosCargo.length === 20 ||
+      (digitosCargo.length === 21 && digitosCargo.startsWith('0'))
+    if (!cargoValido) {
+      throw new BadRequestException(
+        `La cuenta de cargo en ${monedaArchivo} debe tener 20 dígitos y tiene ${digitosCargo.length} ("${chargeAccount}"). El banco rechaza el archivo con "Cuenta de cargo no existe para este servicio". Corrígela en Configuración → Plan de Cuentas y Bancos, o en Configuración → Empresa.`
+      )
+    }
     const otraMoneda = payable.filter(p => p.moneda !== monedaArchivo)
     const enMoneda = payable.filter(p => p.moneda === monedaArchivo)
 
@@ -307,11 +362,13 @@ export class PaymentBatchService {
 
     if (enMoneda.length === 0) {
       return {
-        fileName: 'BBVAREND.txt',
+        fileName: nombreArchivo,
         fileBase64: '',
         count: 0,
         totalSoles: 0,
         excluded,
+        moneda: monedaArchivo,
+        monedasPendientes: this.resumirMonedas(payable),
       }
     }
 
@@ -334,12 +391,44 @@ export class PaymentBatchService {
     })
 
     return {
-      fileName: 'BBVAREND.txt',
+      fileName: nombreArchivo,
       fileBase64: toLatin1Buffer(txt).toString('base64'),
       count: records.length,
       totalSoles: Math.round(totalCents) / 100,
       excluded,
+      moneda: monedaArchivo,
+      monedasPendientes: this.resumirMonedas(payable),
     }
+  }
+
+  /**
+   * Nombre del archivo. La moneda base conserva `BBVAREND.txt` (el nombre que
+   * Tesorería ya usa con el banco); las demás llevan sufijo para no pisarlo al
+   * descargar dos planillas seguidas.
+   */
+  private buildFileName(moneda: string, monedaBase?: string): string {
+    const base = normalizeMoneda(monedaBase)
+    return moneda === base ? 'BBVAREND.txt' : `BBVAREND-${moneda}.txt`
+  }
+
+  /** Pendientes agrupados por moneda (para ofrecer la planilla que falta). */
+  private resumirMonedas(
+    payable: PendingPayment[]
+  ): Array<{ moneda: string; count: number; total: number }> {
+    const porMoneda = new Map<string, { count: number; total: number }>()
+    for (const p of payable) {
+      const actual = porMoneda.get(p.moneda) ?? { count: 0, total: 0 }
+      actual.count += 1
+      actual.total += p.amount
+      porMoneda.set(p.moneda, actual)
+    }
+    return [...porMoneda.entries()]
+      .map(([moneda, v]) => ({
+        moneda,
+        count: v.count,
+        total: Math.round(v.total * 100) / 100,
+      }))
+      .sort((a, b) => a.moneda.localeCompare(b.moneda))
   }
 
   private readonly MESES = [
@@ -360,10 +449,16 @@ export class PaymentBatchService {
 
   // ── Conciliación por PDF ───────────────────────────────────────────────────
 
+  /**
+   * Concilia el PDF de retorno. `moneda` debe ser la de la planilla que se
+   * subió al banco: el PDF no la declara, así que sin este dato se asume la
+   * base y un PDF de la planilla en dólares no cruzaría con nada.
+   */
   async reconcileFromPdf(
     clientId: string,
     pdfBuffer: Buffer,
-    actor: BatchActor
+    actor: BatchActor,
+    moneda?: string
   ): Promise<ReconcileResult> {
     const text = await this.extractPdfText(pdfBuffer)
     const parsed = parseBbvaPdfText(text)
@@ -372,7 +467,7 @@ export class PaymentBatchService {
         'No se pudieron leer abonos del PDF. Verifica que sea la "Consulta de Pagos Masivos" de BBVA, o usa la confirmación manual.'
       )
     }
-    return this.reconcileParsedRows(clientId, parsed, actor)
+    return this.reconcileParsedRows(clientId, parsed, actor, moneda)
   }
 
   /**
@@ -413,24 +508,47 @@ export class PaymentBatchService {
   private async reconcileParsedRows(
     clientId: string,
     parsed: BbvaPdfSummary,
-    actor: BatchActor
+    actor: BatchActor,
+    moneda?: string
   ): Promise<ReconcileResult> {
     const { payable } = await this.collectPendingPayments(clientId)
-    // La planilla generada es la de la moneda base; el PDF de retorno es de esa
-    // misma planilla. Cuando se emitan planillas en otra moneda habrá que
-    // pasarla aquí junto al PDF.
+    // El PDF no declara la moneda. Se usa la de la planilla que se subió al
+    // banco; sin ese dato se asume la base, que es el caso de siempre.
     const config = await this.accountingConfigService.getEffective(clientId)
-    const monedaLote = config.monedaBase || DEFAULT_MONEDA
+    const monedaLote = normalizeMoneda(moneda || config.monedaBase)
     const used = new Set<number>() // índices de payable ya conciliados
+    const advertencias: string[] = []
     const result: ReconcileResult = {
       operationNumber: parsed.operationNumber,
       executedAt: parsed.executedAt,
+      moneda: monedaLote,
+      advertencias,
       conciliados: [],
       sinConciliar: [],
       noAbonados: [],
     }
 
+    if (!parsed.operationNumber) {
+      advertencias.push(
+        'El PDF no trae el N° de movimiento de cargo: los pagos quedarán registrados sin número de operación.'
+      )
+    }
     const transferDate = this.toIsoDate(parsed.executedAt)
+    if (!parsed.executedAt) {
+      advertencias.push(
+        `El PDF no trae la fecha de ejecución: se registra con la fecha de hoy (${transferDate}).`
+      )
+    }
+
+    // Cuántos abonos exitosos trae el PDF por cada combinación DNI+monto. Sirve
+    // para distinguir un empate resoluble (el banco abonó los dos pendientes
+    // iguales) de uno ambiguo (abonó uno solo y no se sabe cuál).
+    const abonosPorClave = new Map<string, number>()
+    for (const row of parsed.rows) {
+      if (!row.success) continue
+      const clave = this.claveAbono(row.documentNumber, row.amount)
+      abonosPorClave.set(clave, (abonosPorClave.get(clave) ?? 0) + 1)
+    }
 
     for (const row of parsed.rows) {
       if (!row.success) {
@@ -441,13 +559,21 @@ export class PaymentBatchService {
         })
         continue
       }
-      const idx = this.findMatchingCandidate(payable, used, row, monedaLote)
+      const { index: idx, ambiguo } = this.findMatchingCandidate(
+        payable,
+        used,
+        row,
+        monedaLote,
+        abonosPorClave
+      )
       if (idx < 0) {
         result.sinConciliar.push({
           titular: row.titular,
           documentNumber: row.documentNumber,
           amount: row.amount,
-          reason: 'No se encontró un pago pendiente con titular + DNI + monto coincidentes',
+          reason: ambiguo
+            ? 'Hay varios pagos pendientes con el mismo documento y monto y el PDF no permite saber cuál se abonó. Confírmalo a mano.'
+            : 'No se encontró un pago pendiente con titular + DNI + monto coincidentes',
         })
         continue
       }
@@ -488,31 +614,63 @@ export class PaymentBatchService {
    * usa como filtro duro: solo desempata cuando hay varios candidatos con el
    * mismo DNI + monto. Sin desempate → FIFO (más antiguo primero).
    */
+  /** Clave de agrupación de un abono: documento + importe al céntimo. */
+  private claveAbono(documentNumber: string, amount: number): string {
+    return `${(documentNumber ?? '').replace(/\D/g, '')}|${Math.round(amount * 100)}`
+  }
+
+  /**
+   * Busca el pendiente que corresponde a un abono del PDF.
+   *
+   * El cruce es por documento + importe (el PDF no trae más). Cuando eso empata
+   * con varios pendientes se intenta desempatar por nombre; si tampoco alcanza,
+   * NO se elige uno al azar: solo se acepta si el PDF trae tantos abonos de esa
+   * misma clave como pendientes hay, porque entonces todos se van a conciliar y
+   * el orden da igual. Si el banco abonó menos de los que están pendientes, no
+   * hay forma de saber cuál se pagó y se devuelve `ambiguo` para que Tesorería
+   * lo confirme a mano en vez de marcar el documento equivocado.
+   */
   private findMatchingCandidate(
     payable: PendingPayment[],
     used: Set<number>,
     row: { titular: string; documentNumber: string; amount: number },
-    moneda: string
-  ): number {
+    moneda: string,
+    abonosPorClave?: Map<string, number>
+  ): { index: number; ambiguo: boolean } {
     const rowDni = (row.documentNumber ?? '').replace(/\D/g, '')
     const matches: number[] = []
+    let totalMismaClave = 0
     for (let i = 0; i < payable.length; i++) {
-      if (used.has(i)) continue
       const c = payable[i]
-      // El PDF no dice la moneda, y una planilla es de una sola: acotar por
-      // ella evita que un abono de 150 USD marque como pagado un pendiente de
-      // 150 PEN del mismo colaborador.
+      // Una planilla es de una sola moneda: acotar por ella evita que un abono
+      // de 150 USD marque como pagado un pendiente de 150 PEN del mismo
+      // colaborador.
       if (c.moneda !== moneda) continue
       const dniMatch = (c.documentNumber ?? '').replace(/\D/g, '') === rowDni
       const amountMatch = Math.abs(c.amount - row.amount) < 0.01
-      if (dniMatch && amountMatch) matches.push(i)
+      if (!dniMatch || !amountMatch) continue
+      totalMismaClave++ // incluye los ya usados: es el total de pendientes iguales
+      if (!used.has(i)) matches.push(i)
     }
-    if (matches.length === 0) return -1
-    if (matches.length > 1 && row.titular) {
-      const named = matches.find((i) => namesMatch(row.titular, payable[i].beneficiaryName))
-      if (named !== undefined) return named
+    if (matches.length === 0) return { index: -1, ambiguo: false }
+    if (matches.length === 1) return { index: matches[0], ambiguo: false }
+
+    // El nombre solo desempata si señala a UN candidato. Si varios se llaman
+    // igual (el caso normal: es la misma persona con dos pendientes iguales) no
+    // resuelve nada, y quedarse con el primero sería volver a elegir al azar.
+    if (row.titular) {
+      const porNombre = matches.filter(i =>
+        namesMatch(row.titular, payable[i].beneficiaryName)
+      )
+      if (porNombre.length === 1) return { index: porNombre[0], ambiguo: false }
     }
-    return matches[0]
+
+    // Empate no resuelto por nombre: solo es seguro si el banco abonó tantas
+    // veces esa clave como pendientes hay (todos terminan conciliados).
+    const abonos =
+      abonosPorClave?.get(this.claveAbono(row.documentNumber, row.amount)) ?? 0
+    if (abonos >= totalMismaClave) return { index: matches[0], ambiguo: false }
+    return { index: -1, ambiguo: true }
   }
 
   // ── Confirmación manual (fallback) ─────────────────────────────────────────
@@ -591,18 +749,44 @@ export class PaymentBatchService {
   // ── Utilidades ─────────────────────────────────────────────────────────────
 
   /** Convierte una fecha (dd/mm/yyyy | ISO | undefined) a `YYYY-MM-DD`. */
+  /**
+   * Fecha del abono a ISO. BBVA la emite en dd/mm/aaaa. Se validan día, mes y
+   * que el calendario exista de verdad (un 31/02 se descarta) y que no sea una
+   * fecha futura: antes, un `13/45/2026` o una fecha mal capturada del PDF se
+   * escribía tal cual en el pago sin que nadie lo notara. Ante cualquier duda
+   * se usa la fecha de hoy, que es el valor que ya se usaba cuando el PDF no
+   * traía fecha.
+   */
   private toIsoDate(input?: string): string {
-    if (input) {
-      const dmy = input.match(/^(\d{2})[\/-](\d{2})[\/-](\d{2,4})/)
-      if (dmy) {
-        const [, d, m, y] = dmy
-        const year = y.length === 2 ? `20${y}` : y
-        return `${year}-${m}-${d}`
-      }
-      const iso = input.match(/^\d{4}-\d{2}-\d{2}/)
-      if (iso) return iso[0]
+    const hoy = new Date().toISOString().slice(0, 10)
+    if (!input) return hoy
+
+    let year: number, month: number, day: number
+    const dmy = input.match(/^(\d{2})[/-](\d{2})[/-](\d{2,4})/)
+    const iso = input.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (dmy) {
+      day = Number(dmy[1])
+      month = Number(dmy[2])
+      year = Number(dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3])
+    } else if (iso) {
+      year = Number(iso[1])
+      month = Number(iso[2])
+      day = Number(iso[3])
+    } else {
+      return hoy
     }
-    return new Date().toISOString().slice(0, 10)
+
+    // `Date.UTC` normaliza los desbordes (32/01 pasa a 01/02), así que se
+    // compara contra lo pedido para detectar una fecha que no existe.
+    const fecha = new Date(Date.UTC(year, month - 1, day))
+    const real =
+      fecha.getUTCFullYear() === year &&
+      fecha.getUTCMonth() === month - 1 &&
+      fecha.getUTCDate() === day
+    if (!real) return hoy
+
+    const iso10 = fecha.toISOString().slice(0, 10)
+    return iso10 > hoy ? hoy : iso10
   }
 
   /** Extrae el texto del PDF con pdf-parse (carga perezosa para no afectar el arranque). */
