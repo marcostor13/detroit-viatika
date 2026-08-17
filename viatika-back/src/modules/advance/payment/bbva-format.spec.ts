@@ -13,6 +13,9 @@ import {
   parseBbvaPdfText,
   splitDocAndAmount,
   isSuccessfulSituacion,
+  toBbvaAccount20,
+  resolveBbvaAccount,
+  describeBbvaAccountProblem,
   BbvaDetailRecord,
 } from './bbva-format'
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -352,5 +355,104 @@ describe('bbva-format - moneda de la planilla', () => {
     const l = lineas(buildBbvaTxt([record], { ...meta, currency: 'USD' }))
     expect(l[0]).toHaveLength(151)
     expect(l[1]).toHaveLength(277)
+  })
+})
+
+describe('toBbvaAccount20 / resolveBbvaAccount', () => {
+  /**
+   * Pares (N° de cuenta de 18 del Excel del cliente → valor de 20 que BBVA
+   * aceptó en BBVAPROVREND.txt / BBVAREND (4).txt, posiciones 18-37 de las filas
+   * de tipo `P`). Es la evidencia de que los dos dígitos extra son relleno del
+   * bloque de cuenta y no dígitos de control.
+   */
+  const PARES_REALES: Array<[string, string]> = [
+    ['001103320200289116', '00110332000200289116'],
+    ['001105790248649754', '00110579000248649754'],
+    ['001100570267030775', '00110057000267030775'],
+    ['001108140286352494', '00110814000286352494'],
+    ['001106090200035160', '00110609000200035160'],
+    ['001105790233457859', '00110579000233457859'],
+    ['001103830200354064', '00110383000200354064'],
+    ['001105790236981516', '00110579000236981516'],
+    ['001105790219133986', '00110579000219133986'],
+    ['001105790219629663', '00110579000219629663'],
+  ]
+
+  it.each(PARES_REALES)(
+    'deriva la cuenta de 20 que el banco aceptó desde el N° de cuenta BBVA (%s)',
+    (cuenta18, esperado20) => {
+      expect(toBbvaAccount20(cuenta18)).toBe(esperado20)
+    }
+  )
+
+  it('devuelve tal cual una cuenta que ya tiene 20 dígitos', () => {
+    expect(toBbvaAccount20('00219110035563002151')).toBe('00219110035563002151')
+  })
+
+  it('ignora guiones y espacios del formato que muestra el banco', () => {
+    expect(toBbvaAccount20('0011-0332-0200289116')).toBe('00110332000200289116')
+  })
+
+  it('NO completa una cuenta de 18 dígitos de otro banco', () => {
+    // Rellenar con ceros aquí produciría una cuenta ajena existente: abono a la
+    // persona equivocada. Sin CCI no hay forma de armarla.
+    expect(toBbvaAccount20('002193113408062095')).toBeNull()
+  })
+
+  it('rechaza longitudes que no son ni 18 (BBVA) ni 20', () => {
+    expect(toBbvaAccount20('123')).toBeNull()
+    expect(toBbvaAccount20('0011033202002891')).toBeNull() // 16
+    expect(toBbvaAccount20('')).toBeNull()
+    expect(toBbvaAccount20(undefined)).toBeNull()
+  })
+
+  it('prefiere el CCI y cae al N° de cuenta solo si el CCI no sirve', () => {
+    expect(
+      resolveBbvaAccount({ cci: '00219110035563002151', accountNumber: '001103320200289116' })
+    ).toEqual({ account20: '00219110035563002151', source: 'cci' })
+
+    expect(resolveBbvaAccount({ cci: '', accountNumber: '001103320200289116' })).toEqual({
+      account20: '00110332000200289116',
+      source: 'accountNumber',
+    })
+
+    expect(resolveBbvaAccount({ cci: '123', accountNumber: '456' })).toBeNull()
+  })
+})
+
+describe('toBbvaAccount20 · carga duplicada del N° de cuenta en el campo CCI', () => {
+  // Escenario real: usuarios a los que se les cargó el mismo número en ambos
+  // campos. Copiado tal cual funciona; "ajustado" a 20 con ceros, no.
+  it('acepta el número copiado tal cual en ambos campos (BBVA de 18)', () => {
+    expect(resolveBbvaAccount({
+      cci: '001103320200289116',
+      accountNumber: '001103320200289116',
+    })).toEqual({ account20: '00110332000200289116', source: 'cci' })
+  })
+
+  it('RECHAZA una cuenta de 18 rellenada con ceros a la izquierda hasta 20', () => {
+    // 00 + 001103320200289116. Empieza en 000: no existe banco 000, y el tipo de
+    // cuenta se resolvería como interbancaria hacia una cuenta inexistente.
+    expect(toBbvaAccount20('00001103320200289116')).toBeNull()
+    expect(describeBbvaAccountProblem('00001103320200289116')).toMatch(/izquierda/)
+  })
+
+  it('RECHAZA una cuenta de 18 rellenada con ceros a la derecha hasta 20', () => {
+    // 001103320200289116 + 00. Empieza en 0011 pero los dígitos quedan corridos:
+    // sería un abono a otra cuenta BBVA existente.
+    expect(toBbvaAccount20('00110332020028911600')).toBeNull()
+    expect(describeBbvaAccountProblem('00110332020028911600')).toMatch(/corridos/)
+  })
+
+  it('sigue aceptando la cuenta BBVA legítima de 20 dígitos', () => {
+    // Único caso del Excel del cliente con BBVA y 20 dígitos.
+    expect(toBbvaAccount20('00110312000200486451')).toBe('00110312000200486451')
+  })
+
+  it('el relleno inválido no se rescata por el otro campo si ambos están mal', () => {
+    expect(resolveBbvaAccount({
+      cci: '00001103320200289116',
+      accountNumber: '00110332020028911600',
+    })).toBeNull()
   })
 })
