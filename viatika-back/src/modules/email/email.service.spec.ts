@@ -62,9 +62,22 @@ describe('EmailService', () => {
       delete process.env.FRONTEND_URL
       process.env.NODE_ENV = 'production'
 
-      expect(service.getPublicAppBaseUrl()).toBe(
-        'https://detroit.viatika.tecdidata.com'
+      expect(service.getPublicAppBaseUrl()).toBe('https://rendiciones.detroit.pe')
+    })
+
+    // VD-119: el origen de producción del cliente. Sin él en la lista integrada
+    // se descartaba por "no permitido" y el correo enlazaba a otro dominio.
+    it('uses rendiciones.detroit.pe when the request comes from it', () => {
+      process.env.NODE_ENV = 'production'
+      delete process.env.APP_ALLOWED_ORIGINS
+      delete process.env.APP_PUBLIC_URL
+      delete process.env.FRONTEND_URL
+
+      const url = runWithRequestOrigin('https://rendiciones.detroit.pe', () =>
+        service.getPublicAppBaseUrl()
       )
+
+      expect(url).toBe('https://rendiciones.detroit.pe')
     })
 
     it('prefers the env URL over the fallback, without trailing slash', () => {
