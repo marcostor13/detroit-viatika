@@ -101,6 +101,101 @@ export function solesToCents(amount: number): number {
   return Math.round(Number(amount ?? 0) * 100)
 }
 
+// ── Resolución del número de cuenta (pos 18-37) ──────────────────────────────
+
+/** Código de banco de BBVA en las 4 primeras posiciones de una cuenta propia. */
+export const BBVA_BANK_PREFIX = '0011'
+
+/** Cuenta ya lista para el archivo, con la traza de de dónde salió. */
+export interface BbvaAccountResolution {
+  /** Número de 20 dígitos que va en las posiciones 18-37. */
+  account20: string
+  /** Campo del que se obtuvo: el CCI registrado o el N° de cuenta BBVA. */
+  source: 'cci' | 'accountNumber'
+}
+
+/**
+ * Normaliza una cuenta al campo de 20 dígitos del archivo. Dos formatos válidos
+ * y NINGÚN relleno a ciegas:
+ *
+ *  - **20 dígitos** → se usa tal cual (es el CCI, o una cuenta BBVA ya en
+ *    formato de 20).
+ *  - **18 dígitos que empiezan en `0011`** → es el N° de cuenta BBVA. El bloque
+ *    de cuenta ocupa 12 posiciones en el archivo y el banco lo entrega con 10,
+ *    así que se alinea con dos ceros a la izquierda:
+ *      `0011 0332 0200289116` → `0011 0332 000200289116`
+ *    Verificado dígito a dígito contra las 10 filas de tipo `P` de los archivos
+ *    que BBVA aceptó (`__fixtures__/BBVAREND.txt`). Esos dos dígitos NO son de
+ *    control: no se calcula nada, solo se alinea el bloque.
+ *
+ * Cualquier otra cosa devuelve `null`. En particular, una cuenta de OTRO banco
+ * sin CCI no se puede completar: rellenarla con ceros produciría una cuenta
+ * ajena y existente, es decir, un abono a la persona equivocada.
+ */
+export function toBbvaAccount20(value: string | undefined | null): string | null {
+  const digits = (value ?? '').replace(/\D/g, '')
+
+  if (digits.length === 20) {
+    // Un 20 dígitos "a la fuerza": la cuenta de 18 rellenada con ceros a la
+    // IZQUIERDA. Ningún banco peruano tiene código 000 (verificado sobre los
+    // 138 valores reales del cliente: 001/002/003/009). Dejarlo pasar mandaba
+    // una cuenta inexistente marcada además como interbancaria.
+    if (digits.startsWith('000')) return null
+    // La misma cuenta rellenada por la DERECHA. En una cuenta BBVA legítima el
+    // bloque de cuenta ocupa 12 posiciones y arranca con los dos ceros de
+    // alineación (27/27 casos reales); una de 18 rellenada al final deja ahí el
+    // inicio del número y TODOS los dígitos corridos, es decir, otra cuenta.
+    if (digits.startsWith(BBVA_BANK_PREFIX) && digits.slice(8, 10) !== '00') {
+      return null
+    }
+    return digits
+  }
+
+  if (digits.length === 18 && digits.startsWith(BBVA_BANK_PREFIX)) {
+    return digits.slice(0, 8) + '00' + digits.slice(8)
+  }
+  return null
+}
+
+/**
+ * Explica en una frase por qué una cuenta no se pudo usar. Solo tiene sentido
+ * cuando `toBbvaAccount20` devolvió `null`. Existe para que Tesorería lea qué
+ * corregir en cada caso, en vez del mismo "CCI inválido" para cinco problemas
+ * distintos que se arreglan de forma distinta.
+ */
+export function describeBbvaAccountProblem(value: string | undefined | null): string {
+  const d = (value ?? '').replace(/\D/g, '')
+  if (!d) return 'está vacío'
+  if (d.length === 20 && d.startsWith('000')) {
+    return `parece un N° de cuenta de 18 dígitos rellenado con ceros a la izquierda ("${d}")`
+  }
+  if (d.length === 20 && d.startsWith(BBVA_BANK_PREFIX)) {
+    return `es una cuenta BBVA con los dígitos corridos ("${d}"): sobra relleno al final`
+  }
+  if (d.length === 18) {
+    return `tiene 18 dígitos y no es una cuenta BBVA ("${d}"), así que falta su CCI de 20`
+  }
+  return `tiene ${d.length} dígitos y se necesitan 20 (CCI) o 18 (cuenta BBVA)`
+}
+
+/**
+ * Resuelve la cuenta a usar a partir de lo que el usuario tenga registrado.
+ * Prefiere el CCI; si falta o no es utilizable, cae al N° de cuenta — que para
+ * BBVA alcanza, y que además rescata a los usuarios cargados al revés (el CCI
+ * guardado en `accountNumber` con `cci` vacío, ver `cargar-detroit-2026-08.mjs`).
+ * Devuelve `null` solo cuando NINGUNO de los dos sirve.
+ */
+export function resolveBbvaAccount(opts: {
+  cci?: string | null
+  accountNumber?: string | null
+}): BbvaAccountResolution | null {
+  const desdeCci = toBbvaAccount20(opts.cci)
+  if (desdeCci) return { account20: desdeCci, source: 'cci' }
+  const desdeCuenta = toBbvaAccount20(opts.accountNumber)
+  if (desdeCuenta) return { account20: desdeCuenta, source: 'accountNumber' }
+  return null
+}
+
 // ── Construcción de líneas ───────────────────────────────────────────────────
 
 /** Construye una línea de DETALLE (277 chars). */

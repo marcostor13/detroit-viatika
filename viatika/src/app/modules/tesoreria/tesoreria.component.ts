@@ -1058,6 +1058,11 @@ export class TesoreriaComponent implements OnInit {
     return (res.monedasPendientes ?? []).filter((m) => m.moneda !== res.moneda);
   });
 
+  /** Importe total que quedó fuera del archivo, para dimensionar el aviso. */
+  totalExcluido = computed(() =>
+    (this.generateResult()?.excluded ?? []).reduce((s, e) => s + Number(e.amount ?? 0), 0)
+  );
+
   /** Genera el TXT, lo descarga y muestra el resumen (excluidos por datos incompletos). */
   generatePaymentsTxt(moneda?: string): void {
     if (this.isGeneratingTxt()) return;
@@ -1072,10 +1077,19 @@ export class TesoreriaComponent implements OnInit {
         this.showBatchModal.set(true);
         if (res.count > 0) {
           this.downloadTxtFile(res.fileBase64, res.fileName);
-          this.notificationService.show(
-            `Archivo generado: ${res.count} pago(s) por ${res.moneda} ${res.totalSoles.toFixed(2)}.`,
-            'success'
-          );
+          // Con excluidos el archivo es válido pero incompleto: el banco lo
+          // acepta y esa gente no cobra. Un toast verde lo daba por bueno.
+          if (res.excluded.length > 0) {
+            this.notificationService.show(
+              `Archivo generado con ${res.count} pago(s), pero ${res.excluded.length} quedaron FUERA por datos bancarios incompletos. Revísalos antes de subirlo al banco.`,
+              'warning'
+            );
+          } else {
+            this.notificationService.show(
+              `Archivo generado: ${res.count} pago(s) por ${res.moneda} ${res.totalSoles.toFixed(2)}.`,
+              'success'
+            );
+          }
         } else {
           this.notificationService.show(
             `No se generó el archivo: ${res.excluded.length} beneficiario(s) con datos bancarios incompletos.`,
