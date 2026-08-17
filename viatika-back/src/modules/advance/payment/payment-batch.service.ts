@@ -21,6 +21,9 @@ import {
   normalizeName,
   namesMatch,
   parseBbvaPdfText,
+  resolveBbvaAccount,
+  describeBbvaAccountProblem,
+  BBVA_BANK_PREFIX,
 } from './bbva-format'
 
 /** Glosa por tipo de pago (VD-7). Ajustable si el cliente pide otra convención. */
@@ -41,7 +44,13 @@ export interface PendingPayment {
   documentType: BbvaDocType
   documentNumber: string
   accountType: BbvaAccountType
-  cci: string
+  /**
+   * Cuenta de 20 dígitos que va al archivo (pos 18-37). Sale del CCI o, cuando
+   * este falta y la cuenta es BBVA, del N° de cuenta — ver `resolveBbvaAccount`.
+   */
+  account20: string
+  /** De qué campo del usuario salió `account20`; se muestra en el resumen. */
+  accountSource: 'cci' | 'accountNumber'
   bankName: string
   email: string
   /** Importe por pagar, en la moneda del documento (`moneda`). */
@@ -128,12 +137,40 @@ export class PaymentBatchService {
   // ── Reglas de derivación ───────────────────────────────────────────────────
 
   /**
-   * Tipo de cuenta para el archivo BBVA: `P` (propia BBVA) cuando el CCI empieza
-   * por el código de banco de BBVA (`0011`), `I` (interbancaria) en otro caso.
-   * Regla verificada contra el archivo real; ajustable si BBVA lo precisa (§6).
+   * Tipo de cuenta para el archivo BBVA: `P` (propia BBVA) cuando la cuenta
+   * empieza por el código de banco de BBVA (`0011`), `I` (interbancaria) en otro
+   * caso. Regla verificada contra el archivo real; ajustable si BBVA lo precisa.
    */
-  private resolveAccountType(cci: string): BbvaAccountType {
-    return (cci ?? '').replace(/\D/g, '').startsWith('0011') ? 'P' : 'I'
+  private resolveAccountType(account20: string): BbvaAccountType {
+    return (account20 ?? '').replace(/\D/g, '').startsWith(BBVA_BANK_PREFIX)
+      ? 'P'
+      : 'I'
+  }
+
+  /**
+   * Motivo de exclusión cuando no se pudo armar la cuenta de 20 dígitos.
+   * Se distingue el caso "no hay nada registrado" del caso "hay una cuenta de
+   * otro banco sin CCI", porque la acción que debe tomar Tesorería es distinta:
+   * la primera se completa en el perfil, la segunda hay que pedírsela al
+   * colaborador. Las cuentas BBVA ya no llegan aquí: se derivan del N° de cuenta.
+   */
+  private motivoCuentaInvalida(bankName: string, cci: string, accountNumber: string): string {
+    const banco = (bankName ?? '').trim() || 'Cuenta'
+    const digitosCci = (cci ?? '').replace(/\D/g, '')
+    const digitosCuenta = (accountNumber ?? '').replace(/\D/g, '')
+
+    if (!digitosCci && !digitosCuenta) {
+      return 'Sin cuenta bancaria registrada. Complétala en el perfil del usuario (Banco, N° de cuenta y CCI).'
+    }
+    // Se describen los DOS campos cuando ambos traen algo: es justo el caso de
+    // los usuarios cargados con el mismo número en N° de cuenta y CCI, donde
+    // saber cuál está mal es la mitad del arreglo.
+    const partes: string[] = []
+    if (digitosCci) partes.push(`el CCI ${describeBbvaAccountProblem(cci)}`)
+    if (digitosCuenta) {
+      partes.push(`el N° de cuenta ${describeBbvaAccountProblem(accountNumber)}`)
+    }
+    return `${banco}: ${partes.join(' y ')}. Corrígelo en el perfil del usuario.`
   }
 
   private buildCandidate(
@@ -142,23 +179,27 @@ export class PaymentBatchService {
     user: any,
     amount: number,
     cci: string,
+    accountNumber: string,
     bankName: string,
     moneda?: string
   ): PendingPayment | ExcludedPayment {
     const beneficiaryName = user?.name ?? '—'
     const documentNumber = (user?.dni ?? '').trim()
-    const digitsCci = (cci ?? '').replace(/\D/g, '')
 
     if (!documentNumber) {
       return { kind, id, beneficiaryName, amount, reason: 'Sin DNI/documento registrado' }
     }
-    if (digitsCci.length !== 20) {
+    // Una cuenta BBVA de 18 dígitos alcanza: el campo del archivo es la misma
+    // cuenta con el bloque alineado a 12 (ver `toBbvaAccount20`). Exigir el CCI
+    // aquí dejaba fuera del archivo, en silencio, a todo el personal de BBVA.
+    const cuenta = resolveBbvaAccount({ cci, accountNumber })
+    if (!cuenta) {
       return {
         kind,
         id,
         beneficiaryName,
         amount,
-        reason: 'CCI inválido o incompleto (se requieren 20 dígitos)',
+        reason: this.motivoCuentaInvalida(bankName, cci, accountNumber),
       }
     }
     // El campo de aviso (flag `E` + correo, pos 147-227) es obligatorio en el
@@ -181,8 +222,9 @@ export class PaymentBatchService {
       beneficiaryName,
       documentType: (user?.documentType as BbvaDocType) || 'L',
       documentNumber,
-      accountType: this.resolveAccountType(digitsCci),
-      cci: digitsCci,
+      accountType: this.resolveAccountType(cuenta.account20),
+      account20: cuenta.account20,
+      accountSource: cuenta.source,
       bankName: bankName ?? '',
       email,
       amount,
@@ -248,21 +290,22 @@ export class PaymentBatchService {
 
     for (const a of advances) {
       candidates.push(
-        this.buildCandidate('advance', a.advanceId, a.user, a.remaining, a.cci, a.bankName, (a as any).moneda)
+        this.buildCandidate('advance', a.advanceId, a.user, a.remaining, a.cci, (a as any).accountNumber, a.bankName, (a as any).moneda)
       )
     }
     for (const v of viaticos) {
       candidates.push(
-        this.buildCandidate('viatico', v.reportId, v.user, v.remaining, v.cci, v.bankName, (v as any).moneda)
+        this.buildCandidate('viatico', v.reportId, v.user, v.remaining, v.cci, (v as any).accountNumber, v.bankName, (v as any).moneda)
       )
     }
     for (const r of reembolsos as any[]) {
       const amount = Math.abs(Number(r?.settlement?.difference ?? 0))
       if (amount <= 0.009) continue
       const cci = r?.userId?.bankAccount?.cci ?? ''
+      const accountNumber = r?.userId?.bankAccount?.accountNumber ?? ''
       const bankName = r?.userId?.bankAccount?.bankName ?? ''
       candidates.push(
-        this.buildCandidate('reembolso', String(r._id), r.userId, amount, cci, bankName, r?.viaticoMoneda)
+        this.buildCandidate('reembolso', String(r._id), r.userId, amount, cci, accountNumber, bankName, r?.viaticoMoneda)
       )
     }
 
@@ -376,7 +419,7 @@ export class PaymentBatchService {
       documentType: p.documentType,
       documentNumber: p.documentNumber,
       accountType: p.accountType,
-      accountNumber: p.cci,
+      accountNumber: p.account20,
       beneficiaryName: p.beneficiaryName,
       amountCents: solesToCents(p.amount),
       concepto: p.concepto,

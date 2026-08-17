@@ -11,10 +11,14 @@ import {
 /**
  * URL del front que se usa cuando la petición no trae un origen utilizable
  * (tareas programadas, seeds) y no hay `APP_PUBLIC_URL` configurada.
- * Es el front de Detroit; el caso normal es que el origen salga de la propia
- * petición — ver `getPublicAppBaseUrl()`.
+ * Es el dominio de producción de Detroit; el caso normal es que el origen salga
+ * de la propia petición — ver `getPublicAppBaseUrl()`.
+ *
+ * VD-119: antes apuntaba a `detroit.viatika.tecdidata.com`, el dominio técnico
+ * anterior. El cliente entra por `rendiciones.detroit.pe`, así que los correos
+ * llevaban al usuario a un sitio distinto del que estaba usando.
  */
-const DEFAULT_APP_URL = 'https://detroit.viatika.tecdidata.com'
+const DEFAULT_APP_URL = 'https://rendiciones.detroit.pe'
 const CLIENT_LOGO_CACHE_TTL_MS = 60_000
 
 /**
@@ -25,8 +29,14 @@ const CLIENT_LOGO_CACHE_TTL_MS = 60_000
  *
  * Netlify quedó fuera: el sitio ya no sirve los assets del front (devuelve 404)
  * y está pendiente de decomisionar, ver DEPLOY_SETUP.md.
+ *
+ * `rendiciones.detroit.pe` es el dominio de producción por el que entra el
+ * cliente (VD-119). Faltaba en esta lista, así que su origen se descartaba por
+ * "no permitido" y el enlace del correo caía al `DEFAULT_APP_URL` anterior.
+ * `detroit.viatika.tecdidata.com` se conserva mientras siga sirviendo el front.
  */
 const BUILT_IN_ALLOWED_ORIGINS = [
+  'https://rendiciones.detroit.pe',
   'https://detroit.viatika.tecdidata.com',
   'https://qa-detroit-viatika.tecdidata.com',
 ]
@@ -43,13 +53,15 @@ const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i
  *
  * Debe ser una URL absoluta y pública: el cliente de correo la descarga desde
  * fuera de la red. Apuntaba a Netlify, que devuelve 404 desde la migración a
- * Coolify, así que el logo salía roto en todos los correos.
+ * Coolify, así que el logo salía roto en todos los correos. Se sirve desde el
+ * mismo dominio de producción que `DEFAULT_APP_URL` (VD-119), y NO se deriva
+ * de `getPublicAppBaseUrl()`: en local o QA eso daría un `localhost` que el
+ * cliente de correo no puede descargar.
  *
  * El tamaño real del archivo es 722x322; la plantilla lo reduce a 150px de
  * ancho en `templates/partials/email-header.hbs`.
  */
-const DEFAULT_EMAIL_LOGO_URL =
-  'https://detroit.viatika.tecdidata.com/logo_header.png'
+const DEFAULT_EMAIL_LOGO_URL = 'https://rendiciones.detroit.pe/logo_header.png'
 
 @Injectable()
 export class EmailService {

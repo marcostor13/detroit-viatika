@@ -1097,6 +1097,21 @@
     @if (gen.count > 0) {
     <h2 class="text-lg font-bold text-secondary mb-1">Archivo de pagos generado</h2>
     <p class="text-sm text-tertiary mb-4">Se descargó <span class="font-medium text-secondary">{{ gen.fileName }}</span>. Súbelo a BBVA Net Cash → Pagos Masivos.</p>
+    <!-- Un archivo válido pero INCOMPLETO es el peor caso: el banco lo acepta y
+         los excluidos no cobran, sin que nada haya fallado. Se avisa arriba, no
+         solo en el detalle de más abajo. -->
+    @if (gen.excluded.length > 0) {
+    <div class="rounded-xl border border-warning/40 bg-warning/10 p-3 mb-4 flex gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0 text-warning-ink">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+      </svg>
+      <p class="text-sm text-warning-ink">
+        <span class="font-semibold">El archivo está incompleto:</span>
+        {{ gen.excluded.length }} pago(s) por {{ gen.moneda }} {{ totalExcluido() | number:'1.2-2' }} NO se incluyeron.
+        El banco aceptará el archivo igual y esas personas no cobrarán. Revisa el detalle al final y corrige antes de subirlo.
+      </p>
+    </div>
+    }
     } @else {
     <h2 class="text-lg font-bold text-warning-ink mb-1">No se generó el archivo</h2>
     <p class="text-sm text-tertiary mb-4">Hay pagos pendientes, pero ninguno tiene datos bancarios completos. Corrige los datos de los beneficiarios y vuelve a intentarlo.</p>
@@ -1133,12 +1148,15 @@
     }
     @if (gen.excluded.length > 0) {
     <div class="rounded-xl border border-warning/30 bg-warning/5 p-3 mb-2">
-      <p class="text-sm font-semibold text-warning-ink mb-2">{{ gen.excluded.length }} beneficiario(s) excluido(s) por datos bancarios incompletos:</p>
-      <ul class="space-y-1">
+      <p class="text-sm font-semibold text-warning-ink mb-2">{{ gen.excluded.length }} beneficiario(s) excluido(s) del archivo — motivo de cada uno:</p>
+      <ul class="space-y-2">
         @for (ex of gen.excluded; track ex.id) {
-        <li class="flex justify-between gap-3 text-xs">
-          <span class="text-secondary font-medium">{{ ex.beneficiaryName }}</span>
-          <span class="text-tertiary text-right">S/ {{ ex.amount | number:'1.2-2' }} · {{ ex.reason }}</span>
+        <li class="text-xs border-b border-warning/20 last:border-0 pb-2 last:pb-0">
+          <div class="flex justify-between gap-3">
+            <span class="text-secondary font-medium">{{ ex.beneficiaryName }}</span>
+            <span class="text-secondary font-semibold whitespace-nowrap">{{ gen.moneda }} {{ ex.amount | number:'1.2-2' }}</span>
+          </div>
+          <p class="text-tertiary mt-0.5">{{ ex.reason }}</p>
         </li>
         }
       </ul>

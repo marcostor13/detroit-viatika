@@ -8,6 +8,8 @@ import { AccountingConfigService } from '../../accounting-config/accounting-conf
 
 const CCI_BBVA = '00110057000267030775' // empieza 0011 → cuenta P
 const CCI_OTRO = '00219110035563002151' // interbancaria → I
+/** N° de cuenta BBVA tal como lo trae el Excel del cliente (18 dígitos, sin CCI). */
+const CUENTA_BBVA_18 = '001103320200289116'
 
 describe('PaymentBatchService', () => {
   let service: PaymentBatchService
@@ -98,7 +100,7 @@ describe('PaymentBatchService', () => {
       expect(reembolso.concepto).toBe('REEMBOLSO')
     })
 
-    it('excluye beneficiarios sin DNI o con CCI inválido', async () => {
+    it('excluye beneficiarios sin DNI o con una cuenta que no se puede completar', async () => {
       advanceService.findBatchPayableAdvances.mockResolvedValue([
         { advanceId: 'a1', user: { name: 'SIN DNI', email: 'x@x.pe' }, remaining: 100, cci: CCI_OTRO },
         { advanceId: 'a2', user: { name: 'MAL CCI', dni: '123', email: 'y@x.pe' }, remaining: 50, cci: '123' },
@@ -108,6 +110,124 @@ describe('PaymentBatchService', () => {
       expect(excluded).toHaveLength(2)
       expect(excluded[0].reason).toMatch(/DNI/)
       expect(excluded[1].reason).toMatch(/CCI/)
+    })
+
+    // Los 67 usuarios de BBVA del Excel del cliente traen el N° de cuenta de 18
+    // dígitos y NO tienen CCI: exigirlo los dejaba a todos fuera del archivo.
+    it('paga a la cuenta BBVA de 18 dígitos aunque no tenga CCI registrado', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'BRIAN CACERES', dni: '71729550', documentType: 'L', email: 'b@x.pe' },
+          remaining: 100,
+          cci: '',
+          accountNumber: CUENTA_BBVA_18,
+          bankName: 'BBVA',
+        },
+      ])
+      const { payable, excluded } = await service.collectPendingPayments('c1')
+      expect(excluded).toHaveLength(0)
+      expect(payable).toHaveLength(1)
+      // Valor exacto de la fila que BBVA aceptó para este DNI en BBVAPROVREND.txt.
+      expect(payable[0].account20).toBe('00110332000200289116')
+      expect(payable[0].accountType).toBe('P')
+      expect(payable[0].accountSource).toBe('accountNumber')
+    })
+
+    it('prefiere el CCI cuando el usuario tiene ambos campos', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'CON AMBOS', dni: '75162447', documentType: 'L', email: 'c@x.pe' },
+          remaining: 100,
+          cci: CCI_OTRO,
+          accountNumber: CUENTA_BBVA_18,
+          bankName: 'BCP',
+        },
+      ])
+      const { payable } = await service.collectPendingPayments('c1')
+      expect(payable[0].account20).toBe(CCI_OTRO)
+      expect(payable[0].accountSource).toBe('cci')
+      expect(payable[0].accountType).toBe('I')
+    })
+
+    it('NO inventa el CCI de una cuenta que no es BBVA y explica qué falta', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'BCP CORTO', dni: '10689692', documentType: 'L', email: 'd@x.pe' },
+          remaining: 100,
+          cci: '',
+          accountNumber: '191100355630021', // 15 dígitos, cuenta BCP sin CCI
+          bankName: 'BCP',
+        },
+        {
+          advanceId: 'a2',
+          user: { name: 'SIN NADA', dni: '46353590', documentType: 'L', email: 'e@x.pe' },
+          remaining: 80,
+          cci: '',
+          accountNumber: '',
+          bankName: '',
+        },
+      ])
+      const { payable, excluded } = await service.collectPendingPayments('c1')
+      expect(payable).toHaveLength(0)
+      expect(excluded[0].reason).toMatch(/BCP/)
+      expect(excluded[0].reason).toMatch(/15 d[ií]gitos/)
+      expect(excluded[1].reason).toMatch(/Sin cuenta bancaria registrada/i)
+    })
+
+    // Usuarios cargados con el mismo número en N° de cuenta y CCI.
+    it('paga al usuario que tiene la cuenta BBVA repetida en ambos campos', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'REPETIDO', dni: '71729550', documentType: 'L', email: 'r@x.pe' },
+          remaining: 100,
+          cci: CUENTA_BBVA_18,
+          accountNumber: CUENTA_BBVA_18,
+          bankName: 'BBVA',
+        },
+      ])
+      const { payable, excluded } = await service.collectPendingPayments('c1')
+      expect(excluded).toHaveLength(0)
+      expect(payable[0].account20).toBe('00110332000200289116')
+      expect(payable[0].accountType).toBe('P')
+    })
+
+    it('excluye y nombra los DOS campos cuando la cuenta se rellenó a 20 con ceros', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'RELLENADO', dni: '71729550', documentType: 'L', email: 'r@x.pe' },
+          remaining: 100,
+          cci: '00001103320200289116', // 18 rellenado por la izquierda
+          accountNumber: '00110332020028911600', // 18 rellenado por la derecha
+          bankName: 'BBVA',
+        },
+      ])
+      const { payable, excluded } = await service.collectPendingPayments('c1')
+      expect(payable).toHaveLength(0)
+      expect(excluded[0].reason).toMatch(/el CCI .*izquierda/)
+      expect(excluded[0].reason).toMatch(/el N° de cuenta .*corridos/)
+    })
+
+    // La primera carga guardó el CCI en `accountNumber` y dejó `cci` vacío.
+    it('rescata el CCI de 20 dígitos guardado en el campo del N° de cuenta', async () => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'CARGA INVERTIDA', dni: '06973600', documentType: 'L', email: 'f@x.pe' },
+          remaining: 100,
+          cci: '',
+          accountNumber: CCI_OTRO,
+          bankName: 'BCP',
+        },
+      ])
+      const { payable, excluded } = await service.collectPendingPayments('c1')
+      expect(excluded).toHaveLength(0)
+      expect(payable[0].account20).toBe(CCI_OTRO)
+      expect(payable[0].accountType).toBe('I')
     })
 
     it('excluye al beneficiario sin correo en vez de mandarlo con el campo en blanco', async () => {
