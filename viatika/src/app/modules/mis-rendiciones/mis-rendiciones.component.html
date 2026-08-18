@@ -421,12 +421,84 @@
   <!-- ════════════════════════════════════════════════════════════ -->
   @if (activeTab() === 'caja-chica') {
 
+  <!-- ── La bolsa: tope, gastado y disponible ─────────────────────── -->
+  @if (fondoLoading()) {
+    <div class="flex justify-center p-8">
+      <span class="w-6 h-6 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></span>
+    </div>
+  } @else if (!fondo()) {
+
+    <!-- Sin bolsa: lo primero es solicitar la asignación. -->
+    <app-empty-state
+      icon="wallet"
+      title="Todavía no tiene caja chica asignada"
+      description="Solicite el monto una sola vez. Pasa por su aprobador, Contabilidad y Tesorería, y cuando le depositen podrá empezar a cargar comprobantes.">
+      <app-button label="Solicitar caja chica" (clicked)="navigateToSolicitudCajaChica()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </app-empty-state>
+
+  } @else {
+
+    <div class="rounded-2xl border border-divider bg-quaternary p-5 mb-4">
+      @if (fondo()!.status === 'pending_funding') {
+        <div class="mb-4">
+          <span class="text-xs text-warning-ink bg-warning/10 border border-amber-200 rounded-lg px-3 py-1.5">
+            {{ estadoSolicitudFondo }}
+          </span>
+        </div>
+      }
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="rounded-xl border border-divider bg-background p-4">
+          <p class="text-xs text-ink-500">Presupuesto</p>
+          <p class="text-lg font-semibold text-ink-900 mt-1">S/ {{ fondo()!.fundAmount | number:'1.2-2' }}</p>
+        </div>
+        <div class="rounded-xl border border-divider bg-background p-4">
+          <p class="text-xs text-ink-500">Total gastado</p>
+          <p class="text-lg font-semibold text-ink-900 mt-1">S/ {{ fondo()!.spentAmount | number:'1.2-2' }}</p>
+        </div>
+        <div class="rounded-xl border border-divider bg-background p-4">
+          <p class="text-xs text-ink-500">Saldo disponible</p>
+          <!-- `success-ink` y no `success`: el token base no pasa contraste AA
+               como texto (ver design-system/README). -->
+          <p class="text-lg font-semibold text-success-ink mt-1">S/ {{ saldoDisponible | number:'1.2-2' }}</p>
+        </div>
+      </div>
+
+      <!-- Sobrante tras bajar el presupuesto: hay que devolverlo con comprobante. -->
+      @if (sobrantePorDevolver > 0) {
+        <div class="mt-3 rounded-xl bg-warning/10 border border-amber-200 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-warning-ink">
+              Debe devolver S/ {{ sobrantePorDevolver | number:'1.2-2' }}
+            </p>
+            <p class="text-xs text-warning-ink/80 mt-0.5">
+              Su presupuesto bajó, así que ese efectivo sobra en la caja. Deposítelo y registre el comprobante.
+            </p>
+          </div>
+          <app-button label="Registrar devolución" variant="secondary" (clicked)="openDevolucion()" />
+        </div>
+      }
+    </div>
+
   <!-- Action bar -->
   <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-    <p class="text-sm text-gray-500">Sube tus comprobantes de caja chica. Contabilidad los incluirá en el reporte correspondiente.</p>
-    <app-button label="Nueva Caja Chica" (clicked)="navigateToNuevaCajaChica()">
-      <app-icon name="plus" size="sm" />
-    </app-button>
+    <p class="text-sm text-gray-500">Sube tus comprobantes de caja chica. Al rendir, Tesorería repone lo aprobado y el presupuesto vuelve a su tope.</p>
+    <div class="flex flex-wrap gap-2">
+      <app-button
+        label="Solicitud de caja chica"
+        variant="secondary"
+        (clicked)="navigateToSolicitudCajaChica()">
+        <app-icon name="wallet" size="sm" />
+      </app-button>
+      <app-button
+        label="Rendición de caja chica"
+        [disabled]="!puedeRendirCajaChica"
+        (clicked)="navigateToNuevaCajaChica()">
+        <app-icon name="plus" size="sm" />
+      </app-button>
+    </div>
   </div>
 
   <!-- Filter bar -->
@@ -466,7 +538,7 @@
     </div>
   } @else if (filteredCajaChicaReports.length === 0) {
     <app-empty-state icon="wallet" title="Sin rendiciones de caja chica" description="Crea una nueva para empezar a subir comprobantes.">
-      <app-button label="Nueva Caja Chica" (clicked)="navigateToNuevaCajaChica()">
+      <app-button label="Rendición de caja chica" [disabled]="!puedeRendirCajaChica" (clicked)="navigateToNuevaCajaChica()">
         <app-icon name="plus" size="sm" />
       </app-button>
     </app-empty-state>
@@ -525,6 +597,55 @@
     </app-data-table>
   }
 
+  <!-- Historial de solicitudes de presupuesto: la asignación inicial y cada
+       cambio posterior. Va al final porque crece con el tiempo y lo que el
+       responsable mira a diario es su saldo y sus rendiciones. Ya no sale en
+       "Solicitudes de fondos". -->
+  @if (solicitudesCajaChica().length > 0) {
+    <div class="mt-8">
+      <p class="text-sm font-semibold text-ink-900 mb-3">Solicitudes de presupuesto</p>
+      <div class="rounded-2xl border border-divider overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-quaternary">
+            <tr class="text-left text-xs uppercase tracking-wide text-ink-500">
+              <th class="px-4 py-2.5 font-medium">Fecha</th>
+              <th class="px-4 py-2.5 font-medium">Presupuesto</th>
+              <th class="px-4 py-2.5 font-medium">Anterior</th>
+              <th class="px-4 py-2.5 font-medium text-right">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (s of solicitudesCajaChica(); track s._id) {
+              <tr class="border-t border-divider">
+                <td class="px-4 py-2.5 text-ink-700">{{ s.createdAt | date:'dd/MM/yyyy' }}</td>
+                <td class="px-4 py-2.5 font-medium text-ink-900">
+                  S/ {{ solicitudMonto(s) | number:'1.2-2' }}
+                </td>
+                <td class="px-4 py-2.5 text-ink-500">
+                  @if (s.cajaChicaPresupuestoAnterior) {
+                    S/ {{ s.cajaChicaPresupuestoAnterior | number:'1.2-2' }}
+                  } @else {
+                    Asignación inicial
+                  }
+                </td>
+                <td class="px-4 py-2.5 text-right">
+                  <span
+                    class="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
+                    [class]="solicitudStatusColor(s.status)"
+                  >
+                    {{ solicitudStatusLabel(s.status) }}
+                  </span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  }
+
+  } <!-- fin @else: tiene presupuesto -->
+
   } <!-- fin @if activeTab === 'caja-chica' -->
 
 </div>
@@ -534,6 +655,117 @@
   [collaboratorId]="currentUserId"
   (close)="onModalClose($event)"
 />
+
+<!-- Devolución del sobrante que dejó una bajada de presupuesto. Mismo
+     formulario que el comprobante de devolución de saldo de una rendición
+     (rendicion-detail): comprobante con escaneo, fecha, monto, banco y
+     operación, en ese orden. -->
+<app-modal
+  [open]="showDevolucionModal()"
+  title="Comprobante de devolución"
+  size="sm"
+  (closed)="showDevolucionModal.set(false)"
+>
+  <div class="space-y-4">
+    <p class="text-sm text-ink-500">
+      Adjunta el comprobante del depósito que realizaste a la cuenta de la empresa.
+      Sobrante pendiente:
+      <span class="font-semibold text-secondary">S/ {{ sobrantePorDevolver | number:'1.2-2' }}</span>
+    </p>
+
+    <div>
+      <label class="block text-xs font-medium text-secondary mb-1">Comprobante (PDF, JPG, PNG - máx 10MB) *</label>
+      @if (devolucionReceiptName) {
+        <p class="text-xs text-success-ink font-medium mb-1">Archivo cargado: {{ devolucionReceiptName }}</p>
+      }
+      <label
+        class="flex items-center gap-2 cursor-pointer px-3 py-2 border border-dashed border-tertiary/30 rounded-lg text-sm text-tertiary hover:bg-background transition-colors"
+      >
+        <input
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png"
+          class="hidden"
+          (change)="onDevolucionFile($event)"
+        />
+        @if (isUploadingDevolucion()) {
+          <span class="inline-block w-4 h-4 border-2 border-tertiary/40 border-t-tertiary rounded-full animate-spin"></span>
+          Subiendo...
+        } @else {
+          Seleccionar archivo
+        }
+      </label>
+      @if (isScanningDevolucion()) {
+        <p class="text-xs text-tertiary flex items-center gap-1.5 mt-1">
+          <span class="inline-block w-3 h-3 border-2 border-tertiary border-t-transparent rounded-full animate-spin"></span>
+          Escaneando comprobante...
+        </p>
+      }
+    </div>
+
+    @if (devolucionHasDetectedData) {
+    <div class="rounded-lg border border-divider bg-background p-3 space-y-1.5">
+      <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Datos detectados del comprobante</p>
+      @if (devolucionTitular()) {
+      <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Titular</span><span class="font-medium text-secondary text-right">{{ devolucionTitular() }}</span></div>
+      }
+      @if (devolucionScanFecha()) {
+      <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Fecha</span><span class="font-medium text-secondary text-right">{{ devolucionScanFecha() }}</span></div>
+      }
+      @if (devolucionScanHora()) {
+      <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Hora</span><span class="font-medium text-secondary text-right">{{ devolucionScanHora() }}</span></div>
+      }
+      @if (devolucionScanBanco()) {
+      <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Banco</span><span class="font-medium text-secondary text-right">{{ devolucionScanBanco() }}</span></div>
+      }
+      @if (devolucionScannedAmount()) {
+      <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">S/ {{ devolucionScannedAmount() | number:'1.2-2' }}</span></div>
+      }
+    </div>
+    }
+
+    <div>
+      <label class="block text-xs font-medium text-secondary mb-1">Fecha del depósito *</label>
+      <input type="date" [value]="devolucionFecha"
+        (input)="devolucionFecha = $any($event.target).value"
+        class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-secondary mb-1">Monto devuelto (S/) *</label>
+      <input type="number" min="0" step="0.01" [value]="devolucionMonto"
+        (input)="devolucionMonto = $any($event.target).value"
+        placeholder="0.00"
+        class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-secondary mb-1">Banco origen</label>
+      <input type="text" [value]="devolucionBanco"
+        (input)="devolucionBanco = $any($event.target).value"
+        placeholder="Ej: BCP, Interbank..."
+        class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-secondary mb-1">N° de operación</label>
+      <input type="text" [value]="devolucionOperacion"
+        (input)="devolucionOperacion = $any($event.target).value"
+        placeholder="Número de operación o referencia"
+        class="w-full border border-tertiary/30 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <app-button label="Cancelar" variant="secondary" (clicked)="showDevolucionModal.set(false)" />
+      <app-button
+        label="Registrar devolución"
+        [loading]="isSavingDevolucion()"
+        loadingLabel="Guardando..."
+        [disabled]="isUploadingDevolucion() || !devolucionReceiptUrl || !devolucionFecha"
+        (clicked)="guardarDevolucion()"
+      />
+    </div>
+  </div>
+</app-modal>
 
 
 <!-- Modal: Procedimientos y Consideraciones -->

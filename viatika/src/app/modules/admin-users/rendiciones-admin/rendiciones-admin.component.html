@@ -3,7 +3,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between gap-4 mb-6">
     <div class="flex items-center gap-3">
-      <h1 class="text-2xl font-bold text-secondary">Rendiciones</h1>
+      <h1 class="text-2xl font-bold text-secondary">{{ mode === 'caja-chica' ? 'Caja Chica' : 'Rendiciones' }}</h1>
     </div>
     @if (hasActiveFilters) {
     <button
@@ -50,7 +50,8 @@
         />
       </div>
 
-      <!-- Tipo -->
+      <!-- Tipo — en la pestaña Caja Chica todas las filas son del mismo tipo. -->
+      @if (mode !== 'caja-chica') {
       <div>
         <label class="block text-xs font-medium text-tertiary mb-1">Tipo</label>
         <select
@@ -66,6 +67,7 @@
           }
         </select>
       </div>
+      }
 
       <!-- Estado -->
       <div>
@@ -136,7 +138,7 @@
         </svg>
       </div>
       <div>
-        <p class="text-sm font-semibold text-secondary">No hay rendiciones</p>
+        <p class="text-sm font-semibold text-secondary">{{ mode === 'caja-chica' ? 'No hay movimientos de caja chica' : 'No hay rendiciones' }}</p>
         <p class="text-xs text-tertiary mt-1">Ajusta los filtros para ver más resultados</p>
       </div>
     </div>
@@ -611,10 +613,27 @@
           </span>
         </div>
         }
+        @if (detailIsSolicitudCajaChica()) {
+        <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
+          <span class="text-sm text-tertiary">Presupuesto solicitado</span>
+          <span class="text-lg font-bold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ detailItem()?.amount | number:'1.2-2' }}</span>
+        </div>
+        @if (detailCajaChicaPresupuestoAnterior() > 0) {
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Presupuesto vigente</span>
+          <span class="font-medium text-secondary">{{ detailItem()?.currencySymbol }} {{ detailCajaChicaPresupuestoAnterior() | number:'1.2-2' }}</span>
+        </div>
+        }
+        <div class="flex justify-between items-center gap-3 text-sm">
+          <span class="text-tertiary shrink-0">Depósito de Tesorería</span>
+          <span class="font-medium text-secondary">{{ detailItem()?.currencySymbol }} {{ detailCajaChicaDeposito() | number:'1.2-2' }}</span>
+        </div>
+        } @else {
         <div class="border-t border-tertiary/10 pt-2.5 flex justify-between items-center">
           <span class="text-sm text-tertiary">Monto solicitado</span>
           <span class="text-lg font-bold text-secondary tabular-nums">{{ detailItem()?.currencySymbol }} {{ detailItem()?.amount | number:'1.2-2' }}</span>
         </div>
+        }
       </div>
 
       <!-- Observaciones -->

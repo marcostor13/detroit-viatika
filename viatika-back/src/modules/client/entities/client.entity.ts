@@ -10,6 +10,13 @@ export interface ClientLimits {
   alimentacionDesayuno?: number
   alimentacionAlmuerzo?: number
   alimentacionCena?: number
+  /**
+   * Tope de ALERTA por comprobante. Un solo valor para toda la empresa, sin
+   * distinguir categoría, aplicado a cualquier tipo de rendición. A diferencia
+   * de los topes de comida, este NUNCA bloquea: solo marca el gasto para que
+   * quien lo sube y quien lo aprueba vean la advertencia. Vacío = sin tope.
+   */
+  topeComprobante?: number
 }
 
 /** Comidas de "Alimentación sin documentación" (VD-109). */
@@ -27,6 +34,14 @@ export function topeComida(
       : tipo === 'almuerzo'
         ? limits?.alimentacionAlmuerzo
         : limits?.alimentacionCena
+  return typeof valor === 'number' && valor > 0 ? valor : null
+}
+
+/** Tope de alerta por comprobante, o `null` si la empresa no puso ninguno. */
+export function topeComprobante(
+  limits: ClientLimits | undefined
+): number | null {
+  const valor = limits?.topeComprobante
   return typeof valor === 'number' && valor > 0 ? valor : null
 }
 
@@ -92,6 +107,7 @@ export class Client {
       alimentacionDesayuno: { type: Number, default: null },
       alimentacionAlmuerzo: { type: Number, default: null },
       alimentacionCena: { type: Number, default: null },
+      topeComprobante: { type: Number, default: null },
     },
     default: {},
   })

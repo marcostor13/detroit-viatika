@@ -176,6 +176,7 @@ export class CompanyConfigService {
       alimentacionDesayuno?: number;
       alimentacionAlmuerzo?: number;
       alimentacionCena?: number;
+      topeComprobante?: number;
     }
   ): Observable<ICompanyConfig> {
     return new Observable((observer) => {

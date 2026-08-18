@@ -35,6 +35,7 @@ import {
   Client,
   TipoComida,
   topeComida,
+  topeComprobante,
 } from '../client/entities/client.entity'
 import { CurrencyService } from '../exchange-rate/currency.service'
 import { AccountingConfigDocument } from '../accounting-config/entities/accounting-config.entity'
@@ -100,6 +101,8 @@ export interface DepositScanResult {
   hora?: string
   operationNumber?: string
   titular?: string
+  /** Banco que emite el comprobante (de donde sale el dinero). */
+  banco?: string
 }
 
 @Injectable()
@@ -762,6 +765,72 @@ export class ExpenseService {
     return { validation, expenseStatus }
   }
 
+  /**
+   * Tope de ALERTA por comprobante de la empresa (Configuración > Límites). Un
+   * solo valor para todas las categorías y todos los tipos de rendición. A
+   * diferencia de `assertTopeComida`, nunca lanza: solo marca el gasto. El tope
+   * vigente se congela en el documento para que el aprobador vea contra qué se
+   * comparó, aunque la empresa lo cambie después.
+   *
+   * Se compara contra el monto en MONEDA BASE: el tope está expresado en soles
+   * y un comprobante en dólares tiene que medirse con la misma vara.
+   */
+  private async evaluateTopeComprobante(
+    clientId: string | undefined,
+    montoBase: number | undefined
+  ): Promise<{ superaTopeComprobante?: boolean; topeComprobante?: number }> {
+    if (!clientId) return {}
+    const client = await this.clientModel.findById(clientId).lean().exec()
+    const tope = topeComprobante(client?.limits)
+    if (tope === null) return {}
+    return {
+      superaTopeComprobante: Number(montoBase ?? 0) > tope,
+      topeComprobante: tope,
+    }
+  }
+
+  /**
+   * Reglas propias del comprobante de caja chica, comunes a todas las vías de
+   * alta:
+   * - El centro de costo (y con él la orden de trabajo) es OPCIONAL. En
+   *   cualquier otra rendición se sigue exigiendo, como siempre.
+   * - La firma es OBLIGATORIA: el papel llega firmado por quien recibió el
+   *   dinero y ese respaldo tiene que quedar guardado.
+   *
+   * Devuelve el centro de costo ya casteado, o `undefined` si no lleva.
+   */
+  private async resolveComprobanteCajaChica(
+    body: CreateExpenseDto
+  ): Promise<Types.ObjectId | undefined> {
+    const esCajaChica = await this.expenseReportService.isReportCajaChica(
+      body.expenseReportId
+    )
+
+    if (!esCajaChica) {
+      if (!body.proyectId) {
+        throw new HttpException(
+          'El centro de costo es requerido',
+          HttpStatus.BAD_REQUEST
+        )
+      }
+      return new Types.ObjectId(body.proyectId)
+    }
+
+    if (!body.firmaUrl?.trim()) {
+      throw new HttpException(
+        'Adjunte la firma del comprobante. En caja chica es obligatoria.',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    if (body.proyectId) return new Types.ObjectId(body.proyectId)
+    // Sin centro de costo elegido se imputa al del responsable (el de su
+    // solicitud). El colaborador sigue sin estar obligado a elegirlo, pero
+    // Contabilidad ya no recibe un gasto sin imputar.
+    return this.expenseReportService.resolveCentroCostoCajaChica(
+      String(body.expenseReportId ?? '')
+    )
+  }
+
   private async createExpenseDocument(
     body: CreateExpenseDto,
     data: ExtractedInvoiceData,
@@ -776,7 +845,7 @@ export class ExpenseService {
     }
 
     const categoryObject = Types.ObjectId.createFromHexString(body.categoryId)
-    const projectObject = Types.ObjectId.createFromHexString(body.proyectId)
+    const projectObject = await this.resolveComprobanteCajaChica(body)
 
     const normalizedFechaEmision = this.normalizeFechaEmisionValue(
       data.fechaEmision
@@ -801,10 +870,15 @@ export class ExpenseService {
     })
     // El límite de la categoría está definido en la moneda base.
     const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
+    const topeMeta = await this.evaluateTopeComprobante(
+      body.clientId,
+      fx.montoBase
+    )
 
     return this.expenseRepository.create({
       categoryId: categoryObject,
       proyectId: projectObject,
+      firmaUrl: body.firmaUrl?.trim() || undefined,
       clientId: body.clientId,
       expenseReportId: body.expenseReportId
         ? new Types.ObjectId(body.expenseReportId)
@@ -821,6 +895,7 @@ export class ExpenseService {
       diasRetraso: deadlineMeta.diasRetraso,
       categoryLimitPercent: categoryMeta.percent,
       categoryLimitWarning: categoryMeta.warning,
+      ...topeMeta,
       comentario: data.comentario || undefined,
       placaVehiculo: data.placaVehiculo || undefined,
       baseAfecta:
@@ -1050,11 +1125,14 @@ export class ExpenseService {
       'transferencia bancaria (BCP, Scotiabank, BBVA u otro). Devuelve ' +
       'EXCLUSIVAMENTE un JSON con la forma {"amount": <número>, "fecha": ' +
       '"<dd/mm/aaaa>", "hora": "<hh:mm>", "operationNumber": "<texto>", ' +
-      '"titular": "<texto>"}. amount es el monto depositado/transferido como ' +
-      'número (sin símbolo de moneda ni separadores de miles, punto decimal). ' +
+      '"titular": "<texto>", "banco": "<texto>"}. amount es el monto ' +
+      'depositado/transferido como número (sin símbolo de moneda ni ' +
+      'separadores de miles, punto decimal). ' +
       'fecha es la fecha de la operación; hora la hora de la operación; ' +
       'operationNumber el número de operación o constancia; titular el nombre ' +
-      'del beneficiario o titular de la cuenta destino que recibe el dinero. ' +
+      'del beneficiario o titular de la cuenta destino que recibe el dinero; ' +
+      'banco el banco ORIGEN, el que emite el comprobante y desde el que sale ' +
+      'el dinero (BCP, BBVA, Interbank, Scotiabank...), solo el nombre. ' +
       'Si un dato no aparece, usa cadena vacía (o 0 para amount).'
 
     try {
@@ -1133,6 +1211,7 @@ export class ExpenseService {
       hora: str(obj.hora),
       operationNumber: str(obj.operationNumber),
       titular: str(obj.titular),
+      banco: str(obj.banco),
     }
   }
 
@@ -1219,6 +1298,10 @@ export class ExpenseService {
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
     )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
+    )
     try {
       const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
       const completion = await this.openai.chat.completions.create({
@@ -1263,6 +1346,10 @@ export class ExpenseService {
     }
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
+    )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
     )
     try {
       const input = await preparePdfVisionInput(file.buffer, {
@@ -1371,6 +1458,10 @@ export class ExpenseService {
   async createInvoiceFromScan(body: CreateExpenseDto): Promise<Expense> {
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
+    )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
     )
     let parsed: any = {}
     try {
@@ -1496,6 +1587,10 @@ export class ExpenseService {
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
     )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
+    )
     if (!body.mobilityRows || body.mobilityRows.length === 0) {
       throw new HttpException(
         'Se requiere al menos una fila en la planilla',
@@ -1593,9 +1688,14 @@ export class ExpenseService {
     })
     // El límite de la categoría está definido en la moneda base.
     const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
+    const topeMeta = await this.evaluateTopeComprobante(
+      body.clientId,
+      fx.montoBase
+    )
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
-      proyectId: new Types.ObjectId(body.proyectId),
+      proyectId: await this.resolveComprobanteCajaChica(body),
+      firmaUrl: body.firmaUrl?.trim() || undefined,
       // Sin OT (viático que no la lleva) no se castea: `new Types.ObjectId(undefined)`
       // generaría un id nuevo y dejaría el gasto apuntando a una OT inexistente.
       ordenTrabajoId: body.ordenTrabajoId
@@ -1617,6 +1717,7 @@ export class ExpenseService {
       diasRetraso: deadlineMeta.diasRetraso,
       categoryLimitPercent: categoryMeta.percent,
       categoryLimitWarning: categoryMeta.warning,
+      ...topeMeta,
       internalCode,
       data: JSON.stringify({
         type: 'planilla_movilidad',
@@ -1678,6 +1779,10 @@ export class ExpenseService {
     // Caja chica finalizada: no se permiten más gastos.
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
+    )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
     )
     if (!body.total || body.total <= 0) {
       throw new HttpException(
@@ -1765,9 +1870,14 @@ export class ExpenseService {
     })
     // El límite de la categoría está definido en la moneda base.
     const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
+    const topeMeta = await this.evaluateTopeComprobante(
+      body.clientId,
+      fx.montoBase
+    )
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
-      proyectId: new Types.ObjectId(body.proyectId),
+      proyectId: await this.resolveComprobanteCajaChica(body),
+      firmaUrl: body.firmaUrl?.trim() || undefined,
       clientId: body.clientId,
       expenseReportId: body.expenseReportId
         ? new Types.ObjectId(body.expenseReportId)
@@ -1792,6 +1902,7 @@ export class ExpenseService {
       diasRetraso: deadlineMeta.diasRetraso,
       categoryLimitPercent: categoryMeta.percent,
       categoryLimitWarning: categoryMeta.warning,
+      ...topeMeta,
       data: JSON.stringify({
         type: 'otros_gastos',
         subTipo,
@@ -2001,6 +2112,10 @@ export class ExpenseService {
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
     )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
+    )
 
     const rubros = [
       { rubro: 'alimentacion' as const, seccion: body.alimentacion },
@@ -2108,9 +2223,16 @@ export class ExpenseService {
         // El límite de la categoría está definido en la moneda base.
         montoBase
       )
+      const topeMeta = await this.evaluateTopeComprobante(
+        body.clientId,
+        montoBase
+      )
 
       const expense = await this.expenseRepository.create({
         categoryId: new Types.ObjectId(seccion!.categoryId),
+        // La DJ de gastos al exterior es de viáticos, no de caja chica: su
+        // centro de costo sigue siendo obligatorio y no lleva firma adjunta
+        // (se sustenta con la firma del propio documento).
         proyectId: new Types.ObjectId(body.proyectId),
         clientId: body.clientId,
         expenseReportId: body.expenseReportId
@@ -2142,6 +2264,7 @@ export class ExpenseService {
         observado: deadlineMeta.observado,
         observacionPlazo: deadlineMeta.observacionPlazo,
         diasRetraso: deadlineMeta.diasRetraso,
+        ...topeMeta,
         categoryLimitPercent: categoryMeta.percent,
         categoryLimitWarning: categoryMeta.warning,
         data: JSON.stringify({
@@ -2193,6 +2316,10 @@ export class ExpenseService {
     await this.expenseReportService.assertReportNotLockedByCajaChica(
       body.expenseReportId
     )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
+    )
     if (!body.imageUrl) {
       throw new HttpException(
         'Debe adjuntar la foto/archivo del recibo de caja',
@@ -2243,9 +2370,14 @@ export class ExpenseService {
     })
     // El límite de la categoría está definido en la moneda base.
     const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
+    const topeMeta = await this.evaluateTopeComprobante(
+      body.clientId,
+      fx.montoBase
+    )
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
-      proyectId: new Types.ObjectId(body.proyectId),
+      proyectId: await this.resolveComprobanteCajaChica(body),
+      firmaUrl: body.firmaUrl?.trim() || undefined,
       clientId: body.clientId,
       expenseReportId: body.expenseReportId
         ? new Types.ObjectId(body.expenseReportId)
@@ -2263,6 +2395,7 @@ export class ExpenseService {
       diasRetraso: deadlineMeta.diasRetraso,
       categoryLimitPercent: categoryMeta.percent,
       categoryLimitWarning: categoryMeta.warning,
+      ...topeMeta,
       data: JSON.stringify({
         type: 'recibo_caja',
         payload: body.data || '',
@@ -2869,6 +3002,22 @@ export class ExpenseService {
     if (updateDoc.categoryId !== undefined)
       updateDoc.categoryId = this.toObjectIdOrRaw(updateDoc.categoryId)
 
+    // El aviso de tope por comprobante se re-evalúa cuando cambia el monto: debe
+    // reflejar el importe vigente, no el del registro inicial. Si la empresa
+    // quitó el tope entretanto, los dos campos quedan limpios. Se reusa el
+    // tipo de cambio ya congelado en el gasto, porque `update` no re-congela
+    // la moneda.
+    if (dto.total !== undefined) {
+      const tipoCambio =
+        Number((existing as unknown as { tipoCambio?: number }).tipoCambio) || 1
+      const topeMeta = await this.evaluateTopeComprobante(
+        String(existing.clientId),
+        Number(dto.total) * tipoCambio
+      )
+      updateDoc.superaTopeComprobante = topeMeta.superaTopeComprobante ?? false
+      updateDoc.topeComprobante = topeMeta.topeComprobante ?? null
+    }
+
     // Corrección de un comprobante rechazado por el colaborador dueño: vuelve a
     // revisión. El front reenvía el `status: 'rejected'` original del documento, así
     // que aquí se sobreescribe el estado y se reabre únicamente el lado que estaba
@@ -3286,6 +3435,9 @@ export class ExpenseService {
 
     const reportId = this.expenseReportIdString(existing)
     if (reportId) {
+      // Devuelve el saldo al presupuesto de caja chica. Va ANTES de desenganchar
+      // el comprobante: el reverso necesita saber a qué rendición pertenecía.
+      await this.expenseReportService.descargarGastoDelPresupuesto(id)
       await this.expenseReportService.removeExpenseFromReport(reportId, id)
     }
 

@@ -27,6 +27,7 @@ import { CreateDirectaDepositDto } from './dto/create-directa-deposit.dto'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
 import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
+import { CreateSolicitudCajaChicaDto } from './dto/create-solicitud-caja-chica.dto'
 import { ProjectService } from '../project/project.service'
 
 @Controller('expense-report')
@@ -777,6 +778,44 @@ export class ExpenseReportController {
       userName: req.user.name || req.user.email || 'Usuario',
       action: 'create_viatico',
       module: 'viaticos',
+      entityId: (result as any)?._id?.toString(),
+      clientId: req.user.clientId,
+    })
+    return result
+  }
+
+  /** Mis solicitudes de caja chica (asignación inicial y cambios de presupuesto). */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('solicitudes-caja-chica/my')
+  findMySolicitudesCajaChica(@Request() req: any) {
+    const userId = String(req.user._id || req.user.sub)
+    const clientId = this.resolveClientId(req)
+    return this.expenseReportService.findMySolicitudesCajaChica(userId, clientId)
+  }
+
+  /**
+   * Crear la SOLICITUD de asignación de caja chica. Reusa el flujo de viáticos
+   * (mismos endpoints de aprobación, Contabilidad y pago), por eso vive acá.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Post('solicitud-caja-chica')
+  async createSolicitudCajaChica(
+    @Body() dto: CreateSolicitudCajaChicaDto,
+    @Request() req: any
+  ) {
+    const userId = String(req.user._id || req.user.sub)
+    const clientId = this.resolveClientId(req)
+    if (!clientId) throw new BadRequestException('Cliente no identificado en la sesión.')
+    const result = await this.expenseReportService.createSolicitudCajaChica(
+      dto,
+      userId,
+      clientId
+    )
+    await this.auditLogService.log({
+      userId: req.user._id || req.user.sub,
+      userName: req.user.name || req.user.email || 'Usuario',
+      action: 'create_fondo_caja_chica',
+      module: 'caja-chica',
       entityId: (result as any)?._id?.toString(),
       clientId: req.user.clientId,
     })

@@ -1,0 +1,224 @@
+<div class="min-h-screen bg-gray-50 flex flex-col">
+
+  <!-- Header -->
+  <div class="sticky top-0 z-10 bg-white border-b border-gray-200 shadow-sm">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          (click)="goBack()"
+          class="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors shrink-0"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+          </svg>
+          Volver
+        </button>
+        <span class="text-gray-200 text-xl font-light">|</span>
+        <div class="flex items-center gap-2 min-w-0">
+          <div class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" />
+            </svg>
+          </div>
+          <h1 class="text-base font-bold text-gray-900 truncate">{{ pageTitle() }}</h1>
+        </div>
+      </div>
+
+      <!-- Total (desktop) -->
+      @if (!loading() && !solicitudEnCurso()) {
+      <div class="hidden sm:flex items-center gap-6 shrink-0">
+        <div class="text-right">
+          <p class="text-xs text-gray-400">Total general</p>
+          <p class="text-xl font-bold text-gray-900">S/ {{ totalGeneral() | number:'1.2-2' }}</p>
+        </div>
+        <button
+          type="button"
+          (click)="submit()"
+          [disabled]="submitting()"
+          class="px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm"
+        >
+          @if (submitting()) {
+          <span class="inline-flex items-center gap-2">
+            <span class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+            Enviando...
+          </span>
+          } @else {
+            Enviar solicitud
+          }
+        </button>
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- Loading -->
+  @if (loading()) {
+  <div class="flex-1 flex items-center justify-center">
+    <div class="flex flex-col items-center gap-3 text-gray-400">
+      <div class="w-10 h-10 border-3 border-gray-200 border-t-primary rounded-full animate-spin"></div>
+      <p class="text-sm">Cargando...</p>
+    </div>
+  </div>
+  } @else if (solicitudEnCurso()) {
+
+  <!-- Dos solicitudes a la vez no se pueden: no se sabría cuál manda. -->
+  <div class="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-6">
+    <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+        <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Ya tiene una solicitud en curso</h2>
+      </div>
+      <div class="px-5 py-5">
+        <p class="text-sm text-gray-700">
+          Su solicitud por
+          <span class="font-semibold text-gray-900">S/ {{ solicitudEnCurso()!.cajaChicaNuevoPresupuesto | number:'1.2-2' }}</span>
+          todavía está en trámite. Espere a que se resuelva antes de pedir otro presupuesto.
+        </p>
+        <button
+          type="button"
+          (click)="goBack()"
+          class="mt-5 px-5 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors shadow-sm"
+        >
+          Ver mi caja chica
+        </button>
+      </div>
+    </div>
+  </div>
+
+  } @else {
+
+  <div class="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6">
+
+    <!-- Info banner -->
+    <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 flex items-start gap-3">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-blue-500 shrink-0 mt-0.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+      </svg>
+      <p class="text-sm text-blue-800">
+        @if (esCambio()) {
+          Indique el nuevo presupuesto de su caja chica. Reemplaza al actual, y puede ser mayor o menor.
+          Pasa por su aprobador, Contabilidad y Tesorería.
+        } @else {
+          Indique el monto de su caja chica. Pasa por su aprobador, Contabilidad y Tesorería, y el
+          depósito va a la cuenta de su perfil.
+        }
+      </p>
+    </div>
+
+    <form [formGroup]="form" class="flex flex-col gap-6">
+
+      <!-- Section: Informacion de la solicitud -->
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3.5 border-b border-gray-100 bg-gray-50/50">
+          <h2 class="text-sm font-semibold text-gray-700 uppercase tracking-wider">Informacion de la solicitud</h2>
+        </div>
+        <div class="px-5 py-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+
+          @if (esCambio()) {
+          <div class="flex flex-col gap-1.5">
+            <span class="text-sm font-medium text-gray-700">Presupuesto actual</span>
+            <p class="px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 bg-gray-50 text-gray-900">
+              S/ {{ presupuestoActual() | number:'1.2-2' }}
+            </p>
+          </div>
+          }
+
+          <!-- Monto solicitado -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-gray-700">
+              {{ esCambio() ? 'Nuevo presupuesto (S/)' : 'Monto solicitado (S/)' }}
+              <span class="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              formControlName="amount"
+              min="1"
+              step="0.01"
+              placeholder="0.00"
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow"
+              [class.border-red-400]="form.get('amount')?.invalid && form.get('amount')?.touched"
+            />
+            @if (form.get('amount')?.invalid && form.get('amount')?.touched) {
+            <p class="text-xs text-red-500">Indique el monto que solicita</p>
+            } @else {
+            <p class="text-xs text-gray-500">Queda como tope de su caja chica.</p>
+            }
+          </div>
+
+          <!-- Qué implica el cambio: depósito de la diferencia o devolución del
+               sobrante. Se calcula al tipear para que no haya sorpresas. -->
+          @if (esCambio() && totalGeneral() > 0) {
+            @if (aDepositar() > 0) {
+            <div class="md:col-span-2 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3">
+              <p class="text-sm text-blue-800">
+                Tesorería le depositará la diferencia:
+                <span class="font-semibold">S/ {{ aDepositar() | number:'1.2-2' }}</span>.
+              </p>
+            </div>
+            } @else if (aDevolver() > 0) {
+            <div class="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p class="text-sm text-amber-800">
+                Su presupuesto baja, así que deberá devolver
+                <span class="font-semibold">S/ {{ aDevolver() | number:'1.2-2' }}</span>.
+                Al aprobarse la solicitud aparecerá el botón para registrar la devolución con su comprobante.
+              </p>
+            </div>
+            } @else {
+            <div class="md:col-span-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <p class="text-sm text-gray-600">
+                Es el mismo monto que tiene hoy. Indique uno distinto para cambiar su presupuesto.
+              </p>
+            </div>
+            }
+          }
+
+          <!-- Observaciones -->
+          <div class="md:col-span-2 flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-gray-700">Observaciones (opcional)</label>
+            <textarea
+              formControlName="observations"
+              rows="3"
+              placeholder="Nota interna sobre la solicitud."
+              class="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-shadow resize-none"
+            ></textarea>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Section: Resumen del monto -->
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3.5 bg-gray-50 flex items-center justify-between gap-4 lg:justify-end">
+          <span class="text-sm font-semibold text-gray-600 uppercase tracking-wide">
+            {{ esCambio() ? 'Nuevo presupuesto' : 'Total general' }}
+          </span>
+          <span class="text-base font-bold text-gray-900 tabular-nums">S/ {{ totalGeneral() | number:'1.2-2' }}</span>
+        </div>
+      </div>
+
+    </form>
+
+  </div>
+
+  <!-- Mobile footer -->
+  <div class="sm:hidden sticky bottom-0 bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between gap-3 shadow-lg">
+    <div>
+      <p class="text-xs text-gray-400">Total</p>
+      <p class="text-base font-bold text-gray-900">S/ {{ totalGeneral() | number:'1.2-2' }}</p>
+    </div>
+    <button
+      type="button"
+      (click)="submit()"
+      [disabled]="submitting()"
+      class="flex-1 max-w-xs py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+    >
+      @if (submitting()) {
+        Enviando...
+      } @else {
+        Enviar solicitud
+      }
+    </button>
+  </div>
+
+  }
+</div>

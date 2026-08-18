@@ -85,6 +85,12 @@ export type AuditAction =
   | 'cancel_viatico'
   | 'approve_directa'
   | 'reject_directa'
+  // Fondo de caja chica (bolsa revolvente)
+  | 'create_fondo_caja_chica'
+  | 'fondear_fondo_caja_chica'
+  | 'reponer_fondo_caja_chica'
+  | 'devolver_sobrante_caja_chica'
+  | 'close_fondo_caja_chica'
 
 @Schema({ timestamps: true })
 export class AuditLog {

@@ -16,10 +16,12 @@ describe('RendicionesTabsComponent', () => {
   ) {
     TestBed.resetTestingModule();
     userState = jasmine.createSpyObj('UserStateService', [
+      'isSuperAdmin',
       'isContabilidadInCompany',
       'isTesoreria',
       'isAdminInCompany',
     ]);
+    userState.isSuperAdmin.and.returnValue(false);
     userState.isContabilidadInCompany.and.returnValue(role === 'contabilidad');
     userState.isTesoreria.and.returnValue(role === 'tesoreria');
     userState.isAdminInCompany.and.returnValue(role === 'admin');
@@ -45,17 +47,24 @@ describe('RendicionesTabsComponent', () => {
     expect(component.activeTab()).toBe('rendiciones');
   });
 
-  describe('visibilidad de la pestaña Caja Chica', () => {
+  describe('sub-vista del agrupador contable', () => {
     it('la ven Contabilidad, Tesorería y Administrador', () => {
       for (const role of ['contabilidad', 'tesoreria', 'admin'] as const) {
         setup(null, role);
-        expect(component.showCajaChicaTab()).toBeTrue();
+        expect(component.showAgrupadorContable()).toBeTrue();
       }
     });
 
-    it('no la ve un aprobador (no tiene nada que aprobar ahí)', () => {
+    it('no la ve un aprobador (sus endpoints responden 403)', () => {
       setup(null, 'aprobador');
-      expect(component.showCajaChicaTab()).toBeFalse();
+      expect(component.showAgrupadorContable()).toBeFalse();
+    });
+
+    it('la pestaña Caja Chica sí la ve el aprobador: ahí están sus solicitudes y rendiciones', () => {
+      setup('caja-chica', 'aprobador');
+      component.ngOnInit();
+      expect(component.activeTab()).toBe('caja-chica');
+      expect(component.cajaChicaView()).toBe('flujo');
     });
   });
 
@@ -84,12 +93,6 @@ describe('RendicionesTabsComponent', () => {
       setup('caja-chica', 'tesoreria');
       component.ngOnInit();
       expect(component.activeTab()).toBe('caja-chica');
-    });
-
-    it('ignora ?tab=caja-chica en un aprobador, que no tiene esa pestaña', () => {
-      setup('caja-chica', 'aprobador');
-      component.ngOnInit();
-      expect(component.activeTab()).toBe('rendiciones');
     });
 
     it('falls back to "rendiciones" for an unrecognized tab param', () => {

@@ -275,4 +275,15 @@ describe('isSolicitudPhase', () => {
   it('is false for a directa, which is born in the rendicion phase', () => {
     expect(isSolicitudPhase({ type: 'directa', isDirecta: true, status: 'open' })).toBeFalse();
   });
+
+  it('sigue siendo solicitud la de caja chica ya depositada: no se rinde sobre ese documento', () => {
+    expect(
+      isSolicitudPhase({
+        type: 'viatico',
+        isSolicitudCajaChica: true,
+        status: 'paid',
+        viaticoPaidAmount: 3000,
+      })
+    ).toBeTrue();
+  });
 });

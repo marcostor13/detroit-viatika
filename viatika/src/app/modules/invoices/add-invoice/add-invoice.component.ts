@@ -100,6 +100,10 @@ export default class AddInvoiceComponent implements OnInit {
   isDirectaMode = false;
   /** True cuando la rendición asociada es directa (report.isDirecta), aunque no venga `mode=directa` en la URL. */
   isDirectaReport = signal<boolean>(false);
+  /** True cuando la rendición asociada es de caja chica: CC y OT opcionales, firma obligatoria. */
+  isCajaChicaReport = signal<boolean>(false);
+  isUploadingFirma = signal(false);
+  firmaFileName = signal<string | null>(null);
   /** True cuando la rendición directa ya tiene una OT propia heredada (rendiciones creadas tras esta funcionalidad). */
   directaOrdenTrabajoInherited = signal<boolean>(false);
   /** True cuando la planilla de movilidad hereda la OT de la solicitud de viático (VD-28). */
@@ -328,7 +332,44 @@ export default class AddInvoiceComponent implements OnInit {
     this.editingInvoiceAmount.set(false);
   }
 
-  private notifyCategoryLimitWarning(response: { categoryLimitWarning?: string; categoryLimitPercent?: number } | null | undefined): void {
+  /** Sube la firma que acompaña al comprobante de caja chica (imagen o PDF). */
+  onFirmaSelected(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    this.isUploadingFirma.set(true);
+    this.uploadService.upload(file, 'raw').subscribe({
+      next: (res) => {
+        this.form.patchValue({ firmaUrl: res.url });
+        this.firmaFileName.set(file.name);
+        this.isUploadingFirma.set(false);
+      },
+      error: () => {
+        this.isUploadingFirma.set(false);
+        this.notificationService.show('No se pudo subir la firma.', 'error');
+      },
+    });
+  }
+
+  /**
+   * Avisos no bloqueantes que devuelve el backend al guardar un gasto: el
+   * límite acumulado de la categoría y el monto de alerta por comprobante de la
+   * empresa. Ninguno impide guardar, por eso se muestran después del éxito.
+   */
+  private notifyExpenseWarnings(response: {
+    categoryLimitWarning?: string;
+    categoryLimitPercent?: number;
+    superaTopeComprobante?: boolean;
+    topeComprobante?: number;
+  } | null | undefined): void {
+    if (response?.superaTopeComprobante) {
+      const tope = typeof response.topeComprobante === 'number'
+        ? ` de S/ ${response.topeComprobante.toFixed(2)}`
+        : '';
+      this.notificationService.show(
+        `El comprobante supera el monto de alerta${tope} configurado por la empresa. Se registró igual.`,
+        'warning'
+      );
+    }
     if (!response?.categoryLimitWarning) return;
     const pct = typeof response.categoryLimitPercent === 'number'
       ? ` (${response.categoryLimitPercent.toFixed(2)}%)`
@@ -656,7 +697,21 @@ export default class AddInvoiceComponent implements OnInit {
       next: (report) => {
         const isDirecta = !!(report as any)?.isDirecta;
         this.isDirectaReport.set(isDirecta);
-        if (report && report.projectId) {
+
+        // Caja chica: el centro de costo y la OT se eligen POR COMPROBANTE y son
+        // opcionales. El responsable puede no saber a qué centro imputar cada
+        // gasto, y lo define Contabilidad al revisar. A cambio, la firma del
+        // comprobante es obligatoria.
+        const esCajaChica = !!(report as any)?.isCajaChica;
+        this.isCajaChicaReport.set(esCajaChica);
+        if (esCajaChica) {
+          this.form.get('proyectId')?.clearValidators();
+          this.form.get('proyectId')?.updateValueAndValidity();
+          this.form.get('firmaUrl')?.setValidators([Validators.required]);
+          this.form.get('firmaUrl')?.updateValueAndValidity();
+        }
+
+        if (!esCajaChica && report && report.projectId) {
           const pId = typeof report.projectId === 'string' ? report.projectId : (report.projectId as any)._id;
           this.form.patchValue({ proyectId: pId });
           // El centro de costo lo fija la rendición (normal o directa): no se elige por comprobante.
@@ -1058,7 +1113,10 @@ export default class AddInvoiceComponent implements OnInit {
 
   initForm() {
     this.form = this.fb.group({
+      // En caja chica pasa a opcional y la firma a obligatoria; se ajusta al
+      // cargar la rendición (ver loadRendicionProject).
       proyectId: ['', Validators.required],
+      firmaUrl: [''],
       ordenTrabajoId: [''],
       categoryId: ['', Validators.required],
       file: [''],
@@ -1805,6 +1863,7 @@ export default class AddInvoiceComponent implements OnInit {
           total: monto,
           fechaEmision: fecha,
           imageUrl: url,
+          firmaUrl: this.form.get('firmaUrl')?.value || undefined,
           data: JSON.stringify({
             razonSocial: this.form.get('receiptRazonSocial')?.value || '',
             ruc: this.form.get('receiptRuc')?.value || '',
@@ -1816,7 +1875,7 @@ export default class AddInvoiceComponent implements OnInit {
           next: (res) => {
             this.isLoading.set(false);
             this.notificationService.show('Recibo de caja guardado correctamente', 'success');
-            this.notifyCategoryLimitWarning(res);
+            this.notifyExpenseWarnings(res);
             this.navigateAfterExpenseSave();
           },
           error: (error) => {
@@ -1938,10 +1997,16 @@ export default class AddInvoiceComponent implements OnInit {
         this.form.get('categoryId')?.value ||
         (this.isDirectaContext() ? rows.find((r: any) => r.categoryId)?.categoryId || '' : '');
       const payload = {
-        proyectId: expenseProjectId,
+        // En caja chica el centro de costo es opcional y la firma obligatoria
+        // (ver el bloque que ajusta los validadores al cargar la rendición). La
+        // planilla era el único de los cuatro tipos de comprobante que no
+        // mandaba `firmaUrl`: el backend la rechazaba con "Adjunte la firma del
+        // comprobante" aunque el colaborador la hubiera subido.
+        proyectId: expenseProjectId || undefined,
         ordenTrabajoId: this.form.get('ordenTrabajoId')?.value || undefined,
         categoryId: expenseCategoryId,
         expenseReportId: this.rendicionId || undefined,
+        firmaUrl: this.form.get('firmaUrl')?.value || undefined,
         mobilityRows: rows,
         imageUrl,
       };
@@ -1949,7 +2014,7 @@ export default class AddInvoiceComponent implements OnInit {
         next: (res) => {
           this.isLoading.set(false);
           this.notificationService.show('Planilla guardada correctamente', 'success');
-          this.notifyCategoryLimitWarning(res);
+          this.notifyExpenseWarnings(res);
           this.navigateAfterExpenseSave();
         },
         error: (error) => {
@@ -2178,6 +2243,7 @@ export default class AddInvoiceComponent implements OnInit {
     const proceed = (imageUrl?: string) => {
       const payload: any = {
         proyectId: this.form.get('proyectId')?.value,
+        firmaUrl: this.form.get('firmaUrl')?.value || undefined,
         categoryId: this.form.get('categoryId')?.value,
         expenseReportId: this.rendicionId || undefined,
         total,
@@ -2195,7 +2261,7 @@ export default class AddInvoiceComponent implements OnInit {
         next: (res) => {
           this.isLoading.set(false);
           this.notificationService.show('Gasto guardado correctamente', 'success');
-          this.notifyCategoryLimitWarning(res);
+          this.notifyExpenseWarnings(res);
           this.navigateAfterExpenseSave();
         },
         error: (error) => {
@@ -2555,13 +2621,14 @@ export default class AddInvoiceComponent implements OnInit {
           comentario,
           placaVehiculo: dataObj.placaVehiculo,
           imageUrl: url,
+          firmaUrl: formValue.firmaUrl || undefined,
           expenseReportId: this.rendicionId || undefined,
         };
         this.invoiceService.createInvoice(payload).subscribe({
           next: (res) => {
             this.isLoading.set(false);
             this.notificationService.show('Factura guardada correctamente', 'success');
-            this.notifyCategoryLimitWarning(res);
+            this.notifyExpenseWarnings(res);
             this.navigateAfterExpenseSave();
           },
           error: (error) => {

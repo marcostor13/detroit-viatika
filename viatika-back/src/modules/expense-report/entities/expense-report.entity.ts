@@ -169,7 +169,24 @@ export interface ExpenseReportDocument extends Document {
   codigo?: string
   gestion?: string
   isDirecta?: boolean
+  /** Rendición de caja chica: los gastos que el responsable carga contra su fondo. */
   isCajaChica?: boolean
+  /**
+   * SOLICITUD del fondo de caja chica. Va sobre un reporte `type: 'viatico'`
+   * para reutilizar entero el flujo de Solicitud de Fondos (cadena de
+   * aprobación, gate de Contabilidad, pago de Tesorería y archivo del banco).
+   * No confundir con `isCajaChica`, que marca la RENDICIÓN.
+   */
+  isSolicitudCajaChica?: boolean
+  /** Fondo al que pertenece esta solicitud o esta rendición. */
+  fondoCajaChicaId?: Types.ObjectId
+  /**
+   * Presupuesto que pide la solicitud. Reemplaza al vigente, para arriba o para
+   * abajo. `viaticoAmount` en cambio es solo la diferencia a depositar.
+   */
+  cajaChicaNuevoPresupuesto?: number
+  /** Presupuesto que había al momento de solicitar (0 en la primera). */
+  cajaChicaPresupuestoAnterior?: number
   accountNumber?: string
   idDocument?: string
   peopleNames?: string[]
@@ -292,6 +309,18 @@ export class ExpenseReport {
 
   @Prop({ required: false, default: false })
   isCajaChica?: boolean
+
+  @Prop({ required: false, default: false })
+  isSolicitudCajaChica?: boolean
+
+  @Prop({ required: false, type: Types.ObjectId, ref: 'FondoCajaChica' })
+  fondoCajaChicaId?: Types.ObjectId
+
+  @Prop({ required: false, type: Number })
+  cajaChicaNuevoPresupuesto?: number
+
+  @Prop({ required: false, type: Number })
+  cajaChicaPresupuestoAnterior?: number
 
   @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
   userId: Types.ObjectId

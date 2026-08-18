@@ -10,6 +10,7 @@ import {
   resolveApprovalStep,
   buildSolicitudChain,
   buildRendicionChain,
+  buildCajaChicaChain,
   ChainStep,
   ChainProject,
 } from './approval-chain.util'
@@ -296,6 +297,125 @@ describe('approval-chain.util', () => {
         selectedProjectId: projA,
         creatorId: u1.toString(),
         projectById: projectById({ [projA]: [] }),
+      })
+      expect(chain).toEqual([])
+    })
+  })
+
+  describe('buildCajaChicaChain', () => {
+    const projA = new Types.ObjectId().toString()
+    const o1 = new Types.ObjectId() // N1 del responsable
+    const o2 = new Types.ObjectId() // N2 del responsable
+    const o3 = new Types.ObjectId() // N3 del responsable
+
+    const principal = (
+      levels: { level: number; userIds: Types.ObjectId[] }[] = []
+    ): ChainProject => ({ _id: projA, approverLevels: levels })
+
+    it('arma la cadena con los niveles del responsable, ignorando el centro de costo', () => {
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [
+          { level: 1, userIds: [o1] },
+          { level: 2, userIds: [o2] },
+        ],
+        // El centro trae otros aprobadores: no deben aparecer.
+        fallbackProject: principal([{ level: 1, userIds: [a1] }]),
+        creatorId: u1.toString(),
+      })
+      expect(chain.map(s => s.approverIds)).toEqual([[o1], [o2]])
+      expect(chain.map(s => s.source)).toEqual(['user', 'user'])
+      expect(chain.every(s => s.projectId.toString() === projA)).toBe(true)
+    })
+
+    it('recorre TODOS los niveles configurados, no solo N1 y N2', () => {
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [
+          { level: 1, userIds: [o1] },
+          { level: 2, userIds: [o2] },
+          { level: 3, userIds: [o3] },
+        ],
+        fallbackProject: principal(),
+        creatorId: u1.toString(),
+      })
+      expect(chain.map(s => s.level)).toEqual([1, 2, 3])
+    })
+
+    it('un solo nivel configurado da una cadena de un paso', () => {
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [{ level: 1, userIds: [o1, o2] }],
+        fallbackProject: principal(),
+        creatorId: u1.toString(),
+      })
+      expect(chain.map(s => s.approverIds)).toEqual([[o1, o2]])
+    })
+
+    it('omite el nivel vacío sin renumerar (regla 1.6)', () => {
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [
+          { level: 1, userIds: [] },
+          { level: 3, userIds: [o3] },
+        ],
+        fallbackProject: principal(),
+        creatorId: u1.toString(),
+      })
+      expect(chain.map(s => s.level)).toEqual([3])
+    })
+
+    it('escala al nivel siguiente si el responsable es su propio aprobador y no duplica el paso', () => {
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [
+          { level: 1, userIds: [u1] },
+          { level: 2, userIds: [o2] },
+        ],
+        fallbackProject: principal(),
+        creatorId: u1.toString(),
+      })
+      // N1 escala a N2, y el paso de N2 se colapsa contra el escalado.
+      expect(chain.map(s => s.approverIds)).toEqual([[o2]])
+      expect(chain[0].escalatedFrom).toBe(1)
+    })
+
+    it('cae a los niveles del centro principal cuando el responsable no tiene ninguno propio', () => {
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [],
+        fallbackProject: principal([
+          { level: 1, userIds: [a1] },
+          { level: 2, userIds: [a2] },
+        ]),
+        creatorId: u1.toString(),
+      })
+      expect(chain.map(s => s.approverIds)).toEqual([[a1], [a2]])
+      expect(chain.map(s => s.source)).toEqual(['project', 'project'])
+    })
+
+    it('falla si no queda ningún aprobador: el fondo no puede aprobarse solo', () => {
+      expect(() =>
+        buildCajaChicaChain({
+          ownerApproverLevels: [],
+          fallbackProject: principal(),
+          creatorId: u1.toString(),
+        })
+      ).toThrow(BadRequestException)
+    })
+
+    it('falla si el responsable es el único aprobador de todos sus niveles', () => {
+      expect(() =>
+        buildCajaChicaChain({
+          ownerApproverLevels: [{ level: 1, userIds: [u1] }],
+          fallbackProject: principal(),
+          creatorId: u1.toString(),
+        })
+      ).toThrow(BadRequestException)
+    })
+
+    it('con throwOnEmpty:false devuelve la cadena vacía en vez de lanzar', () => {
+      // Es lo que usa la cadena de comprobantes ya guardados: lanzar ahí
+      // dejaría el gasto a medio registrar.
+      const chain = buildCajaChicaChain({
+        ownerApproverLevels: [],
+        fallbackProject: principal(),
+        creatorId: u1.toString(),
+        throwOnEmpty: false,
       })
       expect(chain).toEqual([])
     })

@@ -194,6 +194,13 @@ function aggregateRendicionApprovalsByLevel(expenses: any[]): RendicionLevelAppr
  */
 function viaticoEnteredRendicion(r: any): boolean {
   if (r?.type !== 'viatico') return false;
+  // La solicitud de caja chica viaja como viático para reutilizar la cadena, el
+  // gate de Contabilidad y el pago, pero NUNCA se rinde sobre este documento: el
+  // dinero pasa al fondo del responsable y los comprobantes van en una rendición
+  // de caja chica aparte. Sin esto, apenas Tesorería depositaba, el documento se
+  // leía como "viático en fase de rendición" — línea de tiempo de dos fases y el
+  // ojo de /rendiciones navegando a una rendición vacía que nadie va a llenar.
+  if (r?.isSolicitudCajaChica) return false;
   return (
     Number(r.viaticoPaidAmount ?? 0) > 0 ||
     ['open', 'submitted', 'pending_accounting', 'reimbursed', 'closed', 'settled', 'returned'].includes(r.status) ||

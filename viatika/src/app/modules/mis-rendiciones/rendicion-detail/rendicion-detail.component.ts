@@ -10,6 +10,11 @@ import { CompanyConfigService } from '../../../services/company-config.service';
 import { ConfirmationService } from '../../../services/confirmation.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UploadService } from '../../../services/upload.service';
+import { FondoCajaChicaService } from '../../../services/fondo-caja-chica.service';
+import {
+  IFondoCajaChica,
+  saldoDisponible,
+} from '../../../interfaces/fondo-caja-chica.interface';
 import {
   AccountingEntriesService,
   IGeneratedFile,
@@ -69,6 +74,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private rendicionExportService = inject(RendicionExportService);
   private companyConfigService = inject(CompanyConfigService);
   private uploadService = inject(UploadService);
+  private fondoCajaChicaService = inject(FondoCajaChicaService);
   private accountingEntriesService = inject(AccountingEntriesService);
   id: string = this.route.snapshot.params['id'];
   report: IExpenseReport | null = null;
@@ -283,15 +289,47 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.approvedDocCount.set(ids.filter((e: any) => e.status === 'approved').length);
   }
 
+  /**
+   * Presupuesto de caja chica del responsable. Es del FONDO, no de esta
+   * rendición: el saldo lo consumen todas sus rendiciones, así que se lee
+   * aparte y no se calcula desde los comprobantes de este documento.
+   */
+  fondoCajaChica = signal<IFondoCajaChica | null>(null);
+
+  get saldoCajaChica(): number {
+    return saldoDisponible(this.fondoCajaChica());
+  }
+
+  private loadFondoCajaChica(): void {
+    this.fondoCajaChicaService.findMyActive().subscribe({
+      next: (fondo) => this.fondoCajaChica.set(fondo),
+      error: () => this.fondoCajaChica.set(null),
+    });
+  }
+
   loadReport() {
     this.isLoading = true;
     this.expenseReportsService.findOne(this.id).subscribe({
       next: (data) => {
         this.report = data;
+        // Solicitud de caja chica: es un trámite de presupuesto, no una
+        // rendición. Esta pantalla mostraría un fondo de S/ X con cero
+        // comprobantes y un botón de "agregar gasto" que no corresponde — los
+        // gastos van en la rendición de caja chica, contra el fondo. Se devuelve
+        // a la pestaña donde sí se le hace seguimiento.
+        if ((data as any)?.isSolicitudCajaChica) {
+          this.isLoading = false;
+          this.router.navigate([this.isAdminView ? '/rendiciones' : '/mis-rendiciones'], {
+            queryParams: { tab: 'caja-chica' },
+            replaceUrl: true,
+          });
+          return;
+        }
         this.calculateTotals();
         this.updateDocCounts(data);
         this.isLoading = false;
         this.loadExpensesPage(1);
+        if (data?.isCajaChica) this.loadFondoCajaChica();
         // Auto-cierre: viáticos equilibrados que quedaron en 'approved' por datos stale.
         if (
           (data as any)?.type === 'viatico' &&
@@ -714,7 +752,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   get canSubmitReport(): boolean {
     if (!this.report || this.isAdminView) return false;
-    if (this.report.isCajaChica) return false;
+    // La caja chica ya no es solo un depósito de comprobantes para Contabilidad:
+    // se envía y se aprueba como cualquier rendición. Solo la bloquea que
+    // Contabilidad ya la haya incluido en un reporte finalizado.
+    if (this.report.lockedByCajaChica) return false;
     // Viático con pago parcial: el colaborador puede enviar aunque contabilidad aún
     // no complete el depósito (el pago restante se registra después del envío).
     const isPartialViatico = this.report.type === 'viatico' && this.report.status === 'partially_paid';
@@ -2770,7 +2811,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     url: string,
     mimeType: string | undefined,
     scanning: WritableSignal<boolean>,
-    onResult: (res: { amount: number; fecha?: string; hora?: string; operationNumber?: string; titular?: string }) => void
+    onResult: (res: { amount: number; fecha?: string; hora?: string; operationNumber?: string; titular?: string; banco?: string }) => void
   ): void {
     scanning.set(true);
     this.expenseReportsService.scanDepositAmount(url, mimeType).subscribe({
@@ -2803,6 +2844,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   returnVoucherTitular = signal<string | null>(null);
   returnVoucherOperationDate = signal<string | null>(null);
   returnVoucherOperationTime = signal<string | null>(null);
+  returnVoucherScannedBank = signal<string | null>(null);
 
   /**
    * La rendición se considera cerrada (a efectos de visualización) cuando su
@@ -2882,7 +2924,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   get returnVoucherHasDetectedData(): boolean {
-    return !!(this.returnVoucherTitular() || this.returnVoucherOperationDate() || this.returnVoucherOperationTime() || this.returnVoucherScannedAmount());
+    return !!(this.returnVoucherTitular() || this.returnVoucherOperationDate() || this.returnVoucherOperationTime() || this.returnVoucherScannedAmount() || this.returnVoucherScannedBank());
   }
 
   onReturnVoucherFileSelected(event: Event): void {
@@ -2913,7 +2955,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
           this.returnVoucherTitular.set(r.titular || null);
           this.returnVoucherOperationDate.set(r.fecha || null);
           this.returnVoucherOperationTime.set(r.hora || null);
+          this.returnVoucherScannedBank.set(r.banco || null);
           if (r.operationNumber && !this.returnVoucherOperation()) this.returnVoucherOperation.set(r.operationNumber);
+          if (r.banco && !this.returnVoucherBank()) this.returnVoucherBank.set(r.banco);
           if (this.returnVoucherHasDetectedData) {
             this.notificationService.show('Datos detectados del comprobante.', 'success');
           }

@@ -3,6 +3,65 @@
 Lo que queda pendiente de verificar o de limpiar, con su motivo. Cuando algo de
 acá se cierra, se borra la entrada.
 
+## Cualquiera puede agregar gastos a la rendición de otro (2026-08-18)
+
+**Qué:** ninguna vía de alta de comprobante verifica que quien lo sube sea el
+dueño de la rendición. `POST /expense/invoice` (y sus hermanas: planilla de
+movilidad, otros gastos, recibo de caja, declaración jurada) aceptan cualquier
+`expenseReportId` de la empresa. Detectado probando caja chica: un colaborador
+subió un comprobante a la rendición de otro y le descontó S/ 80 del presupuesto,
+porque el cargo va siempre contra el fondo del TITULAR de la rendición.
+
+**Qué se tapó:** solo el caso de caja chica, con
+`ExpenseReportService.assertPuedeCargarEnCajaChica` — ahí hay dinero de por
+medio y el dueño es inequívoco. El resto sigue abierto.
+
+**Por qué no se cerró del todo:** hay flujos legítimos donde alguien carga
+comprobantes por otro (Contabilidad en una directa que ella misma inició, por
+ejemplo). Cerrarlo bien exige decidir qué roles pueden hacerlo y en qué estados,
+no un `if` más.
+
+**Cómo saldarla:** una sola comprobación en el alta —el actor es el dueño de la
+rendición, o tiene un rol habilitado para cargar por terceros— aplicada a las
+cinco vías, con su test por vía.
+
+**Riesgo si no se salda:** un colaborador puede meter gastos en la rendición de
+un compañero; quedan a su nombre en la lista de comprobantes y entran a la
+cadena de aprobación del dueño.
+
+## Validar o rechazar el comprobante de una devolución (2026-08-18)
+
+**Qué:** la devolución del sobrante de caja chica (`registrarDevolucion` en
+`viatika-back/src/modules/fondo-caja-chica/fondo-caja-chica.service.ts`) se
+aplica apenas el responsable sube el comprobante: baja `pendingReturnAmount` en
+el acto, sin paso de validación. Si el monto o el archivo están mal, no hay
+forma de rechazarlo ni de corregirlo desde la plataforma. Tesorería solo puede
+MIRAR el comprobante, en su pestaña Devoluciones.
+
+**Por qué quedó así:** es lo acordado en el plan
+([plan-caja-chica-bolsa.md](plan-caja-chica-bolsa.md), paso 5): el responsable
+devuelve adjuntando el comprobante del depósito, sin revisión previa. El cliente
+pidió (2026-08-18) dejarlo por ahora y resolverlo después de una sola vez para
+TODAS las devoluciones, no solo la de caja chica.
+
+**El patrón ya existe** para la devolución de saldo de un anticipo
+(`AdvanceService.validateReturn`, `advance.service.ts`): el colaborador sube y
+el registro queda en `proof_uploaded` —el saldo NO se da por devuelto—;
+Tesorería valida (pasa a `validated` y el anticipo a `returned`) o rechaza con
+un motivo de mínimo 50 caracteres, y el colaborador sube otro. El front tiene su
+modal "Revisar comprobante" en `tesoreria.component.html`.
+
+**Cómo saldarla:** unificar las tres devoluciones que hoy viven separadas —el
+`returnRecord` del anticipo (con validación), el `returnVoucher` de la rendición
+(sin validación) y el movimiento `devolucion` del fondo de caja chica (sin
+validación)— bajo el mismo ciclo `proof_uploaded -> validated | rejected`. Para
+caja chica eso implica: estado en el movimiento, no descontar el sobrante hasta
+validar, dos endpoints (validar/rechazar) y reusar el modal de revisión.
+
+**Riesgo si no se salda:** entre que el responsable sube el comprobante y
+alguien lo mira, la caja figura cuadrada con un respaldo que nadie validó; un
+monto mal tipeado solo se corrige por base de datos.
+
 ## Sección "Gastos" de rendiciones directas sin uso (2026-08-13)
 
 **Qué:** `viatika/src/app/modules/rendiciones-directas/` tiene una sub-pestaña
