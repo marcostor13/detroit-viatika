@@ -6541,7 +6541,13 @@ export class ExpenseReportService implements OnModuleInit {
       // (`buildReportFlowSteps`): sin ellos su pantalla solo podía decir
       // "pendiente", sin indicar en qué paso está.
       .select(
-        'type status createdAt viaticoAmount cajaChicaNuevoPresupuesto cajaChicaPresupuestoAnterior title ' +
+        // `isSolicitudCajaChica` es imprescindible: de él depende que la línea
+        // de tiempo se arme como SOLICITUD y no como un viático de dos fases
+        // (`viaticoEnteredRendicion`). Sin traerlo, al pagarse el presupuesto
+        // la solicitud mostraba pasos de una rendición que nunca va sobre este
+        // documento: los comprobantes van en una rendición de caja chica aparte.
+        'type status createdAt isSolicitudCajaChica isCajaChica isDirecta ' +
+        'viaticoAmount cajaChicaNuevoPresupuesto cajaChicaPresupuestoAnterior title ' +
         'rejectionReason viaticoRejectionReason rejectedByRole viaticoRejectedByRole ' +
         'viaticoApproverChain viaticoApprovalLevel viaticoRequiredLevels ' +
         'viaticoSolicitudContabilidadApprovedAt viaticoSolicitudContabilidadApprovedBy ' +

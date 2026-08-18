@@ -246,9 +246,18 @@ export class MisRendicionesComponent implements OnInit {
     );
   }
 
-  /** Misma línea de tiempo que ve el aprobador (VD-31). */
+  /**
+   * Misma línea de tiempo que ve el aprobador (VD-31), con el vocabulario de
+   * caja chica en el último paso: el depósito de Tesorería no deja la solicitud
+   * "Pagada" sino el presupuesto aplicado, que es como se rotula su estado en
+   * la tabla.
+   */
   solicitudFlowSteps(s: ISolicitudCajaChica): FlowStep[] {
-    return buildReportFlowSteps(s);
+    return buildReportFlowSteps(s).map(step =>
+      step.label === 'Pagada'
+        ? { ...step, label: 'Presupuesto aplicado' }
+        : step
+    );
   }
 
   /** Presupuesto pedido, con respaldo para las solicitudes anteriores al campo. */
