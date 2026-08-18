@@ -1,8 +1,14 @@
 {{> email-header}}
       <span class="badge badge-info">Pendiente de revisión</span>
+      {{#if esCajaChica}}
+      <h1 class="title">Rendición de caja chica enviada</h1>
+      <p>Estimado/a <strong>{{recipientName}}</strong>,</p>
+      <p><strong>{{collaboratorName}}</strong> envió los comprobantes de su caja chica para su revisión y aprobación.</p>
+      {{else}}
       <h1 class="title">Rendición enviada para revisión</h1>
       <p>Estimado/a <strong>{{recipientName}}</strong>,</p>
       <p>El colaborador <strong>{{collaboratorName}}</strong> ha enviado una rendición de gastos para su revisión y aprobación.</p>
+      {{/if}}
 
       <p class="label">Detalles rápidos:</p>
       <div class="box">
@@ -12,6 +18,11 @@
           {{#if hasDirectaDeposit}}<div class="row"><strong>Total depositado:</strong> {{currencySymbol}} {{depositFormatted}}</div>{{/if}}
           <div class="row"><strong>Total gastado:</strong> {{currencySymbol}} {{expenseTotalFormatted}}</div>
           {{#if hasDirectaDeposit}}<div class="row"><strong>Saldo disponible:</strong> {{currencySymbol}} {{saldoFormatted}}</div>{{/if}}
+        {{else if esCajaChica}}
+          <!-- Lo que el aprobador tiene que revisar es lo GASTADO contra la
+               caja; el tope va como referencia. Antes solo salía el tope. -->
+          <div class="row"><strong>Total rendido:</strong> {{currencySymbol}} {{expenseTotalFormatted}}</div>
+          <div class="row"><strong>Presupuesto de la caja:</strong> {{currencySymbol}} {{budgetFormatted}}</div>
         {{else}}
           <div class="row"><strong>Presupuesto:</strong> {{currencySymbol}} {{budgetFormatted}}</div>
         {{/if}}

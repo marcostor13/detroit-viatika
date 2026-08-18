@@ -1315,6 +1315,12 @@ export class EmailService {
       depositFormatted?: string
       saldoFormatted?: string
       platformUrl?: string
+      /**
+       * Rendición de caja chica: lo que se revisa es lo GASTADO contra la caja,
+       * y el presupuesto es el tope de la caja, no un anticipo de este
+       * documento.
+       */
+      esCajaChica?: boolean
     }
   ) {
     try {
@@ -1328,6 +1334,8 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...data,
+          // Modo strict de Handlebars: la bandera debe existir siempre.
+          esCajaChica: data.esCajaChica === true,
           reportTitle,
           currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(data.platformUrl),
@@ -1735,11 +1743,18 @@ export class EmailService {
       paymentReceiptUrl: string
       paymentReceiptFileName?: string
       platformUrl?: string
+      /**
+       * Caja chica: el depósito no es un reembolso al bolsillo del responsable,
+       * es la REPOSICIÓN de su caja, que vuelve a su tope.
+       */
+      esCajaChica?: boolean
     }
   ) {
     try {
       const reportTitle = this.normalizeIsoDatesInText(data.reportTitle)
-      const subject = `Reembolso de gastos registrado — ${reportTitle}`
+      const subject = data.esCajaChica
+        ? `Reposición de caja chica registrada — ${reportTitle}`
+        : `Reembolso de gastos registrado — ${reportTitle}`
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
@@ -1759,6 +1774,8 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...rest,
+          // Modo strict de Handlebars: la bandera debe existir siempre.
+          esCajaChica: data.esCajaChica === true,
           reportTitle,
           transferDate: this.formatDateDDMMYYYY(data.transferDate),
           platformUrl: this.resolvePlatformHref(platformUrl),

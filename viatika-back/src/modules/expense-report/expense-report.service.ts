@@ -2097,6 +2097,9 @@ export class ExpenseReportService implements OnModuleInit {
           expenseTotalFormatted,
           expenseItems,
           isDirecta,
+          // La rendición de caja chica se revisa por lo gastado contra la caja,
+          // no por un anticipo: el correo lo rotula distinto.
+          esCajaChica: (fullyUpdatedReport as any).isCajaChica === true,
           hasDirectaDeposit,
           depositFormatted,
           saldoFormatted,
@@ -3810,6 +3813,9 @@ export class ExpenseReportService implements OnModuleInit {
       paymentReceiptUrl: pi?.paymentReceiptUrl || '',
       paymentReceiptFileName:
         pi?.paymentReceiptFileName || 'comprobante-reembolso.pdf',
+      // En caja chica el depósito repone la caja, no reembolsa un gasto del
+      // bolsillo del responsable.
+      esCajaChica: (report as any).isCajaChica === true,
       platformUrl,
     }
 
@@ -3838,10 +3844,13 @@ export class ExpenseReportService implements OnModuleInit {
         })
       }
 
+      const esCajaChicaRendicion = (report as any).isCajaChica === true
       await this.notificationsService.create({
         userId: ownerId,
-        title: 'Reembolso registrado',
-        message: `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
+        title: esCajaChicaRendicion ? 'Caja chica repuesta' : 'Reembolso registrado',
+        message: esCajaChicaRendicion
+          ? `Tesorería depositó ${this.settlementCurrencySymbol(report)} ${amountFormatted} y tu presupuesto de caja chica volvió a su tope.`
+          : `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
         type: 'success',
         actionUrl: `/mis-documentos`,
       })
