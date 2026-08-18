@@ -22,6 +22,7 @@ import {
   FONDO_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_COLORS,
+  SOLICITUD_EN_CURSO_STATUSES,
   presupuestoSolicitado,
   saldoDisponible,
 } from '../../interfaces/fondo-caja-chica.interface';
@@ -207,7 +208,17 @@ export class MisRendicionesComponent implements OnInit {
     // Las solicitudes de caja chica ya no salen en "Solicitudes de fondos", así
     // que su seguimiento vive acá.
     this.fondoCajaChicaService.misSolicitudes().subscribe({
-      next: (list) => this.solicitudesCajaChica.set(list),
+      next: (list) => {
+        this.solicitudesCajaChica.set(list);
+        // La solicitud que sigue en trámite arranca con su cronología abierta:
+        // es justo el dato que el responsable viene a buscar, y dejarla cerrada
+        // obligaba a descubrir que la fila se despliega. Las ya cerradas no,
+        // para no alargar la tabla con historial que nadie está mirando.
+        const enCurso = list.find(s =>
+          SOLICITUD_EN_CURSO_STATUSES.includes(s.status)
+        );
+        this.solicitudCronologiaId.set(enCurso?._id ?? null);
+      },
       error: () => this.solicitudesCajaChica.set([]),
     });
   }
