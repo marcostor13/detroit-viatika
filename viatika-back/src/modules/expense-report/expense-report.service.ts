@@ -5183,6 +5183,37 @@ export class ExpenseReportService implements OnModuleInit {
    * crear la solicitud como tras cada aprobación intermedia, para reforzar el
    * aviso a quienes todavía no actuaron.
    */
+  /**
+   * La SOLICITUD de caja chica viaja como viático para reutilizar su flujo,
+   * pero no vive donde viven los viáticos: el aprobador la atiende en la
+   * pestaña de caja chica de /rendiciones y el responsable la sigue desde sus
+   * rendiciones. Sin esto, los avisos del trámite llevaban a /viaticos, donde
+   * la solicitud no aparece.
+   */
+  private esSolicitudCajaChica(report: any): boolean {
+    return report?.isSolicitudCajaChica === true
+  }
+
+  /** Pantalla donde cada destinatario atiende la solicitud. */
+  private solicitudAppPath(
+    report: any,
+    destino: 'aprobador' | 'solicitante'
+  ): string {
+    if (this.esSolicitudCajaChica(report)) {
+      return destino === 'aprobador'
+        ? '/rendiciones?tab=caja-chica'
+        : '/mis-rendiciones?tab=caja-chica'
+    }
+    return destino === 'aprobador' ? '/viaticos' : '/mis-rendiciones'
+  }
+
+  /** Cómo se llama el trámite en los avisos. */
+  private solicitudNombre(report: any): string {
+    return this.esSolicitudCajaChica(report)
+      ? 'solicitud de caja chica'
+      : 'solicitud de fondos'
+  }
+
   private async notifyViaticoCoordinator(report: ExpenseReportDocument, collaboratorUserId: string, clientId: string): Promise<void> {
     const reportId = String((report as any)._id)
     const collaborator = await this.userService.findEmailNameClient(collaboratorUserId)
@@ -5210,7 +5241,8 @@ export class ExpenseReportService implements OnModuleInit {
       }
 
       try {
-        await this.notificationsService.create({ userId: approverId.toString(), title: 'Nueva solicitud de fondos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
+        const esCaja = this.esSolicitudCajaChica(report)
+        await this.notificationsService.create({ userId: approverId.toString(), title: esCaja ? 'Nueva solicitud de caja chica pendiente' : 'Nueva solicitud de fondos pendiente', message: `${collaborator.name} envió una ${this.solicitudNombre(report)} — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(esCaja ? (report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0) : (report.viaticoAmount ?? 0))}. Ingresa a revisarla.`, type: 'info', actionUrl: this.solicitudAppPath(report, 'aprobador'), metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
       } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
 
       const approverEmailEnabled = await this.userService.isEmailEnabled(approverId.toString())
@@ -5229,7 +5261,10 @@ export class ExpenseReportService implements OnModuleInit {
           place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
           totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
           currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
-          projectLabel, platformUrl: this.emailService.buildAppUrl('/viaticos'),
+          projectLabel,
+          platformUrl: this.emailService.buildAppUrl(
+            this.solicitudAppPath(report, 'aprobador')
+          ),
         })
         await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'sent', sentAt: new Date() } } })
       } catch (err: unknown) {
@@ -5803,10 +5838,14 @@ export class ExpenseReportService implements OnModuleInit {
       for (const r of recipients) {
         await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
           clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '',
-          emailTitle: 'Solicitud de Fondos pendiente de tu aprobación',
-          intro: 'La solicitud fue aprobada por los centros de costo correspondientes y requiere tu aprobación final antes de quedar lista para pago.',
+          emailTitle: this.esSolicitudCajaChica(report)
+            ? 'Solicitud de caja chica pendiente de tu aprobación'
+            : 'Solicitud de Fondos pendiente de tu aprobación',
+          intro: 'La solicitud fue aprobada por los aprobadores y requiere tu aprobación final antes de quedar lista para pago.',
           ...detalle,
-          platformUrl: this.emailService.buildAppUrl('/viaticos'),
+          platformUrl: this.emailService.buildAppUrl(
+            this.solicitudAppPath(report, 'aprobador')
+          ),
         }).catch(() => {})
       }
     } catch (err: unknown) {
@@ -5977,7 +6016,7 @@ export class ExpenseReportService implements OnModuleInit {
     report.viaticoRejectedByRole = rejectedByRole
     await report.save()
 
-    this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de Fondos rechazada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: '/mis-rendiciones' }).catch(() => {})
+    this.notificationsService.create({ userId: report.userId.toString(), title: this.esSolicitudCajaChica(report) ? 'Solicitud de caja chica rechazada' : 'Solicitud de Fondos rechazada', message: `Tu ${this.solicitudNombre(report)} por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(this.esSolicitudCajaChica(report) ? (report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0) : (report.viaticoAmount ?? 0))} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: this.solicitudAppPath(report, 'solicitante') }).catch(() => {})
 
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email && await this.userService.isEmailEnabled(report.userId.toString())) {
@@ -5985,7 +6024,9 @@ export class ExpenseReportService implements OnModuleInit {
         clientId: report.clientId.toString(), collaboratorName: collaborator.name,
         collaboratorDocument: '', collaboratorArea: '', collaboratorCargo: '',
         projectLabel: '', rejectionReason: opts.rejectionReason,
-        platformUrl: this.emailService.buildAppUrl(`/mis-rendiciones`),
+        platformUrl: this.emailService.buildAppUrl(
+          this.solicitudAppPath(report, 'solicitante')
+        ),
       }).catch(() => {})
     }
 
@@ -6186,16 +6227,22 @@ export class ExpenseReportService implements OnModuleInit {
       paymentMethod: dto.method,
       paymentReceiptUrl: dto.paymentReceiptUrl ?? '',
       paymentReceiptFileName: dto.paymentReceiptFileName ?? 'comprobante.pdf',
-      platformUrl: this.emailService.buildAppUrl('/mis-rendiciones'),
+      platformUrl: this.emailService.buildAppUrl(
+        this.solicitudAppPath(report, 'solicitante')
+      ),
     }
 
+    const tramite = this.solicitudNombre(report)
     const fullyPaidMsg = fullyPaid
       ? (inPrePaymentPhase
-          ? `Se registró el pago de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
-          : `Se registró el pago restante de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
-      : `Se registró un pago parcial de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
+          ? `Se registró el pago de tu ${tramite} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
+          : `Se registró el pago restante de tu ${tramite} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
+      : `Se registró un pago parcial de tu ${tramite} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
 
-    this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de fondos registrado' : 'Pago parcial de fondos registrado', message: fullyPaidMsg, type: 'success', actionUrl: `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
+    // La solicitud de caja chica no tiene pantalla de detalle propia (esa vista
+    // rebota: es un trámite de presupuesto, no una rendición), así que el aviso
+    // lleva a su pestaña.
+    this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de fondos registrado' : 'Pago parcial de fondos registrado', message: fullyPaidMsg, type: 'success', actionUrl: this.esSolicitudCajaChica(report) ? this.solicitudAppPath(report, 'solicitante') : `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
 
     if (collaborator?.email && await this.userService.isEmailEnabled(collabId)) {
       this.emailService.sendViaticoPagoRealizado(collaborator.email, {
