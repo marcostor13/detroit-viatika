@@ -6,6 +6,10 @@ import { FlowStep } from '../../shared/flow-steps.util';
  * Línea de tiempo del flujo de aprobación (VD-31): un punto por paso, con el
  * completado en verde, el pendiente en azul y el rechazo en rojo.
  *
+ * El pendiente va con `info`, NO con `primary`: el primary de Detroit es rojo
+ * (ver el comentario del token en tailwind.config.js) y pintaba "Falta
+ * aprobación de…" como si fuera un rechazo.
+ *
  * Vive en el design system porque el mismo bloque estaba copiado en el detalle
  * de la rendición y en el modal de /rendiciones, con tamaños distintos en cada
  * copia. Los pasos los arma `buildReportFlowSteps`; este componente solo pinta.
@@ -37,8 +41,8 @@ import { FlowStep } from '../../shared/flow-steps.util';
               </svg>
             </div>
           } @else if (step.state === 'active') {
-            <div class="w-7 h-7 rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center shrink-0">
-              <div class="w-2.5 h-2.5 rounded-full bg-primary"></div>
+            <div class="w-7 h-7 rounded-full bg-info/10 border-2 border-info flex items-center justify-center shrink-0">
+              <div class="w-2.5 h-2.5 rounded-full bg-info"></div>
             </div>
           } @else if (step.state === 'rejected') {
             <div class="w-7 h-7 rounded-full bg-error/10 border-2 border-error flex items-center justify-center shrink-0">
@@ -55,7 +59,7 @@ import { FlowStep } from '../../shared/flow-steps.util';
             <div class="w-0.5 flex-1 my-1 min-h-[16px]"
                  [ngClass]="{
                    'bg-success/40': step.state === 'completed',
-                   'bg-primary/40': step.state === 'active',
+                   'bg-info/40': step.state === 'active',
                    'bg-error/30': step.state === 'rejected',
                    'bg-tertiary/20': step.state === 'upcoming'
                  }"></div>
@@ -73,7 +77,7 @@ import { FlowStep } from '../../shared/flow-steps.util';
           }
           @if (step.description) {
             <p class="text-xs font-medium mt-1"
-               [class.text-primary]="step.state === 'active'"
+               [class.text-info-ink]="step.state === 'active'"
                [class.text-error]="step.state === 'rejected'">
               {{ step.description }}
             </p>
