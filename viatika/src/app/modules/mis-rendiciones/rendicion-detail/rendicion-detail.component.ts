@@ -10,17 +10,12 @@ import { CompanyConfigService } from '../../../services/company-config.service';
 import { ConfirmationService } from '../../../services/confirmation.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UploadService } from '../../../services/upload.service';
-import { FondoCajaChicaService } from '../../../services/fondo-caja-chica.service';
-import {
-  IFondoCajaChica,
-  saldoDisponible,
-} from '../../../interfaces/fondo-caja-chica.interface';
 import {
   AccountingEntriesService,
   IGeneratedFile,
   AsientoTipo,
 } from '../../../services/accounting-entries.service';
-import { IExpenseReport, IChainStep } from '../../../interfaces/expense-report.interface';
+import { IExpenseReport, IChainStep, ICajaChicaFondoResumen } from '../../../interfaces/expense-report.interface';
 import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
@@ -74,7 +69,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private rendicionExportService = inject(RendicionExportService);
   private companyConfigService = inject(CompanyConfigService);
   private uploadService = inject(UploadService);
-  private fondoCajaChicaService = inject(FondoCajaChicaService);
   private accountingEntriesService = inject(AccountingEntriesService);
   id: string = this.route.snapshot.params['id'];
   report: IExpenseReport | null = null;
@@ -291,20 +285,31 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   /**
    * Presupuesto de caja chica del responsable. Es del FONDO, no de esta
-   * rendición: el saldo lo consumen todas sus rendiciones, así que se lee
-   * aparte y no se calcula desde los comprobantes de este documento.
+   * rendición: el saldo lo consumen todas sus rendiciones, así que no se
+   * calcula desde los comprobantes de este documento.
    */
-  fondoCajaChica = signal<IFondoCajaChica | null>(null);
-
-  get saldoCajaChica(): number {
-    return saldoDisponible(this.fondoCajaChica());
+  /**
+   * Caja del RESPONSABLE de esta rendición, tal como la devuelve el detalle
+   * (`report.cajaChicaFondo`). Antes se pedía con `findMyActive()`, que trae la
+   * caja del usuario CONECTADO: el aprobador y Contabilidad veían su propio
+   * presupuesto —o ninguno— sobre la rendición de otra persona.
+   */
+  get cajaChicaFondoResumen(): ICajaChicaFondoResumen | null {
+    return (this.report as any)?.cajaChicaFondo ?? null;
   }
 
-  private loadFondoCajaChica(): void {
-    this.fondoCajaChicaService.findMyActive().subscribe({
-      next: (fondo) => this.fondoCajaChica.set(fondo),
-      error: () => this.fondoCajaChica.set(null),
-    });
+  /** Tope asignado a la caja contra la que se rinde. */
+  get presupuestoCajaChica(): number {
+    return Number(this.cajaChicaFondoResumen?.fundAmount ?? 0);
+  }
+
+  get saldoCajaChica(): number {
+    return Number(this.cajaChicaFondoResumen?.disponible ?? 0);
+  }
+
+  /** Gastado de la caja y aún no repuesto por Tesorería. */
+  get gastadoNoRepuestoCajaChica(): number {
+    return Number(this.cajaChicaFondoResumen?.spentAmount ?? 0);
   }
 
   loadReport() {
@@ -329,7 +334,6 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
         this.updateDocCounts(data);
         this.isLoading = false;
         this.loadExpensesPage(1);
-        if (data?.isCajaChica) this.loadFondoCajaChica();
         // Auto-cierre: viáticos equilibrados que quedaron en 'approved' por datos stale.
         if (
           (data as any)?.type === 'viatico' &&

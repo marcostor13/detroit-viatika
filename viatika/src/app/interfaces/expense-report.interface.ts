@@ -309,8 +309,27 @@ export interface IExpenseReport {
    * finalizada por Contabilidad, por lo que el colaborador no puede subir más gastos.
    */
   lockedByCajaChica?: boolean;
+  /**
+   * Derivado en backend: la caja del RESPONSABLE de esta rendición. No se pide
+   * con `/fondo-caja-chica/mine` porque eso devuelve la del usuario conectado,
+   * y quien revisa la rendición no es su dueño.
+   */
+  cajaChicaFondo?: ICajaChicaFondoResumen;
   /** Depósito inicial cuando la rendición directa fue iniciada por Contabilidad. */
   directaDeposit?: IDirectaDepositInfo;
+}
+
+/** Resumen del fondo de caja chica que acompaña a la rendición. */
+export interface ICajaChicaFondoResumen {
+  code?: string;
+  status?: string;
+  /** Tope asignado al responsable. */
+  fundAmount: number;
+  /** Gastado y aún NO repuesto (vuelve a 0 con cada reposición). */
+  spentAmount: number;
+  /** `fundAmount - spentAmount`. */
+  disponible: number;
+  pendingReturnAmount: number;
 }
 
 export interface IDirectaDepositInfo {

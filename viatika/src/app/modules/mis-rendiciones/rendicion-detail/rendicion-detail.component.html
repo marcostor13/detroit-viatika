@@ -558,7 +558,7 @@
           </p>
         </div>
       </div>
-      } @else if (report.isCajaChica && fondoCajaChica()) {
+      } @else if (report.isCajaChica && cajaChicaFondoResumen) {
       <!-- Caja chica: el presupuesto y el saldo son del FONDO del responsable
            —los consumen todas sus rendiciones—, pero "Total gastado" es el de
            ESTA rendición. Antes la cifra grande era el `spentAmount` del fondo,
@@ -575,7 +575,7 @@
             <p class="font-medium text-tertiary">Presupuesto de la caja</p>
           </div>
           <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">
-            {{ currencySymbol }} {{ fondoCajaChica()!.fundAmount | number:'1.2-2' }}
+            {{ currencySymbol }} {{ presupuestoCajaChica | number:'1.2-2' }}
           </p>
         </div>
         <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
@@ -592,7 +592,7 @@
           </p>
           <p class="mt-1 text-xs text-tertiary">
             De la caja, pendiente de reponer:
-            {{ currencySymbol }} {{ fondoCajaChica()!.spentAmount | number:'1.2-2' }}
+            {{ currencySymbol }} {{ gastadoNoRepuestoCajaChica | number:'1.2-2' }}
           </p>
         </div>
         <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
@@ -2236,7 +2236,15 @@
     <div class="px-6 py-4 overflow-y-auto flex-1">
 
       <div class="bg-background rounded-xl p-4 mb-4 space-y-2">
-        @if (!report.isDirecta) {
+        @if (report.isCajaChica) {
+        <!-- Caja chica: no hay anticipo por rendición. El presupuesto es el tope
+             de la caja del responsable y el saldo es el de la caja, no una
+             diferencia contra esta rendición (daba S/ 0 y saldo negativo). -->
+        <div class="flex justify-between text-sm">
+          <span class="text-tertiary">Presupuesto de la caja</span>
+          <span class="font-semibold text-secondary">{{ currencySymbol }} {{ presupuestoCajaChica | number:'1.2-2' }}</span>
+        </div>
+        } @else if (!report.isDirecta) {
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Presupuesto asignado</span>
           <span class="font-semibold text-secondary">{{ currencySymbol }} {{ totalAnticipado | number:'1.2-2' }}</span>
@@ -2250,11 +2258,20 @@
         }
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Total gastado</span>
-          <span class="font-semibold" [class.text-error]="!report.isDirecta && totalGastado > totalAnticipado" [class.text-secondary]="report.isDirecta || totalGastado <= totalAnticipado">
+          <!-- En caja chica gastar no es una alerta: es el uso normal de la
+               caja, y el rojo hacía leer la cifra como un error. -->
+          <span class="font-semibold" [class.text-error]="!report.isDirecta && !report.isCajaChica && totalGastado > totalAnticipado" [class.text-secondary]="report.isDirecta || report.isCajaChica || totalGastado <= totalAnticipado">
             {{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}
           </span>
         </div>
-        @if (!report.isDirecta) {
+        @if (report.isCajaChica) {
+        <div class="flex justify-between text-sm border-t border-divider pt-2 mt-2">
+          <span class="text-tertiary">Saldo de la caja</span>
+          <span class="font-bold" [class.text-success-ink]="saldoCajaChica >= 0" [class.text-error]="saldoCajaChica < 0">
+            {{ currencySymbol }} {{ saldoCajaChica | number:'1.2-2' }}
+          </span>
+        </div>
+        } @else if (!report.isDirecta) {
         <div class="flex justify-between text-sm border-t border-divider pt-2 mt-2">
           <span class="text-tertiary">Saldo</span>
           <span class="font-bold" [class.text-success-ink]="saldoLibre >= 0" [class.text-error]="saldoLibre < 0">

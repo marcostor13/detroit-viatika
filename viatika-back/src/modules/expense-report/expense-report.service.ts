@@ -264,6 +264,27 @@ export class ExpenseReportService implements OnModuleInit {
       return gastado > 0 ? gastado : Number(report.budget) || 0
     }
 
+    // Rendición de caja chica: tampoco tiene anticipo, y su `budget` es 0. El
+    // presupuesto que corresponde mostrar es el TOPE de la caja del responsable
+    // (`fundAmount` del fondo), que es contra lo que rinde. Sin esta rama los
+    // correos anunciaban "Presupuesto asignado S/ 0.00" y, restando lo gastado,
+    // un saldo negativo — el mismo defecto que se veía en el modal de envío.
+    if (report.isCajaChica === true) {
+      // `userId`/`clientId` llegan como ObjectId o ya populados según el punto
+      // desde el que se arma el correo.
+      const ownerId = String(report.userId?._id ?? report.userId ?? '')
+      const clientId = String(report.clientId?._id ?? report.clientId ?? '')
+      if (ownerId && clientId) {
+        const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+          ownerId,
+          clientId
+        )
+        const tope = Number(fondo?.fundAmount ?? 0)
+        if (tope > 0) return tope
+      }
+      return Number(report.budget) || 0
+    }
+
     const rawAdvanceIds: string[] = (
       Array.isArray(report.advanceIds) ? report.advanceIds : []
     ).map((x: any) =>
@@ -1350,6 +1371,39 @@ export class ExpenseReportService implements OnModuleInit {
         (normalized as unknown as { isCajaChica?: boolean }).isCajaChica === true
           ? await this.isLockedByFinalizedCajaChica(id)
           : false
+
+    // Caja de quien rinde (no la de quien mira). El front la necesita para el
+    // modal de envío y las tarjetas de cabecera; pedirla por su cuenta con
+    // `/fondo-caja-chica/mine` devuelve la caja del USUARIO CONECTADO, así que
+    // el aprobador o Contabilidad veían su propio presupuesto —o ninguno— sobre
+    // la rendición de otro.
+    if ((normalized as unknown as { isCajaChica?: boolean }).isCajaChica === true) {
+      const cajaOwnerId = String(
+        (normalized as any).userId?._id ?? (normalized as any).userId ?? ''
+      )
+      const cajaClientId = String(
+        (normalized as any).clientId?._id ?? (normalized as any).clientId ?? ''
+      )
+      if (cajaOwnerId && cajaClientId) {
+        const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+          cajaOwnerId,
+          cajaClientId
+        )
+        if (fondo) {
+          const fundAmount = Number(fondo.fundAmount ?? 0)
+          const spentAmount = Number(fondo.spentAmount ?? 0)
+          ; (normalized as any).cajaChicaFondo = {
+            code: fondo.code,
+            status: fondo.status,
+            fundAmount,
+            // "Gastado y aún no repuesto": tras la reposición vuelve a 0.
+            spentAmount,
+            disponible: Math.round((fundAmount - spentAmount) * 100) / 100,
+            pendingReturnAmount: Number(fondo.pendingReturnAmount ?? 0),
+          }
+        }
+      }
+    }
 
     // N° de rendición para viáticos (VD-63): los viáticos no tienen `codigo`
     // (solo las directas). Se numeran por la posición del viático entre los del
