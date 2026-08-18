@@ -1171,7 +1171,6 @@
               <!-- Row 3: concepto (comentario del gasto, VD-64) -->
               <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConceptoColumn(expense) }}</p>
               <!-- Row 4: estado único (etapa que bloquea el flujo) -->
-              @if (!report.isCajaChica) {
               @let mobileUnifiedStatus = getExpenseUnifiedStatus(expense);
               <div class="mt-2">
                 @switch (mobileUnifiedStatus.phase) {
@@ -1210,7 +1209,6 @@
                   }
                 }
               </div>
-              }
               <!-- Row 5: acciones -->
               <div class="mt-3 flex flex-wrap gap-2">
                 <button type="button" (click)="openExpenseDetail(expense)"
@@ -1349,9 +1347,7 @@
                   <th class="px-3 py-3 whitespace-nowrap">Proyecto</th>
                   <th class="px-3 py-3 whitespace-nowrap">Categoria</th>
                   <th class="px-3 py-3 text-right whitespace-nowrap">Monto</th>
-                  @if (!report.isCajaChica) {
                   <th class="px-3 py-3 text-center whitespace-nowrap">Estado</th>
-                  }
                   <th class="px-3 py-3 whitespace-nowrap">Opciones</th>
                 </tr>
               </thead>
@@ -1431,7 +1427,6 @@
                     </div>
                   </td>
                   <!-- Estado (único, según la etapa que bloquea el flujo) -->
-                  @if (!report.isCajaChica) {
                   <td class="px-3 py-3 text-center">
                     @let unifiedStatus = getExpenseUnifiedStatus(expense);
                     <div class="flex flex-col items-center gap-0.5">
@@ -1472,7 +1467,6 @@
                       }
                     </div>
                   </td>
-                  }
                   <!-- Opciones -->
                   <td class="px-3 py-3">
                     @let opsUnifiedStatus = getExpenseUnifiedStatus(expense);
@@ -1481,7 +1475,7 @@
                          comprobante tenga un set distinto (adjunto, PDF, descarga...). -->
                     <div class="flex items-center justify-start gap-0.5">
                       <!-- Aprobar/Rechazar por el aprobador de nivel (N1/N2/N3) -->
-                      @if (!report.isCajaChica && canApproveExpenseAsCoord(expense) && opsUnifiedStatus.phase === 'pending_coord') {
+                      @if (canApproveExpenseAsCoord(expense) && opsUnifiedStatus.phase === 'pending_coord') {
                       <div class="relative group/coordok">
                         <button type="button"
                           [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
@@ -1505,7 +1499,7 @@
                       </div>
                       }
                       <!-- Aprobar/Rechazar por Contabilidad (solo si la cadena de aprobadores ya se completó) -->
-                      @if (!report.isCajaChica && canApproveExpenseAsCont && opsUnifiedStatus.phase === 'pending_cont') {
+                      @if (canApproveExpenseAsCont && opsUnifiedStatus.phase === 'pending_cont') {
                       <div class="relative group/contok">
                         <button type="button"
                           [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
