@@ -53,6 +53,8 @@ export class ConfiguracionComponent implements OnInit {
   limitsAlimentacionDesayuno: number | null = null;
   limitsAlimentacionAlmuerzo: number | null = null;
   limitsAlimentacionCena: number | null = null;
+  /** Tope de alerta por comprobante: uno solo, para todas las categorías. */
+  limitsTopeComprobante: number | null = null;
   isSavingLimits = false;
 
   // Cuenta de cargo para pagos BBVA (VD-7)
@@ -149,6 +151,7 @@ export class ConfiguracionComponent implements OnInit {
     this.limitsAlimentacionDesayuno = limits?.alimentacionDesayuno ?? null;
     this.limitsAlimentacionAlmuerzo = limits?.alimentacionAlmuerzo ?? null;
     this.limitsAlimentacionCena = limits?.alimentacionCena ?? null;
+    this.limitsTopeComprobante = limits?.topeComprobante ?? null;
   }
 
   editLimits() {
@@ -170,6 +173,7 @@ export class ConfiguracionComponent implements OnInit {
       alimentacionDesayuno: this.limitsAlimentacionDesayuno ?? undefined,
       alimentacionAlmuerzo: this.limitsAlimentacionAlmuerzo ?? undefined,
       alimentacionCena: this.limitsAlimentacionCena ?? undefined,
+      topeComprobante: this.limitsTopeComprobante ?? undefined,
     }).subscribe({
       next: () => {
         this.notificationService.show('Límites actualizados correctamente', 'success');

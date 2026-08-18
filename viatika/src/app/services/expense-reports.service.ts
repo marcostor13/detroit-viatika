@@ -126,6 +126,8 @@ export class ExpenseReportsService {
     hora?: string;
     operationNumber?: string;
     titular?: string;
+    /** Banco origen leído del comprobante. */
+    banco?: string;
   }> {
     return this.http.post<{
       amount: number;
@@ -133,6 +135,7 @@ export class ExpenseReportsService {
       hora?: string;
       operationNumber?: string;
       titular?: string;
+      banco?: string;
     }>(`${this.apiUrl}/expense/scan-deposit-amount`, { url, mimeType });
   }
 

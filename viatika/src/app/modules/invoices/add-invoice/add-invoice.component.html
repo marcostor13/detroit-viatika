@@ -83,7 +83,8 @@
     @if (!isDirectaContext()) {
     <div class="flex flex-col gap-2">
       <label for="proyectId" class="text-sm font-medium text-secondary">
-        Proyecto <span class="text-error">*</span>
+        Proyecto
+        @if (!isCajaChicaReport()) {<span class="text-error">*</span>}
       </label>
       <app-project-select
         formControlName="proyectId"
@@ -91,8 +92,34 @@
         placeholder="Seleccione un proyecto"
         [invalid]="!!(proyectId?.invalid && proyectId?.touched)"
       />
-      @if (proyectId?.invalid && proyectId?.touched) {
+      @if (isCajaChicaReport()) {
+      <span class="text-sm text-tertiary">Opcional en caja chica. Si no lo indicas, lo define Contabilidad al revisar.</span>
+      } @else if (proyectId?.invalid && proyectId?.touched) {
       <span class="text-sm text-error">El proyecto es requerido</span>
+      }
+    </div>
+    }
+
+    <!-- Caja chica: el comprobante en papel llega firmado por quien recibió el
+         dinero, y ese respaldo tiene que quedar guardado. -->
+    @if (isCajaChicaReport()) {
+    <div class="flex flex-col gap-2">
+      <label for="firmaUrl" class="text-sm font-medium text-secondary">
+        Firma del comprobante <span class="text-error">*</span>
+      </label>
+      <input
+        id="firmaUrl"
+        type="file"
+        accept="image/*,application/pdf"
+        (change)="onFirmaSelected($event)"
+        class="w-full text-sm text-secondary file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary"
+      />
+      @if (isUploadingFirma()) {
+      <span class="text-sm text-tertiary">Subiendo firma...</span>
+      } @else if (firmaFileName()) {
+      <span class="text-sm text-success-ink">Adjunta: {{ firmaFileName() }}</span>
+      } @else {
+      <span class="text-sm text-tertiary">Sube una foto, imagen o PDF de la firma. Es obligatoria.</span>
       }
     </div>
     }

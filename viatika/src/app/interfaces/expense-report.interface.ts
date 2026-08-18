@@ -289,6 +289,22 @@ export interface IExpenseReport {
   isDirecta?: boolean;
   isCajaChica?: boolean;
   /**
+   * SOLICITUD del fondo de caja chica. Viaja sobre un reporte `type: 'viatico'`
+   * porque reutiliza el flujo de Solicitud de Fondos; sirve para distinguirla
+   * de una solicitud de viáticos en las listas.
+   */
+  isSolicitudCajaChica?: boolean;
+  /**
+   * Presupuesto pedido por la solicitud de caja chica. `viaticoAmount` es solo
+   * la diferencia que Tesorería deposita (0 si el presupuesto baja), así que
+   * para mostrar "cuánto pide" hay que leer este campo.
+   */
+  cajaChicaNuevoPresupuesto?: number;
+  /** Presupuesto vigente antes de la solicitud (0 en la primera). */
+  cajaChicaPresupuestoAnterior?: number;
+  /** Fondo al que pertenece la solicitud o la rendición. */
+  fondoCajaChicaId?: string;
+  /**
    * Derivado en backend: la caja chica que incluye esta rendición ya fue
    * finalizada por Contabilidad, por lo que el colaborador no puede subir más gastos.
    */

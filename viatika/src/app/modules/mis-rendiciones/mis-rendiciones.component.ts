@@ -12,6 +12,17 @@ import {
 } from '../../interfaces/expense-report.interface';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CajaChicaReportService } from '../../services/caja-chica-report.service';
+import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
+import { UploadService } from '../../services/upload.service';
+import {
+  IFondoCajaChica,
+  ISolicitudCajaChica,
+  FONDO_STATUS_LABELS,
+  SOLICITUD_CAJA_CHICA_STATUS_LABELS,
+  SOLICITUD_CAJA_CHICA_STATUS_COLORS,
+  presupuestoSolicitado,
+  saldoDisponible,
+} from '../../interfaces/fondo-caja-chica.interface';
 import { CreateRendicionModalComponent } from '../admin-users/user-details/create-rendicion-modal/create-rendicion-modal.component';
 import { DataTableComponent } from '../../design-system/data-table/data-table.component';
 import { ColumnDirective } from '../../design-system/data-table/column.directive';
@@ -60,6 +71,8 @@ export class MisRendicionesComponent implements OnInit {
   private advanceService = inject(AdvanceService);
   private notificationService = inject(NotificationService);
   private cajaChicaReportService = inject(CajaChicaReportService);
+  private fondoCajaChicaService = inject(FondoCajaChicaService);
+  private uploadService = inject(UploadService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
 
@@ -83,6 +96,12 @@ export class MisRendicionesComponent implements OnInit {
   cajaChicaReports = signal<IExpenseReport[]>([]);
   cajaChicaLoading = signal(false);
   cajaChicaLoaded = false;
+
+  // Bolsa del responsable (tope, gastado, disponible)
+  fondo = signal<IFondoCajaChica | null>(null);
+  fondoLoading = signal(false);
+  solicitudesCajaChica = signal<ISolicitudCajaChica[]>([]);
+  readonly FONDO_STATUS_LABELS = FONDO_STATUS_LABELS;
 
   // Tab gastos directos
   directaExpenses = signal<any[]>([]);
@@ -170,6 +189,261 @@ export class MisRendicionesComponent implements OnInit {
       },
       error: () => { this.cajaChicaLoading.set(false); },
     });
+    this.loadFondo();
+  }
+
+  /** Presupuesto del responsable: tope, gastado y saldo disponible. */
+  loadFondo(): void {
+    this.fondoLoading.set(true);
+    this.fondoCajaChicaService.findMyActive().subscribe({
+      next: (fondo) => {
+        this.fondo.set(fondo);
+        this.fondoLoading.set(false);
+      },
+      error: () => this.fondoLoading.set(false),
+    });
+    // Las solicitudes de caja chica ya no salen en "Solicitudes de fondos", así
+    // que su seguimiento vive acá.
+    this.fondoCajaChicaService.misSolicitudes().subscribe({
+      next: (list) => this.solicitudesCajaChica.set(list),
+      error: () => this.solicitudesCajaChica.set([]),
+    });
+  }
+
+  solicitudStatusLabel(status: string): string {
+    return SOLICITUD_CAJA_CHICA_STATUS_LABELS[status] ?? status;
+  }
+
+  solicitudStatusColor(status: string): string {
+    return (
+      SOLICITUD_CAJA_CHICA_STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600'
+    );
+  }
+
+  /** Presupuesto pedido, con respaldo para las solicitudes anteriores al campo. */
+  solicitudMonto(s: ISolicitudCajaChica): number {
+    return presupuestoSolicitado(s);
+  }
+
+  /** Saldo que le queda para seguir cargando comprobantes. */
+  get saldoDisponible(): number {
+    return saldoDisponible(this.fondo());
+  }
+
+  /**
+   * Estado de la SOLICITUD mientras la bolsa aún no está fondeada. Decir solo
+   * "pendiente de depósito" era engañoso cuando todavía falta que la apruebe el
+   * jefe o Contabilidad.
+   */
+  get estadoSolicitudFondo(): string {
+    const f = this.fondo();
+    if (!f || f.status !== 'pending_funding') return '';
+    const solicitud = f.solicitudReportId;
+    if (!solicitud || typeof solicitud === 'string') {
+      return 'Esperando el depósito de Tesorería';
+    }
+    const label =
+      VIATICO_REPORT_STATUS_LABELS[
+        solicitud.status as keyof typeof VIATICO_REPORT_STATUS_LABELS
+      ];
+    switch (solicitud.status) {
+      case 'pending_l1':
+      case 'pending_l2':
+        return 'Solicitud pendiente de aprobación';
+      case 'pending_contabilidad':
+        return 'Solicitud en Contabilidad';
+      case 'viatico_approved':
+      case 'partially_paid':
+        return 'Aprobada, esperando el depósito de Tesorería';
+      case 'rejected':
+        return 'Solicitud rechazada';
+      default:
+        return label ?? 'Esperando el depósito de Tesorería';
+    }
+  }
+
+  /**
+   * Sin una bolsa activa no hay contra qué cargar gastos, así que la rendición
+   * de caja chica no se puede crear todavía.
+   */
+  get puedeRendirCajaChica(): boolean {
+    return this.fondo()?.status === 'active';
+  }
+
+  navigateToSolicitudCajaChica(): void {
+    this.router.navigate(['/mis-rendiciones/solicitud-caja-chica']);
+  }
+
+  // ── Devolución del sobrante ────────────────────────────────────────────────
+
+  /** Sobrante que quedó por devolver tras bajar el presupuesto. */
+  get sobrantePorDevolver(): number {
+    return Number(this.fondo()?.pendingReturnAmount ?? 0);
+  }
+
+  /**
+   * Mismo formulario que el comprobante de devolucion de saldo de una rendicion
+   * (modal "Comprobante de devolucion" de `rendicion-detail`): comprobante con
+   * escaneo, fecha del deposito, monto, banco origen y n. de operacion. Para el
+   * colaborador es la misma operacion, no tiene por que pedirle otros datos ni
+   * verse distinta.
+   */
+  showDevolucionModal = signal(false);
+  /** `app-input` trabaja con string; el numero se parsea al guardar. */
+  devolucionMonto = '';
+  devolucionOperacion = '';
+  devolucionFecha = '';
+  devolucionBanco = '';
+  devolucionReceiptUrl: string | null = null;
+  devolucionReceiptName: string | null = null;
+  isUploadingDevolucion = signal(false);
+  isSavingDevolucion = signal(false);
+  // Datos leidos del comprobante, igual que en la devolucion de saldo.
+  isScanningDevolucion = signal(false);
+  devolucionScannedAmount = signal<number | null>(null);
+  devolucionTitular = signal<string | null>(null);
+  devolucionScanFecha = signal<string | null>(null);
+  devolucionScanHora = signal<string | null>(null);
+  devolucionScanBanco = signal<string | null>(null);
+
+  /** Banco de la cuenta registrada en el perfil del responsable del fondo. */
+  private bancoDelPerfil(): string {
+    const responsable = this.fondo()?.responsibleId;
+    if (responsable && typeof responsable === 'object') {
+      return responsable.bankAccount?.bankName?.trim() ?? '';
+    }
+    return '';
+  }
+
+  get devolucionHasDetectedData(): boolean {
+    return !!(
+      this.devolucionScannedAmount() ||
+      this.devolucionTitular() ||
+      this.devolucionScanFecha() ||
+      this.devolucionScanHora() ||
+      this.devolucionScanBanco()
+    );
+  }
+
+  openDevolucion(): void {
+    this.devolucionMonto = String(this.sobrantePorDevolver);
+    this.devolucionOperacion = '';
+    this.devolucionFecha = new Date().toISOString().split('T')[0];
+    // El banco sale del perfil del colaborador, que es desde donde deposita.
+    // El escaneo del comprobante solo lo completa si el perfil no lo trae.
+    this.devolucionBanco = this.bancoDelPerfil();
+    this.devolucionReceiptUrl = null;
+    this.devolucionReceiptName = null;
+    this.devolucionScannedAmount.set(null);
+    this.devolucionTitular.set(null);
+    this.devolucionScanFecha.set(null);
+    this.devolucionScanHora.set(null);
+    this.devolucionScanBanco.set(null);
+    this.showDevolucionModal.set(true);
+  }
+
+  onDevolucionFile(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    // Mismas restricciones que el comprobante de devolucion de saldo.
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!allowed.includes(file.type)) {
+      this.notificationService.show('Formato invalido. Usa PDF, JPG o PNG.', 'error');
+      input.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      this.notificationService.show('El archivo no puede superar 10MB.', 'error');
+      input.value = '';
+      return;
+    }
+    this.isUploadingDevolucion.set(true);
+    this.uploadService.upload(file, 'raw').subscribe({
+      next: (res) => {
+        this.devolucionReceiptUrl = res.url;
+        this.devolucionReceiptName = file.name;
+        this.isUploadingDevolucion.set(false);
+        this.scanDevolucionComprobante(res.url, file.type);
+      },
+      error: () => {
+        this.isUploadingDevolucion.set(false);
+        this.notificationService.show('No se pudo subir el comprobante.', 'error');
+      },
+    });
+  }
+
+  /** Mismo endpoint de escaneo que el resto de comprobantes de deposito. */
+  private scanDevolucionComprobante(url: string, mimeType?: string): void {
+    this.isScanningDevolucion.set(true);
+    this.expenseReportsService.scanDepositAmount(url, mimeType).subscribe({
+      next: (res) => {
+        this.isScanningDevolucion.set(false);
+        const amount = Number(res?.amount ?? 0);
+        this.devolucionScannedAmount.set(amount > 0 ? amount : null);
+        this.devolucionTitular.set(res?.titular || null);
+        this.devolucionScanFecha.set(res?.fecha || null);
+        this.devolucionScanHora.set(res?.hora || null);
+        this.devolucionScanBanco.set(res?.banco || null);
+        if (res?.operationNumber && !this.devolucionOperacion) {
+          this.devolucionOperacion = res.operationNumber;
+        }
+        if (res?.banco && !this.devolucionBanco) {
+          this.devolucionBanco = res.banco;
+        }
+        if (this.devolucionHasDetectedData) {
+          this.notificationService.show('Datos detectados del comprobante.', 'success');
+        }
+      },
+      error: () => {
+        this.isScanningDevolucion.set(false);
+        this.notificationService.show(
+          'No se pudo escanear el comprobante. Completa los datos manualmente.',
+          'warning'
+        );
+      },
+    });
+  }
+
+  guardarDevolucion(): void {
+    const fondo = this.fondo();
+    const monto = Number(this.devolucionMonto);
+    if (!fondo || !Number.isFinite(monto) || monto <= 0) {
+      this.notificationService.show('Indique el monto devuelto.', 'error');
+      return;
+    }
+    if (!this.devolucionReceiptUrl || !this.devolucionFecha) {
+      this.notificationService.show(
+        'Sube el comprobante e ingresa la fecha del deposito.',
+        'error'
+      );
+      return;
+    }
+    this.isSavingDevolucion.set(true);
+    this.fondoCajaChicaService
+      .devolverSobrante(fondo._id, {
+        amount: monto,
+        receiptUrl: this.devolucionReceiptUrl,
+        operationNumber: this.devolucionOperacion?.trim() || undefined,
+        depositDate: this.devolucionFecha,
+        bankOrigin: this.devolucionBanco?.trim() || undefined,
+      })
+      .subscribe({
+        next: (actualizado) => {
+          this.fondo.set(actualizado);
+          this.isSavingDevolucion.set(false);
+          this.showDevolucionModal.set(false);
+          this.notificationService.show('Devolución registrada.', 'success');
+        },
+        error: (err) => {
+          this.isSavingDevolucion.set(false);
+          const msg = err?.error?.message ?? 'No se pudo registrar la devolución.';
+          this.notificationService.show(
+            Array.isArray(msg) ? msg.join(', ') : msg,
+            'error'
+          );
+        },
+      });
   }
 
   navigateToNuevaCajaChica(): void {

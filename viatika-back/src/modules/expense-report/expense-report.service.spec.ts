@@ -16,6 +16,7 @@ import { CategoryService } from '../category/category.service'
 import { ROLES } from '../auth/enums/roles.enum'
 import { ChainStep } from '../advance/approval-chain.util'
 import { CurrencyService } from '../exchange-rate/currency.service'
+import { FondoCajaChicaService } from '../fondo-caja-chica/fondo-caja-chica.service'
 
 const mockAdvanceService = {
   liquidateExpenseReport: jest.fn().mockResolvedValue(undefined),
@@ -101,6 +102,19 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
         { provide: UserService, useValue: mockUserService },
         { provide: AdvanceService, useValue: mockAdvanceService },
         { provide: UploadService, useValue: {} },
+        {
+          // Solo lo usa la solicitud de caja chica: para el resto de pruebas
+          // basta con que no haya ningún fondo vivo.
+          provide: FondoCajaChicaService,
+          useValue: {
+            findVivoByResponsible: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+            fondear: jest.fn(),
+            registrarCargo: jest.fn(),
+            reversarCargo: jest.fn(),
+            reponer: jest.fn(),
+          },
+        },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
         {
@@ -687,6 +701,19 @@ describe('ExpenseReportService — Fase 8 (cierre definitivo)', () => {
         { provide: UserService, useValue: mockUserServicePhase8 },
         { provide: AdvanceService, useValue: mockAdvanceService },
         { provide: UploadService, useValue: {} },
+        {
+          // Solo lo usa la solicitud de caja chica: para el resto de pruebas
+          // basta con que no haya ningún fondo vivo.
+          provide: FondoCajaChicaService,
+          useValue: {
+            findVivoByResponsible: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+            fondear: jest.fn(),
+            registrarCargo: jest.fn(),
+            reversarCargo: jest.fn(),
+            reponer: jest.fn(),
+          },
+        },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
         {
@@ -1057,6 +1084,19 @@ describe('ExpenseReportService — Fase 6 (reembolso: tenant y registro)', () =>
         { provide: UserService, useValue: mockUserService },
         { provide: AdvanceService, useValue: mockAdvanceService },
         { provide: UploadService, useValue: {} },
+        {
+          // Solo lo usa la solicitud de caja chica: para el resto de pruebas
+          // basta con que no haya ningún fondo vivo.
+          provide: FondoCajaChicaService,
+          useValue: {
+            findVivoByResponsible: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+            fondear: jest.fn(),
+            registrarCargo: jest.fn(),
+            reversarCargo: jest.fn(),
+            reponer: jest.fn(),
+          },
+        },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
         {
@@ -1245,6 +1285,19 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
         { provide: UserService, useValue: mockUserServiceLocal },
         { provide: AdvanceService, useValue: mockAdvanceServiceLocal },
         { provide: UploadService, useValue: {} },
+        {
+          // Solo lo usa la solicitud de caja chica: para el resto de pruebas
+          // basta con que no haya ningún fondo vivo.
+          provide: FondoCajaChicaService,
+          useValue: {
+            findVivoByResponsible: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+            fondear: jest.fn(),
+            registrarCargo: jest.fn(),
+            reversarCargo: jest.fn(),
+            reponer: jest.fn(),
+          },
+        },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
         {
@@ -1348,8 +1401,16 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
   let service: ExpenseReportService
   let mockExpenseReportModel: Record<string, jest.Mock>
   let mockExpenseModel: Record<string, jest.Mock>
-  let mockProjectServiceLocal: { findManyByIds: jest.Mock }
+  let mockProjectServiceLocal: {
+    findManyByIds: jest.Mock
+    findCajaChicaResponsibleIds: jest.Mock
+  }
   let mockUserServiceLocal: { findTransactionalProfile: jest.Mock }
+  let mockFondoService: {
+    findVivoByResponsible: jest.Mock
+    registrarCargo: jest.Mock
+    reversarCargo: jest.Mock
+  }
 
   const addReportId = new Types.ObjectId().toString()
   const addUserId = new Types.ObjectId().toString()
@@ -1391,8 +1452,16 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
         exec: jest.fn().mockResolvedValue([]),
       }),
     }
-    mockProjectServiceLocal = { findManyByIds: jest.fn().mockResolvedValue([]) }
+    mockProjectServiceLocal = {
+      findManyByIds: jest.fn().mockResolvedValue([]),
+      findCajaChicaResponsibleIds: jest.fn().mockResolvedValue([]),
+    }
     mockUserServiceLocal = { findTransactionalProfile: jest.fn().mockResolvedValue(null) }
+    mockFondoService = {
+      findVivoByResponsible: jest.fn().mockResolvedValue(null),
+      registrarCargo: jest.fn().mockResolvedValue({}),
+      reversarCargo: jest.fn().mockResolvedValue({}),
+    }
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -1405,6 +1474,7 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
         { provide: UserService, useValue: mockUserServiceLocal },
         { provide: AdvanceService, useValue: {} },
         { provide: UploadService, useValue: {} },
+        { provide: FondoCajaChicaService, useValue: mockFondoService },
         { provide: ProjectService, useValue: mockProjectServiceLocal },
         { provide: CategoryService, useValue: {} },
         {
@@ -1423,6 +1493,177 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     }).compile()
 
     service = module.get<ExpenseReportService>(ExpenseReportService)
+  })
+
+  // El comprobante de caja chica descuenta del presupuesto y no puede superarlo.
+  describe('caja chica: cargo contra el presupuesto', () => {
+    beforeEach(() => {
+      mockExpenseModel.findById = jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({ montoBase: 500, total: 500 }),
+          }),
+        }),
+      })
+      mockExpenseModel.deleteOne = jest.fn().mockResolvedValue({ deletedCount: 1 })
+    })
+
+    it('descuenta el comprobante del presupuesto', async () => {
+      mockFindByIdSelect(reportSelectResult({ isCajaChica: true }))
+      mockFondoService.findVivoByResponsible.mockResolvedValue({ _id: 'fondo-1' })
+
+      await service.addExpenseToReport(addReportId, newExpenseId)
+
+      expect(mockFondoService.registrarCargo).toHaveBeenCalledWith(
+        'fondo-1',
+        expect.objectContaining({ expenseId: newExpenseId, amount: 500 })
+      )
+    })
+
+    it('si el gasto supera el presupuesto, no lo engancha y borra el comprobante', async () => {
+      mockFindByIdSelect(reportSelectResult({ isCajaChica: true }))
+      mockFondoService.findVivoByResponsible.mockResolvedValue({ _id: 'fondo-1' })
+      mockFondoService.registrarCargo.mockRejectedValue(
+        new BadRequestException('Saldo insuficiente en la caja chica CCH-0001')
+      )
+
+      await expect(
+        service.addExpenseToReport(addReportId, newExpenseId)
+      ).rejects.toThrow(/Saldo insuficiente/)
+
+      expect(mockExpenseModel.deleteOne).toHaveBeenCalled()
+      expect(mockExpenseReportModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('sin caja chica activa no deja cargar y borra el comprobante', async () => {
+      mockFindByIdSelect(reportSelectResult({ isCajaChica: true }))
+      mockFondoService.findVivoByResponsible.mockResolvedValue(null)
+
+      await expect(
+        service.addExpenseToReport(addReportId, newExpenseId)
+      ).rejects.toThrow(/no tiene una caja chica activa/i)
+
+      expect(mockExpenseModel.deleteOne).toHaveBeenCalled()
+    })
+
+    it('una rendición que NO es de caja chica no toca ningún presupuesto', async () => {
+      mockFindByIdSelect(reportSelectResult({ status: 'submitted' }))
+
+      await service.addExpenseToReport(addReportId, newExpenseId)
+
+      expect(mockFondoService.registrarCargo).not.toHaveBeenCalled()
+    })
+  })
+
+  // Decision del cliente (2026-08-18): el comprobante de caja chica sin centro
+  // de costo se imputa al del responsable, el de su solicitud.
+  describe('resolveCentroCostoCajaChica', () => {
+    it('toma el centro de costo de la solicitud que abrio la caja', async () => {
+      const ccSolicitud = new Types.ObjectId()
+      const solicitudId = new Types.ObjectId()
+      mockExpenseReportModel.findById = jest
+        .fn()
+        .mockReturnValueOnce({
+          select: () => ({ lean: () => ({ exec: async () => ({ userId: addUserId, clientId: addClientId }) }) }),
+        })
+        .mockReturnValueOnce({
+          select: () => ({ lean: () => ({ exec: async () => ({ projectId: ccSolicitud }) }) }),
+        })
+      mockFondoService.findVivoByResponsible.mockResolvedValue({ solicitudReportId: solicitudId })
+
+      const cc = await service.resolveCentroCostoCajaChica(addReportId)
+
+      expect(String(cc)).toBe(String(ccSolicitud))
+      expect(mockUserServiceLocal.findTransactionalProfile).not.toHaveBeenCalled()
+    })
+
+    it('sin solicitud usable cae al centro de costo principal del responsable', async () => {
+      const ccPerfil = new Types.ObjectId().toString()
+      mockExpenseReportModel.findById = jest.fn().mockReturnValue({
+        select: () => ({ lean: () => ({ exec: async () => ({ userId: addUserId, clientId: addClientId }) }) }),
+      })
+      mockFondoService.findVivoByResponsible.mockResolvedValue(null)
+      mockUserServiceLocal.findTransactionalProfile.mockResolvedValue({
+        primaryProjectId: ccPerfil,
+        projectIds: [ccPerfil],
+      })
+
+      const cc = await service.resolveCentroCostoCajaChica(addReportId)
+
+      expect(String(cc)).toBe(ccPerfil)
+    })
+
+    it('sin nada de donde sacarlo devuelve undefined', async () => {
+      mockExpenseReportModel.findById = jest.fn().mockReturnValue({
+        select: () => ({ lean: () => ({ exec: async () => null }) }),
+      })
+
+      await expect(service.resolveCentroCostoCajaChica(addReportId)).resolves.toBeUndefined()
+    })
+  })
+
+  // Un tercero podia subir un comprobante a la caja chica ajena y consumirle el
+  // presupuesto al dueño: el cargo va siempre contra el fondo del titular.
+  describe('assertPuedeCargarEnCajaChica', () => {
+    it('rechaza a quien no es el responsable de la caja chica', async () => {
+      mockFindByIdSelect({ isCajaChica: true, userId: addUserId })
+
+      await expect(
+        service.assertPuedeCargarEnCajaChica(addReportId, new Types.ObjectId().toString())
+      ).rejects.toThrow(/Solo el responsable de la caja chica/i)
+    })
+
+    it('deja pasar al responsable', async () => {
+      mockFindByIdSelect({ isCajaChica: true, userId: addUserId })
+
+      await expect(
+        service.assertPuedeCargarEnCajaChica(addReportId, addUserId)
+      ).resolves.toBeUndefined()
+    })
+
+    it('no se mete con las rendiciones que no son de caja chica', async () => {
+      mockFindByIdSelect({ isCajaChica: false, userId: addUserId })
+
+      await expect(
+        service.assertPuedeCargarEnCajaChica(addReportId, new Types.ObjectId().toString())
+      ).resolves.toBeUndefined()
+    })
+  })
+
+  // El select de `update()` decide `esCajaChica`: sin el campo, los comprobantes
+  // de una caja chica se enrutaban por el centro de costo de cada uno
+  // (`buildRendicionChain`) en vez de por los aprobadores del responsable.
+  // Solo se ejercita hasta la construccion de cadenas; el resto de `update()`
+  // toca populate/correos que este mock no cubre, de ahi el catch.
+  it('al ENVIAR una rendición de caja chica, las cadenas se arman con los aprobadores del responsable', async () => {
+    mockFindByIdSelect(reportSelectResult({ status: 'open', isCajaChica: true }))
+    const svc = service as unknown as Record<string, jest.Mock>
+    jest.spyOn(svc as never, 'validateBeforeSubmit' as never).mockResolvedValue(undefined as never)
+    const chains = jest
+      .spyOn(svc as never, 'buildExpenseChains' as never)
+      .mockResolvedValue(undefined as never)
+
+    await service.update(addReportId, { status: 'submitted' } as never).catch(() => undefined)
+
+    expect(chains).toHaveBeenCalledWith(
+      expect.anything(),
+      addUserId,
+      addClientId,
+      { esCajaChica: true }
+    )
+  })
+
+  it('el select de update() trae isCajaChica (de ahí sale esCajaChica)', async () => {
+    const select = jest.fn().mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reportSelectResult({ status: 'open' })),
+      }),
+    })
+    mockExpenseReportModel.findById.mockReturnValue({ select })
+
+    await service.update(addReportId, { title: 'x' } as never).catch(() => undefined)
+
+    expect(select.mock.calls[0][0]).toContain('isCajaChica')
   })
 
   it('agregar un comprobante a una rendición YA ENVIADA solo construye la cadena del nuevo (no toca los existentes)', async () => {
@@ -1639,6 +1880,46 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     ).toContain(reportWithChain.toString())
   })
 
+  it('findAllByCoordinator suma las cajas chicas de los responsables que aprueba (visibles antes del envío, cuando todavía no hay cadena)', async () => {
+    const coordId = new Types.ObjectId().toString()
+    const responsableId = new Types.ObjectId().toString()
+    mockProjectServiceLocal.findCajaChicaResponsibleIds.mockResolvedValue([responsableId])
+    mockExpenseModel.find.mockReturnValue({
+      distinct: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+    })
+    mockExpenseReportModel.find = jest.fn().mockReturnValue({
+      populate: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([]),
+    })
+
+    await service.findAllByCoordinator(coordId, addClientId)
+
+    const query = mockExpenseReportModel.find.mock.calls[0][0] as { $or: Array<Record<string, any>> }
+    const cajaChicaClause = query.$or.find(c => c['isCajaChica'] === true)
+    expect(cajaChicaClause).toBeDefined()
+    expect(
+      cajaChicaClause!['userId'].$in.map((x: Types.ObjectId) => x.toString())
+    ).toEqual([responsableId])
+  })
+
+  it('findAllByCoordinator no agrega la cláusula de caja chica si el usuario no aprueba a nadie', async () => {
+    mockProjectServiceLocal.findCajaChicaResponsibleIds.mockResolvedValue([])
+    mockExpenseModel.find.mockReturnValue({
+      distinct: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+    })
+    mockExpenseReportModel.find = jest.fn().mockReturnValue({
+      populate: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([]),
+    })
+
+    await service.findAllByCoordinator(new Types.ObjectId().toString(), addClientId)
+
+    const query = mockExpenseReportModel.find.mock.calls[0][0] as { $or: Array<Record<string, any>> }
+    expect(query.$or.some(c => c['isCajaChica'] === true)).toBe(false)
+  })
+
   // Regla 1.10 en la cadena de la RENDICIÓN a nivel de reporte (fase post-pago
   // del viático). `buildReportRendicionChain` es anterior a los aprobadores por
   // usuario y armaba la cadena solo con los niveles del centro de costo.
@@ -1712,6 +1993,19 @@ describe('ExpenseReportService — findExpensesPaginated (búsqueda por RUC, VD-
         { provide: UserService, useValue: {} },
         { provide: AdvanceService, useValue: {} },
         { provide: UploadService, useValue: {} },
+        {
+          // Solo lo usa la solicitud de caja chica: para el resto de pruebas
+          // basta con que no haya ningún fondo vivo.
+          provide: FondoCajaChicaService,
+          useValue: {
+            findVivoByResponsible: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+            fondear: jest.fn(),
+            registrarCargo: jest.fn(),
+            reversarCargo: jest.fn(),
+            reponer: jest.fn(),
+          },
+        },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
         {
@@ -1852,6 +2146,19 @@ describe('ExpenseReportService — isReportSinOrdenTrabajo', () => {
         { provide: UserService, useValue: {} },
         { provide: AdvanceService, useValue: {} },
         { provide: UploadService, useValue: {} },
+        {
+          // Solo lo usa la solicitud de caja chica: para el resto de pruebas
+          // basta con que no haya ningún fondo vivo.
+          provide: FondoCajaChicaService,
+          useValue: {
+            findVivoByResponsible: jest.fn().mockResolvedValue(null),
+            create: jest.fn(),
+            fondear: jest.fn(),
+            registrarCargo: jest.fn(),
+            reversarCargo: jest.fn(),
+            reponer: jest.fn(),
+          },
+        },
         { provide: ProjectService, useValue: {} },
         { provide: CategoryService, useValue: {} },
         { provide: CurrencyService, useValue: {} },
@@ -1879,6 +2186,11 @@ describe('ExpenseReportService — isReportSinOrdenTrabajo', () => {
   it('directa con OT propia: la planilla debe llevarla', async () => {
     conReporte({ isDirecta: true, directaOrdenTrabajoId: otId })
     await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(false)
+  })
+
+  it('caja chica: no tiene OT propia, asi que no hay nada que heredar', async () => {
+    conReporte({ isCajaChica: true })
+    await expect(service.isReportSinOrdenTrabajo(reportId)).resolves.toBe(true)
   })
 
   it('rendición común (ni viático ni directa): la OT se sigue exigiendo', async () => {

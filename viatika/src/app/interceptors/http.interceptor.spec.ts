@@ -131,4 +131,18 @@ describe('httpInterceptor', () => {
       return of(new HttpResponse({ status: 200 }));
     }).subscribe();
   });
+
+  // Con el companyId pegado al final, /fondo-caja-chica/mine no resolvía en el
+  // backend y devolvía "Cannot GET".
+  it('does NOT append companyId to /fondo-caja-chica/mine', (done) => {
+    userState.getUser.and.returnValue({ access_token: validToken, companyId: 'c1' } as any);
+    userState.getToken.and.returnValue(validToken);
+    userState.isSuperAdmin.and.returnValue(false);
+    const req = new HttpRequest('GET', 'http://api/fondo-caja-chica/mine');
+    run(req, (r: HttpRequest<any>) => {
+      expect(r.url).toBe('http://api/fondo-caja-chica/mine');
+      done();
+      return of(new HttpResponse({ status: 200 }));
+    }).subscribe();
+  });
 });

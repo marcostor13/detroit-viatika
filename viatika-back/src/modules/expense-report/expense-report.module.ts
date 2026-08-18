@@ -21,6 +21,7 @@ import { ProjectModule } from '../project/project.module'
 import { CategoryModule } from '../category/category.module'
 import { ClientModule } from '../client/client.module'
 import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module'
+import { FondoCajaChicaModule } from '../fondo-caja-chica/fondo-caja-chica.module'
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ExchangeRateModule } from '../exchange-rate/exchange-rate.module'
     ClientModule,
     forwardRef(() => AdvanceModule),
     ExchangeRateModule,
+    FondoCajaChicaModule,
   ],
   controllers: [ExpenseReportController],
   providers: [ExpenseReportService],

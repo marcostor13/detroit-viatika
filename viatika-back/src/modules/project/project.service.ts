@@ -359,6 +359,73 @@ export class ProjectService {
     return !!enColaborador
   }
 
+  /**
+   * Responsables de caja chica cuya cadena firma este usuario.
+   *
+   * Reproduce lo que hace `buildCajaChicaChain`, que ignora el centro de costo
+   * del comprobante y usa los aprobadores del RESPONSABLE: sus niveles propios
+   * (regla 1.10) o, si no tiene ninguno, los del centro de costo principal
+   * (`primaryProjectId`, o `projectIds[0]` por retrocompatibilidad).
+   *
+   * Se usa para mostrarle su caja chica ANTES del envío: hasta ese momento los
+   * comprobantes no tienen cadena y no hay por dónde engancharla.
+   */
+  async findCajaChicaResponsibleIds(
+    approverId: string,
+    clientId: string
+  ): Promise<string[]> {
+    if (!Types.ObjectId.isValid(approverId) || !Types.ObjectId.isValid(clientId)) {
+      return []
+    }
+    const approverIdObject = new Types.ObjectId(approverId)
+    const clientIdObject = new Types.ObjectId(clientId)
+
+    const porNivelesPropios = await this.userModel
+      .find({
+        clientId: clientIdObject,
+        'permissions.approverLevels.userIds': approverIdObject,
+      })
+      .select('_id')
+      .lean()
+      .exec()
+
+    // Centros de costo donde este usuario es aprobador. Solo alcanzan a los
+    // responsables SIN niveles propios: en cuanto el colaborador tiene los
+    // suyos, el centro de costo deja de ser la fuente (`ownerOrProjectSource`).
+    const proyectos = await this.projectModel
+      .find({ clientId: clientIdObject, 'approverLevels.userIds': approverIdObject })
+      .select('_id')
+      .lean()
+      .exec()
+    const proyectoIds = proyectos.map(p => String(p._id))
+
+    const porCentroDeCosto = proyectoIds.length
+      ? await this.userModel
+        .find({
+          clientId: clientIdObject,
+          // "Sin niveles propios" = ningún nivel con al menos un aprobador,
+          // el mismo criterio de `hasConfiguredLevels`.
+          'permissions.approverLevels.userIds.0': { $exists: false },
+          $or: [
+            { 'permissions.primaryProjectId': { $in: proyectoIds } },
+            {
+              'permissions.primaryProjectId': { $in: [null, ''] },
+              'permissions.projectIds.0': { $in: proyectoIds },
+            },
+          ],
+        })
+        .select('_id')
+        .lean()
+        .exec()
+      : []
+
+    return [
+      ...new Set(
+        [...porNivelesPropios, ...porCentroDeCosto].map(u => String(u._id))
+      ),
+    ]
+  }
+
   /** Carga varios centros de costo por ID (usado al armar la cadena de aprobación). */
   async findManyByIds(ids: string[], clientId: string): Promise<ProjectDocument[]> {
     if (!ids.length) return []

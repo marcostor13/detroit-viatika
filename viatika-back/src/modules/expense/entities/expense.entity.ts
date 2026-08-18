@@ -110,7 +110,8 @@ export interface ExpenseCargosClasificacion {
 }
 
 export interface ExpenseDocument extends Document {
-  proyectId: Types.ObjectId
+  /** Opcional solo en caja chica; ver el @Prop correspondiente. */
+  proyectId?: Types.ObjectId
   /** Orden de Trabajo (LIM-XXX-NNNNNN), obligatoria en el formato oficial de planilla de movilidad (ADF-FOR-005). */
   ordenTrabajoId?: Types.ObjectId
   total: number
@@ -130,6 +131,16 @@ export interface ExpenseDocument extends Document {
   diasRetraso?: number
   categoryLimitPercent?: number
   categoryLimitWarning?: string
+  /**
+   * El gasto supera el tope de alerta por comprobante de la empresa
+   * (`Client.limits.topeComprobante`). Es SOLO un aviso: no bloquea el registro
+   * ni la aprobación. Se persiste para que el aprobador lo vea sin recalcular.
+   */
+  superaTopeComprobante?: boolean
+  /** Tope vigente al registrar el gasto, congelado para mostrarlo en el aviso. */
+  topeComprobante?: number
+  /** Firma que acompaña al comprobante (imagen o PDF). Obligatoria en caja chica. */
+  firmaUrl?: string
   expenseReportId?: Types.ObjectId
   expenseType?: ExpenseType
   mobilityRows?: MobilityRow[]
@@ -211,8 +222,13 @@ export interface GetExpenseDocument extends Omit<ExpenseDocument, '_id'> {
 
 @Schema({ timestamps: true })
 export class Expense {
-  @Prop({ required: true, type: Types.ObjectId, ref: 'Project' })
-  proyectId: Types.ObjectId
+  /**
+   * Centro de costo del comprobante. Opcional SOLO en caja chica, donde el
+   * responsable puede no saber a qué centro imputar cada gasto; en el resto de
+   * rendiciones el servicio lo sigue exigiendo (ver `assertProyectIdRequerido`).
+   */
+  @Prop({ required: false, type: Types.ObjectId, ref: 'Project' })
+  proyectId?: Types.ObjectId
 
   @Prop({ required: false, type: Types.ObjectId, ref: 'OrdenTrabajo' })
   ordenTrabajoId?: Types.ObjectId
@@ -270,6 +286,20 @@ export class Expense {
 
   @Prop({ type: String, required: false })
   categoryLimitWarning?: string
+
+  @Prop({ type: Boolean, required: false })
+  superaTopeComprobante?: boolean
+
+  /**
+   * Firma que acompaña al comprobante, como imagen o PDF. Obligatoria en caja
+   * chica: el papel llega firmado por quien recibió el dinero y ese respaldo
+   * tiene que quedar en el sistema.
+   */
+  @Prop({ type: String, required: false })
+  firmaUrl?: string
+
+  @Prop({ type: Number, required: false })
+  topeComprobante?: number
 
   @Prop({
     type: [

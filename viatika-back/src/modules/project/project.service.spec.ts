@@ -39,6 +39,7 @@ const makeQuery = (resolvedValue: any) => ({
   populate: jest.fn().mockReturnThis(),
   sort: jest.fn().mockReturnThis(),
   select: jest.fn().mockReturnThis(),
+  lean: jest.fn().mockReturnThis(),
   exec: jest.fn().mockResolvedValue(resolvedValue),
 })
 
@@ -64,7 +65,7 @@ const mockProjectModel = {
 }
 
 const mockLineaNegocioModel = { findOne: jest.fn() }
-const mockUserModel = { findOne: jest.fn(), exists: jest.fn() }
+const mockUserModel = { findOne: jest.fn(), find: jest.fn(), exists: jest.fn() }
 
 describe('ProjectService', () => {
   let service: ProjectService
@@ -76,6 +77,8 @@ describe('ProjectService', () => {
     mockProjectModel.findOne.mockReturnValue(makeQuery(null))
     mockLineaNegocioModel.findOne.mockReturnValue(makeQuery(null))
     mockUserModel.findOne.mockReturnValue(makeQuery(null))
+    mockUserModel.find.mockReturnValue(makeQuery([]))
+    mockProjectModel.find.mockReturnValue(makeQuery([]))
     mockProjectModel.exists.mockResolvedValue(null)
     mockUserModel.exists.mockResolvedValue(null)
 
@@ -91,6 +94,43 @@ describe('ProjectService', () => {
       ],
     }).compile()
     service = module.get<ProjectService>(ProjectService)
+  })
+
+  describe('findCajaChicaResponsibleIds', () => {
+    const approverId = new Types.ObjectId().toString()
+
+    it('junta a quienes lo tienen en sus niveles propios y a los que dependen del centro de costo, sin repetir', async () => {
+      const conNivelesPropios = new Types.ObjectId()
+      const porCentroDeCosto = new Types.ObjectId()
+      mockUserModel.find
+        .mockReturnValueOnce(makeQuery([{ _id: conNivelesPropios }]))
+        .mockReturnValueOnce(makeQuery([{ _id: porCentroDeCosto }, { _id: conNivelesPropios }]))
+      mockProjectModel.find.mockReturnValue(makeQuery([{ _id: new Types.ObjectId(projectId) }]))
+
+      const ids = await service.findCajaChicaResponsibleIds(approverId, clientId)
+
+      expect(ids).toEqual([String(conNivelesPropios), String(porCentroDeCosto)])
+    })
+
+    it('no consulta por centro de costo si el usuario no es aprobador de ninguno', async () => {
+      mockUserModel.find.mockReturnValue(makeQuery([]))
+      mockProjectModel.find.mockReturnValue(makeQuery([]))
+
+      await expect(
+        service.findCajaChicaResponsibleIds(approverId, clientId)
+      ).resolves.toEqual([])
+      // Solo la consulta de niveles propios.
+      expect(mockUserModel.find).toHaveBeenCalledTimes(1)
+    })
+
+    it('el centro de costo solo alcanza a responsables SIN niveles propios', async () => {
+      mockProjectModel.find.mockReturnValue(makeQuery([{ _id: new Types.ObjectId(projectId) }]))
+
+      await service.findCajaChicaResponsibleIds(approverId, clientId)
+
+      const filtroPorCentro = mockUserModel.find.mock.calls[1][0]
+      expect(filtroPorCentro['permissions.approverLevels.userIds.0']).toEqual({ $exists: false })
+    })
   })
 
   describe('isApproverForClient', () => {
@@ -600,6 +640,8 @@ describe('ProjectService', () => {
     it('errors the row (does not silently drop) when an approver email is not found', async () => {
       mockProjectModel.findOne.mockReturnValue(makeQuery(null))
       mockUserModel.findOne.mockReturnValue(makeQuery(null))
+    mockUserModel.find.mockReturnValue(makeQuery([]))
+    mockProjectModel.find.mockReturnValue(makeQuery([]))
 
       const result = await service.bulkImport(
         [{ 'Nombre Proyecto': 'Alpha', 'Aprobador N1': 'ghost@empresa.com' }],

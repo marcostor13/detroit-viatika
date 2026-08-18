@@ -52,7 +52,11 @@ describe('ExpenseService — email gating (isEmailEnabled)', () => {
           provide: getModelToken(Expense.name),
           useValue: { aggregate: jest.fn() },
         },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: mockEmailServiceGating },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: mockUserServiceGating },
@@ -160,7 +164,11 @@ describe('ExpenseService — Fase 5 (plazos y límites de categoría)', () => {
           provide: getModelToken(Expense.name),
           useValue: mockExpenseRepository,
         },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: noopDeps.emailService },
         { provide: ProjectService, useValue: noopDeps.projectService },
         { provide: UserService, useValue: noopDeps.userService },
@@ -356,7 +364,11 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
         ExpenseService,
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('sk-test') } },
         { provide: getModelToken(Expense.name), useValue: mockExpenseModel },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: {} },
@@ -573,7 +585,11 @@ describe('ExpenseService — assertCanMutateExpense (VD-69: N1/N2 no editan ni e
         ExpenseService,
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('sk-test') } },
         { provide: getModelToken(Expense.name), useValue: mockExpenseModel },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: {} },
@@ -675,7 +691,11 @@ describe('ExpenseService — resolveMovilidadCategoryId (VD-89: planilla en dire
           useValue: { get: jest.fn().mockReturnValue('sk-test') },
         },
         { provide: getModelToken(Expense.name), useValue: {} },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: userService },
@@ -754,6 +774,11 @@ describe('ExpenseService — createDeclaracionJurada (DJE: un gasto por rubro)',
   }
   const expenseReportService = {
     assertReportNotLockedByCajaChica: jest.fn(),
+    assertPuedeCargarEnCajaChica: jest.fn().mockResolvedValue(undefined),
+    resolveCentroCostoCajaChica: jest.fn().mockResolvedValue(undefined),
+    // Estas pruebas son de rendiciones normales: el centro de costo sigue
+    // siendo obligatorio y no se pide firma.
+    isReportCajaChica: jest.fn().mockResolvedValue(false),
     buildChainForNewExpense: jest.fn(),
     addExpenseToReport: jest.fn(),
     // Bimoneda: la DJE consulta la moneda de la rendición para calcular el
@@ -771,7 +796,11 @@ describe('ExpenseService — createDeclaracionJurada (DJE: un gasto por rubro)',
           useValue: { get: jest.fn().mockReturnValue('sk-test') },
         },
         { provide: getModelToken(Expense.name), useValue: expenseModel },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: userService },
@@ -969,6 +998,11 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
   const userService = { findOne: jest.fn().mockResolvedValue({ name: 'John Doe' }) }
   const expenseReportService = {
     assertReportNotLockedByCajaChica: jest.fn(),
+    assertPuedeCargarEnCajaChica: jest.fn().mockResolvedValue(undefined),
+    resolveCentroCostoCajaChica: jest.fn().mockResolvedValue(undefined),
+    // Estas pruebas son de rendiciones normales: el centro de costo sigue
+    // siendo obligatorio y no se pide firma.
+    isReportCajaChica: jest.fn().mockResolvedValue(false),
     isReportSinOrdenTrabajo: jest.fn().mockResolvedValue(false),
     findCurrencyMeta: jest.fn().mockResolvedValue(null),
     findOne: jest.fn().mockResolvedValue({ userId }),
@@ -1100,6 +1134,11 @@ describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
   }
   const expenseReportService = {
     assertReportNotLockedByCajaChica: jest.fn(),
+    assertPuedeCargarEnCajaChica: jest.fn().mockResolvedValue(undefined),
+    resolveCentroCostoCajaChica: jest.fn().mockResolvedValue(undefined),
+    // Estas pruebas son de rendiciones normales: el centro de costo sigue
+    // siendo obligatorio y no se pide firma.
+    isReportCajaChica: jest.fn().mockResolvedValue(false),
     buildChainForNewExpense: jest.fn(),
     addExpenseToReport: jest.fn(),
     findCurrencyMeta: jest.fn().mockResolvedValue(null),
@@ -1225,5 +1264,127 @@ describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
     const doc = expenseModel.create.mock.calls[0][0]
     expect(doc.tipoComida).toBeUndefined()
     expect(doc.description).toBe('Peaje de ida')
+  })
+
+  // Tope de ALERTA por comprobante: único para la empresa, sin distinguir
+  // categoría, y a diferencia de los topes de comida NUNCA bloquea.
+  describe('tope de alerta por comprobante', () => {
+    const tkBody = (total: number) =>
+      ({
+        clientId,
+        userId,
+        proyectId,
+        categoryId,
+        total,
+        subTipo: 'TK',
+        declaracionJurada: false,
+        rucEmisor: '20123456789',
+        imageUrl: 'https://s3/doc.pdf',
+        data: 'Peaje',
+      }) as unknown as CreateExpenseDto
+
+    it('marca el gasto que supera el tope pero lo registra igual', async () => {
+      conLimites({ topeComprobante: 400 })
+
+      await service.createOtherExpense(tkBody(520))
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(doc.superaTopeComprobante).toBe(true)
+      expect(doc.topeComprobante).toBe(400)
+    })
+
+    it('no marca el gasto que llega justo al tope', async () => {
+      conLimites({ topeComprobante: 400 })
+
+      await service.createOtherExpense(tkBody(400))
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(doc.superaTopeComprobante).toBe(false)
+      expect(doc.topeComprobante).toBe(400)
+    })
+
+    it('sin tope configurado no marca nada', async () => {
+      conLimites({ alimentacionAlmuerzo: 30 })
+
+      await service.createOtherExpense(tkBody(9999))
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(doc.superaTopeComprobante).toBeUndefined()
+      expect(doc.topeComprobante).toBeUndefined()
+    })
+  })
+
+  // En caja chica el centro de costo es opcional y la firma obligatoria; en el
+  // resto de rendiciones sigue siendo al revés.
+  describe('comprobante de caja chica', () => {
+    const cajaChicaBody = (extra: Record<string, unknown> = {}) =>
+      ({
+        clientId,
+        userId,
+        categoryId,
+        total: 100,
+        subTipo: 'TK',
+        declaracionJurada: false,
+        rucEmisor: '20123456789',
+        imageUrl: 'https://s3/doc.pdf',
+        data: 'Peaje',
+        expenseReportId: new Types.ObjectId().toHexString(),
+        ...extra,
+      }) as unknown as CreateExpenseDto
+
+    it('sin centro de costo lo imputa al del responsable (el de su solicitud)', async () => {
+      expenseReportService.isReportCajaChica.mockResolvedValue(true)
+      const ccDelResponsable = new Types.ObjectId()
+      expenseReportService.resolveCentroCostoCajaChica.mockResolvedValue(ccDelResponsable)
+
+      await service.createOtherExpense(
+        cajaChicaBody({ firmaUrl: 'https://s3/firma.png' })
+      )
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(String(doc.proyectId)).toBe(String(ccDelResponsable))
+      expect(doc.firmaUrl).toBe('https://s3/firma.png')
+    })
+
+    it('si no hay de donde sacar el centro de costo, el alta no se rompe', async () => {
+      expenseReportService.isReportCajaChica.mockResolvedValue(true)
+      expenseReportService.resolveCentroCostoCajaChica.mockResolvedValue(undefined)
+
+      await service.createOtherExpense(
+        cajaChicaBody({ firmaUrl: 'https://s3/firma.png' })
+      )
+
+      expect(expenseModel.create.mock.calls[0][0].proyectId).toBeUndefined()
+    })
+
+    it('guarda el centro de costo cuando el responsable sí lo indica', async () => {
+      expenseReportService.isReportCajaChica.mockResolvedValue(true)
+
+      await service.createOtherExpense(
+        cajaChicaBody({ proyectId, firmaUrl: 'https://s3/firma.png' })
+      )
+
+      expect(expenseModel.create.mock.calls[0][0].proyectId.toString()).toBe(
+        proyectId
+      )
+    })
+
+    it('rechaza el comprobante sin firma', async () => {
+      expenseReportService.isReportCajaChica.mockResolvedValue(true)
+
+      await expect(service.createOtherExpense(cajaChicaBody())).rejects.toThrow(
+        /firma del comprobante/i
+      )
+      expect(expenseModel.create).not.toHaveBeenCalled()
+    })
+
+    it('fuera de caja chica el centro de costo sigue siendo obligatorio', async () => {
+      expenseReportService.isReportCajaChica.mockResolvedValue(false)
+
+      await expect(service.createOtherExpense(cajaChicaBody())).rejects.toThrow(
+        /centro de costo es requerido/i
+      )
+      expect(expenseModel.create).not.toHaveBeenCalled()
+    })
   })
 })

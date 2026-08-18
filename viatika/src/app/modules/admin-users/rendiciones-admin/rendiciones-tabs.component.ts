@@ -35,7 +35,6 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Rendiciones Directas
         </button>
-        @if (showCajaChicaTab()) {
         <button
           (click)="setTab('caja-chica')"
           class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
@@ -46,18 +45,39 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         >
           Caja Chica
         </button>
-        }
       </div>
 
       <div class="flex-1 overflow-auto">
         @if (activeTab() === 'rendiciones') {
-          <app-rendiciones-admin />
+          <app-rendiciones-admin mode="fondos" />
         }
         @if (activeTab() === 'directas') {
           <app-rendiciones-directas />
         }
         @if (activeTab() === 'caja-chica') {
-          <app-rendiciones-caja-chica />
+          @if (showAgrupadorContable()) {
+          <div class="flex gap-1 px-6 pt-4">
+            <button
+              (click)="cajaChicaView.set('flujo')"
+              class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+              [class]="cajaChicaView() === 'flujo' ? 'bg-background text-primary' : 'text-gray-500'"
+            >
+              Solicitudes y rendiciones
+            </button>
+            <button
+              (click)="cajaChicaView.set('agrupador')"
+              class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors"
+              [class]="cajaChicaView() === 'agrupador' ? 'bg-background text-primary' : 'text-gray-500'"
+            >
+              Reportes contables
+            </button>
+          </div>
+          }
+          @if (cajaChicaView() === 'flujo' || !showAgrupadorContable()) {
+            <app-rendiciones-admin mode="caja-chica" />
+          } @else {
+            <app-rendiciones-caja-chica />
+          }
         }
       </div>
     </div>
@@ -71,20 +91,28 @@ export class RendicionesTabsComponent implements OnInit {
   activeTab = signal<Tab>('rendiciones');
 
   /**
-   * "Solicitud de Fondos" y "Rendiciones Directas" las ve cualquiera que llegue
-   * acá: quien abre /rendiciones ya pasó el guard del módulo (o entró por ser
-   * aprobador), y cada pestaña acota su contenido a lo que le compete — solo
-   * Contabilidad, Tesorería y los administradores ven la empresa completa.
-   * Antes las directas eran exclusivas de Contabilidad, así que un aprobador no
-   * tenía dónde verlas y Tesorería, que es quien cierra las rendiciones
-   * (VD-66/VD-49), solo llegaba pegando el URL del detalle a mano.
-   *
-   * Caja Chica se queda fuera: es el agrupador contable de las rendiciones de
-   * caja chica, sus endpoints son de Contabilidad/Admin/Tesorería y un aprobador
-   * no tiene nada que aprobar ahí, así que la pestaña le saldría vacía o en 403.
+   * Sub-vista de la pestaña Caja Chica. `flujo` es la bandeja de solicitudes de
+   * fondo y rendiciones de caja chica (la que usa el aprobador); `agrupador` es
+   * el reporte consolidado que arma Contabilidad.
    */
-  showCajaChicaTab(): boolean {
+  cajaChicaView = signal<'flujo' | 'agrupador'>('flujo');
+
+  /**
+   * Las tres pestañas las ve cualquiera que llegue acá: quien abre /rendiciones
+   * ya pasó el guard del módulo (o entró por ser aprobador), y cada pestaña
+   * acota su contenido a lo que le compete — solo Contabilidad, Tesorería y los
+   * administradores ven la empresa completa.
+   *
+   * Caja Chica estaba reservada a Contabilidad/Tesorería/Admin porque solo
+   * contenía el agrupador contable. Ahora la caja chica tiene su propio ciclo de
+   * aprobación (solicitud de fondo + rendición contra el fondo), así que el
+   * aprobador necesita la pestaña: sus documentos salieron de "Solicitud de
+   * Fondos", donde se mezclaban con los viáticos. El agrupador contable, que sí
+   * responde 403 fuera de esos roles, queda detrás de esta sub-vista.
+   */
+  showAgrupadorContable(): boolean {
     return (
+      this.userState.isSuperAdmin() ||
       this.userState.isContabilidadInCompany() ||
       this.userState.isTesoreria() ||
       this.userState.isAdminInCompany()
@@ -94,9 +122,9 @@ export class RendicionesTabsComponent implements OnInit {
   ngOnInit(): void {
     this.route.queryParamMap.subscribe((params) => {
       const tab = params.get('tab') as Tab | null;
-      // El ?tab= se respeta solo si el usuario tiene esa pestaña; si no, cae en
-      // la principal en vez de dejar el contenido sin pestaña visible.
-      if (tab === 'directas' || (tab === 'caja-chica' && this.showCajaChicaTab())) {
+      // El ?tab= se respeta solo si es una pestaña conocida; si no, cae en la
+      // principal en vez de dejar el contenido sin pestaña visible.
+      if (tab === 'directas' || tab === 'caja-chica') {
         this.activeTab.set(tab);
       } else {
         this.activeTab.set('rendiciones');

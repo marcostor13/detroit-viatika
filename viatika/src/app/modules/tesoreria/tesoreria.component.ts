@@ -17,6 +17,11 @@ import {
 } from '../../interfaces/advance.interface';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
+import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
+import {
+  IFondoCajaChica,
+  IFondoMovement,
+} from '../../interfaces/fondo-caja-chica.interface';
 import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
@@ -36,6 +41,7 @@ export class TesoreriaComponent implements OnInit {
   private userStateService = inject(UserStateService);
   private notificationService = inject(NotificationService);
   private uploadService = inject(UploadService);
+  private fondoCajaChicaService = inject(FondoCajaChicaService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private fb = inject(FormBuilder);
@@ -53,7 +59,13 @@ export class TesoreriaComponent implements OnInit {
       // (pendingReimbursements). Las devoluciones (saldo que devuelve el colaborador)
       // recuperan su propia pestaña "Devoluciones".
       tabs.push({ value: 'reembolsos', label: 'Reembolsos', badge: this.pendingReimbursements.length || undefined });
-      tabs.push({ value: 'devoluciones', label: 'Devoluciones', badge: this.pendingReturns.length || undefined });
+      tabs.push({
+        value: 'devoluciones',
+        label: 'Devoluciones',
+        badge:
+          this.pendingReturns.length + this.cajaChicaConDevoluciones().length ||
+          undefined,
+      });
     }
     if (this.canManageDirectaDeposit) {
       tabs.push({ value: 'rendiciones-directas', label: 'Rendiciones Directas' });
@@ -235,6 +247,7 @@ export class TesoreriaComponent implements OnInit {
         this.isLoading.set(false);
         this.loadPendingReimbursements();
         this.loadPendingReturns();
+        this.loadFondosCajaChica();
         this.loadDirectaDepositReports();
         this.loadPendingViaticoPayments();
       },
@@ -242,6 +255,7 @@ export class TesoreriaComponent implements OnInit {
         this.isLoading.set(false);
         this.loadPendingReimbursements();
         this.loadPendingReturns();
+        this.loadFondosCajaChica();
         this.loadDirectaDepositReports();
         this.loadPendingViaticoPayments();
       },
@@ -274,6 +288,48 @@ export class TesoreriaComponent implements OnInit {
       next: rows => { this.pendingReturns = rows ?? []; },
       error: () => { this.pendingReturns = []; },
     });
+  }
+
+  // -- Caja chica: sobrantes por devolver y comprobantes ya cargados ----------
+
+  /**
+   * Cajas chicas de la empresa. La devolucion del sobrante no vive en una
+   * rendicion sino como movimiento del fondo, asi que Tesoreria no tenia donde
+   * ver el comprobante que sube el responsable: aparece aqui, junto a las
+   * devoluciones de saldo, que es la misma conciliacion bancaria.
+   */
+  fondosCajaChica = signal<IFondoCajaChica[]>([]);
+
+  cajaChicaConDevoluciones = computed(() =>
+    this.fondosCajaChica().filter(
+      f =>
+        Number(f.pendingReturnAmount ?? 0) > 0 ||
+        (f.movements ?? []).some(m => m.type === 'devolucion')
+    )
+  );
+
+  private loadFondosCajaChica(): void {
+    if (!this.canPayAndSettle) {
+      this.fondosCajaChica.set([]);
+      return;
+    }
+    this.fondoCajaChicaService.findAllByClient().subscribe({
+      next: rows => this.fondosCajaChica.set(rows ?? []),
+      error: () => this.fondosCajaChica.set([]),
+    });
+  }
+
+  fondoResponsableName(f: IFondoCajaChica): string {
+    const r = f.responsibleId;
+    return r && typeof r === 'object' ? r.name : '-';
+  }
+
+  /** Devoluciones registradas contra un fondo, de la mas reciente a la mas antigua. */
+  fondoDevoluciones(f: IFondoCajaChica): IFondoMovement[] {
+    return (f.movements ?? [])
+      .filter(m => m.type === 'devolucion')
+      .slice()
+      .reverse();
   }
 
   private loadPendingViaticoPayments(): void {
