@@ -325,8 +325,13 @@ export class RendicionesAdminComponent implements OnInit {
           : isDirectaChain
             ? 'Directa'
             : 'Solicitud de Fondos',
+        // Un color por tipo, tambien dentro de caja chica: solicitud y rendicion
+        // conviven en la misma pestana y compartir el morado obligaba a leer la
+        // etiqueta entera para distinguirlas.
         kindColor: isCajaChica
-          ? 'bg-purple-100 text-purple-700'
+          ? (r.isSolicitudCajaChica
+            ? 'bg-purple-100 text-purple-700'
+            : 'bg-teal-100 text-teal-700')
           : isDirectaChain
             ? 'bg-amber-100 text-amber-700'
             : 'bg-blue-100 text-blue-700',
