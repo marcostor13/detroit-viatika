@@ -567,6 +567,15 @@
         S/ {{ cajaChicaTotalExpenses(report) | number:'1.2-2' }}
       </ng-container>
 
+      <!-- Estado: en qué paso va la rendición, igual que en directas y en
+           solicitud de fondos. Sin esta columna el responsable no sabía si
+           todavía podía cargar gastos o si ya estaba con sus aprobadores. -->
+      <ng-container *appColumn="'estado'; header: 'Estado'; align: 'center'; let report">
+        <span class="inline-block px-2 py-0.5 rounded-full text-xs font-medium" [class]="cajaChicaStatusColor(report)">
+          {{ cajaChicaStatusLabel(report) }}
+        </span>
+      </ng-container>
+
       <!-- Acciones -->
       <ng-container *appColumn="'acciones'; header: 'Acciones'; align: 'right'; let report">
         <div class="flex items-center justify-end gap-1">

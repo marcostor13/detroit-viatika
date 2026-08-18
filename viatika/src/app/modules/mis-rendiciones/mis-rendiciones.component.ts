@@ -1143,6 +1143,42 @@ export class MisRendicionesComponent implements OnInit {
     return map[report.status] ?? report.status;
   }
 
+  /**
+   * Estado de una RENDICIÓN de caja chica, con las palabras que usa el
+   * responsable. No reusa `getLegacyReportLabel` porque el vocabulario cambia:
+   * lo que ahí es "Reembolsada" acá es "Repuesta" (Tesorería devuelve a la caja
+   * lo aprobado), y "Enviada" no dice quién la tiene.
+   */
+  cajaChicaStatusLabel(report: IExpenseReport): string {
+    const map: Partial<Record<string, string>> = {
+      open: 'Registrando gastos',
+      submitted: 'Pendiente de aprobación',
+      pending_accounting: 'En contabilidad',
+      approved: 'Aprobada, por reponer',
+      reimbursed: 'Repuesta',
+      settled: 'Repuesta',
+      closed: 'Cerrada',
+      rejected: 'Observada',
+      cancelled: 'Cancelada',
+    };
+    return map[report.status] ?? report.status;
+  }
+
+  cajaChicaStatusColor(report: IExpenseReport): string {
+    const map: Partial<Record<string, string>> = {
+      open: 'bg-emerald-100 text-emerald-700',
+      submitted: 'bg-yellow-100 text-yellow-700',
+      pending_accounting: 'bg-violet-100 text-violet-700',
+      approved: 'bg-green-100 text-green-700',
+      reimbursed: 'bg-teal-100 text-teal-700',
+      settled: 'bg-teal-100 text-teal-700',
+      closed: 'bg-gray-100 text-gray-500',
+      rejected: 'bg-red-100 text-red-700',
+      cancelled: 'bg-gray-100 text-gray-500',
+    };
+    return map[report.status] ?? 'bg-gray-100 text-gray-600';
+  }
+
   getLegacyReportColor(report: IExpenseReport): string {
     if (this.isReportInProgress(report)) return 'bg-emerald-100 text-emerald-700';
     if (this.isReportEffectivelyClosed(report)) return 'bg-gray-100 text-gray-500';
