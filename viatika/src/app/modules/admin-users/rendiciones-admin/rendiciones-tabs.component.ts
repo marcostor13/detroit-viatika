@@ -5,6 +5,7 @@ import { UserStateService } from '../../../services/user-state.service';
 import { RendicionesAdminComponent } from './rendiciones-admin.component';
 import { RendicionesDirectasComponent } from '../../rendiciones-directas/rendiciones-directas.component';
 import { RendicionesCajaChicaComponent } from '../../rendiciones-caja-chica/rendiciones-caja-chica.component';
+import { FondoCajaChicaService } from '../../../services/fondo-caja-chica.service';
 
 type Tab = 'rendiciones' | 'directas' | 'caja-chica';
 
@@ -44,6 +45,9 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
           [class.text-gray-500]="activeTab() !== 'caja-chica'"
         >
           Caja Chica
+          @if (cajaChicaPendientes() > 0) {
+            <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ cajaChicaPendientes() }}</span>
+          }
         </button>
       </div>
 
@@ -87,6 +91,7 @@ export class RendicionesTabsComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private userState = inject(UserStateService);
+  private fondoCajaChicaService = inject(FondoCajaChicaService);
 
   activeTab = signal<Tab>('rendiciones');
 
@@ -96,6 +101,12 @@ export class RendicionesTabsComponent implements OnInit {
    * el reporte consolidado que arma Contabilidad.
    */
   cajaChicaView = signal<'flujo' | 'agrupador'>('flujo');
+
+  /**
+   * Documentos de caja chica que esperan una acción de este usuario. Lo cuenta
+   * el backend según su rol, para que el número se vea sin abrir la pestaña.
+   */
+  cajaChicaPendientes = signal(0);
 
   /**
    * Las tres pestañas las ve cualquiera que llegue acá: quien abre /rendiciones
@@ -129,6 +140,15 @@ export class RendicionesTabsComponent implements OnInit {
       } else {
         this.activeTab.set('rendiciones');
       }
+    });
+    this.loadCajaChicaPendientes();
+  }
+
+  private loadCajaChicaPendientes(): void {
+    this.fondoCajaChicaService.pendientes().subscribe({
+      next: ({ total }) => this.cajaChicaPendientes.set(total ?? 0),
+      // Sin contador la pestaña sigue funcionando: no se avisa del error.
+      error: () => this.cajaChicaPendientes.set(0),
     });
   }
 

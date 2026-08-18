@@ -6336,6 +6336,151 @@ export class ExpenseReportService implements OnModuleInit {
    * presupuesto. Viven aquí y no en la lista de viáticos porque para el
    * colaborador son otra cosa, aunque por dentro compartan el mismo flujo.
    */
+  /**
+   * Cuántos documentos de caja chica esperan una acción DE ESTE usuario, para
+   * el contador de la pestaña /rendiciones?tab=caja-chica. Cada rol cuenta lo
+   * suyo y un usuario que junta varios (un Administrador que además aprueba)
+   * suma sin repetir documentos.
+   *
+   * Se resuelve en el servidor y no contando la lista en el front porque la
+   * pestaña muestra el número ANTES de abrirse: pedir el listado completo solo
+   * para contarlo cargaría la bandeja entera en cada visita a /rendiciones.
+   */
+  async countCajaChicaPendientes(
+    userId: string,
+    clientId: string,
+    opts: {
+      esContabilidad: boolean
+      esTesoreria: boolean
+      /** Admin/Superadmin: ve todo lo pendiente de la empresa. */
+      esAdmin: boolean
+    }
+  ): Promise<{ total: number }> {
+    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(clientId)) {
+      return { total: 0 }
+    }
+    const uid = new Types.ObjectId(userId)
+    const cid = new Types.ObjectId(clientId)
+    const ids = new Set<string>()
+    const add = (docs: { _id: unknown }[]) => {
+      for (const d of docs) ids.add(String(d._id))
+    }
+    const soloIds = { _id: 1 } as const
+
+    // Aprobador: le toca firmar. La solicitud lleva su cadena en el propio
+    // documento; la rendición, en la de cada comprobante.
+    const solicitudesPorFirmar = await this.expenseReportModel
+      .find({
+        clientId: cid,
+        isSolicitudCajaChica: true,
+        status: 'pending_l1',
+        viaticoApproverChain: {
+          $elemMatch: { approved: { $ne: true }, approverIds: uid },
+        },
+      })
+      .select(soloIds)
+      .lean()
+      .exec()
+    add(solicitudesPorFirmar)
+
+    const comprobantesPorFirmar = await this.expenseModel
+      .find({
+        clientId: cid,
+        status: { $ne: 'rejected' },
+        approverChain: {
+          $elemMatch: { approved: { $ne: true }, approverIds: uid },
+        },
+      })
+      .select({ expenseReportId: 1 })
+      .lean<{ expenseReportId?: Types.ObjectId }[]>()
+      .exec()
+    const reportIdsPorFirmar = [
+      ...new Set(
+        comprobantesPorFirmar
+          .map(e => e.expenseReportId)
+          .filter((x): x is Types.ObjectId => !!x)
+          .map(String)
+      ),
+    ].map(x => new Types.ObjectId(x))
+    if (reportIdsPorFirmar.length > 0) {
+      const rendicionesPorFirmar = await this.expenseReportModel
+        .find({
+          _id: { $in: reportIdsPorFirmar },
+          isCajaChica: true,
+          status: 'submitted',
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(rendicionesPorFirmar)
+    }
+
+    if (opts.esContabilidad || opts.esAdmin) {
+      const enContabilidad = await this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            { isSolicitudCajaChica: true, status: 'pending_contabilidad' },
+            { isCajaChica: true, status: 'pending_accounting' },
+          ],
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(enContabilidad)
+    }
+
+    if (opts.esTesoreria || opts.esAdmin) {
+      // Depósito del presupuesto y reposición de lo ya aprobado: las dos colas
+      // de Tesorería en caja chica.
+      const enTesoreria = await this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            {
+              isSolicitudCajaChica: true,
+              status: { $in: ['viatico_approved', 'partially_paid'] },
+            },
+            {
+              isCajaChica: true,
+              status: 'approved',
+              $and: [
+                {
+                  $or: [
+                    { reimbursementPaymentInfo: { $exists: false } },
+                    { reimbursementPaymentInfo: null },
+                  ],
+                },
+              ],
+            },
+          ],
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(enTesoreria)
+    }
+
+    if (opts.esAdmin) {
+      // El Administrador ve el trabajo de la empresa, no solo el suyo: se suman
+      // los documentos que esperan a CUALQUIER aprobador.
+      const esperandoAprobador = await this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            { isSolicitudCajaChica: true, status: 'pending_l1' },
+            { isCajaChica: true, status: 'submitted' },
+          ],
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(esperandoAprobador)
+    }
+
+    return { total: ids.size }
+  }
+
   async findMySolicitudesCajaChica(userId: string, clientId: string) {
     return this.expenseReportModel
       .find({
