@@ -625,7 +625,7 @@
           </thead>
           <tbody>
             @for (s of solicitudesCajaChica(); track s._id) {
-              <tr class="border-t border-divider">
+              <tr class="border-t border-divider cursor-pointer hover:bg-background" (click)="toggleSolicitudCronologia(s._id)">
                 <td class="px-4 py-2.5 text-ink-700">{{ s.createdAt | date:'dd/MM/yyyy' }}</td>
                 <td class="px-4 py-2.5 font-medium text-ink-900">
                   S/ {{ solicitudMonto(s) | number:'1.2-2' }}
@@ -638,14 +638,28 @@
                   }
                 </td>
                 <td class="px-4 py-2.5 text-right">
-                  <span
-                    class="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
-                    [class]="solicitudStatusColor(s.status)"
-                  >
-                    {{ solicitudStatusLabel(s.status) }}
-                  </span>
+                  <div class="inline-flex items-center gap-2">
+                    <span
+                      class="inline-block px-2 py-0.5 rounded-full text-xs font-medium"
+                      [class]="solicitudStatusColor(s.status)"
+                    >
+                      {{ solicitudStatusLabel(s.status) }}
+                    </span>
+                    <app-icon [name]="solicitudCronologiaId() === s._id ? 'chevron-up' : 'chevron-down'" size="sm" class="text-tertiary" />
+                  </div>
                 </td>
               </tr>
+              <!-- Cronología del trámite: la misma que ve el aprobador en
+                   /rendiciones. El responsable no entra a esa pantalla, así que
+                   sin esto solo sabía "pendiente", no en qué paso. -->
+              @if (solicitudCronologiaId() === s._id) {
+                <tr class="border-t border-divider bg-background">
+                  <td colspan="4" class="px-4 py-4">
+                    <p class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-3">Estado de la solicitud</p>
+                    <app-flow-timeline [steps]="solicitudFlowSteps(s)" />
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>

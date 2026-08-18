@@ -12,6 +12,8 @@ import {
 } from '../../interfaces/expense-report.interface';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CajaChicaReportService } from '../../services/caja-chica-report.service';
+import { buildReportFlowSteps, FlowStep } from '../../shared/flow-steps.util';
+import { FlowTimelineComponent } from '../../design-system/flow-timeline/flow-timeline.component';
 import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
 import { UploadService } from '../../services/upload.service';
 import {
@@ -60,7 +62,7 @@ type UnifiedViaticoItem = {
 @Component({
   selector: 'app-mis-rendiciones',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, CreateRendicionModalComponent, DataTableComponent, ColumnDirective, ModalComponent, ButtonComponent, IconComponent, EmptyStateComponent],
+  imports: [CommonModule, FormsModule, RouterModule, CreateRendicionModalComponent, DataTableComponent, ColumnDirective, ModalComponent, ButtonComponent, IconComponent, EmptyStateComponent, FlowTimelineComponent],
   templateUrl: './mis-rendiciones.component.html',
   styleUrls: ['./mis-rendiciones.component.scss']
 })
@@ -218,6 +220,24 @@ export class MisRendicionesComponent implements OnInit {
     return (
       SOLICITUD_CAJA_CHICA_STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600'
     );
+  }
+
+  /**
+   * Solicitud cuya cronología está abierta. El responsable solo entra a
+   * /mis-rendiciones: sin esto no tenía dónde ver en qué paso quedó su
+   * solicitud, que es justo lo que el aprobador sí ve en /rendiciones.
+   */
+  solicitudCronologiaId = signal<string | null>(null);
+
+  toggleSolicitudCronologia(id: string): void {
+    this.solicitudCronologiaId.set(
+      this.solicitudCronologiaId() === id ? null : id
+    );
+  }
+
+  /** Misma línea de tiempo que ve el aprobador (VD-31). */
+  solicitudFlowSteps(s: ISolicitudCajaChica): FlowStep[] {
+    return buildReportFlowSteps(s);
   }
 
   /** Presupuesto pedido, con respaldo para las solicitudes anteriores al campo. */

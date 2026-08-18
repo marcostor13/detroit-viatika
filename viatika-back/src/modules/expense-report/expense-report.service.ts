@@ -6344,9 +6344,21 @@ export class ExpenseReportService implements OnModuleInit {
         userId: new Types.ObjectId(userId),
         clientId: new Types.ObjectId(clientId),
       })
+      // Los campos de la cadena y de los hitos van incluidos porque el
+      // responsable ve la MISMA línea de tiempo que el aprobador
+      // (`buildReportFlowSteps`): sin ellos su pantalla solo podía decir
+      // "pendiente", sin indicar en qué paso está.
       .select(
-        'status createdAt viaticoAmount cajaChicaNuevoPresupuesto cajaChicaPresupuestoAnterior title rejectionReason'
+        'type status createdAt viaticoAmount cajaChicaNuevoPresupuesto cajaChicaPresupuestoAnterior title ' +
+        'rejectionReason viaticoRejectionReason rejectedByRole viaticoRejectedByRole ' +
+        'viaticoApproverChain viaticoApprovalLevel viaticoRequiredLevels ' +
+        'viaticoSolicitudContabilidadApprovedAt viaticoSolicitudContabilidadApprovedBy ' +
+        'viaticoPaidAmount viaticoPaymentInfo viaticoPayments closedAt'
       )
+      // Nombres reales en la línea de tiempo: sin poblar, cada paso decía
+      // "Aprobador" en vez de quién es.
+      .populate('viaticoApproverChain.approverIds', 'name email')
+      .populate('viaticoSolicitudContabilidadApprovedBy', 'name email')
       .sort({ createdAt: -1 })
       .lean()
       .exec()

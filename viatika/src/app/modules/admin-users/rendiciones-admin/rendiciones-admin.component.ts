@@ -5,6 +5,7 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
 import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
 import { buildReportFlowSteps, isSolicitudPhase, FlowStep } from '../../../shared/flow-steps.util';
+import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -98,7 +99,7 @@ export type UnifiedRendicionItem = {
 @Component({
   selector: 'app-rendiciones-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent],
   templateUrl: './rendiciones-admin.component.html',
 })
 export class RendicionesAdminComponent implements OnInit {

@@ -17,6 +17,7 @@ import {
 } from '../../../services/accounting-entries.service';
 import { IExpenseReport, IChainStep, ICajaChicaFondoResumen } from '../../../interfaces/expense-report.interface';
 import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
+import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
 import { ButtonComponent } from '../../../design-system/button/button.component';
@@ -53,6 +54,7 @@ interface AsientoStep {
     ButtonComponent,
     IconComponent,
     RouterModule,
+    FlowTimelineComponent,
   ],
   templateUrl: './rendicion-detail.component.html',
   styleUrls: ['./rendicion-detail.component.scss']
@@ -1683,6 +1685,12 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     };
     return labels[this.report.status] ?? this.report.status;
   }
+
+  /** Encabezados de las dos fases del viático en la línea de tiempo. */
+  readonly FLOW_GROUP_LABELS: Record<string, string> = {
+    solicitud: 'Solicitud de viático',
+    rendicion: 'Rendición de comprobantes',
+  };
 
   /** Trazabilidad del flujo de aprobación paso a paso (VD-31). Ver `buildReportFlowSteps`. */
   flowSteps(): FlowStep[] {
