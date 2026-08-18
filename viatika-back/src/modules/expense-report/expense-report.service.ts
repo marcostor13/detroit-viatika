@@ -6582,8 +6582,11 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     if (opts.esTesoreria || opts.esAdmin) {
-      // Depósito del presupuesto y reposición de lo ya aprobado: las dos colas
-      // de Tesorería en caja chica.
+      // Tres colas de Tesorería en caja chica: depositar el presupuesto,
+      // reponer lo aprobado y CERRAR la rendición ya repuesta. El cierre
+      // faltaba: al registrar la reposición el reporte pasa a `reimbursed` y
+      // salía de la cuenta, pero sigue esperando el cierre definitivo, que
+      // también es de Tesorería (`PATCH :id/close`).
       const enTesoreria = await this.expenseReportModel
         .find({
           clientId: cid,
@@ -6604,6 +6607,7 @@ export class ExpenseReportService implements OnModuleInit {
                 },
               ],
             },
+            { isCajaChica: true, status: 'reimbursed' },
           ],
         })
         .select(soloIds)
