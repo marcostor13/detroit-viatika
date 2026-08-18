@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
@@ -12,6 +13,9 @@ import {
   saldoDisponible,
 } from './entities/fondo-caja-chica.entity'
 import { CreateFondoCajaChicaDto } from './dto/create-fondo-caja-chica.dto'
+import { EmailService } from '../email/email.service'
+import { UserService } from '../user/user.service'
+import { NotificationsService } from '../notifications/notifications.service'
 
 /** Los importes se guardan con 2 decimales: son soles, no flotantes libres. */
 function round2(n: number): number {
@@ -20,9 +24,14 @@ function round2(n: number): number {
 
 @Injectable()
 export class FondoCajaChicaService {
+  private readonly logger = new Logger(FondoCajaChicaService.name)
+
   constructor(
     @InjectModel(FondoCajaChica.name)
-    private readonly model: Model<FondoCajaChicaDocument>
+    private readonly model: Model<FondoCajaChicaDocument>,
+    private readonly emailService: EmailService,
+    private readonly userService: UserService,
+    private readonly notificationsService: NotificationsService
   ) {}
 
   private async generateCode(clientId: string): Promise<string> {
@@ -235,7 +244,7 @@ export class FondoCajaChicaService {
       )
     }
 
-    return this.push(
+    const actualizado = await this.push(
       id,
       {
         type: 'devolucion',
@@ -251,6 +260,81 @@ export class FondoCajaChicaService {
       0,
       { pendingReturnAmount: round2(pendiente - amount) }
     )
+
+    // El depósito lo verifica alguien: sin este aviso la devolución quedaba
+    // registrada y nadie se enteraba, a diferencia del comprobante de
+    // devolución de una rendición, que sí avisa a Tesorería y Contabilidad.
+    void this.notifyDevolucionRegistrada(actualizado, {
+      amount,
+      pendiente: round2(pendiente - amount),
+      depositDate: opts.depositDate,
+      bankOrigin: opts.bankOrigin?.trim() || undefined,
+      operationNumber: opts.operationNumber,
+    })
+
+    return actualizado
+  }
+
+  /** Avisa a Tesorería y Contabilidad del depósito del sobrante. No lanza. */
+  private async notifyDevolucionRegistrada(
+    fondo: FondoCajaChicaDocument,
+    datos: {
+      amount: number
+      pendiente: number
+      depositDate?: string
+      bankOrigin?: string
+      operationNumber?: string
+    }
+  ): Promise<void> {
+    try {
+      const clientId = String(fondo.clientId)
+      const responsableId = String(fondo.responsibleId)
+      const responsable =
+        await this.userService.findEmailNameClient(responsableId)
+      const nombre = responsable?.name ?? 'El responsable'
+      const montoFmt = datos.amount.toFixed(2)
+      const fecha = datos.depositDate ?? new Date().toISOString().slice(0, 10)
+
+      const tesoreria =
+        await this.userService.findTesoreriaRecipientsWithIds(clientId)
+      const contabilidad =
+        await this.userService.findContabilidadRecipients(clientId)
+
+      for (const t of tesoreria) {
+        await this.notificationsService
+          .create({
+            userId: t._id,
+            title: 'Devolución de caja chica registrada',
+            message: `${nombre} depositó S/ ${montoFmt} del sobrante de su caja chica. Verifica la operación.`,
+            type: 'info',
+            actionUrl: '/tesoreria',
+          })
+          .catch(() => {})
+      }
+
+      const enviados = new Set<string>()
+      for (const r of [...tesoreria, ...contabilidad]) {
+        const key = r.email?.trim().toLowerCase()
+        if (!key || enviados.has(key)) continue
+        enviados.add(key)
+        await this.emailService.sendCajaChicaDevolucionRegistrada(r.email, {
+          clientId,
+          recipientName: r.name,
+          collaboratorName: nombre,
+          fondoCode: fondo.code,
+          amountFormatted: montoFmt,
+          depositDate: fecha,
+          bankOrigin: datos.bankOrigin,
+          operationNumber: datos.operationNumber,
+          pendienteFormatted: datos.pendiente.toFixed(2),
+          platformUrl: this.emailService.buildAppUrl('/tesoreria'),
+        })
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `Aviso de devolución de caja chica ${String(fondo._id)}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
   }
 
   /**
