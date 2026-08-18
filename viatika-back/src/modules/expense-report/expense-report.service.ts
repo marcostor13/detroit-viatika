@@ -5268,12 +5268,28 @@ export class ExpenseReportService implements OnModuleInit {
         const projectLabel = `[${project.code} - ${project.name}]`
         const startStr = report.viaticoStartDate instanceof Date ? report.viaticoStartDate.toISOString().slice(0, 10) : String(report.viaticoStartDate ?? '').slice(0, 10)
         const endStr = report.viaticoEndDate instanceof Date ? report.viaticoEndDate.toISOString().slice(0, 10) : String(report.viaticoEndDate ?? '').slice(0, 10)
+        // En caja chica el aprobador autoriza el PRESUPUESTO pedido, no la
+        // diferencia a depositar: pedir 5000 teniendo 3000 le anunciaba 2000.
+        // La bandera es además la que elige la rama de la plantilla; sin
+        // pasarla, el correo del trámite se leía como una solicitud de viáticos,
+        // con las filas Lugar y Fechas vacías.
+        const esCajaChica = this.esSolicitudCajaChica(report)
+        const presupuestoAnterior = Number(report.cajaChicaPresupuestoAnterior ?? 0)
         await this.emailService.sendViaticoSolicitudToCoordinator(approver.email, {
           clientId, coordinatorName: approver.name, collaboratorName: collaborator.name,
           place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
-          totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
+          totalFormatted: this.viaticoFormatMoney(
+            esCajaChica
+              ? Number(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)
+              : Number(report.viaticoAmount ?? 0)
+          ),
           currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
           projectLabel,
+          esCajaChica,
+          presupuestoAnteriorFormatted:
+            esCajaChica && presupuestoAnterior > 0
+              ? this.viaticoFormatMoney(presupuestoAnterior)
+              : undefined,
           platformUrl: this.emailService.buildAppUrl(
             this.solicitudAppPath(report, 'aprobador')
           ),
