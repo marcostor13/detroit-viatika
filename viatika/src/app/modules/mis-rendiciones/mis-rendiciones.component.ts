@@ -12,6 +12,8 @@ import {
 } from '../../interfaces/expense-report.interface';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { CajaChicaReportService } from '../../services/caja-chica-report.service';
+import { buildReportFlowSteps, FlowStep } from '../../shared/flow-steps.util';
+import { FlowTimelineComponent } from '../../design-system/flow-timeline/flow-timeline.component';
 import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
 import { UploadService } from '../../services/upload.service';
 import {
@@ -20,6 +22,7 @@ import {
   FONDO_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_COLORS,
+  SOLICITUD_EN_CURSO_STATUSES,
   presupuestoSolicitado,
   saldoDisponible,
 } from '../../interfaces/fondo-caja-chica.interface';
@@ -60,7 +63,7 @@ type UnifiedViaticoItem = {
 @Component({
   selector: 'app-mis-rendiciones',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, CreateRendicionModalComponent, DataTableComponent, ColumnDirective, ModalComponent, ButtonComponent, IconComponent, EmptyStateComponent],
+  imports: [CommonModule, FormsModule, RouterModule, CreateRendicionModalComponent, DataTableComponent, ColumnDirective, ModalComponent, ButtonComponent, IconComponent, EmptyStateComponent, FlowTimelineComponent],
   templateUrl: './mis-rendiciones.component.html',
   styleUrls: ['./mis-rendiciones.component.scss']
 })
@@ -205,7 +208,17 @@ export class MisRendicionesComponent implements OnInit {
     // Las solicitudes de caja chica ya no salen en "Solicitudes de fondos", así
     // que su seguimiento vive acá.
     this.fondoCajaChicaService.misSolicitudes().subscribe({
-      next: (list) => this.solicitudesCajaChica.set(list),
+      next: (list) => {
+        this.solicitudesCajaChica.set(list);
+        // La solicitud que sigue en trámite arranca con su cronología abierta:
+        // es justo el dato que el responsable viene a buscar, y dejarla cerrada
+        // obligaba a descubrir que la fila se despliega. Las ya cerradas no,
+        // para no alargar la tabla con historial que nadie está mirando.
+        const enCurso = list.find(s =>
+          SOLICITUD_EN_CURSO_STATUSES.includes(s.status)
+        );
+        this.solicitudCronologiaId.set(enCurso?._id ?? null);
+      },
       error: () => this.solicitudesCajaChica.set([]),
     });
   }
@@ -217,6 +230,33 @@ export class MisRendicionesComponent implements OnInit {
   solicitudStatusColor(status: string): string {
     return (
       SOLICITUD_CAJA_CHICA_STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600'
+    );
+  }
+
+  /**
+   * Solicitud cuya cronología está abierta. El responsable solo entra a
+   * /mis-rendiciones: sin esto no tenía dónde ver en qué paso quedó su
+   * solicitud, que es justo lo que el aprobador sí ve en /rendiciones.
+   */
+  solicitudCronologiaId = signal<string | null>(null);
+
+  toggleSolicitudCronologia(id: string): void {
+    this.solicitudCronologiaId.set(
+      this.solicitudCronologiaId() === id ? null : id
+    );
+  }
+
+  /**
+   * Misma línea de tiempo que ve el aprobador (VD-31), con el vocabulario de
+   * caja chica en el último paso: el depósito de Tesorería no deja la solicitud
+   * "Pagada" sino el presupuesto aplicado, que es como se rotula su estado en
+   * la tabla.
+   */
+  solicitudFlowSteps(s: ISolicitudCajaChica): FlowStep[] {
+    return buildReportFlowSteps(s).map(step =>
+      step.label === 'Pagada'
+        ? { ...step, label: 'Presupuesto aplicado' }
+        : step
     );
   }
 
@@ -1141,6 +1181,42 @@ export class MisRendicionesComponent implements OnInit {
       closed: 'Cerrada', cancelled: 'Cancelada',
     };
     return map[report.status] ?? report.status;
+  }
+
+  /**
+   * Estado de una RENDICIÓN de caja chica, con las palabras que usa el
+   * responsable. No reusa `getLegacyReportLabel` porque el vocabulario cambia:
+   * lo que ahí es "Reembolsada" acá es "Repuesta" (Tesorería devuelve a la caja
+   * lo aprobado), y "Enviada" no dice quién la tiene.
+   */
+  cajaChicaStatusLabel(report: IExpenseReport): string {
+    const map: Partial<Record<string, string>> = {
+      open: 'Registrando gastos',
+      submitted: 'Pendiente de aprobación',
+      pending_accounting: 'En contabilidad',
+      approved: 'Aprobada, por reponer',
+      reimbursed: 'Repuesta',
+      settled: 'Repuesta',
+      closed: 'Cerrada',
+      rejected: 'Observada',
+      cancelled: 'Cancelada',
+    };
+    return map[report.status] ?? report.status;
+  }
+
+  cajaChicaStatusColor(report: IExpenseReport): string {
+    const map: Partial<Record<string, string>> = {
+      open: 'bg-emerald-100 text-emerald-700',
+      submitted: 'bg-yellow-100 text-yellow-700',
+      pending_accounting: 'bg-violet-100 text-violet-700',
+      approved: 'bg-green-100 text-green-700',
+      reimbursed: 'bg-teal-100 text-teal-700',
+      settled: 'bg-teal-100 text-teal-700',
+      closed: 'bg-gray-100 text-gray-500',
+      rejected: 'bg-red-100 text-red-700',
+      cancelled: 'bg-gray-100 text-gray-500',
+    };
+    return map[report.status] ?? 'bg-gray-100 text-gray-600';
   }
 
   getLegacyReportColor(report: IExpenseReport): string {

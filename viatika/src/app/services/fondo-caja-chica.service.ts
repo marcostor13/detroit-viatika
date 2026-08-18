@@ -47,6 +47,18 @@ export class FondoCajaChicaService {
     );
   }
 
+  /**
+   * Cuántos documentos de caja chica esperan una acción de este usuario. Lo
+   * cuenta el backend según su rol (aprobador, Contabilidad, Tesorería o
+   * Administrador): la pestaña muestra el número antes de abrirse, así que
+   * traerse la bandeja completa solo para contarla no sirve.
+   */
+  pendientes(): Observable<{ total: number }> {
+    return this.http.get<{ total: number }>(
+      `${environment.api}/expense-report/caja-chica/pendientes`
+    );
+  }
+
   findMine(): Observable<IFondoCajaChica[]> {
     return this.http.get<IFondoCajaChica[]>(`${this.url}/mine`);
   }

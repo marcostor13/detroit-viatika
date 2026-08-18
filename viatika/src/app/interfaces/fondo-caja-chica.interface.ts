@@ -86,6 +86,14 @@ export interface ISolicitudCajaChica {
   cajaChicaNuevoPresupuesto?: number;
   cajaChicaPresupuestoAnterior?: number;
   rejectionReason?: string;
+  /**
+   * El backend devuelve además la cadena de aprobadores y los hitos del
+   * trámite (`viaticoApproverChain`, fechas de Contabilidad y pago) para poder
+   * armar la línea de tiempo con `buildReportFlowSteps`, la misma que ve el
+   * aprobador. Se dejan sin tipar campo por campo porque ese constructor lee el
+   * documento crudo de la rendición.
+   */
+  [extra: string]: unknown;
 }
 
 /**

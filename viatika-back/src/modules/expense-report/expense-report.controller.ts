@@ -784,6 +784,24 @@ export class ExpenseReportController {
     return result
   }
 
+  /**
+   * Cuántos documentos de caja chica esperan una acción de quien pregunta, para
+   * el contador de la pestaña. Sin roles: cada usuario recibe lo que le toca
+   * según el suyo, y un aprobador sin rol especial sigue viendo su cuenta.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('caja-chica/pendientes')
+  countCajaChicaPendientes(@Request() req: any) {
+    const userId = String(req.user._id || req.user.sub)
+    const clientId = this.resolveClientId(req)
+    const role = req.user?.roles?.[0] || req.user?.role
+    return this.expenseReportService.countCajaChicaPendientes(userId, clientId, {
+      esContabilidad: role === ROLES.CONTABILIDAD,
+      esTesoreria: role === ROLES.TESORERIA,
+      esAdmin: role === ROLES.ADMIN || role === ROLES.SUPER_ADMIN,
+    })
+  }
+
   /** Mis solicitudes de caja chica (asignación inicial y cambios de presupuesto). */
   @UseGuards(AuthGuard('jwt'))
   @Get('solicitudes-caja-chica/my')

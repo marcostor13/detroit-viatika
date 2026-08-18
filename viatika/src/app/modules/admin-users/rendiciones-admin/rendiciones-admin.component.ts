@@ -5,6 +5,7 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
 import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
 import { buildReportFlowSteps, isSolicitudPhase, FlowStep } from '../../../shared/flow-steps.util';
+import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -98,7 +99,7 @@ export type UnifiedRendicionItem = {
 @Component({
   selector: 'app-rendiciones-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent],
   templateUrl: './rendiciones-admin.component.html',
 })
 export class RendicionesAdminComponent implements OnInit {
@@ -325,8 +326,13 @@ export class RendicionesAdminComponent implements OnInit {
           : isDirectaChain
             ? 'Directa'
             : 'Solicitud de Fondos',
+        // Un color por tipo, tambien dentro de caja chica: solicitud y rendicion
+        // conviven en la misma pestana y compartir el morado obligaba a leer la
+        // etiqueta entera para distinguirlas.
         kindColor: isCajaChica
-          ? 'bg-purple-100 text-purple-700'
+          ? (r.isSolicitudCajaChica
+            ? 'bg-purple-100 text-purple-700'
+            : 'bg-teal-100 text-teal-700')
           : isDirectaChain
             ? 'bg-amber-100 text-amber-700'
             : 'bg-blue-100 text-blue-700',
