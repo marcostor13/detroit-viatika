@@ -1148,6 +1148,13 @@ export class EmailService {
       cci?: string
       hasBankAccount: boolean
       platformUrl?: string
+      /**
+       * Caja chica: lo que Tesorería deposita es la DIFERENCIA hasta el nuevo
+       * tope (`budgetFormatted`), no el presupuesto entero, que va aparte en
+       * `presupuestoFormatted`.
+       */
+      esCajaChica?: boolean
+      presupuestoFormatted?: string
     }
   ) {
     console.log(`[EMAIL] sendViaticoAprobadoTesoreria -> ${email}`)
@@ -1155,12 +1162,18 @@ export class EmailService {
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
-        subject: `Solicitud de Fondos aprobada, pendiente de pago — ${data.advanceDescription}`,
+        subject: data.esCajaChica
+          ? `Caja chica aprobada, pendiente de depósito — ${data.advanceDescription}`
+          : `Solicitud de Fondos aprobada, pendiente de pago — ${data.advanceDescription}`,
         template: './viatico-aprobado-tesoreria',
         context: {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...rest,
+          // Handlebars corre en modo strict: garantizar siempre lo que la
+          // plantilla lee.
+          esCajaChica: data.esCajaChica === true,
+          presupuestoFormatted: data.presupuestoFormatted ?? '',
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
       })
@@ -1338,10 +1351,19 @@ export class EmailService {
       projectLabel: string
       rejectionReason: string
       platformUrl?: string
+      /**
+       * Caja chica: la solicitud no lleva centro de costo, documento, área ni
+       * cargo, así que esas filas se omiten en vez de salir en blanco.
+       */
+      esCajaChica?: boolean
+      presupuestoFormatted?: string
+      currencySymbol?: string
     }
   ) {
     try {
-      const subject = `Rechazo de solicitud de fondos - ${data.projectLabel}`
+      const subject = data.esCajaChica
+        ? 'Rechazo de solicitud de caja chica'
+        : `Rechazo de solicitud de fondos - ${data.projectLabel}`
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
@@ -1351,6 +1373,10 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...rest,
+          // Modo strict de Handlebars: garantizar lo que la plantilla lee.
+          esCajaChica: data.esCajaChica === true,
+          presupuestoFormatted: data.presupuestoFormatted ?? '',
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
       })
@@ -1468,11 +1494,21 @@ export class EmailService {
       currencySymbol?: string
       projectLabel: string
       platformUrl?: string
+      /**
+       * Solicitud de caja chica: no lleva lugar ni fechas (esas filas salían
+       * vacías) y el monto que se muestra es el PRESUPUESTO pedido, no la
+       * diferencia a depositar.
+       */
+      esCajaChica?: boolean
+      /** Presupuesto vigente antes de la solicitud, si es un cambio de tope. */
+      presupuestoAnteriorFormatted?: string
     }
   ) {
     try {
       const subject = this.withSubjectRef(
-        'Nueva solicitud de fondos',
+        data.esCajaChica
+          ? 'Nueva solicitud de caja chica'
+          : 'Nueva solicitud de fondos',
         data.projectLabel
       )
       this.logger.debug(`Enviando solicitud de viáticos a coordinador ${email}`)
@@ -1485,6 +1521,10 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...rest,
+          // El modo strict de Handlebars aborta el render si la plantilla lee
+          // una variable ausente: estas dos se garantizan siempre.
+          esCajaChica: data.esCajaChica === true,
+          presupuestoAnteriorFormatted: data.presupuestoAnteriorFormatted ?? '',
           startDate: this.formatDateDDMMYYYY(data.startDate),
           endDate: this.formatDateDDMMYYYY(data.endDate),
           platformUrl: this.resolvePlatformHref(platformUrl),
@@ -1748,10 +1788,14 @@ export class EmailService {
       paymentReceiptUrl: string
       paymentReceiptFileName?: string
       platformUrl?: string
+      /** Caja chica: el depósito habilita la caja, no una fase de rendición. */
+      esCajaChica?: boolean
     }
   ) {
     try {
-      const subject = `Solicitudes de Fondos aprobadas y pagadas — ${data.projectLabel}`
+      const subject = data.esCajaChica
+        ? `Caja chica depositada — ${data.collaboratorName}`
+        : `Solicitudes de Fondos aprobadas y pagadas — ${data.projectLabel}`
       const { platformUrl, ...rest } = data
       await this.send({
         to: email,
@@ -1771,6 +1815,8 @@ export class EmailService {
           logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
           year: new Date().getFullYear(),
           ...rest,
+          // Modo strict de Handlebars: la bandera debe existir siempre.
+          esCajaChica: data.esCajaChica === true,
           transferDate: this.formatDateDDMMYYYY(data.transferDate),
           platformUrl: this.resolvePlatformHref(platformUrl),
         },
@@ -2047,6 +2093,89 @@ export class EmailService {
       })
     } catch (error) {
       this.logger.error(`Error correo caja chica fondeada a ${email}:`, error)
+    }
+  }
+
+  /**
+   * La solicitud BAJÓ el presupuesto de la caja: Contabilidad la aprobó y el
+   * ajuste se aplicó sin pasar por Tesorería, porque no hay nada que depositar.
+   * Sin este correo el responsable no se enteraba del cambio ni del sobrante
+   * que le queda por devolver.
+   */
+  async sendCajaChicaPresupuestoAplicado(
+    email: string,
+    data: {
+      clientId?: string
+      collaboratorName: string
+      presupuestoAnteriorFormatted: string
+      presupuestoNuevoFormatted: string
+      /** Vacío cuando no quedó sobrante por devolver. */
+      sobranteFormatted?: string
+      currencySymbol?: string
+      platformUrl?: string
+    }
+  ) {
+    try {
+      const { platformUrl, ...rest } = data
+      await this.send({
+        to: email,
+        subject: 'Su presupuesto de caja chica cambió',
+        template: './caja-chica-presupuesto-aplicado',
+        context: {
+          logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
+          year: new Date().getFullYear(),
+          ...rest,
+          platformUrl: this.resolvePlatformHref(platformUrl),
+        },
+      })
+    } catch (error) {
+      this.logger.error(
+        `Error correo caja chica presupuesto aplicado a ${email}:`,
+        error
+      )
+    }
+  }
+
+  /**
+   * El responsable depositó el sobrante de su caja. Va a Tesorería y a
+   * Contabilidad para que verifiquen la operación, igual que el comprobante de
+   * devolución de una rendición.
+   */
+  async sendCajaChicaDevolucionRegistrada(
+    email: string,
+    data: {
+      clientId?: string
+      recipientName: string
+      collaboratorName: string
+      fondoCode: string
+      amountFormatted: string
+      depositDate: string
+      bankOrigin?: string
+      operationNumber?: string
+      pendienteFormatted: string
+      currencySymbol?: string
+      platformUrl?: string
+    }
+  ) {
+    try {
+      const { platformUrl, ...rest } = data
+      await this.send({
+        to: email,
+        subject: `Devolución de caja chica registrada — ${data.fondoCode}`,
+        template: './caja-chica-devolucion-registrada',
+        context: {
+          logoUrl: await this.resolveLogoUrl(this.extractClientId(data)),
+          year: new Date().getFullYear(),
+          ...rest,
+          depositDate: this.formatDateDDMMYYYY(data.depositDate),
+          platformUrl: this.resolvePlatformHref(platformUrl),
+        },
+      })
+    } catch (error) {
+      this.logger.error(
+        `Error correo devolución caja chica a ${email}:`,
+        error
+      )
     }
   }
 
