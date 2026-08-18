@@ -1,0 +1,21 @@
+{{> email-header}}
+      <span class="badge">Devolución registrada</span>
+      <h1 class="title">Devolución de sobrante de caja chica</h1>
+      <p>Estimado/a <strong>{{recipientName}}</strong>,</p>
+      <p>El responsable <strong>{{collaboratorName}}</strong> registró el depósito del sobrante de su caja chica. Por favor, verifique la operación.</p>
+
+      <p class="label">Detalles rápidos:</p>
+      <div class="box">
+        <div class="row"><strong>Caja chica:</strong> {{fondoCode}}</div>
+        <div class="row"><strong>Responsable:</strong> {{collaboratorName}}</div>
+        <div class="row"><strong>Monto devuelto:</strong> {{currencySymbol}} {{amountFormatted}}</div>
+        <div class="row"><strong>Fecha de depósito:</strong> {{depositDate}}</div>
+        {{#if bankOrigin}}<div class="row"><strong>Banco origen:</strong> {{bankOrigin}}</div>{{/if}}
+        {{#if operationNumber}}<div class="row"><strong>N° de operación:</strong> {{operationNumber}}</div>{{/if}}
+        <div class="row"><strong>Sobrante que queda pendiente:</strong> {{currencySymbol}} {{pendienteFormatted}}</div>
+      </div>
+
+      <div class="btn-container">
+        <a href="{{platformUrl}}" class="btn">Ir a la plataforma</a>
+      </div>
+{{> email-footer}}

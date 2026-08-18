@@ -2097,6 +2097,9 @@ export class ExpenseReportService implements OnModuleInit {
           expenseTotalFormatted,
           expenseItems,
           isDirecta,
+          // La rendición de caja chica se revisa por lo gastado contra la caja,
+          // no por un anticipo: el correo lo rotula distinto.
+          esCajaChica: (fullyUpdatedReport as any).isCajaChica === true,
           hasDirectaDeposit,
           depositFormatted,
           saldoFormatted,
@@ -3810,6 +3813,9 @@ export class ExpenseReportService implements OnModuleInit {
       paymentReceiptUrl: pi?.paymentReceiptUrl || '',
       paymentReceiptFileName:
         pi?.paymentReceiptFileName || 'comprobante-reembolso.pdf',
+      // En caja chica el depósito repone la caja, no reembolsa un gasto del
+      // bolsillo del responsable.
+      esCajaChica: (report as any).isCajaChica === true,
       platformUrl,
     }
 
@@ -3838,10 +3844,13 @@ export class ExpenseReportService implements OnModuleInit {
         })
       }
 
+      const esCajaChicaRendicion = (report as any).isCajaChica === true
       await this.notificationsService.create({
         userId: ownerId,
-        title: 'Reembolso registrado',
-        message: `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
+        title: esCajaChicaRendicion ? 'Caja chica repuesta' : 'Reembolso registrado',
+        message: esCajaChicaRendicion
+          ? `Tesorería depositó ${this.settlementCurrencySymbol(report)} ${amountFormatted} y tu presupuesto de caja chica volvió a su tope.`
+          : `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
         type: 'success',
         actionUrl: `/mis-documentos`,
       })
@@ -5242,7 +5251,10 @@ export class ExpenseReportService implements OnModuleInit {
 
       try {
         const esCaja = this.esSolicitudCajaChica(report)
-        await this.notificationsService.create({ userId: approverId.toString(), title: esCaja ? 'Nueva solicitud de caja chica pendiente' : 'Nueva solicitud de fondos pendiente', message: `${collaborator.name} envió una ${this.solicitudNombre(report)} — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(esCaja ? (report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0) : (report.viaticoAmount ?? 0))}. Ingresa a revisarla.`, type: 'info', actionUrl: this.solicitudAppPath(report, 'aprobador'), metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
+        const mensajeSolicitud = esCaja
+          ? `${collaborator.name} solicitó caja chica — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)}. Ingresa a revisarla.`
+          : `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`
+        await this.notificationsService.create({ userId: approverId.toString(), title: esCaja ? 'Nueva solicitud de caja chica pendiente' : 'Nueva solicitud de fondos pendiente', message: mensajeSolicitud, type: 'info', actionUrl: this.solicitudAppPath(report, 'aprobador'), metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
       } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
 
       const approverEmailEnabled = await this.userService.isEmailEnabled(approverId.toString())
@@ -5256,12 +5268,28 @@ export class ExpenseReportService implements OnModuleInit {
         const projectLabel = `[${project.code} - ${project.name}]`
         const startStr = report.viaticoStartDate instanceof Date ? report.viaticoStartDate.toISOString().slice(0, 10) : String(report.viaticoStartDate ?? '').slice(0, 10)
         const endStr = report.viaticoEndDate instanceof Date ? report.viaticoEndDate.toISOString().slice(0, 10) : String(report.viaticoEndDate ?? '').slice(0, 10)
+        // En caja chica el aprobador autoriza el PRESUPUESTO pedido, no la
+        // diferencia a depositar: pedir 5000 teniendo 3000 le anunciaba 2000.
+        // La bandera es además la que elige la rama de la plantilla; sin
+        // pasarla, el correo del trámite se leía como una solicitud de viáticos,
+        // con las filas Lugar y Fechas vacías.
+        const esCajaChica = this.esSolicitudCajaChica(report)
+        const presupuestoAnterior = Number(report.cajaChicaPresupuestoAnterior ?? 0)
         await this.emailService.sendViaticoSolicitudToCoordinator(approver.email, {
           clientId, coordinatorName: approver.name, collaboratorName: collaborator.name,
           place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
-          totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
+          totalFormatted: this.viaticoFormatMoney(
+            esCajaChica
+              ? Number(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)
+              : Number(report.viaticoAmount ?? 0)
+          ),
           currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
           projectLabel,
+          esCajaChica,
+          presupuestoAnteriorFormatted:
+            esCajaChica && presupuestoAnterior > 0
+              ? this.viaticoFormatMoney(presupuestoAnterior)
+              : undefined,
           platformUrl: this.emailService.buildAppUrl(
             this.solicitudAppPath(report, 'aprobador')
           ),
@@ -5841,7 +5869,9 @@ export class ExpenseReportService implements OnModuleInit {
           emailTitle: this.esSolicitudCajaChica(report)
             ? 'Solicitud de caja chica pendiente de tu aprobación'
             : 'Solicitud de Fondos pendiente de tu aprobación',
-          intro: 'La solicitud fue aprobada por los aprobadores y requiere tu aprobación final antes de quedar lista para pago.',
+          intro: this.esSolicitudCajaChica(report)
+            ? 'La solicitud de caja chica fue aprobada por los aprobadores y requiere tu aprobación final antes de quedar lista para el depósito.'
+            : 'La solicitud fue aprobada por los centros de costo correspondientes y requiere tu aprobación final antes de quedar lista para pago.',
           ...detalle,
           platformUrl: this.emailService.buildAppUrl(
             this.solicitudAppPath(report, 'aprobador')
@@ -5894,6 +5924,7 @@ export class ExpenseReportService implements OnModuleInit {
         )
         report.status = 'paid'
         await report.save()
+        await this.notifyCajaChicaPresupuestoAplicado(report)
       } catch (err: unknown) {
         this.logger.error(
           `No se pudo ajustar el presupuesto de caja chica de la solicitud ${id}: ${err instanceof Error ? err.message : String(err)}`
@@ -5909,6 +5940,65 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     return this.findOne(id) as Promise<ExpenseReportDocument>
+  }
+
+  /**
+   * Avisa al responsable que su presupuesto de caja chica quedó actualizado
+   * cuando la solicitud lo BAJA. Ese caso no pasa por Tesorería —no hay nada
+   * que depositar—, así que sin este aviso el trámite terminaba en silencio: el
+   * responsable no se enteraba del nuevo tope ni del sobrante que le queda por
+   * devolver, que solo veía si entraba a mirar su caja.
+   */
+  private async notifyCajaChicaPresupuestoAplicado(
+    report: ExpenseReportDocument
+  ): Promise<void> {
+    const ownerId = String(report.userId)
+    const nuevo = Number(report.cajaChicaNuevoPresupuesto ?? 0)
+    const anterior = Number(report.cajaChicaPresupuestoAnterior ?? 0)
+    const simbolo = this.viaticoMoneySymbol(report.viaticoMoneda)
+    try {
+      const fondo = report.fondoCajaChicaId
+        ? await this.fondoCajaChicaService.findOne(
+            String(report.fondoCajaChicaId),
+            String(report.clientId)
+          )
+        : null
+      const sobrante = Number(fondo?.pendingReturnAmount ?? 0)
+      const sobranteMsg =
+        sobrante > 0
+          ? ` Debe devolver ${simbolo} ${this.viaticoFormatMoney(sobrante)}: deposítelo y registre el comprobante.`
+          : ''
+
+      await this.notificationsService
+        .create({
+          userId: ownerId,
+          title: 'Presupuesto de caja chica actualizado',
+          message: `Su presupuesto de caja chica quedó en ${simbolo} ${this.viaticoFormatMoney(nuevo)}.${sobranteMsg}`,
+          type: sobrante > 0 ? 'warning' : 'success',
+          actionUrl: this.solicitudAppPath(report, 'solicitante'),
+        })
+        .catch(() => {})
+
+      const owner = await this.userService.findEmailNameClient(ownerId)
+      if (!owner?.email) return
+      if (!(await this.userService.isEmailEnabled(ownerId))) return
+      await this.emailService.sendCajaChicaPresupuestoAplicado(owner.email, {
+        clientId: String(report.clientId),
+        collaboratorName: owner.name,
+        presupuestoAnteriorFormatted: this.viaticoFormatMoney(anterior),
+        presupuestoNuevoFormatted: this.viaticoFormatMoney(nuevo),
+        sobranteFormatted:
+          sobrante > 0 ? this.viaticoFormatMoney(sobrante) : undefined,
+        currencySymbol: simbolo,
+        platformUrl: this.emailService.buildAppUrl(
+          this.solicitudAppPath(report, 'solicitante')
+        ),
+      })
+    } catch (err: unknown) {
+      this.logger.error(
+        `Aviso de presupuesto de caja chica aplicado ${String((report as any)._id)}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
   }
 
   /** Devuelve `true` si el viático quedó cubierto 100% con saldo y se abrió sin pago. */
@@ -5958,6 +6048,10 @@ export class ExpenseReportService implements OnModuleInit {
           await this.emailService.sendViaticoAprobadoTesoreria(tesoEmail, {
             clientId: clientIdStr,
             advanceDescription: report.viaticoPlace ?? report.title ?? 'Solicitud de Fondos',
+            esCajaChica: this.esSolicitudCajaChica(report),
+            presupuestoFormatted: this.esSolicitudCajaChica(report)
+              ? Number(report.cajaChicaNuevoPresupuesto ?? 0).toFixed(2)
+              : '',
             collaboratorName: collab?.name ?? 'Colaborador',
             collaboratorDni: collab?.dni,
             budgetFormatted: Number(report.viaticoAmount ?? 0).toFixed(2),
@@ -6016,7 +6110,10 @@ export class ExpenseReportService implements OnModuleInit {
     report.viaticoRejectedByRole = rejectedByRole
     await report.save()
 
-    this.notificationsService.create({ userId: report.userId.toString(), title: this.esSolicitudCajaChica(report) ? 'Solicitud de caja chica rechazada' : 'Solicitud de Fondos rechazada', message: `Tu ${this.solicitudNombre(report)} por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(this.esSolicitudCajaChica(report) ? (report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0) : (report.viaticoAmount ?? 0))} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: this.solicitudAppPath(report, 'solicitante') }).catch(() => {})
+    const mensajeRechazo = this.esSolicitudCajaChica(report)
+      ? `Tu solicitud de caja chica por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`
+      : `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`
+    this.notificationsService.create({ userId: report.userId.toString(), title: this.esSolicitudCajaChica(report) ? 'Solicitud de caja chica rechazada' : 'Solicitud de Fondos rechazada', message: mensajeRechazo, type: 'error', actionUrl: this.solicitudAppPath(report, 'solicitante') }).catch(() => {})
 
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email && await this.userService.isEmailEnabled(report.userId.toString())) {
@@ -6024,6 +6121,11 @@ export class ExpenseReportService implements OnModuleInit {
         clientId: report.clientId.toString(), collaboratorName: collaborator.name,
         collaboratorDocument: '', collaboratorArea: '', collaboratorCargo: '',
         projectLabel: '', rejectionReason: opts.rejectionReason,
+        esCajaChica: this.esSolicitudCajaChica(report),
+        presupuestoFormatted: this.esSolicitudCajaChica(report)
+          ? this.viaticoFormatMoney(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)
+          : '',
+        currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
         platformUrl: this.emailService.buildAppUrl(
           this.solicitudAppPath(report, 'solicitante')
         ),
@@ -6227,11 +6329,13 @@ export class ExpenseReportService implements OnModuleInit {
       paymentMethod: dto.method,
       paymentReceiptUrl: dto.paymentReceiptUrl ?? '',
       paymentReceiptFileName: dto.paymentReceiptFileName ?? 'comprobante.pdf',
+      esCajaChica: this.esSolicitudCajaChica(report),
       platformUrl: this.emailService.buildAppUrl(
         this.solicitudAppPath(report, 'solicitante')
       ),
     }
 
+    // 'solicitud de fondos' en viático: mismo texto que antes de caja chica.
     const tramite = this.solicitudNombre(report)
     const fullyPaidMsg = fullyPaid
       ? (inPrePaymentPhase
@@ -6478,8 +6582,11 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     if (opts.esTesoreria || opts.esAdmin) {
-      // Depósito del presupuesto y reposición de lo ya aprobado: las dos colas
-      // de Tesorería en caja chica.
+      // Tres colas de Tesorería en caja chica: depositar el presupuesto,
+      // reponer lo aprobado y CERRAR la rendición ya repuesta. El cierre
+      // faltaba: al registrar la reposición el reporte pasa a `reimbursed` y
+      // salía de la cuenta, pero sigue esperando el cierre definitivo, que
+      // también es de Tesorería (`PATCH :id/close`).
       const enTesoreria = await this.expenseReportModel
         .find({
           clientId: cid,
@@ -6500,6 +6607,7 @@ export class ExpenseReportService implements OnModuleInit {
                 },
               ],
             },
+            { isCajaChica: true, status: 'reimbursed' },
           ],
         })
         .select(soloIds)

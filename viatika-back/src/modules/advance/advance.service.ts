@@ -1781,6 +1781,7 @@ export class AdvanceService implements OnModuleInit {
     )
     const hasDeposit = depositTotal > 0
     const isDirecta = !!(report as any).isDirecta
+    const isCajaChica = !!(report as any).isCajaChica
 
     const expenses = (report.expenseIds as any[]) || []
     const expenseTotal = expenses.reduce((sum, e) => {
@@ -1809,13 +1810,22 @@ export class AdvanceService implements OnModuleInit {
     // el reembolso pendiente (VD-26).
     const directaWithoutFunding = isDirecta && !hasDeposit && expenseTotal > 0
 
+    // Caja chica: aritméticamente es igual a una directa sin depósito (entregado
+    // 0, gastado X, se le debe X), y ese saldo es lo que Tesorería repone. Sin
+    // liquidarla, el reporte salía de aquí SIN settlement y el aviso de
+    // "pendiente de pago" a Tesorería —condicionado a que haya un monto real que
+    // pagar— nunca se enviaba: la reposición se quedaba esperando a que
+    // Tesorería mirara su bandeja por su cuenta.
+    const cajaChicaWithoutFunding = isCajaChica && !hasDeposit && expenseTotal > 0
+
     if (
       paidAdvances.length === 0 &&
       partiallyPaidAdvances.length === 0 &&
       settledAdvances.length === 0 &&
       approvedAdvances.length === 0 &&
       depositTotal <= 0 &&
-      !directaWithoutFunding
+      !directaWithoutFunding &&
+      !cajaChicaWithoutFunding
     ) {
       return
     }

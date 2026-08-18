@@ -1,8 +1,15 @@
 {{> email-header}}
+      {{#if esCajaChica}}
+      <span class="badge">Solicitud de caja chica aprobada</span>
+      <h1 class="title">Caja chica pendiente de depósito</h1>
+      <p>Estimado/a,</p>
+      <p>La siguiente solicitud de caja chica fue aprobada. Corresponde depositar la diferencia para dejar el presupuesto en su nuevo tope.</p>
+      {{else}}
       <span class="badge">Solicitud de Fondos aprobada</span>
       <h1 class="title">Solicitud de Fondos pendiente de desembolso</h1>
       <p>Estimado/a,</p>
       <p>La siguiente solicitud de fondos fue aprobada y requiere procesamiento de pago al colaborador.</p>
+      {{/if}}
 
       <p class="label">Detalles rápidos:</p>
       <div class="box">
@@ -10,7 +17,15 @@
         {{#if projectLabel}}<div class="row"><strong>Centro de costo:</strong> {{projectLabel}}</div>{{/if}}
         <div class="row"><strong>Colaborador:</strong> {{collaboratorName}}</div>
         {{#if collaboratorDni}}<div class="row"><strong>DNI:</strong> {{collaboratorDni}}</div>{{/if}}
+        {{#if esCajaChica}}
+        <!-- En caja chica lo que se deposita es la DIFERENCIA hasta el nuevo
+             tope, no el presupuesto entero: rotularlo "monto solicitado" hacía
+             pensar que Tesorería debía depositar el total. -->
+        <div class="row"><strong>Presupuesto aprobado:</strong> {{currencySymbol}} {{presupuestoFormatted}}</div>
+        <div class="row"><strong>Monto a depositar:</strong> {{currencySymbol}} {{budgetFormatted}}</div>
+        {{else}}
         <div class="row"><strong>Monto solicitado:</strong> {{currencySymbol}} {{budgetFormatted}}</div>
+        {{/if}}
       </div>
 
       <p class="label">Datos bancarios para depósito:</p>

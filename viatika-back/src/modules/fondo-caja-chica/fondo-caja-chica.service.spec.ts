@@ -8,6 +8,9 @@ import {
   FondoMovement,
   saldoDisponible,
 } from './entities/fondo-caja-chica.entity'
+import { EmailService } from '../email/email.service'
+import { UserService } from '../user/user.service'
+import { NotificationsService } from '../notifications/notifications.service'
 
 /**
  * El modelo se simula con un documento en memoria: lo que importa es el
@@ -55,6 +58,17 @@ describe('FondoCajaChicaService', () => {
     return doc
   }
 
+  const emailService = {
+    sendCajaChicaDevolucionRegistrada: jest.fn().mockResolvedValue(undefined),
+    buildAppUrl: jest.fn().mockReturnValue('http://localhost/tesoreria'),
+  }
+  const userService = {
+    findEmailNameClient: jest.fn().mockResolvedValue({ name: 'Responsable', email: 'r@x.com' }),
+    findTesoreriaRecipientsWithIds: jest.fn().mockResolvedValue([]),
+    findContabilidadRecipients: jest.fn().mockResolvedValue([]),
+  }
+  const notificationsService = { create: jest.fn().mockResolvedValue(undefined) }
+
   beforeEach(async () => {
     jest.clearAllMocks()
     doc = nuevoDoc()
@@ -76,6 +90,11 @@ describe('FondoCajaChicaService', () => {
       providers: [
         FondoCajaChicaService,
         { provide: getModelToken(FondoCajaChica.name), useValue: model },
+        // Avisos de la devolución del sobrante: aquí solo interesa que no
+        // estorben, el contenido del correo se prueba aparte.
+        { provide: EmailService, useValue: emailService },
+        { provide: UserService, useValue: userService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile()
     service = module.get(FondoCajaChicaService)
