@@ -107,20 +107,38 @@
       <label for="firmaUrl" class="text-sm font-medium text-secondary">
         Firma del comprobante <span class="text-error">*</span>
       </label>
-      <input
-        id="firmaUrl"
-        type="file"
-        accept="image/*,application/pdf"
-        (change)="onFirmaSelected($event)"
-        class="w-full text-sm text-secondary file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary"
-      />
-      @if (isUploadingFirma()) {
-      <span class="text-sm text-tertiary">Subiendo firma...</span>
-      } @else if (firmaFileName()) {
-      <span class="text-sm text-success-ink">Adjunta: {{ firmaFileName() }}</span>
-      } @else {
-      <span class="text-sm text-tertiary">Sube una foto, imagen o PDF de la firma. Es obligatoria.</span>
-      }
+      <!-- Mismo adjunto que el resto del formulario (input oculto + zona
+           pulsable). El input de archivo desnudo mostraba "Choose File / No
+           file chosen": ese texto lo pinta el navegador y no se puede traducir
+           ni con estilos ni con `lang`, hay que no usarlo. -->
+      <div
+        class="bg-background border-2 border-dashed border-tertiary/40 rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
+        (click)="firmaInput.click()"
+      >
+        @if (isUploadingFirma()) {
+        <p class="text-sm text-tertiary">Subiendo firma...</p>
+        } @else if (firmaFileName()) {
+        <div class="flex items-center justify-center gap-3">
+          <app-icon name="file-text" size="lg" class="text-primary" />
+          <div class="text-left">
+            <p class="text-sm font-medium text-secondary">{{ firmaFileName() }}</p>
+            <p class="text-xs text-tertiary">Haz clic para cambiar el archivo</p>
+          </div>
+        </div>
+        } @else {
+        <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+        <p class="mt-2 text-sm text-secondary font-medium">Haz clic para adjuntar la firma</p>
+        <p class="mt-1 text-xs text-tertiary">Foto, imagen o PDF. Es obligatoria.</p>
+        }
+        <input
+          id="firmaUrl"
+          type="file"
+          accept="image/*,application/pdf"
+          (change)="onFirmaSelected($event)"
+          class="hidden"
+          #firmaInput
+        />
+      </div>
     </div>
     }
 
