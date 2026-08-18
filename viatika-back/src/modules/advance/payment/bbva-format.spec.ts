@@ -16,6 +16,11 @@ import {
   toBbvaAccount20,
   resolveBbvaAccount,
   describeBbvaAccountProblem,
+  sanitizeBeneficiaryName,
+  sanitizeBankText,
+  sanitizeEmail,
+  sanitizeDocNumber,
+  sanitizeLatin1,
   BbvaDetailRecord,
 } from './bbva-format'
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -454,5 +459,186 @@ describe('toBbvaAccount20 · carga duplicada del N° de cuenta en el campo CCI',
       cci: '00001103320200289116',
       accountNumber: '00110332020028911600',
     })).toBeNull()
+  })
+})
+
+/**
+ * Regresión del rechazo real del 18-ago-2026: BBVA Net Cash devolvió
+ * `Valor no permitido para campo nombre; localizado en la fila N, columna 38`
+ * para las 3 filas del archivo, que eran justo las 3 con coma en el nombre
+ * (`APELLIDOS, NOMBRES`, tal como se cargaron desde el Excel de personal).
+ * El cliente quitó las comas a mano y el mismo archivo pasó sin errores.
+ */
+describe('bbva-format · nombre del beneficiario (pos 38-77)', () => {
+  const base: BbvaDetailRecord = {
+    documentType: 'L',
+    documentNumber: '44932276',
+    accountType: 'I',
+    accountNumber: '00336501324130900249',
+    beneficiaryName: 'QUISPE GUTIERREZ,DIEGO ZOSIMO',
+    amountCents: 567,
+    concepto: 'REEMBOLSO',
+    email: 'EDQGPE@DETROIT.PE',
+  }
+  const nombreDe = (linea: string) => linea.slice(37, 77)
+
+  it('cambia la coma por espacio en vez de borrarla (sin pegar apellido y nombre)', () => {
+    expect(sanitizeBeneficiaryName('QUISPE GUTIERREZ,DIEGO ZOSIMO')).toBe(
+      'QUISPE GUTIERREZ DIEGO ZOSIMO'
+    )
+    expect(sanitizeBeneficiaryName('MORRIS FLORES,GUILLERMO JOSE')).toBe(
+      'MORRIS FLORES GUILLERMO JOSE'
+    )
+  })
+
+  it('no deja doble espacio cuando la coma ya venía seguida de espacio', () => {
+    expect(sanitizeBeneficiaryName('PILLACA AZA, SERGIO MAURICIO')).toBe(
+      'PILLACA AZA SERGIO MAURICIO'
+    )
+    // El Excel de personal trae dos espacios entre apellidos.
+    expect(sanitizeBeneficiaryName('AGREDA  FLORES, ANDRE LEANDRO')).toBe(
+      'AGREDA FLORES ANDRE LEANDRO'
+    )
+  })
+
+  it('conserva Ñ y tildes (el archivo que el banco aceptó las trae)', () => {
+    expect(sanitizeBeneficiaryName('Fidel Tuesta Saldaña')).toBe(
+      'FIDEL TUESTA SALDAÑA'
+    )
+    expect(sanitizeBeneficiaryName('Astrid Selene Estacio Peña')).toBe(
+      'ASTRID SELENE ESTACIO PEÑA'
+    )
+  })
+
+  it('quita también el resto de puntuación que el campo no admite', () => {
+    expect(sanitizeBeneficiaryName('DE LA CRUZ-OLIVOS, RUBEN (JR.)')).toBe(
+      'DE LA CRUZ OLIVOS RUBEN JR'
+    )
+  })
+
+  it('la línea de detalle sale sin coma y con los 40 caracteres del campo', () => {
+    const nombre = nombreDe(buildDetailLine(base))
+    expect(nombre).toBe('QUISPE GUTIERREZ DIEGO ZOSIMO           ')
+    expect(nombre).toHaveLength(40)
+    expect(nombre).not.toContain(',')
+  })
+
+  it('ningún carácter no permitido en el campo nombre de las 3 filas rechazadas', () => {
+    const rechazadas = [
+      'MORRIS FLORES,GUILLERMO JOSE',
+      'QUISPE GUTIERREZ,DIEGO ZOSIMO',
+      'PILLACA AZA, SERGIO MAURICIO',
+    ]
+    for (const beneficiaryName of rechazadas) {
+      const nombre = nombreDe(buildDetailLine({ ...base, beneficiaryName }))
+      expect(nombre).toMatch(/^[A-Z0-9\xC0-\xD6\xD8-\xF6\xF8-\xFF ]{40}$/)
+    }
+  })
+
+  it('el archivo aceptado se sigue reconstruyendo byte a byte', () => {
+    // Ningún nombre del archivo aceptado tiene puntuación, así que la regla
+    // nueva tiene que ser un no-op sobre todos ellos: lo que el banco ya dio
+    // por bueno no puede cambiar de bytes.
+    for (const linea of DETAILS) {
+      const nombre = linea.slice(37, 77)
+      expect(sanitizeBeneficiaryName(nombre)).toBe(sanitizeLatin1(nombre))
+    }
+  })
+})
+
+/**
+ * El rechazo del 18-ago llegó por el nombre, pero la coma podía entrar por
+ * cualquier campo de texto. Estos tests fijan la regla de cada uno.
+ */
+describe('bbva-format · saneo del resto de campos', () => {
+  const base: BbvaDetailRecord = {
+    documentType: 'L',
+    documentNumber: '44932276',
+    accountType: 'I',
+    accountNumber: '00336501324130900249',
+    beneficiaryName: 'QUISPE GUTIERREZ DIEGO ZOSIMO',
+    amountCents: 5670,
+    concepto: 'REEMBOLSO',
+    email: 'EDQGPE@DETROIT.PE',
+  }
+
+  it('la glosa pierde la puntuación y la corta se deriva de la ya saneada', () => {
+    const linea = buildDetailLine({
+      ...base,
+      concepto: 'RENDICIÓN DE VIÁTICOS, AGOSTO',
+    })
+    expect(linea.slice(93, 105)).toBe('RENDICIÓN DE') // pos 94-105, glosa corta
+    expect(linea.slice(106, 146)).toBe(
+      'RENDICIÓN DE VIÁTICOS AGOSTO            ' // pos 107-146, glosa larga
+    )
+    expect(linea).toHaveLength(277)
+  })
+
+  it('el correo conserva @ y punto, que es lo que el archivo aceptado trae', () => {
+    expect(sanitizeEmail('edqgpe@detroit.pe')).toBe('EDQGPE@DETROIT.PE')
+    expect(sanitizeEmail('nombre.apellido+aviso@detroit.pe')).toBe(
+      'NOMBRE.APELLIDO+AVISO@DETROIT.PE'
+    )
+  })
+
+  it('el correo se limpia BORRANDO, no sustituyendo por espacio', () => {
+    // Un espacio dentro del correo lo parte en dos y el aviso no llega.
+    expect(sanitizeEmail(' edqgpe@detroit.pe , ')).toBe('EDQGPE@DETROIT.PE')
+  })
+
+  it('el N° de documento se queda solo con letras y dígitos', () => {
+    expect(sanitizeDocNumber('44.932.276')).toBe('44932276')
+    expect(sanitizeDocNumber('44932276 ')).toBe('44932276')
+    // Pasaporte / carné de extranjería: las letras se conservan.
+    expect(sanitizeDocNumber('pa-123456')).toBe('PA123456')
+  })
+
+  it('la descripción de la planilla también se sanea (cabecera pos 52-75)', () => {
+    const header = buildHeaderLine({
+      chargeAccount: '000110380350100056833',
+      description: 'PROVEEDORES SOL, 18 AGOST',
+      recordCount: 3,
+      totalCents: 180470,
+    })
+    expect(header.slice(51, 75)).toBe('PROVEEDORES SOL 18 AGOST')
+    expect(header).toHaveLength(151)
+  })
+
+  it('la moneda se normaliza a 3 letras mayúsculas', () => {
+    const header = buildHeaderLine({
+      chargeAccount: '000110380350100056833',
+      currency: 'usd',
+      description: 'PROVEEDORES USD',
+      recordCount: 1,
+      totalCents: 100,
+    })
+    expect(header.slice(23, 26)).toBe('USD')
+  })
+
+  it('una moneda que queda vacía revienta en vez de colarse como espacios', () => {
+    expect(() =>
+      buildHeaderLine({
+        chargeAccount: '000110380350100056833',
+        currency: '...',
+        description: 'PROVEEDORES',
+        recordCount: 1,
+        totalCents: 100,
+      })
+    ).toThrow(/longitud inválida/)
+  })
+
+  it('un registro sucio de punta a punta sigue midiendo 277', () => {
+    const linea = buildDetailLine({
+      ...base,
+      documentNumber: '44.932.276',
+      beneficiaryName: 'QUISPE  GUTIERREZ, DIEGO (ZOSIMO)',
+      concepto: 'REEMBOLSO, VARIOS',
+      email: ' edqgpe@detroit.pe ',
+    })
+    expect(linea).toHaveLength(277)
+    expect(linea.slice(4, 16)).toBe('44932276    ')
+    expect(linea.slice(37, 77)).toBe('QUISPE GUTIERREZ DIEGO ZOSIMO           ')
+    expect(linea.slice(106, 146)).toBe('REEMBOLSO VARIOS                        ')
+    expect(linea.slice(147, 227)).toBe(padRight('EDQGPE@DETROIT.PE', 80))
   })
 })
