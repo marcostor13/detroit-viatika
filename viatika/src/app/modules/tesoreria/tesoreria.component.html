@@ -942,11 +942,15 @@
           <p class="text-xs text-tertiary">{{ selectedReturnAdvance.returnRecord?.proof?.note }}</p>
         </div>
         }
+        @if (selectedReturnAdvance.returnRecord?.proof?.fileUrl) {
         <a [href]="selectedReturnAdvance.returnRecord?.proof?.fileUrl" target="_blank"
           class="flex items-center gap-1.5 text-xs text-primary font-semibold hover:underline pt-1">
           <app-icon name="file-text" size="sm" />
           Ver documento adjunto
         </a>
+        } @else {
+        <span class="flex items-center gap-1.5 text-xs text-tertiary pt-1">Sin documento adjunto</span>
+        }
       </div>
       }
       <div class="flex flex-col gap-1.5 mb-5">

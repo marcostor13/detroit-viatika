@@ -96,6 +96,53 @@ export function sanitizeLatin1(value: string): string {
     .trim()
 }
 
+/**
+ * Sanitiza un campo de TEXTO del archivo (nombre del beneficiario, glosas,
+ * descripción de la planilla). Más estricto que `sanitizeLatin1`: BBVA Net Cash
+ * valida los caracteres de estos campos y rechaza el archivo COMPLETO por
+ * "errores de estructura" si encuentra puntuación —
+ * `Valor no permitido para campo nombre; localizado en la fila N, columna 38`
+ * (el banco reporta la columna donde ARRANCA el campo, no la del carácter).
+ *
+ * El disparador real fue la coma: los usuarios se cargaron desde el Excel de
+ * personal como `APELLIDOS, NOMBRES` (185 de 186 filas traen coma), mientras
+ * que los archivos que el banco sí aceptó no tienen ni una. Las letras con
+ * tilde y la Ñ NO son el problema: el archivo aceptado las trae y se conservan.
+ *
+ * La puntuación se sustituye por espacio, nunca se borra: `GUTIERREZ,DIEGO`
+ * sin coma quedaría `GUTIERREZDIEGO`, un titular que no existe.
+ */
+export function sanitizeBankText(value: string): string {
+  return sanitizeLatin1(value)
+    // Deja letras (A-Z + acentuadas y Ñ de Latin-1), dígitos y espacio.
+    .replace(/[^A-Z0-9\xC0-\xD6\xD8-\xF6\xF8-\xFF ]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+/** Alias con el nombre del campo que provocó el rechazo (pos 38-77). */
+export const sanitizeBeneficiaryName = sanitizeBankText
+
+/**
+ * Sanitiza el CORREO DE AVISO (pos 148-227). No puede usar `sanitizeBankText`:
+ * la `@` y el `.` son justamente los dos únicos caracteres no alfanuméricos que
+ * el archivo aceptado contiene, y sin ellos el aviso no llega a nadie. Se
+ * eliminan (no se sustituyen por espacio) los caracteres ajenos a un correo,
+ * incluidos los espacios: un correo partido en dos no es un correo.
+ */
+export function sanitizeEmail(value: string): string {
+  return sanitizeLatin1(value).replace(/[^A-Z0-9@._+-]/g, '')
+}
+
+/**
+ * Sanitiza el N° DE DOCUMENTO (pos 5-16). Alfanumérico: los DNI son dígitos,
+ * pero pasaporte y carné de extranjería admiten letras. Fuera puntos, guiones y
+ * espacios con los que suele venir escrito el documento.
+ */
+export function sanitizeDocNumber(value: string): string {
+  return sanitizeLatin1(value).replace(/[^A-Z0-9]/g, '')
+}
+
 /** Convierte soles (number) a céntimos enteros de forma segura. */
 export function solesToCents(amount: number): number {
   return Math.round(Number(amount ?? 0) * 100)
@@ -200,24 +247,24 @@ export function resolveBbvaAccount(opts: {
 
 /** Construye una línea de DETALLE (277 chars). */
 export function buildDetailLine(rec: BbvaDetailRecord): string {
-  const concepto = sanitizeLatin1(rec.concepto)
+  const concepto = sanitizeBankText(rec.concepto)
   const glosaCorta = concepto.slice(0, W.glosaCorta)
 
   const line =
     '00' + // pos 1-2  filler
     '2' + // pos 3    tipo registro detalle
     rec.documentType + // pos 4    tipo doc
-    padRight(rec.documentNumber.trim(), W.docNumber) + // pos 5-16
+    padRight(sanitizeDocNumber(rec.documentNumber), W.docNumber) + // pos 5-16
     rec.accountType + // pos 17   tipo cuenta
     padRight(padLeftZeros(rec.accountNumber, W.accountNumber), W.accountNumber) + // pos 18-37
-    padRight(sanitizeLatin1(rec.beneficiaryName), W.beneficiary) + // pos 38-77
+    padRight(sanitizeBankText(rec.beneficiaryName), W.beneficiary) + // pos 38-77
     padLeftZeros(String(Math.max(0, Math.round(rec.amountCents))), W.amount) + // pos 78-92
     'F' + // pos 93   flag glosa corta
     padRight(glosaCorta, W.glosaCorta) + // pos 94-105
     'N' + // pos 106  flag glosa larga
     padRight(concepto, W.glosaLarga) + // pos 107-146
     'E' + // pos 147  flag email
-    padRight(sanitizeLatin1(rec.email), W.email) + // pos 148-227
+    padRight(sanitizeEmail(rec.email), W.email) + // pos 148-227
     '0'.repeat(W.reserved) + // pos 228-259 reservado
     ' '.repeat(W.detailFiller) // pos 260-277 filler
 
@@ -231,7 +278,11 @@ export function buildDetailLine(rec: BbvaDetailRecord): string {
 
 /** Construye la línea de CABECERA (151 chars). */
 export function buildHeaderLine(meta: BbvaHeaderMeta): string {
-  const currency = (meta.currency ?? 'PEN').slice(0, 3)
+  // Sin `padRight`: una moneda que quede vacía debe romper el chequeo de
+  // longitud de abajo, no colarse como 3 espacios en una cabecera aceptable.
+  const currency = sanitizeBankText(meta.currency ?? 'PEN')
+    .replace(/[^A-Z]/g, '')
+    .slice(0, 3)
   const line =
     '75' + // pos 1-2   prefijo cabecera
     padRight(padLeftZeros(meta.chargeAccount, 21), 21) + // pos 3-23  cuenta de cargo
@@ -239,7 +290,7 @@ export function buildHeaderLine(meta: BbvaHeaderMeta): string {
     padLeftZeros(String(Math.max(0, Math.round(meta.totalCents))), 15) + // pos 27-41 total céntimos
     'A' + // pos 42    flag
     ' '.repeat(9) + // pos 43-51
-    padRight(sanitizeLatin1(meta.description), 24) + // pos 52-75 descripción
+    padRight(sanitizeBankText(meta.description), 24) + // pos 52-75 descripción
     ' ' + // pos 76
     padLeftZeros(String(meta.recordCount), 6) + // pos 77-82 N° registros
     'S' + // pos 83    flag

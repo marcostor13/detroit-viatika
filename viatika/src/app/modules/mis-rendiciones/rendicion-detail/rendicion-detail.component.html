@@ -902,10 +902,18 @@
         </div>
         }
         <div class="flex flex-wrap gap-3 text-sm">
+          <!-- Un pago en efectivo se registra sin adjunto: con href="" el
+               enlace recargaba la SPA y devolvia al usuario al inicio. -->
+          @if (report.reimbursementPaymentInfo.paymentReceiptUrl) {
           <a [href]="report.reimbursementPaymentInfo.paymentReceiptUrl" target="_blank" rel="noopener noreferrer"
             class="inline-flex items-center px-4 py-2 rounded-lg bg-success text-white font-semibold hover:bg-success">
             Ver comprobante de reembolso
           </a>
+          } @else {
+          <span class="inline-flex items-center px-4 py-2 rounded-lg bg-background text-tertiary border border-divider font-medium">
+            Sin comprobante adjunto
+          </span>
+          }
           @if (report.reimbursedAt) {
           <span class="text-tertiary self-center">
             Fecha registro: {{ report.reimbursedAt | date:'dd/MM/yyyy' }}
@@ -946,10 +954,16 @@
           }
           <p><span class="text-tertiary">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
         </div>
+        @if (report.returnVoucher.url) {
         <a [href]="report.returnVoucher.url" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center px-4 py-2 rounded-lg bg-warning text-white font-semibold text-sm hover:bg-warning">
           Ver comprobante
         </a>
+        } @else {
+        <span class="inline-flex items-center px-4 py-2 rounded-lg bg-background text-tertiary border border-divider font-medium text-sm">
+          Sin comprobante adjunto
+        </span>
+        }
       </div>
       }
 

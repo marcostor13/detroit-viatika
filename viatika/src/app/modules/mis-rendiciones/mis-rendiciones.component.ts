@@ -22,6 +22,8 @@ import {
   FONDO_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_COLORS,
+  rendicionCajaChicaStatusLabel,
+  rendicionCajaChicaStatusColor,
   SOLICITUD_EN_CURSO_STATUSES,
   presupuestoSolicitado,
   saldoDisponible,
@@ -1188,35 +1190,18 @@ export class MisRendicionesComponent implements OnInit {
    * responsable. No reusa `getLegacyReportLabel` porque el vocabulario cambia:
    * lo que ahí es "Reembolsada" acá es "Repuesta" (Tesorería devuelve a la caja
    * lo aprobado), y "Enviada" no dice quién la tiene.
+   *
+   * El diccionario vive en `rendicionCajaChicaStatusLabel` y lo comparte con la
+   * bandeja de /rendiciones y con el detalle: responsable, Contabilidad y
+   * Tesorería tienen que leer el mismo estado, sobre todo después de la
+   * aprobación, donde faltan el reembolso/devolución y el cierre de Tesorería.
    */
   cajaChicaStatusLabel(report: IExpenseReport): string {
-    const map: Partial<Record<string, string>> = {
-      open: 'Registrando gastos',
-      submitted: 'Pendiente de aprobación',
-      pending_accounting: 'En contabilidad',
-      approved: 'Aprobada, por reponer',
-      reimbursed: 'Repuesta',
-      settled: 'Repuesta',
-      closed: 'Cerrada',
-      rejected: 'Observada',
-      cancelled: 'Cancelada',
-    };
-    return map[report.status] ?? report.status;
+    return rendicionCajaChicaStatusLabel(report as any);
   }
 
   cajaChicaStatusColor(report: IExpenseReport): string {
-    const map: Partial<Record<string, string>> = {
-      open: 'bg-emerald-100 text-emerald-700',
-      submitted: 'bg-yellow-100 text-yellow-700',
-      pending_accounting: 'bg-violet-100 text-violet-700',
-      approved: 'bg-green-100 text-green-700',
-      reimbursed: 'bg-teal-100 text-teal-700',
-      settled: 'bg-teal-100 text-teal-700',
-      closed: 'bg-gray-100 text-gray-500',
-      rejected: 'bg-red-100 text-red-700',
-      cancelled: 'bg-gray-100 text-gray-500',
-    };
-    return map[report.status] ?? 'bg-gray-100 text-gray-600';
+    return rendicionCajaChicaStatusColor(report as any);
   }
 
   getLegacyReportColor(report: IExpenseReport): string {

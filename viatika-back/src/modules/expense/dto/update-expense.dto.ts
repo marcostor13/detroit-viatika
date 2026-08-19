@@ -21,6 +21,15 @@ export class UpdateExpenseDto {
   @IsOptional()
   proyectId?: string
 
+  /**
+   * Firma que acompaña al comprobante (imagen o PDF). Obligatoria en caja
+   * chica: al corregir un comprobante viejo, cargado antes de que se pidiera,
+   * se adjunta desde la misma pantalla de edición.
+   */
+  @IsString()
+  @IsOptional()
+  firmaUrl?: string
+
   @IsString()
   @IsOptional()
   ordenTrabajoId?: string

@@ -332,6 +332,17 @@ export default class AddInvoiceComponent implements OnInit {
     this.editingInvoiceAmount.set(false);
   }
 
+  /**
+   * Nombre legible de un archivo ya subido, sacado del final de su URL. Se usa
+   * para que la firma guardada se vea igual que una recién adjuntada al abrir
+   * el comprobante en edición.
+   */
+  private fileNameFromUrl(url: string): string {
+    const sinQuery = url.split(/[?#]/)[0];
+    const nombre = decodeURIComponent(sinQuery.split('/').pop() || '');
+    return nombre || 'firma adjunta';
+  }
+
   /** Sube la firma que acompaña al comprobante de caja chica (imagen o PDF). */
   onFirmaSelected(event: Event): void {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -377,8 +388,29 @@ export default class AddInvoiceComponent implements OnInit {
     this.notificationService.show(`${response.categoryLimitWarning}${pct}`, 'warning');
   }
 
+  /**
+   * Pestaña de /mis-rendiciones a la que pertenece la rendición abierta. Viaja
+   * como `?tab=` al volver, para que el botón "Volver" del detalle regrese a la
+   * misma lista de la que salió el usuario y no a la primera pestaña.
+   */
+  private rendicionTab(): 'viaticos' | 'directas' | 'caja-chica' {
+    if (this.isCajaChicaReport()) return 'caja-chica';
+    if (this.isDirectaReport() || this.isDirectaMode) return 'directas';
+    return 'viaticos';
+  }
+
   /** Tras crear/actualizar gasto: vuelve según el contexto y rol. */
   private navigateAfterExpenseSave(): void {
+    // El comprobante pertenece a una rendición concreta: se vuelve a ella
+    // cualquiera sea el rol. Contabilidad salía siempre a
+    // /rendiciones?tab=directas, así que trabajando dentro de una caja chica
+    // terminaba en la lista de rendiciones directas, fuera del documento.
+    if (this.rendicionId) {
+      this.router.navigate(['/mis-rendiciones', this.rendicionId, 'detalle'], {
+        queryParams: { tab: this.rendicionTab() },
+      });
+      return;
+    }
     if (this.fromContabilidad) {
       this.router.navigate(['/rendiciones'], { queryParams: { tab: 'directas' } });
       return;
@@ -389,8 +421,6 @@ export default class AddInvoiceComponent implements OnInit {
         next: () => { this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'directas' } }); },
         error: () => { this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'directas' } }); },
       });
-    } else if (this.rendicionId) {
-      this.router.navigate(['/mis-rendiciones', this.rendicionId, 'detalle']);
     } else {
       this.router.navigate(['/invoices']);
     }
@@ -569,8 +599,16 @@ export default class AddInvoiceComponent implements OnInit {
             fecha = this.formatDateForInput((res as any).fechaEmision);
           }
 
+          // Caja chica: la firma guardada vuelve al formulario para no obligar a
+          // subirla de nuevo en cada edición (el validador la exige).
+          const firmaGuardada = (res as any).firmaUrl || '';
+          if (firmaGuardada) {
+            this.firmaFileName.set(this.fileNameFromUrl(firmaGuardada));
+          }
+
           const baseValues: any = {
             proyectId: res.proyectId?._id || res.proyectId || '',
+            firmaUrl: firmaGuardada,
             ordenTrabajoId: (res as any).ordenTrabajoId?._id || (res as any).ordenTrabajoId || '',
             categoryId: res.categoryId?._id || res.categoryId || '',
             comentario: (res as any).comentario || dataObj.comentario || '',
@@ -973,6 +1011,39 @@ export default class AddInvoiceComponent implements OnInit {
   get showTopBlock(): boolean {
     if (!this.isDirectaContext()) return true;
     return this.showTopCategorySelect || this.showMovilidadCategoryBlock;
+  }
+
+  /**
+   * ¿El tipo de comprobante en curso obliga a adjuntar el documento? Mismo
+   * criterio que `isFormValid()`: la planilla de movilidad, la DJ al extranjero
+   * y Alimentación sin documentación (AL) se guardan sin archivo.
+   */
+  private get comprobanteRequiereAdjunto(): boolean {
+    switch (this.expenseType()) {
+      case 'planilla_movilidad':
+        return false;
+      case 'otros_gastos':
+        return this.otrosSubTipo() !== 'AL' && !this.isDj();
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Firma del comprobante de caja chica. Se pide al FINAL del formulario y solo
+   * cuando el documento ya está adjunto: es la firma de quien recibió el dinero
+   * por ese comprobante, así que antes de subirlo no hay nada que firmar y el
+   * campo solo estorbaba arriba, entre el centro de costo y la categoría.
+   *
+   * Al editar se muestra siempre, con la firma ya guardada precargada
+   * (`firmaUrl` vuelve del backend en `loadInvoice`): sin eso el formulario
+   * quedaba inválido para siempre porque el validador la exige y el campo
+   * llegaba vacío.
+   */
+  get showFirmaBlock(): boolean {
+    if (!this.isCajaChicaReport()) return false;
+    if (this.id) return true;
+    return !!this.selectedFile || !this.comprobanteRequiereAdjunto;
   }
 
   /**
@@ -1765,6 +1836,15 @@ export default class AddInvoiceComponent implements OnInit {
       const c = this.form.get('proyectId');
       return c?.disabled || c?.valid === true;
     })();
+    // Caja chica: la firma del comprobante es obligatoria para los cuatro tipos.
+    // Solo `factura` lo verificaba (usa `form.valid`); planilla, otros gastos y
+    // recibo de caja llegaban al backend sin firma y volvían con un error.
+    // Al editar no se re-exige: el comprobante ya se guardó con la suya.
+    const firmaOk =
+      !this.isCajaChicaReport() ||
+      !!this.id ||
+      !!(this.form.get('firmaUrl')?.value || '').toString().trim();
+    if (!firmaOk) return false;
     switch (this.expenseType()) {
       case 'planilla_movilidad': {
         // La categoría se resuelve igual en viático y en directa: automática si
@@ -2341,6 +2421,13 @@ export default class AddInvoiceComponent implements OnInit {
       status: this.originalInvoice.status,
       comentario: (formValue.comentario || '').trim() || undefined,
     };
+
+    // Caja chica: solo viaja si el usuario la cambió o la agregó recién (los
+    // comprobantes anteriores a la firma obligatoria llegan sin ella). Mandarla
+    // vacía borraría la que ya estaba guardada.
+    if (formValue.firmaUrl) {
+      payload.firmaUrl = formValue.firmaUrl;
+    }
 
     if (type === 'factura') {
       const fetched = this.fetchedRazonSocial();
