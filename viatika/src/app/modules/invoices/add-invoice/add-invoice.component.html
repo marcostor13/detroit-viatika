@@ -83,8 +83,7 @@
     @if (!isDirectaContext()) {
     <div class="flex flex-col gap-2">
       <label for="proyectId" class="text-sm font-medium text-secondary">
-        Centro de costo
-        @if (!isCajaChicaReport()) {<span class="text-error">*</span>}
+        Centro de costo <span class="text-error">*</span>
       </label>
       <app-project-select
         formControlName="proyectId"
@@ -92,10 +91,12 @@
         placeholder="Seleccione un centro de costo"
         [invalid]="!!(proyectId?.invalid && proyectId?.touched)"
       />
-      @if (isCajaChicaReport()) {
-      <span class="text-sm text-tertiary">Opcional en caja chica. Si no lo indicas, lo define Contabilidad al revisar.</span>
-      } @else if (proyectId?.invalid && proyectId?.touched) {
+      @if (proyectId?.invalid && proyectId?.touched) {
       <span class="text-sm text-error">El centro de costo es requerido</span>
+      } @else if (isCajaChicaReport() && proyectId?.value) {
+      <span class="text-sm text-tertiary">Viene puesto el de tu caja chica. Cámbialo si este gasto va a otro centro de costo.</span>
+      } @else if (isCajaChicaReport()) {
+      <span class="text-sm text-tertiary">Elige a qué centro de costo se imputa este gasto.</span>
       }
     </div>
     }

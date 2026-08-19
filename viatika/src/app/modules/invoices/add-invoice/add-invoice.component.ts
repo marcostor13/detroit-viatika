@@ -729,6 +729,36 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
+  /**
+   * Precarga el centro de costo de una rendición de caja chica con el mismo que
+   * el backend imputaría si el comprobante llegara sin elegirlo: el de la
+   * solicitud del fondo y, si no la hay, el centro principal del responsable.
+   *
+   * No pisa una elección previa (edición de un gasto que ya tiene el suyo) ni
+   * deshabilita el campo: en caja chica cada comprobante puede ir a un centro
+   * distinto, así que el responsable tiene que poder cambiarlo.
+   */
+  private prefillCentroCostoCajaChica(): void {
+    if (!this.rendicionId) return;
+    const ctrl = this.form.get('proyectId');
+    if (!ctrl || ctrl.value) return;
+    this.expenseReportsService
+      .findCajaChicaCentroCosto(this.rendicionId)
+      .subscribe({
+        next: ({ projectId }) => {
+          // Se re-consulta el control: entre la petición y la respuesta el
+          // usuario pudo elegir uno a mano, y esa elección manda.
+          const actual = this.form.get('proyectId');
+          if (projectId && actual && !actual.value) {
+            actual.setValue(projectId);
+          }
+        },
+        // Sin centro deducible el campo queda vacío y el usuario elige: es la
+        // misma situación que un responsable sin fondo ni centro principal.
+        error: () => {},
+      });
+  }
+
   loadRendicionProject() {
     if (!this.rendicionId) return;
     this.expenseReportsService.findOne(this.rendicionId).subscribe({
@@ -736,17 +766,18 @@ export default class AddInvoiceComponent implements OnInit {
         const isDirecta = !!(report as any)?.isDirecta;
         this.isDirectaReport.set(isDirecta);
 
-        // Caja chica: el centro de costo y la OT se eligen POR COMPROBANTE y son
-        // opcionales. El responsable puede no saber a qué centro imputar cada
-        // gasto, y lo define Contabilidad al revisar. A cambio, la firma del
-        // comprobante es obligatoria.
+        // Caja chica: el centro de costo y la OT se eligen POR COMPROBANTE
+        // (cada gasto puede ir a un centro distinto), pero el centro llega
+        // precargado con el de la caja. Antes se dejaba vacío y opcional: el
+        // aviso decía "opcional" y el botón de guardar seguía deshabilitado,
+        // porque `syncTopValidators` volvía a marcarlo requerido en cuanto se
+        // tocaba el tipo de gasto. La firma sí es obligatoria acá.
         const esCajaChica = !!(report as any)?.isCajaChica;
         this.isCajaChicaReport.set(esCajaChica);
         if (esCajaChica) {
-          this.form.get('proyectId')?.clearValidators();
-          this.form.get('proyectId')?.updateValueAndValidity();
           this.form.get('firmaUrl')?.setValidators([Validators.required]);
           this.form.get('firmaUrl')?.updateValueAndValidity();
+          this.prefillCentroCostoCajaChica();
         }
 
         if (!esCajaChica && report && report.projectId) {
@@ -1424,8 +1455,10 @@ export default class AddInvoiceComponent implements OnInit {
    * y dejan de ser obligatorios; en el resto de casos son requeridos.
    */
   private syncTopValidators(): void {
-    // Proyecto: opcional solo en planilla directa (el centro de costo vive en la
-    // rendición). Requerido en el resto de casos.
+    // Centro de costo: opcional solo en planilla directa (vive en la rendición).
+    // Requerido en el resto de casos, caja chica incluida — ahí se precarga con
+    // el de la caja (ver `prefillCentroCostoCajaChica`) y el responsable puede
+    // cambiarlo por comprobante, pero nunca se guarda un gasto sin imputar.
     const projCtrl = this.form.get('proyectId');
     if (projCtrl && !projCtrl.disabled) {
       projCtrl.setValidators(this.isDirectaPlanilla() ? [] : [Validators.required]);
