@@ -17,6 +17,7 @@ import {
 } from '../../../services/accounting-entries.service';
 import { IExpenseReport, IChainStep, ICajaChicaFondoResumen } from '../../../interfaces/expense-report.interface';
 import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
+import { rendicionCajaChicaStatusLabel } from '../../../interfaces/fondo-caja-chica.interface';
 import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { IAdvance, IAdvancePayment, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../../interfaces/advance.interface';
@@ -482,17 +483,37 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return tc > 0 && tc !== 1 ? `${original} · TC ${tc}` : original;
   }
 
+  /**
+   * Pestaña de la lista a la que pertenece esta rendición. Se deduce del propio
+   * documento y solo cae en el `?tab=` de la URL mientras el reporte no haya
+   * cargado: una caja chica volvía a la primera pestaña disponible (viáticos o
+   * directas) y parecía que el sistema la hubiera sacado de su lista.
+   */
+  private listTab(): 'viaticos' | 'directas' | 'caja-chica' | null {
+    if ((this.report as any)?.isCajaChica) return 'caja-chica';
+    if (this.report?.isDirecta) return 'directas';
+    if (this.report) return 'viaticos';
+    return this.route.snapshot.queryParamMap.get('tab') as
+      | 'viaticos'
+      | 'directas'
+      | 'caja-chica'
+      | null;
+  }
+
   goBack() {
     const ownerId = typeof this.report?.userId === 'object' ? this.report?.userId?._id : this.report?.userId;
     const canViewAdminUsers = this.userStateService.isAdmin() || this.userStateService.isSuperAdmin();
+    const tab = this.listTab();
     if (this.isAdminView && ownerId && canViewAdminUsers) {
       this.router.navigate(['/admin-users', ownerId, 'details']);
     } else if (this.isAdminView && this.userStateService.isContabilidad()) {
-      this.router.navigate(['/rendiciones'], this.report?.isDirecta ? { queryParams: { tab: 'directas' } } : {});
+      // La bandeja de /rendiciones solo reconoce 'directas' y 'caja-chica'; los
+      // viáticos viven en la pestaña por defecto, que va sin ?tab=.
+      const adminTab = tab === 'caja-chica' || tab === 'directas' ? tab : null;
+      this.router.navigate(['/rendiciones'], adminTab ? { queryParams: { tab: adminTab } } : {});
     } else if (this.isAdminView) {
       this.router.navigate(['/tesoreria']);
     } else {
-      const tab = this.route.snapshot.queryParamMap.get('tab');
       this.router.navigate(['/mis-rendiciones'], tab ? { queryParams: { tab } } : {});
     }
   }
@@ -1643,6 +1664,13 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   getReportStatusLabel(): string {
     if (!this.report) return '';
+    // Caja chica: mismo texto que las dos listas, y se resuelve antes del atajo
+    // de `isEffectivelyClosed` — ahí un comprobante de devolución cargado ya
+    // cuenta como "Cerrada", pero en caja chica después de esa devolución
+    // todavía falta que Tesorería cierre la rendición.
+    if ((this.report as any).isCajaChica) {
+      return rendicionCajaChicaStatusLabel(this.report as any);
+    }
     // Saldo ya resuelto (trasladado o devuelto) => se muestra como Cerrada.
     if (this.isEffectivelyClosed) return 'Cerrada';
     if (this.report.isDirecta) {
