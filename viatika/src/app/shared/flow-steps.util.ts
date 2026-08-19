@@ -268,7 +268,13 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     r.settlement?.type === 'devolucion' ||
     !!r.returnVoucher ||
     status === 'returned';
-  const cajaChicaReposicion = isCajaChica && terminal && !enDevolucion;
+  // Sin `terminal`: en caja chica el desenlace se conoce desde que se abre la
+  // rendición. Lo rendido sale del fondo del responsable, no hay depósito
+  // previo contra el cual compensarlo, así que el saldo siempre queda a su
+  // favor y lo repone Tesorería. Anunciarlo recién al aprobarse dejaba la línea
+  // de tiempo terminando en "Finalizada", sin decir que después venían el
+  // reembolso y el cierre.
+  const cajaChicaReposicion = isCajaChica && !enDevolucion;
   const expectsReembolso =
     reembolsoDone ||
     r.settlement?.type === 'reembolso' ||
@@ -366,7 +372,12 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   }
   // Tras la aprobación, el paso pendiente es el reembolso (si aplica) y luego el
   // cierre por Contabilidad, hasta que la rendición quede efectivamente cerrada.
-  if (!rejected && !closed) {
+  //
+  // El gate de Contabilidad (`contaDone`) es lo que separa "pendiente" de "aún
+  // por venir": la caja chica declara su reembolso desde que nace, y sin este
+  // corte el paso de Tesorería se pintaba activo mientras la rendición todavía
+  // esperaba a sus aprobadores.
+  if (!rejected && !closed && contaDone) {
     if (expectsReembolso && !reembolsoDone) {
       activeIndex = reembolsoIdx;
     } else if (expectsReembolso && reembolsoDone) {
