@@ -17,9 +17,19 @@ import {
 import { TIPOS_COMIDA, TipoComida } from '../../client/entities/client.entity'
 
 export class CreateExpenseDto {
+  /**
+   * Centro de costo. Opcional a nivel de DTO porque en caja chica puede no ir;
+   * en el resto de rendiciones el servicio lo sigue exigiendo (ver
+   * `resolveComprobanteCajaChica`), para no aflojar la regla para todos.
+   */
   @IsString()
-  @IsNotEmpty()
-  proyectId: string
+  @IsOptional()
+  proyectId?: string
+
+  /** Firma que acompaña al comprobante (imagen o PDF). Obligatoria en caja chica. */
+  @IsString()
+  @IsOptional()
+  firmaUrl?: string
 
   /** Orden de Trabajo (opcional salvo en planilla_movilidad, ver ADF-FOR-005). */
   @IsString()

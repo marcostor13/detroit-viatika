@@ -16,7 +16,14 @@
       </button>
       <div class="min-w-0 flex-1">
         <h1 class="text-xl sm:text-2xl font-bold text-secondary leading-tight">
-          {{ report?.description || (report?.isDirecta ? 'Rendición Directa' : (report?.isCajaChica ? 'Rendición Caja Chica' : 'Rendición de viáticos')) }}
+          @if (report?.isCajaChica) {
+            <!-- La caja chica se crea con un título propio ("Caja chica junio
+                 2026") y sin descripción, así que el título es lo que
+                 identifica la rendición. -->
+            {{ report?.title || report?.description || 'Rendición Caja Chica' }}
+          } @else {
+            {{ report?.description || (report?.isDirecta ? 'Rendición Directa' : 'Rendición de viáticos') }}
+          }
         </h1>
         @if (getHeaderCentroCosto()) {
           <p class="text-sm sm:text-base font-medium text-tertiary mt-1 flex items-center gap-1.5">
@@ -315,7 +322,6 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
           </app-button>
-          @if (!report.isCajaChica) {
           <div class="relative group/submit">
             <app-button
               [label]="report.status === 'rejected' ? 'Volver a enviar rendicion' : 'Enviar Rendicion'"
@@ -335,7 +341,6 @@
             </div>
             }
           </div>
-          }
         </div>
         }
 
@@ -550,6 +555,57 @@
           </div>
           <p class="text-2xl sm:text-3xl font-bold tabular-nums" [ngClass]="{'text-success-ink': directaSaldo >= 0, 'text-error': directaSaldo < 0}">
             {{ currencySymbol }} {{ directaSaldo | number:'1.2-2' }}
+          </p>
+        </div>
+      </div>
+      } @else if (report.isCajaChica && cajaChicaFondoResumen) {
+      <!-- Caja chica: el presupuesto y el saldo son del FONDO del responsable
+           —los consumen todas sus rendiciones—, pero "Total gastado" es el de
+           ESTA rendición. Antes la cifra grande era el `spentAmount` del fondo,
+           que es lo pendiente de reponer: tras la reposición volvía a 0 y la
+           rendición mostraba "gastado 0" habiendo gastado 670.50. -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-6 md:mb-8">
+        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-primary/10 text-primary rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 12a2.25 2.25 0 0 0-2.25-2.25H15a3 3 0 1 1-6 0H5.25A2.25 2.25 0 0 0 3 12m18 0v6a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 9m18 0V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v3" />
+              </svg>
+            </div>
+            <p class="font-medium text-tertiary">Presupuesto de la caja</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">
+            {{ currencySymbol }} {{ presupuestoCajaChica | number:'1.2-2' }}
+          </p>
+        </div>
+        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-error/10 text-error rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-tertiary">Gastado en esta rendición</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-secondary tabular-nums">
+            {{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}
+          </p>
+          <p class="mt-1 text-xs text-tertiary">
+            De la caja, pendiente de reponer:
+            {{ currencySymbol }} {{ gastadoNoRepuestoCajaChica | number:'1.2-2' }}
+          </p>
+        </div>
+        <div class="bg-quaternary rounded-xl shadow-sm border border-divider p-4 sm:p-6">
+          <div class="flex items-center gap-3 mb-2">
+            <div class="p-2 bg-success/10 text-success-ink rounded-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+            </div>
+            <p class="font-medium text-tertiary">Saldo disponible de la caja</p>
+          </div>
+          <p class="text-2xl sm:text-3xl font-bold text-success-ink tabular-nums">
+            {{ currencySymbol }} {{ saldoCajaChica | number:'1.2-2' }}
           </p>
         </div>
       </div>
@@ -846,10 +902,18 @@
         </div>
         }
         <div class="flex flex-wrap gap-3 text-sm">
+          <!-- Un pago en efectivo se registra sin adjunto: con href="" el
+               enlace recargaba la SPA y devolvia al usuario al inicio. -->
+          @if (report.reimbursementPaymentInfo.paymentReceiptUrl) {
           <a [href]="report.reimbursementPaymentInfo.paymentReceiptUrl" target="_blank" rel="noopener noreferrer"
             class="inline-flex items-center px-4 py-2 rounded-lg bg-success text-white font-semibold hover:bg-success">
             Ver comprobante de reembolso
           </a>
+          } @else {
+          <span class="inline-flex items-center px-4 py-2 rounded-lg bg-background text-tertiary border border-divider font-medium">
+            Sin comprobante adjunto
+          </span>
+          }
           @if (report.reimbursedAt) {
           <span class="text-tertiary self-center">
             Fecha registro: {{ report.reimbursedAt | date:'dd/MM/yyyy' }}
@@ -890,10 +954,16 @@
           }
           <p><span class="text-tertiary">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
         </div>
+        @if (report.returnVoucher.url) {
         <a [href]="report.returnVoucher.url" target="_blank" rel="noopener noreferrer"
           class="inline-flex items-center px-4 py-2 rounded-lg bg-warning text-white font-semibold text-sm hover:bg-warning">
           Ver comprobante
         </a>
+        } @else {
+        <span class="inline-flex items-center px-4 py-2 rounded-lg bg-background text-tertiary border border-divider font-medium text-sm">
+          Sin comprobante adjunto
+        </span>
+        }
       </div>
       }
 
@@ -1115,7 +1185,6 @@
               <!-- Row 3: concepto (comentario del gasto, VD-64) -->
               <p class="text-xs text-tertiary mt-1 leading-snug line-clamp-2">{{ getExpenseConceptoColumn(expense) }}</p>
               <!-- Row 4: estado único (etapa que bloquea el flujo) -->
-              @if (!report.isCajaChica) {
               @let mobileUnifiedStatus = getExpenseUnifiedStatus(expense);
               <div class="mt-2">
                 @switch (mobileUnifiedStatus.phase) {
@@ -1154,7 +1223,6 @@
                   }
                 }
               </div>
-              }
               <!-- Row 5: acciones -->
               <div class="mt-3 flex flex-wrap gap-2">
                 <button type="button" (click)="openExpenseDetail(expense)"
@@ -1293,9 +1361,7 @@
                   <th class="px-3 py-3 whitespace-nowrap">Proyecto</th>
                   <th class="px-3 py-3 whitespace-nowrap">Categoria</th>
                   <th class="px-3 py-3 text-right whitespace-nowrap">Monto</th>
-                  @if (!report.isCajaChica) {
                   <th class="px-3 py-3 text-center whitespace-nowrap">Estado</th>
-                  }
                   <th class="px-3 py-3 whitespace-nowrap">Opciones</th>
                 </tr>
               </thead>
@@ -1375,7 +1441,6 @@
                     </div>
                   </td>
                   <!-- Estado (único, según la etapa que bloquea el flujo) -->
-                  @if (!report.isCajaChica) {
                   <td class="px-3 py-3 text-center">
                     @let unifiedStatus = getExpenseUnifiedStatus(expense);
                     <div class="flex flex-col items-center gap-0.5">
@@ -1416,7 +1481,6 @@
                       }
                     </div>
                   </td>
-                  }
                   <!-- Opciones -->
                   <td class="px-3 py-3">
                     @let opsUnifiedStatus = getExpenseUnifiedStatus(expense);
@@ -1425,7 +1489,7 @@
                          comprobante tenga un set distinto (adjunto, PDF, descarga...). -->
                     <div class="flex items-center justify-start gap-0.5">
                       <!-- Aprobar/Rechazar por el aprobador de nivel (N1/N2/N3) -->
-                      @if (!report.isCajaChica && canApproveExpenseAsCoord(expense) && opsUnifiedStatus.phase === 'pending_coord') {
+                      @if (canApproveExpenseAsCoord(expense) && opsUnifiedStatus.phase === 'pending_coord') {
                       <div class="relative group/coordok">
                         <button type="button"
                           [disabled]="approvingExpenseRoleId() === 'coord:' + expense._id"
@@ -1449,7 +1513,7 @@
                       </div>
                       }
                       <!-- Aprobar/Rechazar por Contabilidad (solo si la cadena de aprobadores ya se completó) -->
-                      @if (!report.isCajaChica && canApproveExpenseAsCont && opsUnifiedStatus.phase === 'pending_cont') {
+                      @if (canApproveExpenseAsCont && opsUnifiedStatus.phase === 'pending_cont') {
                       <div class="relative group/contok">
                         <button type="button"
                           [disabled]="approvingExpenseRoleId() === 'cont:' + expense._id"
@@ -1624,75 +1688,7 @@
       @if (flowSteps().length > 0) {
       <div class="mt-6 bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6">
         <h2 class="text-xs font-semibold text-tertiary uppercase tracking-wider mb-5">Estado</h2>
-        <div>
-          @for (step of flowSteps(); track $index; let last = $last; let first = $first) {
-          @if (step.group && (first || step.group !== flowSteps()[$index - 1].group)) {
-            <p class="text-[11px] font-bold uppercase tracking-wider mb-2"
-               [class.mt-1]="first"
-               [class.mt-1.5]="!first"
-               [class.text-primary]="step.group === 'solicitud'"
-               [class.text-warning-ink]="step.group === 'rendicion'">
-              {{ step.group === 'solicitud' ? 'Solicitud de viático' : 'Rendición de comprobantes' }}
-            </p>
-          }
-          <div class="flex gap-3">
-            <!-- Ícono + línea vertical -->
-            <div class="flex flex-col items-center">
-              @if (step.state === 'completed') {
-                <div class="w-7 h-7 rounded-full bg-green-100 border-2 border-green-500 flex items-center justify-center shrink-0">
-                  <svg class="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
-                  </svg>
-                </div>
-              } @else if (step.state === 'active') {
-                <div class="w-7 h-7 rounded-full bg-blue-50 border-2 border-blue-500 flex items-center justify-center shrink-0">
-                  <div class="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                </div>
-              } @else if (step.state === 'rejected') {
-                <div class="w-7 h-7 rounded-full bg-red-100 border-2 border-red-500 flex items-center justify-center shrink-0">
-                  <svg class="w-3 h-3 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                </div>
-              } @else {
-                <div class="w-7 h-7 rounded-full border-2 border-tertiary/20 flex items-center justify-center shrink-0">
-                  <div class="w-2 h-2 rounded-full bg-tertiary/20"></div>
-                </div>
-              }
-              @if (!last) {
-                <div class="w-0.5 flex-1 my-1 min-h-[16px]"
-                     [ngClass]="{
-                       'bg-green-300': step.state === 'completed',
-                       'bg-blue-300': step.state === 'active',
-                       'bg-red-200': step.state === 'rejected',
-                       'bg-tertiary/20': step.state === 'upcoming'
-                     }"></div>
-              }
-            </div>
-            <!-- Contenido del paso -->
-            <div class="flex-1 pt-0.5" [class.pb-4]="!last">
-              <p class="text-sm font-medium"
-                 [class.text-secondary]="step.state !== 'upcoming'"
-                 [class.text-tertiary]="step.state === 'upcoming'">
-                {{ step.label }}
-              </p>
-              @if (step.date) {
-                <p class="text-xs text-tertiary mt-0.5">{{ step.date }}</p>
-              }
-              @if (step.description) {
-                <p class="text-xs font-medium mt-1"
-                   [class.text-blue-600]="step.state === 'active'"
-                   [class.text-red-600]="step.state === 'rejected'">
-                  {{ step.description }}
-                </p>
-              }
-              @if (step.notes) {
-                <p class="text-xs text-tertiary italic mt-0.5">{{ step.notes }}</p>
-              }
-            </div>
-          </div>
-          }
-        </div>
+        <app-flow-timeline [steps]="flowSteps()" [groupLabels]="FLOW_GROUP_LABELS" />
       </div>
       }
 
@@ -1901,6 +1897,19 @@
       <div class="rounded-xl bg-warning/10 border border-amber-200 p-4 text-sm text-warning-ink">
         <span class="font-semibold">Comprobante observado por plazo: </span>
         <span class="whitespace-pre-wrap break-words">{{ exp['observacionPlazo'] || 'Se registró fuera del plazo permitido.' }}</span>
+      </div>
+      }
+
+      <!-- Alerta por comprobante (tope único de empresa): solo informa, no
+           condiciona la aprobación. -->
+      @if (exp['superaTopeComprobante']) {
+      <div class="rounded-xl bg-warning/10 border border-amber-200 p-4 text-sm text-warning-ink">
+        <span class="font-semibold">Monto alto: </span>
+        <span>
+          este comprobante supera el monto de alerta de
+          S/ {{ $any(exp['topeComprobante']) | number:'1.2-2' }} configurado por la empresa.
+          Es solo un aviso, no impide aprobarlo.
+        </span>
       </div>
       }
 
@@ -2173,7 +2182,15 @@
     <div class="px-6 py-4 overflow-y-auto flex-1">
 
       <div class="bg-background rounded-xl p-4 mb-4 space-y-2">
-        @if (!report.isDirecta) {
+        @if (report.isCajaChica) {
+        <!-- Caja chica: no hay anticipo por rendición. El presupuesto es el tope
+             de la caja del responsable y el saldo es el de la caja, no una
+             diferencia contra esta rendición (daba S/ 0 y saldo negativo). -->
+        <div class="flex justify-between text-sm">
+          <span class="text-tertiary">Presupuesto de la caja</span>
+          <span class="font-semibold text-secondary">{{ currencySymbol }} {{ presupuestoCajaChica | number:'1.2-2' }}</span>
+        </div>
+        } @else if (!report.isDirecta) {
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Presupuesto asignado</span>
           <span class="font-semibold text-secondary">{{ currencySymbol }} {{ totalAnticipado | number:'1.2-2' }}</span>
@@ -2187,11 +2204,20 @@
         }
         <div class="flex justify-between text-sm">
           <span class="text-tertiary">Total gastado</span>
-          <span class="font-semibold" [class.text-error]="!report.isDirecta && totalGastado > totalAnticipado" [class.text-secondary]="report.isDirecta || totalGastado <= totalAnticipado">
+          <!-- En caja chica gastar no es una alerta: es el uso normal de la
+               caja, y el rojo hacía leer la cifra como un error. -->
+          <span class="font-semibold" [class.text-error]="!report.isDirecta && !report.isCajaChica && totalGastado > totalAnticipado" [class.text-secondary]="report.isDirecta || report.isCajaChica || totalGastado <= totalAnticipado">
             {{ currencySymbol }} {{ totalGastado | number:'1.2-2' }}
           </span>
         </div>
-        @if (!report.isDirecta) {
+        @if (report.isCajaChica) {
+        <div class="flex justify-between text-sm border-t border-divider pt-2 mt-2">
+          <span class="text-tertiary">Saldo de la caja</span>
+          <span class="font-bold" [class.text-success-ink]="saldoCajaChica >= 0" [class.text-error]="saldoCajaChica < 0">
+            {{ currencySymbol }} {{ saldoCajaChica | number:'1.2-2' }}
+          </span>
+        </div>
+        } @else if (!report.isDirecta) {
         <div class="flex justify-between text-sm border-t border-divider pt-2 mt-2">
           <span class="text-tertiary">Saldo</span>
           <span class="font-bold" [class.text-success-ink]="saldoLibre >= 0" [class.text-error]="saldoLibre < 0">
@@ -2893,6 +2919,9 @@
         }
         @if (returnVoucherOperationTime()) {
         <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Hora</span><span class="font-medium text-secondary text-right">{{ returnVoucherOperationTime() }}</span></div>
+        }
+        @if (returnVoucherScannedBank()) {
+        <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Banco</span><span class="font-medium text-secondary text-right">{{ returnVoucherScannedBank() }}</span></div>
         }
         @if (returnVoucherScannedAmount()) {
         <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary/70">Monto</span><span class="font-medium text-secondary text-right">{{ currencySymbol }} {{ returnVoucherScannedAmount() | number:'1.2-2' }}</span></div>

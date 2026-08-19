@@ -13,6 +13,8 @@ describe('ExpenseService.create — congelado de moneda', () => {
 
     svc.expenseReportService = {
       assertReportNotLockedByCajaChica: jest.fn(),
+      assertPuedeCargarEnCajaChica: jest.fn().mockResolvedValue(undefined),
+    resolveCentroCostoCajaChica: jest.fn().mockResolvedValue(undefined),
       buildChainForNewExpense: jest.fn(),
       addExpenseToReport: jest.fn(),
     }

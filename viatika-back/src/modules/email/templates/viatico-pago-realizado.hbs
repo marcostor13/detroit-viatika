@@ -1,6 +1,10 @@
 {{> email-header}}
       <span class="badge">Pago confirmado</span>
+      {{#if esCajaChica}}
+      <h1 class="title">Depósito de caja chica confirmado</h1>
+      {{else}}
       <h1 class="title">Pago de fondos confirmado</h1>
+      {{/if}}
       <p>Estimado/a <strong>{{recipientName}}</strong>,</p>
       <p>Se registró el desembolso correspondiente a la solicitud de <strong>{{collaboratorName}}</strong>.</p>
 
@@ -15,7 +19,11 @@
         {{#if paymentReceiptUrl}}<div class="row"><strong>Comprobante:</strong> <a href="{{paymentReceiptUrl}}" target="_blank" rel="noreferrer">Ver comprobante</a></div>{{/if}}
       </div>
 
+      {{#if esCajaChica}}
+      <p>El presupuesto de caja chica ya está disponible: puede cargar sus comprobantes contra la caja y, al rendirlos, Tesorería repone lo aprobado.</p>
+      {{else}}
       <p>El módulo de registro de gastos ya se encuentra habilitado para continuar con la rendición.</p>
+      {{/if}}
 
       <div class="btn-container">
         <a href="{{platformUrl}}" class="btn">Ir a la plataforma</a>

@@ -1,0 +1,21 @@
+{{> email-header}}
+      <span class="badge">Presupuesto aplicado</span>
+      <h1 class="title">Su presupuesto de caja chica cambió</h1>
+      <p>Estimado/a <strong>{{collaboratorName}}</strong>,</p>
+      <p>Contabilidad aprobó su solicitud y su presupuesto de caja chica quedó actualizado. Como el nuevo presupuesto es menor al anterior, no hay ningún depósito por recibir.</p>
+
+      <p class="label">Detalles rápidos:</p>
+      <div class="box">
+        <div class="row"><strong>Presupuesto anterior:</strong> {{currencySymbol}} {{presupuestoAnteriorFormatted}}</div>
+        <div class="row"><strong>Presupuesto nuevo:</strong> {{currencySymbol}} {{presupuestoNuevoFormatted}}</div>
+        {{#if sobranteFormatted}}<div class="row"><strong>Sobrante por devolver:</strong> {{currencySymbol}} {{sobranteFormatted}}</div>{{/if}}
+      </div>
+
+      {{#if sobranteFormatted}}
+      <p>Ese efectivo sobra en su caja: deposítelo y registre el comprobante desde la plataforma para dejar la caja cuadrada.</p>
+      {{/if}}
+
+      <div class="btn-container">
+        <a href="{{platformUrl}}" class="btn">Ir a la plataforma</a>
+      </div>
+{{> email-footer}}

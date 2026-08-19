@@ -84,6 +84,7 @@
           }
         </div>
         <div class="flex flex-col sm:items-end gap-2 shrink-0">
+          @if (doc.receiptUrl) {
           <a [href]="doc.receiptUrl" target="_blank" rel="noopener noreferrer"
             class="inline-flex justify-center items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-primary text-white hover:opacity-90 transition-opacity">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -91,6 +92,11 @@
             </svg>
             Ver comprobante
           </a>
+          } @else {
+          <span class="inline-flex justify-center items-center px-4 py-2 rounded-xl text-sm font-medium bg-background text-tertiary border border-divider">
+            Sin comprobante adjunto
+          </span>
+          }
           @if (doc.expenseReportId) {
           <a [routerLink]="['/mis-rendiciones', doc.expenseReportId, 'detalle']"
             class="text-xs text-tertiary hover:text-primary underline-offset-2 hover:underline text-center sm:text-right">

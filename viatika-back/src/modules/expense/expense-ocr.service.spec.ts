@@ -157,7 +157,11 @@ describe('ExpenseService — escaneo OCR de comprobantes', () => {
             aggregate: jest.fn().mockResolvedValue([]),
           },
         },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: {} },
@@ -176,6 +180,10 @@ describe('ExpenseService — escaneo OCR de comprobantes', () => {
             assertReportNotLockedByCajaChica: jest
               .fn()
               .mockResolvedValue(undefined),
+            assertPuedeCargarEnCajaChica: jest.fn().mockResolvedValue(undefined),
+            resolveCentroCostoCajaChica: jest.fn().mockResolvedValue(undefined),
+            // Rendición normal: centro de costo obligatorio y sin firma.
+            isReportCajaChica: jest.fn().mockResolvedValue(false),
             findCurrencyMeta: jest.fn().mockResolvedValue(null),
             buildChainForNewExpense,
             addExpenseToReport,

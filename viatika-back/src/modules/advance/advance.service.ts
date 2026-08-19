@@ -686,13 +686,18 @@ export class AdvanceService implements OnModuleInit {
       this.viaticoEmailKvRow('Fecha y hora de aprobación', apprDate),
     ].join('')
 
-    const bankRows = bankMeta?.accountNumber
-      ? [
-          this.viaticoEmailKvRow('Banco', this.viaticoNotifyField(bankMeta.bankName)),
-          this.viaticoEmailKvRow('N° Cuenta', bankMeta.accountNumber),
-          ...(bankMeta.cci ? [this.viaticoEmailKvRow('CCI', bankMeta.cci)] : []),
-        ].join('')
-      : ''
+    // Con o sin N° de cuenta: quien cobra en otro banco registra solo el CCI,
+    // y exigir el N° de cuenta dejaba ese correo sin ningún dato bancario.
+    const bankRows =
+      bankMeta?.accountNumber || bankMeta?.cci
+        ? [
+            this.viaticoEmailKvRow('Banco', this.viaticoNotifyField(bankMeta.bankName)),
+            ...(bankMeta.accountNumber
+              ? [this.viaticoEmailKvRow('N° Cuenta', bankMeta.accountNumber)]
+              : []),
+            ...(bankMeta.cci ? [this.viaticoEmailKvRow('CCI', bankMeta.cci)] : []),
+          ].join('')
+        : ''
 
     return [
       `<div style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;font-size:14px;line-height:1.55;color:#334155;">`,
@@ -774,11 +779,11 @@ export class AdvanceService implements OnModuleInit {
 
     // Prefer bank data from the solicitud; fall back to user profile.
     let bankMetaL2: { bankName?: string; accountNumber?: string; cci?: string } | undefined
-    if (doc.requestAccountNumber?.trim()) {
+    if (doc.requestAccountNumber?.trim() || doc.requestCci?.trim()) {
       bankMetaL2 = { bankName: doc.requestBankName, accountNumber: doc.requestAccountNumber, cci: doc.requestCci }
     } else {
       const collabFull = await this.userService.findOne(collabId)
-      if (collabFull?.bankAccount?.accountNumber) {
+      if (collabFull?.bankAccount?.accountNumber || collabFull?.bankAccount?.cci) {
         bankMetaL2 = { bankName: collabFull.bankAccount.bankName, accountNumber: collabFull.bankAccount.accountNumber, cci: collabFull.bankAccount.cci }
       }
     }
@@ -944,13 +949,18 @@ export class AdvanceService implements OnModuleInit {
       this.viaticoEmailKvRow('Fecha y hora', apprDate),
     ].join('')
 
-    const bankRows = bankMeta?.accountNumber
-      ? [
-          this.viaticoEmailKvRow('Banco', this.viaticoNotifyField(bankMeta.bankName)),
-          this.viaticoEmailKvRow('N° Cuenta', bankMeta.accountNumber),
-          ...(bankMeta.cci ? [this.viaticoEmailKvRow('CCI', bankMeta.cci)] : []),
-        ].join('')
-      : ''
+    // Con o sin N° de cuenta: quien cobra en otro banco registra solo el CCI,
+    // y exigir el N° de cuenta dejaba ese correo sin ningún dato bancario.
+    const bankRows =
+      bankMeta?.accountNumber || bankMeta?.cci
+        ? [
+            this.viaticoEmailKvRow('Banco', this.viaticoNotifyField(bankMeta.bankName)),
+            ...(bankMeta.accountNumber
+              ? [this.viaticoEmailKvRow('N° Cuenta', bankMeta.accountNumber)]
+              : []),
+            ...(bankMeta.cci ? [this.viaticoEmailKvRow('CCI', bankMeta.cci)] : []),
+          ].join('')
+        : ''
 
     return [
       `<div style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;font-size:14px;line-height:1.55;color:#334155;">`,
@@ -1051,11 +1061,11 @@ export class AdvanceService implements OnModuleInit {
 
     // Prefer bank data from the solicitud; fall back to user profile.
     let bankMeta: { bankName?: string; accountNumber?: string; cci?: string } | undefined
-    if (doc.requestAccountNumber?.trim()) {
+    if (doc.requestAccountNumber?.trim() || doc.requestCci?.trim()) {
       bankMeta = { bankName: doc.requestBankName, accountNumber: doc.requestAccountNumber, cci: doc.requestCci }
     } else {
       const collabFull = await this.userService.findOne(collabId)
-      if (collabFull?.bankAccount?.accountNumber) {
+      if (collabFull?.bankAccount?.accountNumber || collabFull?.bankAccount?.cci) {
         bankMeta = { bankName: collabFull.bankAccount.bankName, accountNumber: collabFull.bankAccount.accountNumber, cci: collabFull.bankAccount.cci }
       }
     }
@@ -1781,6 +1791,7 @@ export class AdvanceService implements OnModuleInit {
     )
     const hasDeposit = depositTotal > 0
     const isDirecta = !!(report as any).isDirecta
+    const isCajaChica = !!(report as any).isCajaChica
 
     const expenses = (report.expenseIds as any[]) || []
     const expenseTotal = expenses.reduce((sum, e) => {
@@ -1809,13 +1820,22 @@ export class AdvanceService implements OnModuleInit {
     // el reembolso pendiente (VD-26).
     const directaWithoutFunding = isDirecta && !hasDeposit && expenseTotal > 0
 
+    // Caja chica: aritméticamente es igual a una directa sin depósito (entregado
+    // 0, gastado X, se le debe X), y ese saldo es lo que Tesorería repone. Sin
+    // liquidarla, el reporte salía de aquí SIN settlement y el aviso de
+    // "pendiente de pago" a Tesorería —condicionado a que haya un monto real que
+    // pagar— nunca se enviaba: la reposición se quedaba esperando a que
+    // Tesorería mirara su bandeja por su cuenta.
+    const cajaChicaWithoutFunding = isCajaChica && !hasDeposit && expenseTotal > 0
+
     if (
       paidAdvances.length === 0 &&
       partiallyPaidAdvances.length === 0 &&
       settledAdvances.length === 0 &&
       approvedAdvances.length === 0 &&
       depositTotal <= 0 &&
-      !directaWithoutFunding
+      !directaWithoutFunding &&
+      !cajaChicaWithoutFunding
     ) {
       return
     }

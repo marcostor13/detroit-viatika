@@ -1,17 +1,31 @@
 {{> email-header}}
       <span class="badge badge-danger">Solicitud rechazada</span>
+      {{#if esCajaChica}}
+      <h1 class="title">Solicitud de caja chica rechazada</h1>
+      <p>Estimado/a <strong>{{collaboratorName}}</strong>,</p>
+      <p>Su solicitud de presupuesto de caja chica ha sido <strong>rechazada</strong>.</p>
+      {{else}}
       <h1 class="title">Solicitud de Fondos rechazada</h1>
       <p>Estimado/a <strong>{{collaboratorName}}</strong>,</p>
       <p>Su solicitud de fondos asociada al centro de costo <strong>{{projectLabel}}</strong> ha sido <strong>rechazada</strong>.</p>
+      {{/if}}
 
       <p class="label">Detalles rápidos:</p>
       <div class="box">
+        {{#if esCajaChica}}
+        <!-- La solicitud de caja chica no lleva centro de costo, documento,
+             área ni cargo: esas filas salían en blanco. -->
+        <div class="row"><strong>Colaborador:</strong> {{collaboratorName}}</div>
+        {{#if presupuestoFormatted}}<div class="row"><strong>Presupuesto solicitado:</strong> {{currencySymbol}} {{presupuestoFormatted}}</div>{{/if}}
+        <div class="row"><strong>Motivo:</strong> {{rejectionReason}}</div>
+        {{else}}
         <div class="row"><strong>Centro de costo:</strong> {{projectLabel}}</div>
         <div class="row"><strong>Colaborador:</strong> {{collaboratorName}}</div>
         <div class="row"><strong>Documento:</strong> {{collaboratorDocument}}</div>
         <div class="row"><strong>Área:</strong> {{collaboratorArea}}</div>
         <div class="row"><strong>Cargo:</strong> {{collaboratorCargo}}</div>
         <div class="row"><strong>Motivo:</strong> {{rejectionReason}}</div>
+        {{/if}}
       </div>
 
       <p>Ingrese a la plataforma para revisar la solicitud, corregir la información y <strong>reenviarla</strong>. El historial de acciones quedará registrado.</p>

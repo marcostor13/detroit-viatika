@@ -34,7 +34,8 @@ export interface IMobilityRow {
 }
 
 export interface ICreateMobilitySheetPayload {
-  proyectId: string;
+  /** Opcional en caja chica: ahí el centro de costo se elige por comprobante. */
+  proyectId?: string;
   /**
    * Orden de Trabajo, obligatoria según el formato oficial ADF-FOR-005. Opcional
    * solo cuando la planilla pertenece a un viático cuya solicitud no llevó OT
@@ -43,6 +44,8 @@ export interface ICreateMobilitySheetPayload {
   ordenTrabajoId?: string;
   categoryId: string;
   expenseReportId?: string;
+  /** Obligatoria en caja chica, como en el resto de sus comprobantes. */
+  firmaUrl?: string;
   mobilityRows: IMobilityRow[];
   imageUrl?: string;
 }
@@ -150,6 +153,10 @@ export interface IInvoiceResponse {
   diasRetraso?: number;
   categoryLimitPercent?: number;
   categoryLimitWarning?: string;
+  /** Supera el monto de alerta por comprobante de la empresa. Solo aviso. */
+  superaTopeComprobante?: boolean;
+  /** Monto de alerta vigente cuando se registró el comprobante. */
+  topeComprobante?: number;
   reviewHistory?: {
     action: 'approved' | 'rejected';
     reviewerId?: string;

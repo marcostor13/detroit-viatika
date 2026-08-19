@@ -31,6 +31,12 @@ class ClientLimitsDto {
   @IsNumber()
   @Min(0)
   alimentacionCena?: number
+
+  /** Tope de alerta por comprobante, único para toda la empresa. Solo avisa. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  topeComprobante?: number
 }
 
 export class CreateClientDto {

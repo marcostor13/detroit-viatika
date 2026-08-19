@@ -100,6 +100,10 @@ export default class AddInvoiceComponent implements OnInit {
   isDirectaMode = false;
   /** True cuando la rendición asociada es directa (report.isDirecta), aunque no venga `mode=directa` en la URL. */
   isDirectaReport = signal<boolean>(false);
+  /** True cuando la rendición asociada es de caja chica: CC y OT opcionales, firma obligatoria. */
+  isCajaChicaReport = signal<boolean>(false);
+  isUploadingFirma = signal(false);
+  firmaFileName = signal<string | null>(null);
   /** True cuando la rendición directa ya tiene una OT propia heredada (rendiciones creadas tras esta funcionalidad). */
   directaOrdenTrabajoInherited = signal<boolean>(false);
   /** True cuando la planilla de movilidad hereda la OT de la solicitud de viático (VD-28). */
@@ -328,7 +332,55 @@ export default class AddInvoiceComponent implements OnInit {
     this.editingInvoiceAmount.set(false);
   }
 
-  private notifyCategoryLimitWarning(response: { categoryLimitWarning?: string; categoryLimitPercent?: number } | null | undefined): void {
+  /**
+   * Nombre legible de un archivo ya subido, sacado del final de su URL. Se usa
+   * para que la firma guardada se vea igual que una recién adjuntada al abrir
+   * el comprobante en edición.
+   */
+  private fileNameFromUrl(url: string): string {
+    const sinQuery = url.split(/[?#]/)[0];
+    const nombre = decodeURIComponent(sinQuery.split('/').pop() || '');
+    return nombre || 'firma adjunta';
+  }
+
+  /** Sube la firma que acompaña al comprobante de caja chica (imagen o PDF). */
+  onFirmaSelected(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    this.isUploadingFirma.set(true);
+    this.uploadService.upload(file, 'raw').subscribe({
+      next: (res) => {
+        this.form.patchValue({ firmaUrl: res.url });
+        this.firmaFileName.set(file.name);
+        this.isUploadingFirma.set(false);
+      },
+      error: () => {
+        this.isUploadingFirma.set(false);
+        this.notificationService.show('No se pudo subir la firma.', 'error');
+      },
+    });
+  }
+
+  /**
+   * Avisos no bloqueantes que devuelve el backend al guardar un gasto: el
+   * límite acumulado de la categoría y el monto de alerta por comprobante de la
+   * empresa. Ninguno impide guardar, por eso se muestran después del éxito.
+   */
+  private notifyExpenseWarnings(response: {
+    categoryLimitWarning?: string;
+    categoryLimitPercent?: number;
+    superaTopeComprobante?: boolean;
+    topeComprobante?: number;
+  } | null | undefined): void {
+    if (response?.superaTopeComprobante) {
+      const tope = typeof response.topeComprobante === 'number'
+        ? ` de S/ ${response.topeComprobante.toFixed(2)}`
+        : '';
+      this.notificationService.show(
+        `El comprobante supera el monto de alerta${tope} configurado por la empresa. Se registró igual.`,
+        'warning'
+      );
+    }
     if (!response?.categoryLimitWarning) return;
     const pct = typeof response.categoryLimitPercent === 'number'
       ? ` (${response.categoryLimitPercent.toFixed(2)}%)`
@@ -336,8 +388,29 @@ export default class AddInvoiceComponent implements OnInit {
     this.notificationService.show(`${response.categoryLimitWarning}${pct}`, 'warning');
   }
 
+  /**
+   * Pestaña de /mis-rendiciones a la que pertenece la rendición abierta. Viaja
+   * como `?tab=` al volver, para que el botón "Volver" del detalle regrese a la
+   * misma lista de la que salió el usuario y no a la primera pestaña.
+   */
+  private rendicionTab(): 'viaticos' | 'directas' | 'caja-chica' {
+    if (this.isCajaChicaReport()) return 'caja-chica';
+    if (this.isDirectaReport() || this.isDirectaMode) return 'directas';
+    return 'viaticos';
+  }
+
   /** Tras crear/actualizar gasto: vuelve según el contexto y rol. */
   private navigateAfterExpenseSave(): void {
+    // El comprobante pertenece a una rendición concreta: se vuelve a ella
+    // cualquiera sea el rol. Contabilidad salía siempre a
+    // /rendiciones?tab=directas, así que trabajando dentro de una caja chica
+    // terminaba en la lista de rendiciones directas, fuera del documento.
+    if (this.rendicionId) {
+      this.router.navigate(['/mis-rendiciones', this.rendicionId, 'detalle'], {
+        queryParams: { tab: this.rendicionTab() },
+      });
+      return;
+    }
     if (this.fromContabilidad) {
       this.router.navigate(['/rendiciones'], { queryParams: { tab: 'directas' } });
       return;
@@ -348,8 +421,6 @@ export default class AddInvoiceComponent implements OnInit {
         next: () => { this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'directas' } }); },
         error: () => { this.router.navigate(['/mis-rendiciones'], { queryParams: { tab: 'directas' } }); },
       });
-    } else if (this.rendicionId) {
-      this.router.navigate(['/mis-rendiciones', this.rendicionId, 'detalle']);
     } else {
       this.router.navigate(['/invoices']);
     }
@@ -528,8 +599,16 @@ export default class AddInvoiceComponent implements OnInit {
             fecha = this.formatDateForInput((res as any).fechaEmision);
           }
 
+          // Caja chica: la firma guardada vuelve al formulario para no obligar a
+          // subirla de nuevo en cada edición (el validador la exige).
+          const firmaGuardada = (res as any).firmaUrl || '';
+          if (firmaGuardada) {
+            this.firmaFileName.set(this.fileNameFromUrl(firmaGuardada));
+          }
+
           const baseValues: any = {
             proyectId: res.proyectId?._id || res.proyectId || '',
+            firmaUrl: firmaGuardada,
             ordenTrabajoId: (res as any).ordenTrabajoId?._id || (res as any).ordenTrabajoId || '',
             categoryId: res.categoryId?._id || res.categoryId || '',
             comentario: (res as any).comentario || dataObj.comentario || '',
@@ -650,13 +729,58 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
+  /**
+   * Precarga el centro de costo de una rendición de caja chica con el mismo que
+   * el backend imputaría si el comprobante llegara sin elegirlo: el de la
+   * solicitud del fondo y, si no la hay, el centro principal del responsable.
+   *
+   * No pisa una elección previa (edición de un gasto que ya tiene el suyo) ni
+   * deshabilita el campo: en caja chica cada comprobante puede ir a un centro
+   * distinto, así que el responsable tiene que poder cambiarlo.
+   */
+  private prefillCentroCostoCajaChica(): void {
+    if (!this.rendicionId) return;
+    const ctrl = this.form.get('proyectId');
+    if (!ctrl || ctrl.value) return;
+    this.expenseReportsService
+      .findCajaChicaCentroCosto(this.rendicionId)
+      .subscribe({
+        next: ({ projectId }) => {
+          // Se re-consulta el control: entre la petición y la respuesta el
+          // usuario pudo elegir uno a mano, y esa elección manda.
+          const actual = this.form.get('proyectId');
+          if (projectId && actual && !actual.value) {
+            actual.setValue(projectId);
+          }
+        },
+        // Sin centro deducible el campo queda vacío y el usuario elige: es la
+        // misma situación que un responsable sin fondo ni centro principal.
+        error: () => {},
+      });
+  }
+
   loadRendicionProject() {
     if (!this.rendicionId) return;
     this.expenseReportsService.findOne(this.rendicionId).subscribe({
       next: (report) => {
         const isDirecta = !!(report as any)?.isDirecta;
         this.isDirectaReport.set(isDirecta);
-        if (report && report.projectId) {
+
+        // Caja chica: el centro de costo y la OT se eligen POR COMPROBANTE
+        // (cada gasto puede ir a un centro distinto), pero el centro llega
+        // precargado con el de la caja. Antes se dejaba vacío y opcional: el
+        // aviso decía "opcional" y el botón de guardar seguía deshabilitado,
+        // porque `syncTopValidators` volvía a marcarlo requerido en cuanto se
+        // tocaba el tipo de gasto. La firma sí es obligatoria acá.
+        const esCajaChica = !!(report as any)?.isCajaChica;
+        this.isCajaChicaReport.set(esCajaChica);
+        if (esCajaChica) {
+          this.form.get('firmaUrl')?.setValidators([Validators.required]);
+          this.form.get('firmaUrl')?.updateValueAndValidity();
+          this.prefillCentroCostoCajaChica();
+        }
+
+        if (!esCajaChica && report && report.projectId) {
           const pId = typeof report.projectId === 'string' ? report.projectId : (report.projectId as any)._id;
           this.form.patchValue({ proyectId: pId });
           // El centro de costo lo fija la rendición (normal o directa): no se elige por comprobante.
@@ -921,6 +1045,39 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
+   * ¿El tipo de comprobante en curso obliga a adjuntar el documento? Mismo
+   * criterio que `isFormValid()`: la planilla de movilidad, la DJ al extranjero
+   * y Alimentación sin documentación (AL) se guardan sin archivo.
+   */
+  private get comprobanteRequiereAdjunto(): boolean {
+    switch (this.expenseType()) {
+      case 'planilla_movilidad':
+        return false;
+      case 'otros_gastos':
+        return this.otrosSubTipo() !== 'AL' && !this.isDj();
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Firma del comprobante de caja chica. Se pide al FINAL del formulario y solo
+   * cuando el documento ya está adjunto: es la firma de quien recibió el dinero
+   * por ese comprobante, así que antes de subirlo no hay nada que firmar y el
+   * campo solo estorbaba arriba, entre el centro de costo y la categoría.
+   *
+   * Al editar se muestra siempre, con la firma ya guardada precargada
+   * (`firmaUrl` vuelve del backend en `loadInvoice`): sin eso el formulario
+   * quedaba inválido para siempre porque el validador la exige y el campo
+   * llegaba vacío.
+   */
+  get showFirmaBlock(): boolean {
+    if (!this.isCajaChicaReport()) return false;
+    if (this.id) return true;
+    return !!this.selectedFile || !this.comprobanteRequiereAdjunto;
+  }
+
+  /**
    * Categorías de "Gastos Reparables (gastos sin factura)" asignadas al
    * colaborador: las que corresponden a Alimentación sin documentación
    * (VD-108). En Detroit son dos, la de Servicios y la Comercial (" COM").
@@ -1058,7 +1215,10 @@ export default class AddInvoiceComponent implements OnInit {
 
   initForm() {
     this.form = this.fb.group({
+      // En caja chica pasa a opcional y la firma a obligatoria; se ajusta al
+      // cargar la rendición (ver loadRendicionProject).
       proyectId: ['', Validators.required],
+      firmaUrl: [''],
       ordenTrabajoId: [''],
       categoryId: ['', Validators.required],
       file: [''],
@@ -1295,8 +1455,10 @@ export default class AddInvoiceComponent implements OnInit {
    * y dejan de ser obligatorios; en el resto de casos son requeridos.
    */
   private syncTopValidators(): void {
-    // Proyecto: opcional solo en planilla directa (el centro de costo vive en la
-    // rendición). Requerido en el resto de casos.
+    // Centro de costo: opcional solo en planilla directa (vive en la rendición).
+    // Requerido en el resto de casos, caja chica incluida — ahí se precarga con
+    // el de la caja (ver `prefillCentroCostoCajaChica`) y el responsable puede
+    // cambiarlo por comprobante, pero nunca se guarda un gasto sin imputar.
     const projCtrl = this.form.get('proyectId');
     if (projCtrl && !projCtrl.disabled) {
       projCtrl.setValidators(this.isDirectaPlanilla() ? [] : [Validators.required]);
@@ -1707,6 +1869,15 @@ export default class AddInvoiceComponent implements OnInit {
       const c = this.form.get('proyectId');
       return c?.disabled || c?.valid === true;
     })();
+    // Caja chica: la firma del comprobante es obligatoria para los cuatro tipos.
+    // Solo `factura` lo verificaba (usa `form.valid`); planilla, otros gastos y
+    // recibo de caja llegaban al backend sin firma y volvían con un error.
+    // Al editar no se re-exige: el comprobante ya se guardó con la suya.
+    const firmaOk =
+      !this.isCajaChicaReport() ||
+      !!this.id ||
+      !!(this.form.get('firmaUrl')?.value || '').toString().trim();
+    if (!firmaOk) return false;
     switch (this.expenseType()) {
       case 'planilla_movilidad': {
         // La categoría se resuelve igual en viático y en directa: automática si
@@ -1805,6 +1976,7 @@ export default class AddInvoiceComponent implements OnInit {
           total: monto,
           fechaEmision: fecha,
           imageUrl: url,
+          firmaUrl: this.form.get('firmaUrl')?.value || undefined,
           data: JSON.stringify({
             razonSocial: this.form.get('receiptRazonSocial')?.value || '',
             ruc: this.form.get('receiptRuc')?.value || '',
@@ -1816,7 +1988,7 @@ export default class AddInvoiceComponent implements OnInit {
           next: (res) => {
             this.isLoading.set(false);
             this.notificationService.show('Recibo de caja guardado correctamente', 'success');
-            this.notifyCategoryLimitWarning(res);
+            this.notifyExpenseWarnings(res);
             this.navigateAfterExpenseSave();
           },
           error: (error) => {
@@ -1938,10 +2110,16 @@ export default class AddInvoiceComponent implements OnInit {
         this.form.get('categoryId')?.value ||
         (this.isDirectaContext() ? rows.find((r: any) => r.categoryId)?.categoryId || '' : '');
       const payload = {
-        proyectId: expenseProjectId,
+        // En caja chica el centro de costo es opcional y la firma obligatoria
+        // (ver el bloque que ajusta los validadores al cargar la rendición). La
+        // planilla era el único de los cuatro tipos de comprobante que no
+        // mandaba `firmaUrl`: el backend la rechazaba con "Adjunte la firma del
+        // comprobante" aunque el colaborador la hubiera subido.
+        proyectId: expenseProjectId || undefined,
         ordenTrabajoId: this.form.get('ordenTrabajoId')?.value || undefined,
         categoryId: expenseCategoryId,
         expenseReportId: this.rendicionId || undefined,
+        firmaUrl: this.form.get('firmaUrl')?.value || undefined,
         mobilityRows: rows,
         imageUrl,
       };
@@ -1949,7 +2127,7 @@ export default class AddInvoiceComponent implements OnInit {
         next: (res) => {
           this.isLoading.set(false);
           this.notificationService.show('Planilla guardada correctamente', 'success');
-          this.notifyCategoryLimitWarning(res);
+          this.notifyExpenseWarnings(res);
           this.navigateAfterExpenseSave();
         },
         error: (error) => {
@@ -2178,6 +2356,7 @@ export default class AddInvoiceComponent implements OnInit {
     const proceed = (imageUrl?: string) => {
       const payload: any = {
         proyectId: this.form.get('proyectId')?.value,
+        firmaUrl: this.form.get('firmaUrl')?.value || undefined,
         categoryId: this.form.get('categoryId')?.value,
         expenseReportId: this.rendicionId || undefined,
         total,
@@ -2195,7 +2374,7 @@ export default class AddInvoiceComponent implements OnInit {
         next: (res) => {
           this.isLoading.set(false);
           this.notificationService.show('Gasto guardado correctamente', 'success');
-          this.notifyCategoryLimitWarning(res);
+          this.notifyExpenseWarnings(res);
           this.navigateAfterExpenseSave();
         },
         error: (error) => {
@@ -2275,6 +2454,13 @@ export default class AddInvoiceComponent implements OnInit {
       status: this.originalInvoice.status,
       comentario: (formValue.comentario || '').trim() || undefined,
     };
+
+    // Caja chica: solo viaja si el usuario la cambió o la agregó recién (los
+    // comprobantes anteriores a la firma obligatoria llegan sin ella). Mandarla
+    // vacía borraría la que ya estaba guardada.
+    if (formValue.firmaUrl) {
+      payload.firmaUrl = formValue.firmaUrl;
+    }
 
     if (type === 'factura') {
       const fetched = this.fetchedRazonSocial();
@@ -2555,13 +2741,14 @@ export default class AddInvoiceComponent implements OnInit {
           comentario,
           placaVehiculo: dataObj.placaVehiculo,
           imageUrl: url,
+          firmaUrl: formValue.firmaUrl || undefined,
           expenseReportId: this.rendicionId || undefined,
         };
         this.invoiceService.createInvoice(payload).subscribe({
           next: (res) => {
             this.isLoading.set(false);
             this.notificationService.show('Factura guardada correctamente', 'success');
-            this.notifyCategoryLimitWarning(res);
+            this.notifyExpenseWarnings(res);
             this.navigateAfterExpenseSave();
           },
           error: (error) => {

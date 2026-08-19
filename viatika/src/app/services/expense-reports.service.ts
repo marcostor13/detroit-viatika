@@ -56,6 +56,18 @@ export class ExpenseReportsService {
     return this.http.get<IExpenseReport>(`${this.apiUrl}/expense-report/${id}`);
   }
 
+  /**
+   * Centro de costo por defecto de una rendición de caja chica: el mismo que
+   * imputa el backend cuando el comprobante llega sin elegirlo (el de la
+   * solicitud del fondo, o el principal del responsable). El formulario del
+   * gasto lo precarga. `projectId` es `null` si no hay ninguno que deducir.
+   */
+  findCajaChicaCentroCosto(id: string): Observable<{ projectId: string | null }> {
+    return this.http.get<{ projectId: string | null }>(
+      `${this.apiUrl}/expense-report/${id}/caja-chica/centro-costo`
+    );
+  }
+
   update(id: string, data: IUpdateExpenseReport): Observable<IExpenseReport> {
     return this.http.patch<IExpenseReport>(`${this.apiUrl}/expense-report/${id}`, data);
   }
@@ -126,6 +138,8 @@ export class ExpenseReportsService {
     hora?: string;
     operationNumber?: string;
     titular?: string;
+    /** Banco origen leído del comprobante. */
+    banco?: string;
   }> {
     return this.http.post<{
       amount: number;
@@ -133,6 +147,7 @@ export class ExpenseReportsService {
       hora?: string;
       operationNumber?: string;
       titular?: string;
+      banco?: string;
     }>(`${this.apiUrl}/expense/scan-deposit-amount`, { url, mimeType });
   }
 

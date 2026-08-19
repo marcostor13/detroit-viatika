@@ -73,7 +73,7 @@
   </div>
   }
 
-  <!-- Proyecto + OT + Categoría. En planilla directa el centro de costo y la OT
+  <!-- Centro de costo + OT + Categoría. En planilla directa el centro de costo y la OT
        se heredan de la rendición y no se muestran; el bloque solo reaparece
        cuando queda la categoría por resolver (ver showMovilidadCategoryBlock).
        En Otros Gastos la categoría se muestra dentro del tipo de documento. -->
@@ -83,16 +83,20 @@
     @if (!isDirectaContext()) {
     <div class="flex flex-col gap-2">
       <label for="proyectId" class="text-sm font-medium text-secondary">
-        Proyecto <span class="text-error">*</span>
+        Centro de costo <span class="text-error">*</span>
       </label>
       <app-project-select
         formControlName="proyectId"
         [projects]="proyects"
-        placeholder="Seleccione un proyecto"
+        placeholder="Seleccione un centro de costo"
         [invalid]="!!(proyectId?.invalid && proyectId?.touched)"
       />
       @if (proyectId?.invalid && proyectId?.touched) {
-      <span class="text-sm text-error">El proyecto es requerido</span>
+      <span class="text-sm text-error">El centro de costo es requerido</span>
+      } @else if (isCajaChicaReport() && proyectId?.value) {
+      <span class="text-sm text-tertiary">Viene puesto el de tu caja chica. Cámbialo si este gasto va a otro centro de costo.</span>
+      } @else if (isCajaChicaReport()) {
+      <span class="text-sm text-tertiary">Elige a qué centro de costo se imputa este gasto.</span>
       }
     </div>
     }
@@ -1193,6 +1197,58 @@
       </div>
     </div>
     }
+  </div>
+  }
+
+  <!-- Caja chica: el comprobante en papel llega firmado por quien recibió el
+       dinero, y ese respaldo tiene que quedar guardado. Va al final del
+       formulario y solo aparece cuando el comprobante ya está adjunto
+       (ver showFirmaBlock): la firma es del documento que se acaba de subir,
+       pedirla antes obligaba a resolver primero un campo sin contexto. -->
+  @if (showFirmaBlock) {
+  <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
+    <div class="flex flex-col gap-2">
+      <label for="firmaUrl" class="text-sm font-medium text-secondary">
+        Firma del comprobante <span class="text-error">*</span>
+      </label>
+      <p class="text-xs text-tertiary -mt-1">
+        Adjunta la firma de quien recibió el dinero. Sin ella no se puede guardar el gasto de caja chica.
+      </p>
+      <!-- Mismo adjunto que el resto del formulario (input oculto + zona
+           pulsable). El input de archivo desnudo mostraba "Choose File / No
+           file chosen": ese texto lo pinta el navegador y no se puede traducir
+           ni con estilos ni con `lang`, hay que no usarlo. -->
+      <div
+        [class]="firmaFileName()
+          ? 'bg-green-50 border-2 border-green-400 rounded-xl p-6 text-center cursor-pointer transition-all duration-200'
+          : 'bg-background border-2 border-dashed border-tertiary/40 rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group'"
+        (click)="firmaInput.click()"
+      >
+        @if (isUploadingFirma()) {
+        <p class="text-sm text-tertiary">Subiendo firma...</p>
+        } @else if (firmaFileName()) {
+        <div class="flex items-center justify-center gap-3">
+          <app-icon name="circle-check" size="lg" class="text-success" />
+          <div class="text-left">
+            <p class="text-sm font-medium text-success-ink break-all">{{ firmaFileName() }}</p>
+            <p class="text-xs text-success">Haz clic para cambiar el archivo</p>
+          </div>
+        </div>
+        } @else {
+        <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
+        <p class="mt-2 text-sm text-secondary font-medium">Haz clic para adjuntar la firma</p>
+        <p class="mt-1 text-xs text-tertiary">Foto, imagen o PDF. Es obligatoria.</p>
+        }
+        <input
+          id="firmaUrl"
+          type="file"
+          accept="image/*,application/pdf"
+          (change)="onFirmaSelected($event)"
+          class="hidden"
+          #firmaInput
+        />
+      </div>
+    </div>
   </div>
   }
 

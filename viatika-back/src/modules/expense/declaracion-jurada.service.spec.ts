@@ -80,7 +80,11 @@ describe('ExpenseService.createDeclaracionJurada', () => {
             }),
           },
         },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         {
@@ -101,6 +105,8 @@ describe('ExpenseService.createDeclaracionJurada', () => {
           provide: ExpenseReportService,
           useValue: {
             assertReportNotLockedByCajaChica: jest.fn().mockResolvedValue(undefined),
+            assertPuedeCargarEnCajaChica: jest.fn().mockResolvedValue(undefined),
+            resolveCentroCostoCajaChica: jest.fn().mockResolvedValue(undefined),
             buildChainForNewExpense: jest.fn().mockResolvedValue(undefined),
             addExpenseToReport: jest.fn().mockResolvedValue(undefined),
           },
@@ -274,7 +280,11 @@ describe('ExpenseService.freezeExpenseCurrency', () => {
         ExpenseService,
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('sk-test') } },
         { provide: getModelToken(Expense.name), useValue: {} },
-        { provide: getModelToken(Client.name), useValue: {} },
+        // Empresa sin topes configurados: `findById` resuelve a null.
+        {
+          provide: getModelToken(Client.name),
+          useValue: { findById: () => ({ lean: () => ({ exec: async () => null }) }) },
+        },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
         { provide: UserService, useValue: {} },

@@ -17,6 +17,11 @@ export interface ICompanyConfig {
     alimentacionDesayuno?: number | null;
     alimentacionAlmuerzo?: number | null;
     alimentacionCena?: number | null;
+    /**
+     * Tope de alerta por comprobante: uno solo para toda la empresa, sin
+     * distinguir categoría. Solo advierte, nunca bloquea.
+     */
+    topeComprobante?: number | null;
   };
   notificationSettings?: {
     enabled: boolean;

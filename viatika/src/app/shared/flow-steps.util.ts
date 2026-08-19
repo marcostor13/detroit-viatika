@@ -194,6 +194,13 @@ function aggregateRendicionApprovalsByLevel(expenses: any[]): RendicionLevelAppr
  */
 function viaticoEnteredRendicion(r: any): boolean {
   if (r?.type !== 'viatico') return false;
+  // La solicitud de caja chica viaja como viático para reutilizar la cadena, el
+  // gate de Contabilidad y el pago, pero NUNCA se rinde sobre este documento: el
+  // dinero pasa al fondo del responsable y los comprobantes van en una rendición
+  // de caja chica aparte. Sin esto, apenas Tesorería depositaba, el documento se
+  // leía como "viático en fase de rendición" — línea de tiempo de dos fases y el
+  // ojo de /rendiciones navegando a una rendición vacía que nadie va a llenar.
+  if (r?.isSolicitudCajaChica) return false;
   return (
     Number(r.viaticoPaidAmount ?? 0) > 0 ||
     ['open', 'submitted', 'pending_accounting', 'reimbursed', 'closed', 'settled', 'returned'].includes(r.status) ||
@@ -228,6 +235,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
 
   const isViatico = r.type === 'viatico';
   const isDirecta = !!r.isDirecta;
+  const isCajaChica = !!r.isCajaChica;
   const status: string = r.status;
 
   if (viaticoEnteredRendicion(r)) {
@@ -249,10 +257,29 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     !!r.reimbursementPaymentInfo || !!r.reimbursedAt || status === 'reimbursed';
   const collaboratorDirecta =
     isDirecta && !(Number(r.directaDeposit?.amount ?? 0) > 0);
+  // Caja chica: cuando Contabilidad aprueba, el siguiente hito es el depósito
+  // con que Tesorería REPONE el presupuesto del responsable, y después el
+  // cierre. Aritméticamente es el mismo reembolso de una directa sin depósito
+  // (así lo trata el backend en `findPendingReimbursements`), pero su
+  // `settlement` no se persiste hasta que Tesorería paga: sin este caso la
+  // línea de tiempo se detenía en "Aprobada" y no mostraba que aún faltaba
+  // Tesorería. Si la rendición terminó en devolución, manda ese otro camino.
+  const enDevolucion =
+    r.settlement?.type === 'devolucion' ||
+    !!r.returnVoucher ||
+    status === 'returned';
+  // Sin `terminal`: en caja chica el desenlace se conoce desde que se abre la
+  // rendición. Lo rendido sale del fondo del responsable, no hay depósito
+  // previo contra el cual compensarlo, así que el saldo siempre queda a su
+  // favor y lo repone Tesorería. Anunciarlo recién al aprobarse dejaba la línea
+  // de tiempo terminando en "Finalizada", sin decir que después venían el
+  // reembolso y el cierre.
+  const cajaChicaReposicion = isCajaChica && !enDevolucion;
   const expectsReembolso =
     reembolsoDone ||
     r.settlement?.type === 'reembolso' ||
-    (collaboratorDirecta && terminal);
+    (collaboratorDirecta && terminal) ||
+    cajaChicaReposicion;
 
   // Devolución: el colaborador debe devolver el saldo a favor de la empresa
   // (settlement 'devolucion'). Se completa al cargarse/validarse el comprobante
@@ -345,7 +372,12 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   }
   // Tras la aprobación, el paso pendiente es el reembolso (si aplica) y luego el
   // cierre por Contabilidad, hasta que la rendición quede efectivamente cerrada.
-  if (!rejected && !closed) {
+  //
+  // El gate de Contabilidad (`contaDone`) es lo que separa "pendiente" de "aún
+  // por venir": la caja chica declara su reembolso desde que nace, y sin este
+  // corte el paso de Tesorería se pintaba activo mientras la rendición todavía
+  // esperaba a sus aprobadores.
+  if (!rejected && !closed && contaDone) {
     if (expectsReembolso && !reembolsoDone) {
       activeIndex = reembolsoIdx;
     } else if (expectsReembolso && reembolsoDone) {
@@ -497,7 +529,13 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
       label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
       state: reembolsoState,
       date: reembolsoState === 'completed' ? fmt(r.reimbursedAt) : undefined,
-      description: reembolsoState === 'active' ? 'Pendiente de pago de Tesorería' : undefined,
+      // En caja chica ese depósito no cubre un gasto del bolsillo del
+      // responsable: repone su presupuesto, que vuelve al tope.
+      description: reembolsoState === 'active'
+        ? (isCajaChica
+          ? 'Pendiente del depósito de Tesorería, que repone el presupuesto'
+          : 'Pendiente de pago de Tesorería')
+        : undefined,
     });
   }
 

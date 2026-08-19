@@ -42,9 +42,12 @@ import {
   plainChainStep,
   buildSolicitudChain,
   buildRendicionChain,
+  buildCajaChicaChain,
   ChainStep,
   ChainProject,
 } from '../advance/approval-chain.util'
+import { FondoCajaChicaService } from '../fondo-caja-chica/fondo-caja-chica.service'
+import { CreateSolicitudCajaChicaDto } from './dto/create-solicitud-caja-chica.dto'
 import { ApproverLevel } from '../../common/types/approver-level'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
@@ -80,7 +83,8 @@ export class ExpenseReportService implements OnModuleInit {
     private readonly uploadService: UploadService,
     private readonly projectService: ProjectService,
     private readonly categoryService: CategoryService,
-    private readonly currencyService: CurrencyService
+    private readonly currencyService: CurrencyService,
+    private readonly fondoCajaChicaService: FondoCajaChicaService
   ) { }
 
   async onModuleInit() {
@@ -258,6 +262,27 @@ export class ExpenseReportService implements OnModuleInit {
         0
       )
       return gastado > 0 ? gastado : Number(report.budget) || 0
+    }
+
+    // Rendición de caja chica: tampoco tiene anticipo, y su `budget` es 0. El
+    // presupuesto que corresponde mostrar es el TOPE de la caja del responsable
+    // (`fundAmount` del fondo), que es contra lo que rinde. Sin esta rama los
+    // correos anunciaban "Presupuesto asignado S/ 0.00" y, restando lo gastado,
+    // un saldo negativo — el mismo defecto que se veía en el modal de envío.
+    if (report.isCajaChica === true) {
+      // `userId`/`clientId` llegan como ObjectId o ya populados según el punto
+      // desde el que se arma el correo.
+      const ownerId = String(report.userId?._id ?? report.userId ?? '')
+      const clientId = String(report.clientId?._id ?? report.clientId ?? '')
+      if (ownerId && clientId) {
+        const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+          ownerId,
+          clientId
+        )
+        const tope = Number(fondo?.fundAmount ?? 0)
+        if (tope > 0) return tope
+      }
+      return Number(report.budget) || 0
     }
 
     const rawAdvanceIds: string[] = (
@@ -749,11 +774,19 @@ export class ExpenseReportService implements OnModuleInit {
     return report.save()
   }
 
+  /**
+   * Listado administrativo completo (Contabilidad/Tesorería/Admin, `?scope=all`).
+   *
+   * La caja chica YA NO se excluye. La exclusión venía de cuando era un depósito
+   * de comprobantes que solo se miraba desde el agrupador contable; hoy su
+   * rendición se aprueba como cualquier otra y pasa por el gate de Contabilidad,
+   * así que ocultarla acá dejaba a Contabilidad sin la pantalla donde revisarla.
+   * El front la manda a la pestaña Caja Chica, no la mezcla con los viáticos.
+   */
   async findAllByClient(clientId: string) {
     return await this.expenseReportModel
       .find({
         clientId: new Types.ObjectId(clientId),
-        isCajaChica: { $ne: true },
       })
       .populate('userId', 'name email signature bankAccount')
       .populate('createdBy', 'name email')
@@ -800,14 +833,30 @@ export class ExpenseReportService implements OnModuleInit {
       .find({ 'approverChain.approverIds': coordinatorObjectId })
       .distinct('expenseReportId')
       .exec()
+    // Caja chica: la cadena recién se estampa en los comprobantes al ENVIAR la
+    // rendición, así que hasta ese momento no hay nada que enganchar y el
+    // aprobador no veía consumirse el fondo que él mismo autorizó. Se traen
+    // también las rendiciones en curso de los responsables a los que aprueba
+    // (los mismos que resuelve `buildCajaChicaChain`); llegan sin acciones,
+    // solo para seguimiento.
+    const responsibleIds = (
+      await this.projectService.findCajaChicaResponsibleIds(coordinatorId, clientId)
+    ).map(id => new Types.ObjectId(id))
     return await this.expenseReportModel
       .find({
         clientId: new Types.ObjectId(clientId),
-        isCajaChica: { $ne: true },
+        // La caja chica ya NO se excluye. Antes era un flujo puramente contable
+        // sin aprobador, pero ahora tanto la solicitud del fondo como la
+        // rendición pasan por la cadena del responsable, así que su aprobador
+        // tiene que verlas para poder aprobarlas. El `$or` sigue siendo el
+        // filtro real: solo entran las que tienen a este usuario en su cadena.
         $or: [
           { assignedCoordinatorId: coordinatorObjectId },
           { type: 'viatico', 'viaticoApproverChain.approverIds': coordinatorObjectId },
           { _id: { $in: chainReportIds } },
+          ...(responsibleIds.length > 0
+            ? [{ isCajaChica: true, userId: { $in: responsibleIds } }]
+            : []),
         ],
       })
       .populate('userId', 'name email signature bankAccount')
@@ -1094,6 +1143,35 @@ export class ExpenseReportService implements OnModuleInit {
     return count > 0
   }
 
+  /**
+   * En caja chica el comprobante DESCUENTA del presupuesto del responsable, así
+   * que solo él puede cargarlo: un tercero con acceso al módulo podía subir un
+   * gasto a la rendición ajena y consumirle la caja al dueño (el cargo siempre
+   * va contra el fondo del titular de la rendición, no contra el suyo).
+   *
+   * Solo cubre caja chica a propósito. Que cualquiera pueda agregar gastos a la
+   * rendición de otro es un problema más amplio del módulo, anotado como deuda:
+   * acotarlo aquí no cambia los flujos donde Contabilidad carga comprobantes por
+   * el colaborador (directas, viáticos).
+   */
+  async assertPuedeCargarEnCajaChica(
+    reportId?: string,
+    actorUserId?: string
+  ): Promise<void> {
+    if (!reportId || !actorUserId || !Types.ObjectId.isValid(reportId)) return
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('isCajaChica userId')
+      .lean<{ isCajaChica?: boolean; userId?: unknown }>()
+      .exec()
+    if (!report?.isCajaChica) return
+    if (String(report.userId ?? '') !== String(actorUserId)) {
+      throw new ForbiddenException(
+        'Solo el responsable de la caja chica puede cargar comprobantes contra su presupuesto.'
+      )
+    }
+  }
+
   /** Lanza 403 si la rendición pertenece a una caja chica ya finalizada. */
   async assertReportNotLockedByCajaChica(reportId?: string): Promise<void> {
     if (!reportId) return
@@ -1134,6 +1212,10 @@ export class ExpenseReportService implements OnModuleInit {
    * OT es opcional en ambos orígenes:
    *  - viático: opcional al solicitarlo (VD-28)
    *  - directa: opcional al crear la rendición
+   *  - caja chica: la rendición no tiene OT propia; CC y OT se eligen por
+   *    comprobante y son opcionales (decisión del cliente). Sin esto el
+   *    colaborador no podía cargar una planilla de movilidad en su caja chica:
+   *    se le exigía una OT que la pantalla ni siquiera le ofrece.
    * Si la rendición no la tiene, el formulario ni siquiera muestra el campo, así
    * que no hay nada que exigirle a la planilla.
    */
@@ -1141,18 +1223,78 @@ export class ExpenseReportService implements OnModuleInit {
     if (!reportId || !Types.ObjectId.isValid(reportId)) return false
     const report = await this.expenseReportModel
       .findById(reportId)
-      .select('type isDirecta viaticoOrdenTrabajoId directaOrdenTrabajoId')
+      .select('type isDirecta isCajaChica viaticoOrdenTrabajoId directaOrdenTrabajoId')
       .lean<{
         type?: string
         isDirecta?: boolean
+        isCajaChica?: boolean
         viaticoOrdenTrabajoId?: Types.ObjectId
         directaOrdenTrabajoId?: Types.ObjectId
       }>()
       .exec()
     if (!report) return false
+    if (report.isCajaChica) return true
     if (report.type === 'viatico') return !report.viaticoOrdenTrabajoId
     if (report.isDirecta) return !report.directaOrdenTrabajoId
     return false
+  }
+
+  /**
+   * Centro de costo con el que se imputa un comprobante de caja chica que llega
+   * SIN centro de costo: el del responsable, el mismo que quedó guardado en su
+   * primera solicitud (decisión del cliente, 2026-08-18). Elegirlo por
+   * comprobante sigue siendo opcional para él; lo que ya no queda es un gasto
+   * sin imputar, que era lo que frenaba el asiento contable.
+   *
+   * Se toma de la SOLICITUD y no del perfil para que sea estable: si mañana le
+   * cambian el centro de costo al colaborador, los comprobantes de esa caja no
+   * se mueven. El perfil queda de respaldo por si el fondo se creó a mano.
+   *
+   * Devuelve `undefined` si no hay de dónde sacarlo: mejor un comprobante sin
+   * centro de costo que un alta rota.
+   */
+  async resolveCentroCostoCajaChica(
+    reportId: string
+  ): Promise<Types.ObjectId | undefined> {
+    if (!reportId || !Types.ObjectId.isValid(reportId)) return undefined
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('userId clientId')
+      .lean<{ userId?: unknown; clientId?: unknown }>()
+      .exec()
+    const ownerId = report?.userId ? String(report.userId) : ''
+    const clientId = report?.clientId ? String(report.clientId) : ''
+    if (!ownerId || !clientId) return undefined
+
+    const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+      ownerId,
+      clientId
+    )
+    const solicitudId = (fondo as unknown as { solicitudReportId?: unknown })
+      ?.solicitudReportId
+    if (solicitudId) {
+      const solicitud = await this.expenseReportModel
+        .findById(String(solicitudId))
+        .select('projectId')
+        .lean<{ projectId?: unknown }>()
+        .exec()
+      if (solicitud?.projectId) return new Types.ObjectId(String(solicitud.projectId))
+    }
+
+    const profile = await this.userService.findTransactionalProfile(ownerId)
+    const fallback = profile?.primaryProjectId ?? profile?.projectIds?.[0]
+    return fallback ? new Types.ObjectId(String(fallback)) : undefined
+  }
+
+  /** `true` si la rendición es de caja chica. Sin id, `false`. */
+  async isReportCajaChica(reportId?: string): Promise<boolean> {
+    if (!reportId || !Types.ObjectId.isValid(reportId)) return false
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('isCajaChica')
+      .lean<{ isCajaChica?: boolean }>()
+      .exec()
+    return report?.isCajaChica === true
   }
 
   async findOne(id: string) {
@@ -1229,6 +1371,39 @@ export class ExpenseReportService implements OnModuleInit {
         (normalized as unknown as { isCajaChica?: boolean }).isCajaChica === true
           ? await this.isLockedByFinalizedCajaChica(id)
           : false
+
+    // Caja de quien rinde (no la de quien mira). El front la necesita para el
+    // modal de envío y las tarjetas de cabecera; pedirla por su cuenta con
+    // `/fondo-caja-chica/mine` devuelve la caja del USUARIO CONECTADO, así que
+    // el aprobador o Contabilidad veían su propio presupuesto —o ninguno— sobre
+    // la rendición de otro.
+    if ((normalized as unknown as { isCajaChica?: boolean }).isCajaChica === true) {
+      const cajaOwnerId = String(
+        (normalized as any).userId?._id ?? (normalized as any).userId ?? ''
+      )
+      const cajaClientId = String(
+        (normalized as any).clientId?._id ?? (normalized as any).clientId ?? ''
+      )
+      if (cajaOwnerId && cajaClientId) {
+        const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+          cajaOwnerId,
+          cajaClientId
+        )
+        if (fondo) {
+          const fundAmount = Number(fondo.fundAmount ?? 0)
+          const spentAmount = Number(fondo.spentAmount ?? 0)
+          ; (normalized as any).cajaChicaFondo = {
+            code: fondo.code,
+            status: fondo.status,
+            fundAmount,
+            // "Gastado y aún no repuesto": tras la reposición vuelve a 0.
+            spentAmount,
+            disponible: Math.round((fundAmount - spentAmount) * 100) / 100,
+            pendingReturnAmount: Number(fondo.pendingReturnAmount ?? 0),
+          }
+        }
+      }
+    }
 
     // N° de rendición para viáticos (VD-63): los viáticos no tienen `codigo`
     // (solo las directas). Se numeran por la posición del viático entre los del
@@ -1390,7 +1565,12 @@ export class ExpenseReportService implements OnModuleInit {
     const dto = updateExpenseReportDto
     const existing = await this.expenseReportModel
       .findById(id)
-      .select('status isDirecta type clientId projectId userId expenseIds rendicionApproverChain rendicionApprovalLevel rendicionRequiredLevels')
+      // `isCajaChica` va en el select porque de el sale `esCajaChica` al
+      // (re)construir las cadenas por comprobante: sin traerlo llegaba siempre
+      // como `false` y los comprobantes de una caja chica se enrutaban por el
+      // centro de costo de cada uno (`buildRendicionChain`) en vez de por los
+      // aprobadores del RESPONSABLE, que es la regla de caja chica.
+      .select('status isDirecta isCajaChica type clientId projectId userId expenseIds rendicionApproverChain rendicionApprovalLevel rendicionRequiredLevels')
       .lean()
       .exec()
     if (!existing) {
@@ -1506,7 +1686,8 @@ export class ExpenseReportService implements OnModuleInit {
           await this.buildExpenseChains(
             ((existing as any).expenseIds ?? []) as Types.ObjectId[],
             ownerId,
-            reportClientId
+            reportClientId,
+            { esCajaChica: (existing as any).isCajaChica === true }
           )
           // Cadena de aprobación de la RENDICIÓN a nivel de reporte (viático):
           // los aprobadores del centro de costo (N1/N2…) deben completarla antes
@@ -1916,6 +2097,9 @@ export class ExpenseReportService implements OnModuleInit {
           expenseTotalFormatted,
           expenseItems,
           isDirecta,
+          // La rendición de caja chica se revisa por lo gastado contra la caja,
+          // no por un anticipo: el correo lo rotula distinto.
+          esCajaChica: (fullyUpdatedReport as any).isCajaChica === true,
           hasDirectaDeposit,
           depositFormatted,
           saldoFormatted,
@@ -2795,9 +2979,21 @@ export class ExpenseReportService implements OnModuleInit {
   async addExpenseToReport(reportId: string, expenseId: string) {
     const existing = await this.expenseReportModel
       .findById(reportId)
-      .select('status userId clientId expenseIds')
+      .select('status userId clientId expenseIds isCajaChica')
       .lean()
       .exec()
+
+    // Caja chica: el comprobante descuenta del presupuesto y no puede superarlo.
+    // Se cobra ANTES de engancharlo, así que si no alcanza el saldo el gasto se
+    // borra y no queda ni comprobante colgado ni presupuesto descuadrado.
+    if ((existing as any)?.isCajaChica === true) {
+      await this.cargarGastoAlPresupuesto(
+        reportId,
+        expenseId,
+        String((existing as any).userId),
+        String((existing as any).clientId)
+      )
+    }
 
     const updateOp: Record<string, unknown> = {
       $push: { expenseIds: new Types.ObjectId(expenseId) },
@@ -2834,23 +3030,120 @@ export class ExpenseReportService implements OnModuleInit {
           ...((existing as any)?.expenseIds ?? []),
           new Types.ObjectId(expenseId),
         ] as Types.ObjectId[]
-        await this.buildExpenseChains(expenseIds, ownerId, reportClientId, { force: true })
+        await this.buildExpenseChains(expenseIds, ownerId, reportClientId, {
+          force: true,
+          esCajaChica: (existing as any)?.isCajaChica === true,
+        })
       } else if (wasSubmitted || wasPendingAccounting) {
         // Rendición ya enviada y en curso de aprobación: solo se construye la
         // cadena del comprobante NUEVO — no se toca la de los existentes, que
         // pueden tener aprobaciones N1/N2 ya en curso.
-        await this.buildExpenseChains([new Types.ObjectId(expenseId)], ownerId, reportClientId)
+        await this.buildExpenseChains(
+          [new Types.ObjectId(expenseId)],
+          ownerId,
+          reportClientId,
+          { esCajaChica: (existing as any)?.isCajaChica === true }
+        )
       }
     }
 
     return updated
   }
 
+  /**
+   * Descuenta un comprobante del presupuesto de caja chica del responsable. Si
+   * no alcanza el saldo, BORRA el comprobante recién creado y propaga el error:
+   * el colaborador ve el motivo y no queda un gasto huérfano ni un presupuesto
+   * que no cuadra con lo cargado.
+   *
+   * El cargo es idempotente por `expenseId`, así que un reintento del alta no
+   * descuenta dos veces.
+   */
+  private async cargarGastoAlPresupuesto(
+    reportId: string,
+    expenseId: string,
+    ownerId: string,
+    clientId: string
+  ): Promise<void> {
+    const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+      ownerId,
+      clientId
+    )
+    if (!fondo) {
+      await this.expenseModel.deleteOne({ _id: new Types.ObjectId(expenseId) })
+      throw new BadRequestException(
+        'No tiene una caja chica activa. Solicite su presupuesto antes de cargar comprobantes.'
+      )
+    }
+
+    const expense = await this.expenseModel
+      .findById(expenseId)
+      .select('montoBase total')
+      .lean<{ montoBase?: number; total?: number }>()
+      .exec()
+    // El presupuesto está en moneda base, así que el gasto se mide igual.
+    const monto = Number(expense?.montoBase ?? expense?.total ?? 0)
+
+    try {
+      await this.fondoCajaChicaService.registrarCargo(String(fondo._id), {
+        expenseId,
+        expenseReportId: reportId,
+        amount: monto,
+        registeredBy: ownerId,
+      })
+    } catch (err: unknown) {
+      await this.expenseModel.deleteOne({ _id: new Types.ObjectId(expenseId) })
+      throw err
+    }
+  }
+
+  /**
+   * Devuelve al presupuesto el cargo de un comprobante que se elimina. Solo
+   * aplica al BORRADO: un comprobante rechazado se corrige y se reenvía, y el
+   * efectivo ya salió de la caja igual.
+   */
+  async descargarGastoDelPresupuesto(expenseId: string): Promise<void> {
+    const expense = await this.expenseModel
+      .findById(expenseId)
+      .select('expenseReportId clientId createdBy')
+      .lean<{ expenseReportId?: Types.ObjectId; clientId?: string }>()
+      .exec()
+    if (!expense?.expenseReportId) return
+
+    const report = await this.expenseReportModel
+      .findById(expense.expenseReportId)
+      .select('isCajaChica userId clientId')
+      .lean<{ isCajaChica?: boolean; userId?: Types.ObjectId; clientId?: Types.ObjectId }>()
+      .exec()
+    if (!report?.isCajaChica || !report.userId || !report.clientId) return
+
+    const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+      String(report.userId),
+      String(report.clientId)
+    )
+    if (!fondo) return
+
+    try {
+      await this.fondoCajaChicaService.reversarCargo(
+        String(fondo._id),
+        expenseId,
+        String(report.userId)
+      )
+    } catch (err: unknown) {
+      this.logger.error(
+        `No se pudo reversar el cargo del gasto ${expenseId}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+  }
+
   /** Cambia silenciosamente el estado de una rendición rechazada a enviada, sin notificaciones. */
   async resubmitSilent(reportId: string): Promise<void> {
     const existing = await this.expenseReportModel
       .findById(reportId)
-      .select('status userId clientId expenseIds')
+      // `isCajaChica`: ver el select de `update()`. Aca se reconstruyen TODAS
+      // las cadenas con `force`, asi que sin el campo un reenvio le cambiaba
+      // los aprobadores a la caja chica.
+      .select('status isCajaChica userId clientId expenseIds')
       .lean()
       .exec()
     if (!existing || (existing as any).status !== 'rejected') return
@@ -2870,7 +3163,7 @@ export class ExpenseReportService implements OnModuleInit {
         ((existing as any).expenseIds ?? []) as Types.ObjectId[],
         ownerId,
         reportClientId,
-        { force: true }
+        { force: true, esCajaChica: (existing as any).isCajaChica === true }
       )
     }
   }
@@ -3150,13 +3443,17 @@ export class ExpenseReportService implements OnModuleInit {
     //    si lo hubiera) y, si es positivo, se adjunta un settlement calculado para
     //    que Tesorería pueda registrar el pago. Al confirmar, el backend recomputa
     //    y persiste el settlement real (registerReimbursementPayment). VD-37.
+    // La caja chica entra por la misma puerta: su reposición es aritméticamente
+    // igual a un reembolso de directa sin depósito (entregado 0, gastado X, se
+    // le debe X). Lo que cambia es qué pasa al registrar el pago: además del
+    // depósito al colaborador, el presupuesto vuelve a su tope.
     const directas = await this.expenseReportModel
       .find({
         clientId: cid,
-        isDirecta: true,
+        $or: [{ isDirecta: true }, { isCajaChica: true }],
         status: 'approved',
         'settlement.type': { $ne: 'reembolso' },
-        $or: noPayment,
+        $and: [{ $or: noPayment }],
       })
       .populate('userId', 'name email bankAccount dni documentType')
       .populate('expenseIds', 'total status montoBase moneda montoReporte monedaReporte')
@@ -3430,9 +3727,60 @@ export class ExpenseReportService implements OnModuleInit {
       .findByIdAndUpdate(reportId, { $set: updateFields })
       .exec()
 
+    // Caja chica: el depósito que acaba de registrar Tesorería es la REPOSICIÓN
+    // del presupuesto. Devuelve al saldo lo rendido, así que la caja vuelve a
+    // su tope y el responsable puede seguir gastando.
+    if (report.isCajaChica) {
+      const repuesto =
+        Math.abs(
+          Number(
+            (preSettlement?.['difference'] as number | undefined) ??
+              report.settlement?.difference ??
+              0
+          )
+        ) || 0
+      await this.reponerPresupuestoCajaChica(report, reportId, repuesto)
+    }
+
     await this.notifyCollaboratorReimbursementPaid(reportId)
 
     return this.findOne(reportId)
+  }
+
+  /**
+   * Devuelve al presupuesto de caja chica lo que Tesorería acaba de depositar.
+   * No lanza: el pago al colaborador ya quedó registrado y no puede deshacerse
+   * porque falle la reposición; si algo sale mal queda en el log para
+   * corregirlo a mano.
+   */
+  private async reponerPresupuestoCajaChica(
+    report: ExpenseReportDocument,
+    reportId: string,
+    monto: number
+  ): Promise<void> {
+    if (monto <= 0) return
+    try {
+      const fondo = await this.fondoCajaChicaService.findVivoByResponsible(
+        String(report.userId),
+        String(report.clientId)
+      )
+      if (!fondo) {
+        this.logger.warn(
+          `Rendición de caja chica ${reportId}: su responsable no tiene fondo activo, no hay presupuesto que reponer.`
+        )
+        return
+      }
+      await this.fondoCajaChicaService.reponer(String(fondo._id), {
+        amount: monto,
+        expenseReportId: reportId,
+        registeredBy: String(report.userId),
+        note: `Reposición por la rendición ${reportId}`,
+      })
+    } catch (err: unknown) {
+      this.logger.error(
+        `No se pudo reponer el presupuesto de caja chica de la rendición ${reportId}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
   }
 
   private async notifyCollaboratorReimbursementPaid(reportId: string) {
@@ -3465,6 +3813,9 @@ export class ExpenseReportService implements OnModuleInit {
       paymentReceiptUrl: pi?.paymentReceiptUrl || '',
       paymentReceiptFileName:
         pi?.paymentReceiptFileName || 'comprobante-reembolso.pdf',
+      // En caja chica el depósito repone la caja, no reembolsa un gasto del
+      // bolsillo del responsable.
+      esCajaChica: (report as any).isCajaChica === true,
       platformUrl,
     }
 
@@ -3493,10 +3844,13 @@ export class ExpenseReportService implements OnModuleInit {
         })
       }
 
+      const esCajaChicaRendicion = (report as any).isCajaChica === true
       await this.notificationsService.create({
         userId: ownerId,
-        title: 'Reembolso registrado',
-        message: `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
+        title: esCajaChicaRendicion ? 'Caja chica repuesta' : 'Reembolso registrado',
+        message: esCajaChicaRendicion
+          ? `Tesorería depositó ${this.settlementCurrencySymbol(report)} ${amountFormatted} y tu presupuesto de caja chica volvió a su tope.`
+          : `Se registró el pago del reembolso por ${this.settlementCurrencySymbol(report)} ${amountFormatted} para "${report.title}".`,
         type: 'success',
         actionUrl: `/mis-documentos`,
       })
@@ -4425,7 +4779,7 @@ export class ExpenseReportService implements OnModuleInit {
     expenseIds: Types.ObjectId[],
     ownerUserId: string,
     clientId: string,
-    opts: { force?: boolean } = {}
+    opts: { force?: boolean; esCajaChica?: boolean } = {}
   ): Promise<void> {
     if (expenseIds.length === 0) return
     const profile = await this.userService.findTransactionalProfile(ownerUserId)
@@ -4452,19 +4806,46 @@ export class ExpenseReportService implements OnModuleInit {
       projects.map(p => [String(p._id), p as unknown as ChainProject])
     )
 
+    // Caja chica: el centro de costo del comprobante es opcional y puede ser
+    // cualquiera, así que no puede decidir quién aprueba. Todos los gastos del
+    // fondo van a los aprobadores del RESPONSABLE, la misma cadena que la
+    // solicitud. Se resuelve una vez, fuera del bucle, porque no depende del
+    // comprobante.
+    const principalId = primaryProjectId ?? assignedProjectIds[0]
+    const cajaChicaChain = opts.esCajaChica
+      ? buildCajaChicaChain({
+          ownerApproverLevels,
+          fallbackProject: projectById.get(String(principalId)) ?? {
+            _id: new Types.ObjectId(),
+          },
+          creatorId: ownerUserId,
+          // El comprobante ya está guardado: lanzar acá lo dejaría a medio
+          // registrar. Sin aprobadores la cadena queda vacía, igual que en el
+          // resto del motor, y se avisa en el log.
+          throwOnEmpty: false,
+        })
+      : null
+    if (opts.esCajaChica && cajaChicaChain?.length === 0) {
+      this.logger.warn(
+        `Caja chica de ${ownerUserId}: sus comprobantes quedan sin cadena porque no tiene aprobadores configurados.`
+      )
+    }
+
     for (const expense of expenses) {
       if (expense.status === 'rejected') continue
       if (expense.approverChain !== undefined && !opts.force) continue
       const selectedProjectId = expense.proyectId?.toString()
-      if (!selectedProjectId) continue
-      const chain = buildRendicionChain({
-        assignedProjectIds,
-        primaryProjectId,
-        selectedProjectId,
-        creatorId: ownerUserId,
-        projectById,
-        ownerApproverLevels,
-      })
+      if (!opts.esCajaChica && !selectedProjectId) continue
+      const chain =
+        cajaChicaChain ??
+        buildRendicionChain({
+          assignedProjectIds,
+          primaryProjectId,
+          selectedProjectId: selectedProjectId!,
+          creatorId: ownerUserId,
+          projectById,
+          ownerApproverLevels,
+        })
       expense.approverChain = chain
       expense.requiredLevels = chain.length
       expense.approvalLevel = 0
@@ -4517,11 +4898,16 @@ export class ExpenseReportService implements OnModuleInit {
     if (!reportId) return
     const report = await this.expenseReportModel
       .findById(reportId)
-      .select('status')
-      .lean<{ status?: string }>()
+      .select('status isCajaChica')
+      .lean<{ status?: string; isCajaChica?: boolean }>()
       .exec()
     if (report?.status !== 'submitted') return
-    await this.buildExpenseChains([new Types.ObjectId(expenseId)], ownerUserId, clientId)
+    await this.buildExpenseChains(
+      [new Types.ObjectId(expenseId)],
+      ownerUserId,
+      clientId,
+      { esCajaChica: report.isCajaChica === true }
+    )
   }
 
   /**
@@ -4548,6 +4934,178 @@ export class ExpenseReportService implements OnModuleInit {
         this.logger.error(`Notif comprobante pendiente ${expenseId}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
+  }
+
+  /**
+   * SOLICITUD de asignación de caja chica. Va sobre un reporte `type: 'viatico'`
+   * a propósito: así reutiliza entero el flujo de Solicitud de Fondos que ya
+   * existe (aprobación por la cadena, gate de Contabilidad, pago de Tesorería,
+   * archivo del banco y correos) sin duplicar nada. Lo que cambia respecto de
+   * `createViatico`:
+   *
+   * - No lleva lugar, fechas, líneas, motivo ni orden de trabajo: el formato en
+   *   papel no los tiene. Lo único que escribe el responsable es el monto.
+   * - El centro de costo es el suyo, no lo elige.
+   * - La cadena sale de sus propios aprobadores (`buildCajaChicaChain`), no del
+   *   centro de costo, porque los gastos del fondo pueden ir a cualquiera.
+   *
+   * Se crea también el fondo en `pending_funding`. Recién queda operativo
+   * cuando Tesorería registra el pago (ver `registerViaticoPayment`): antes de
+   * eso el responsable no tiene efectivo en la mano.
+   */
+  async createSolicitudCajaChica(
+    dto: CreateSolicitudCajaChicaDto,
+    userId: string,
+    clientId: string
+  ): Promise<ExpenseReportDocument> {
+    const profile = await this.userService.findTransactionalProfile(userId)
+    if (!profile?.signature?.trim()) {
+      throw new ForbiddenException(
+        'Debe registrar su firma digital en el perfil antes de solicitar fondos.'
+      )
+    }
+
+    // Una solicitud posterior REEMPLAZA el presupuesto vigente: puede pedir más
+    // o menos. Lo único que no se permite es encimar dos solicitudes, porque no
+    // se sabría cuál manda.
+    const fondoVigente = await this.fondoCajaChicaService.findVivoByResponsible(
+      userId,
+      clientId
+    )
+    if (fondoVigente?.status === 'pending_funding') {
+      throw new BadRequestException(
+        'Ya tiene una solicitud de caja chica en curso. Espere a que se resuelva antes de pedir otro presupuesto.'
+      )
+    }
+    if (fondoVigente) {
+      const enCurso = await this.expenseReportModel.countDocuments({
+        userId: new Types.ObjectId(userId),
+        clientId: new Types.ObjectId(clientId),
+        isSolicitudCajaChica: true,
+        status: {
+          $in: ['pending_l1', 'pending_l2', 'pending_contabilidad', 'viatico_approved'],
+        },
+      })
+      if (enCurso > 0) {
+        throw new BadRequestException(
+          'Ya tiene una solicitud de presupuesto en curso. Espere a que se resuelva antes de pedir otra.'
+        )
+      }
+    }
+
+    // Bajar el presupuesto por debajo de lo ya gastado dejaria el disponible en
+    // negativo. Se corta aca, al pedirlo, y no al final de la cadena: el
+    // responsable se entera de una y no despues de molestar a sus aprobadores.
+    const gastadoVigente = Math.round(Number(fondoVigente?.spentAmount ?? 0) * 100) / 100
+    if (fondoVigente && Math.round(dto.amount * 100) / 100 < gastadoVigente) {
+      throw new BadRequestException(
+        `El presupuesto solicitado (S/ ${dto.amount.toFixed(2)}) es menor a lo ya gastado y pendiente de reposicion (S/ ${gastadoVigente.toFixed(2)}). Rinda esos comprobantes antes de bajar el presupuesto.`
+      )
+    }
+
+    // El centro de costo es el del solicitante. Si no tiene principal se toma el
+    // primero asignado, que es el mismo criterio del resto del motor.
+    const projectId = profile.primaryProjectId ?? profile.projectIds?.[0]
+    if (!projectId) {
+      throw new BadRequestException(
+        'No tiene centros de costo asignados. Un administrador debe asignarle al menos uno antes de solicitar caja chica.'
+      )
+    }
+    const [project] = await this.projectService.findManyByIds(
+      [projectId],
+      clientId
+    )
+    if (!project) {
+      throw new BadRequestException('Su centro de costo no fue encontrado.')
+    }
+
+    const chain = buildCajaChicaChain({
+      ownerApproverLevels: profile.approverLevels,
+      fallbackProject: project as unknown as ChainProject,
+      creatorId: userId,
+    })
+
+    // El presupuesto solicitado reemplaza al vigente. Lo que Tesorería tiene que
+    // depositar es solo la DIFERENCIA: pedir 5000 teniendo 3000 mueve 2000, y
+    // pedir 2000 teniendo 3000 no mueve nada (genera un sobrante por devolver).
+    const nuevoPresupuesto = Math.round(dto.amount * 100) / 100
+    const presupuestoVigente = Math.round(
+      Number(fondoVigente?.fundAmount ?? 0) * 100
+    ) / 100
+    const amount = Math.max(
+      0,
+      Math.round((nuevoPresupuesto - presupuestoVigente) * 100) / 100
+    )
+
+    const moneda = normalizeMoneda(dto.moneda)
+    const accountingConfig = await this.currencyService.getConfig(clientId)
+    const conversion = await this.currencyService.toBase(
+      amount,
+      moneda,
+      new Date(),
+      accountingConfig
+    )
+
+    const report = await this.expenseReportModel.create({
+      type: 'viatico',
+      isSolicitudCajaChica: true,
+      cajaChicaNuevoPresupuesto: nuevoPresupuesto,
+      cajaChicaPresupuestoAnterior: presupuestoVigente,
+      userId: new Types.ObjectId(userId),
+      clientId: new Types.ObjectId(clientId),
+      createdBy: new Types.ObjectId(userId),
+      projectId: new Types.ObjectId(projectId),
+      // El título es lo que la lista del aprobador muestra en la columna
+      // principal: sin él la fila salía como "—" porque una solicitud de caja
+      // chica no tiene lugar de destino del que caer.
+      title: fondoVigente
+        ? `Caja chica: nuevo presupuesto S/ ${nuevoPresupuesto.toFixed(2)}`
+        : 'Solicitud de caja chica',
+      description: 'Solicitud de asignación de caja chica',
+      status: 'pending_l1',
+      expenseIds: [],
+      budget: amount,
+      viaticoAmount: amount,
+      viaticoMoneda: moneda,
+      viaticoMontoBase: conversion.montoBase,
+      tipoCambio: conversion.tipoCambio,
+      tcFecha: conversion.tcFecha,
+      viaticoApproverChain: chain,
+      viaticoRequiredLevels: chain.length,
+      viaticoApprovalLevel: 0,
+      viaticoApprovalHistory: [],
+      viaticoSolicitudVersion: 1,
+      viaticoBudgetCommitmentRecorded: false,
+      viaticoObservations: dto.observations?.trim(),
+      viaticoLines: [],
+    })
+
+    const reportId = String((report as any)._id)
+    // La primera solicitud abre el fondo; las siguientes se cuelgan del que ya
+    // existe y solo lo ajustan cuando se aprueban.
+    const fondo =
+      fondoVigente ??
+      (await this.fondoCajaChicaService.create(
+        {
+          responsibleId: userId,
+          clientId,
+          requestedAmount: nuevoPresupuesto,
+          solicitudReportId: reportId,
+        },
+        userId
+      ))
+    await this.expenseReportModel.updateOne(
+      { _id: (report as any)._id },
+      { $set: { fondoCajaChicaId: fondo._id } }
+    )
+
+    void this.notifyViaticoCoordinator(
+      report as ExpenseReportDocument,
+      userId,
+      clientId
+    )
+
+    return this.findOne(reportId) as Promise<ExpenseReportDocument>
   }
 
   async createViatico(dto: CreateViaticoExpenseReportDto, userId: string, clientId: string): Promise<ExpenseReportDocument> {
@@ -4634,6 +5192,37 @@ export class ExpenseReportService implements OnModuleInit {
    * crear la solicitud como tras cada aprobación intermedia, para reforzar el
    * aviso a quienes todavía no actuaron.
    */
+  /**
+   * La SOLICITUD de caja chica viaja como viático para reutilizar su flujo,
+   * pero no vive donde viven los viáticos: el aprobador la atiende en la
+   * pestaña de caja chica de /rendiciones y el responsable la sigue desde sus
+   * rendiciones. Sin esto, los avisos del trámite llevaban a /viaticos, donde
+   * la solicitud no aparece.
+   */
+  private esSolicitudCajaChica(report: any): boolean {
+    return report?.isSolicitudCajaChica === true
+  }
+
+  /** Pantalla donde cada destinatario atiende la solicitud. */
+  private solicitudAppPath(
+    report: any,
+    destino: 'aprobador' | 'solicitante'
+  ): string {
+    if (this.esSolicitudCajaChica(report)) {
+      return destino === 'aprobador'
+        ? '/rendiciones?tab=caja-chica'
+        : '/mis-rendiciones?tab=caja-chica'
+    }
+    return destino === 'aprobador' ? '/viaticos' : '/mis-rendiciones'
+  }
+
+  /** Cómo se llama el trámite en los avisos. */
+  private solicitudNombre(report: any): string {
+    return this.esSolicitudCajaChica(report)
+      ? 'solicitud de caja chica'
+      : 'solicitud de fondos'
+  }
+
   private async notifyViaticoCoordinator(report: ExpenseReportDocument, collaboratorUserId: string, clientId: string): Promise<void> {
     const reportId = String((report as any)._id)
     const collaborator = await this.userService.findEmailNameClient(collaboratorUserId)
@@ -4661,7 +5250,11 @@ export class ExpenseReportService implements OnModuleInit {
       }
 
       try {
-        await this.notificationsService.create({ userId: approverId.toString(), title: 'Nueva solicitud de fondos pendiente', message: `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`, type: 'info', actionUrl: '/viaticos', metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
+        const esCaja = this.esSolicitudCajaChica(report)
+        const mensajeSolicitud = esCaja
+          ? `${collaborator.name} solicitó caja chica — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)}. Ingresa a revisarla.`
+          : `${collaborator.name} solicitó viáticos — ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}. Ingresa a Aprobaciones para revisar.`
+        await this.notificationsService.create({ userId: approverId.toString(), title: esCaja ? 'Nueva solicitud de caja chica pendiente' : 'Nueva solicitud de fondos pendiente', message: mensajeSolicitud, type: 'info', actionUrl: this.solicitudAppPath(report, 'aprobador'), metadata: { reportId, collaboratorUserId, event: 'viatico_submitted' } })
       } catch (err: unknown) { this.logger.error(`In-app notif viático ${reportId}: ${err instanceof Error ? err.message : String(err)}`) }
 
       const approverEmailEnabled = await this.userService.isEmailEnabled(approverId.toString())
@@ -4675,12 +5268,31 @@ export class ExpenseReportService implements OnModuleInit {
         const projectLabel = `[${project.code} - ${project.name}]`
         const startStr = report.viaticoStartDate instanceof Date ? report.viaticoStartDate.toISOString().slice(0, 10) : String(report.viaticoStartDate ?? '').slice(0, 10)
         const endStr = report.viaticoEndDate instanceof Date ? report.viaticoEndDate.toISOString().slice(0, 10) : String(report.viaticoEndDate ?? '').slice(0, 10)
+        // En caja chica el aprobador autoriza el PRESUPUESTO pedido, no la
+        // diferencia a depositar: pedir 5000 teniendo 3000 le anunciaba 2000.
+        // La bandera es además la que elige la rama de la plantilla; sin
+        // pasarla, el correo del trámite se leía como una solicitud de viáticos,
+        // con las filas Lugar y Fechas vacías.
+        const esCajaChica = this.esSolicitudCajaChica(report)
+        const presupuestoAnterior = Number(report.cajaChicaPresupuestoAnterior ?? 0)
         await this.emailService.sendViaticoSolicitudToCoordinator(approver.email, {
           clientId, coordinatorName: approver.name, collaboratorName: collaborator.name,
           place: report.viaticoPlace ?? '', startDate: startStr, endDate: endStr,
-          totalFormatted: this.viaticoFormatMoney(report.viaticoAmount ?? 0),
+          totalFormatted: this.viaticoFormatMoney(
+            esCajaChica
+              ? Number(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)
+              : Number(report.viaticoAmount ?? 0)
+          ),
           currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
-          projectLabel, platformUrl: this.emailService.buildAppUrl('/viaticos'),
+          projectLabel,
+          esCajaChica,
+          presupuestoAnteriorFormatted:
+            esCajaChica && presupuestoAnterior > 0
+              ? this.viaticoFormatMoney(presupuestoAnterior)
+              : undefined,
+          platformUrl: this.emailService.buildAppUrl(
+            this.solicitudAppPath(report, 'aprobador')
+          ),
         })
         await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { recipientUserId: approverId, status: 'sent', sentAt: new Date() } } })
       } catch (err: unknown) {
@@ -5254,10 +5866,16 @@ export class ExpenseReportService implements OnModuleInit {
       for (const r of recipients) {
         await this.emailService.sendViaticoAprobacionContabilidad(r.email, {
           clientId: report.clientId.toString(), recipientName: r.name, urgent: false, urgentBanner: '',
-          emailTitle: 'Solicitud de Fondos pendiente de tu aprobación',
-          intro: 'La solicitud fue aprobada por los centros de costo correspondientes y requiere tu aprobación final antes de quedar lista para pago.',
+          emailTitle: this.esSolicitudCajaChica(report)
+            ? 'Solicitud de caja chica pendiente de tu aprobación'
+            : 'Solicitud de Fondos pendiente de tu aprobación',
+          intro: this.esSolicitudCajaChica(report)
+            ? 'La solicitud de caja chica fue aprobada por los aprobadores y requiere tu aprobación final antes de quedar lista para el depósito.'
+            : 'La solicitud fue aprobada por los centros de costo correspondientes y requiere tu aprobación final antes de quedar lista para pago.',
           ...detalle,
-          platformUrl: this.emailService.buildAppUrl('/viaticos'),
+          platformUrl: this.emailService.buildAppUrl(
+            this.solicitudAppPath(report, 'aprobador')
+          ),
         }).catch(() => {})
       }
     } catch (err: unknown) {
@@ -5289,6 +5907,32 @@ export class ExpenseReportService implements OnModuleInit {
     report.status = 'viatico_approved'
     await report.save()
 
+    // Solicitud de caja chica que BAJA el presupuesto: no hay nada que
+    // depositar, así que no tiene sentido dejarla esperando a Tesorería. El
+    // ajuste se aplica acá y el sobrante queda pendiente de devolución.
+    if (
+      report.isSolicitudCajaChica &&
+      Number(report.viaticoAmount ?? 0) <= 0 &&
+      report.fondoCajaChicaId
+    ) {
+      try {
+        await this.fondoCajaChicaService.ajustarPresupuesto(
+          String(report.fondoCajaChicaId),
+          Number(report.cajaChicaNuevoPresupuesto ?? 0),
+          String(report.userId),
+          `Solicitud ${String((report as any)._id)}`
+        )
+        report.status = 'paid'
+        await report.save()
+        await this.notifyCajaChicaPresupuestoAplicado(report)
+      } catch (err: unknown) {
+        this.logger.error(
+          `No se pudo ajustar el presupuesto de caja chica de la solicitud ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+      return this.findOne(id) as Promise<ExpenseReportDocument>
+    }
+
     const autoOpenedBySaldo = await this.onViaticoFullyApproved(report as ExpenseReportDocument)
 
     if (!autoOpenedBySaldo) {
@@ -5296,6 +5940,65 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     return this.findOne(id) as Promise<ExpenseReportDocument>
+  }
+
+  /**
+   * Avisa al responsable que su presupuesto de caja chica quedó actualizado
+   * cuando la solicitud lo BAJA. Ese caso no pasa por Tesorería —no hay nada
+   * que depositar—, así que sin este aviso el trámite terminaba en silencio: el
+   * responsable no se enteraba del nuevo tope ni del sobrante que le queda por
+   * devolver, que solo veía si entraba a mirar su caja.
+   */
+  private async notifyCajaChicaPresupuestoAplicado(
+    report: ExpenseReportDocument
+  ): Promise<void> {
+    const ownerId = String(report.userId)
+    const nuevo = Number(report.cajaChicaNuevoPresupuesto ?? 0)
+    const anterior = Number(report.cajaChicaPresupuestoAnterior ?? 0)
+    const simbolo = this.viaticoMoneySymbol(report.viaticoMoneda)
+    try {
+      const fondo = report.fondoCajaChicaId
+        ? await this.fondoCajaChicaService.findOne(
+            String(report.fondoCajaChicaId),
+            String(report.clientId)
+          )
+        : null
+      const sobrante = Number(fondo?.pendingReturnAmount ?? 0)
+      const sobranteMsg =
+        sobrante > 0
+          ? ` Debe devolver ${simbolo} ${this.viaticoFormatMoney(sobrante)}: deposítelo y registre el comprobante.`
+          : ''
+
+      await this.notificationsService
+        .create({
+          userId: ownerId,
+          title: 'Presupuesto de caja chica actualizado',
+          message: `Su presupuesto de caja chica quedó en ${simbolo} ${this.viaticoFormatMoney(nuevo)}.${sobranteMsg}`,
+          type: sobrante > 0 ? 'warning' : 'success',
+          actionUrl: this.solicitudAppPath(report, 'solicitante'),
+        })
+        .catch(() => {})
+
+      const owner = await this.userService.findEmailNameClient(ownerId)
+      if (!owner?.email) return
+      if (!(await this.userService.isEmailEnabled(ownerId))) return
+      await this.emailService.sendCajaChicaPresupuestoAplicado(owner.email, {
+        clientId: String(report.clientId),
+        collaboratorName: owner.name,
+        presupuestoAnteriorFormatted: this.viaticoFormatMoney(anterior),
+        presupuestoNuevoFormatted: this.viaticoFormatMoney(nuevo),
+        sobranteFormatted:
+          sobrante > 0 ? this.viaticoFormatMoney(sobrante) : undefined,
+        currencySymbol: simbolo,
+        platformUrl: this.emailService.buildAppUrl(
+          this.solicitudAppPath(report, 'solicitante')
+        ),
+      })
+    } catch (err: unknown) {
+      this.logger.error(
+        `Aviso de presupuesto de caja chica aplicado ${String((report as any)._id)}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
   }
 
   /** Devuelve `true` si el viático quedó cubierto 100% con saldo y se abrió sin pago. */
@@ -5345,6 +6048,10 @@ export class ExpenseReportService implements OnModuleInit {
           await this.emailService.sendViaticoAprobadoTesoreria(tesoEmail, {
             clientId: clientIdStr,
             advanceDescription: report.viaticoPlace ?? report.title ?? 'Solicitud de Fondos',
+            esCajaChica: this.esSolicitudCajaChica(report),
+            presupuestoFormatted: this.esSolicitudCajaChica(report)
+              ? Number(report.cajaChicaNuevoPresupuesto ?? 0).toFixed(2)
+              : '',
             collaboratorName: collab?.name ?? 'Colaborador',
             collaboratorDni: collab?.dni,
             budgetFormatted: Number(report.viaticoAmount ?? 0).toFixed(2),
@@ -5403,7 +6110,10 @@ export class ExpenseReportService implements OnModuleInit {
     report.viaticoRejectedByRole = rejectedByRole
     await report.save()
 
-    this.notificationsService.create({ userId: report.userId.toString(), title: 'Solicitud de Fondos rechazada', message: `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`, type: 'error', actionUrl: '/mis-rendiciones' }).catch(() => {})
+    const mensajeRechazo = this.esSolicitudCajaChica(report)
+      ? `Tu solicitud de caja chica por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`
+      : `Tu solicitud por ${this.viaticoMoneySymbol(report.viaticoMoneda)} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)} fue rechazada. Motivo: ${opts.rejectionReason}`
+    this.notificationsService.create({ userId: report.userId.toString(), title: this.esSolicitudCajaChica(report) ? 'Solicitud de caja chica rechazada' : 'Solicitud de Fondos rechazada', message: mensajeRechazo, type: 'error', actionUrl: this.solicitudAppPath(report, 'solicitante') }).catch(() => {})
 
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email && await this.userService.isEmailEnabled(report.userId.toString())) {
@@ -5411,7 +6121,14 @@ export class ExpenseReportService implements OnModuleInit {
         clientId: report.clientId.toString(), collaboratorName: collaborator.name,
         collaboratorDocument: '', collaboratorArea: '', collaboratorCargo: '',
         projectLabel: '', rejectionReason: opts.rejectionReason,
-        platformUrl: this.emailService.buildAppUrl(`/mis-rendiciones`),
+        esCajaChica: this.esSolicitudCajaChica(report),
+        presupuestoFormatted: this.esSolicitudCajaChica(report)
+          ? this.viaticoFormatMoney(report.cajaChicaNuevoPresupuesto ?? report.viaticoAmount ?? 0)
+          : '',
+        currencySymbol: this.viaticoMoneySymbol(report.viaticoMoneda),
+        platformUrl: this.emailService.buildAppUrl(
+          this.solicitudAppPath(report, 'solicitante')
+        ),
       }).catch(() => {})
     }
 
@@ -5545,10 +6262,47 @@ export class ExpenseReportService implements OnModuleInit {
     const inPrePaymentPhase =
       report.status === 'viatico_approved' || report.status === 'partially_paid'
     if (inPrePaymentPhase) {
-      report.status = fullyPaid ? 'open' : 'partially_paid'
+      // La solicitud de caja chica NO se convierte en rendición al pagarse: el
+      // dinero va al fondo y los gastos se rinden aparte, en rendiciones de
+      // caja chica. Por eso termina en 'paid' y no en 'open'.
+      report.status = fullyPaid
+        ? report.isSolicitudCajaChica
+          ? 'paid'
+          : 'open'
+        : 'partially_paid'
     }
 
     await report.save()
+
+    // Recién con el depósito el responsable tiene el efectivo, así que es acá y
+    // no en la aprobación donde el presupuesto queda disponible. La primera
+    // solicitud abre el fondo; una posterior solo lo ajusta al monto nuevo.
+    if (report.isSolicitudCajaChica && fullyPaid && report.fondoCajaChicaId) {
+      const fondoId = String(report.fondoCajaChicaId)
+      const nota = `Depósito de la solicitud ${String((report as any)._id)}`
+      try {
+        const fondo = await this.fondoCajaChicaService.findById(fondoId)
+        if (fondo?.status === 'pending_funding') {
+          await this.fondoCajaChicaService.fondear(
+            fondoId,
+            Number(report.viaticoPaidAmount ?? paymentAmount),
+            String(report.userId),
+            nota
+          )
+        } else {
+          await this.fondoCajaChicaService.ajustarPresupuesto(
+            fondoId,
+            Number(report.cajaChicaNuevoPresupuesto ?? 0),
+            String(report.userId),
+            nota
+          )
+        }
+      } catch (err: unknown) {
+        this.logger.error(
+          `No se pudo aplicar el presupuesto de caja chica de la solicitud ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
 
     const collabId = report.userId.toString()
     const collaborator = await this.userService.findEmailNameClient(collabId)
@@ -5575,16 +6329,24 @@ export class ExpenseReportService implements OnModuleInit {
       paymentMethod: dto.method,
       paymentReceiptUrl: dto.paymentReceiptUrl ?? '',
       paymentReceiptFileName: dto.paymentReceiptFileName ?? 'comprobante.pdf',
-      platformUrl: this.emailService.buildAppUrl('/mis-rendiciones'),
+      esCajaChica: this.esSolicitudCajaChica(report),
+      platformUrl: this.emailService.buildAppUrl(
+        this.solicitudAppPath(report, 'solicitante')
+      ),
     }
 
+    // 'solicitud de fondos' en viático: mismo texto que antes de caja chica.
+    const tramite = this.solicitudNombre(report)
     const fullyPaidMsg = fullyPaid
       ? (inPrePaymentPhase
-          ? `Se registró el pago de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
-          : `Se registró el pago restante de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
-      : `Se registró un pago parcial de tu solicitud de fondos por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
+          ? `Se registró el pago de tu ${tramite} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)}. Ya puedes registrar tus gastos.`
+          : `Se registró el pago restante de tu ${tramite} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)}).`)
+      : `Se registró un pago parcial de tu ${tramite} por ${viaticoSym} ${this.viaticoFormatMoney(paymentAmount)} (total pagado ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoPaidAmount ?? 0)} de ${viaticoSym} ${this.viaticoFormatMoney(report.viaticoAmount ?? 0)}).`
 
-    this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de fondos registrado' : 'Pago parcial de fondos registrado', message: fullyPaidMsg, type: 'success', actionUrl: `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
+    // La solicitud de caja chica no tiene pantalla de detalle propia (esa vista
+    // rebota: es un trámite de presupuesto, no una rendición), así que el aviso
+    // lleva a su pestaña.
+    this.notificationsService.create({ userId: collabId, title: fullyPaid ? 'Pago de fondos registrado' : 'Pago parcial de fondos registrado', message: fullyPaidMsg, type: 'success', actionUrl: this.esSolicitudCajaChica(report) ? this.solicitudAppPath(report, 'solicitante') : `/mis-rendiciones/${reportId}/detalle` }).catch(() => {})
 
     if (collaborator?.email && await this.userService.isEmailEnabled(collabId)) {
       this.emailService.sendViaticoPagoRealizado(collaborator.email, {
@@ -5720,9 +6482,203 @@ export class ExpenseReportService implements OnModuleInit {
       .exec()
   }
 
+  /**
+   * Solicitudes de caja chica del colaborador, la primera y las de cambio de
+   * presupuesto. Viven aquí y no en la lista de viáticos porque para el
+   * colaborador son otra cosa, aunque por dentro compartan el mismo flujo.
+   */
+  /**
+   * Cuántos documentos de caja chica esperan una acción DE ESTE usuario, para
+   * el contador de la pestaña /rendiciones?tab=caja-chica. Cada rol cuenta lo
+   * suyo y un usuario que junta varios (un Administrador que además aprueba)
+   * suma sin repetir documentos.
+   *
+   * Se resuelve en el servidor y no contando la lista en el front porque la
+   * pestaña muestra el número ANTES de abrirse: pedir el listado completo solo
+   * para contarlo cargaría la bandeja entera en cada visita a /rendiciones.
+   */
+  async countCajaChicaPendientes(
+    userId: string,
+    clientId: string,
+    opts: {
+      esContabilidad: boolean
+      esTesoreria: boolean
+      /** Admin/Superadmin: ve todo lo pendiente de la empresa. */
+      esAdmin: boolean
+    }
+  ): Promise<{ total: number }> {
+    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(clientId)) {
+      return { total: 0 }
+    }
+    const uid = new Types.ObjectId(userId)
+    const cid = new Types.ObjectId(clientId)
+    const ids = new Set<string>()
+    const add = (docs: { _id: unknown }[]) => {
+      for (const d of docs) ids.add(String(d._id))
+    }
+    const soloIds = { _id: 1 } as const
+
+    // Aprobador: le toca firmar. La solicitud lleva su cadena en el propio
+    // documento; la rendición, en la de cada comprobante.
+    const solicitudesPorFirmar = await this.expenseReportModel
+      .find({
+        clientId: cid,
+        isSolicitudCajaChica: true,
+        status: 'pending_l1',
+        viaticoApproverChain: {
+          $elemMatch: { approved: { $ne: true }, approverIds: uid },
+        },
+      })
+      .select(soloIds)
+      .lean()
+      .exec()
+    add(solicitudesPorFirmar)
+
+    const comprobantesPorFirmar = await this.expenseModel
+      .find({
+        clientId: cid,
+        status: { $ne: 'rejected' },
+        approverChain: {
+          $elemMatch: { approved: { $ne: true }, approverIds: uid },
+        },
+      })
+      .select({ expenseReportId: 1 })
+      .lean<{ expenseReportId?: Types.ObjectId }[]>()
+      .exec()
+    const reportIdsPorFirmar = [
+      ...new Set(
+        comprobantesPorFirmar
+          .map(e => e.expenseReportId)
+          .filter((x): x is Types.ObjectId => !!x)
+          .map(String)
+      ),
+    ].map(x => new Types.ObjectId(x))
+    if (reportIdsPorFirmar.length > 0) {
+      const rendicionesPorFirmar = await this.expenseReportModel
+        .find({
+          _id: { $in: reportIdsPorFirmar },
+          isCajaChica: true,
+          status: 'submitted',
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(rendicionesPorFirmar)
+    }
+
+    if (opts.esContabilidad || opts.esAdmin) {
+      const enContabilidad = await this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            { isSolicitudCajaChica: true, status: 'pending_contabilidad' },
+            { isCajaChica: true, status: 'pending_accounting' },
+          ],
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(enContabilidad)
+    }
+
+    if (opts.esTesoreria || opts.esAdmin) {
+      // Tres colas de Tesorería en caja chica: depositar el presupuesto,
+      // reponer lo aprobado y CERRAR la rendición ya repuesta. El cierre
+      // faltaba: al registrar la reposición el reporte pasa a `reimbursed` y
+      // salía de la cuenta, pero sigue esperando el cierre definitivo, que
+      // también es de Tesorería (`PATCH :id/close`).
+      const enTesoreria = await this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            {
+              isSolicitudCajaChica: true,
+              status: { $in: ['viatico_approved', 'partially_paid'] },
+            },
+            {
+              isCajaChica: true,
+              status: 'approved',
+              $and: [
+                {
+                  $or: [
+                    { reimbursementPaymentInfo: { $exists: false } },
+                    { reimbursementPaymentInfo: null },
+                  ],
+                },
+              ],
+            },
+            { isCajaChica: true, status: 'reimbursed' },
+          ],
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(enTesoreria)
+    }
+
+    if (opts.esAdmin) {
+      // El Administrador ve el trabajo de la empresa, no solo el suyo: se suman
+      // los documentos que esperan a CUALQUIER aprobador.
+      const esperandoAprobador = await this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            { isSolicitudCajaChica: true, status: 'pending_l1' },
+            { isCajaChica: true, status: 'submitted' },
+          ],
+        })
+        .select(soloIds)
+        .lean()
+        .exec()
+      add(esperandoAprobador)
+    }
+
+    return { total: ids.size }
+  }
+
+  async findMySolicitudesCajaChica(userId: string, clientId: string) {
+    return this.expenseReportModel
+      .find({
+        type: 'viatico',
+        isSolicitudCajaChica: true,
+        userId: new Types.ObjectId(userId),
+        clientId: new Types.ObjectId(clientId),
+      })
+      // Los campos de la cadena y de los hitos van incluidos porque el
+      // responsable ve la MISMA línea de tiempo que el aprobador
+      // (`buildReportFlowSteps`): sin ellos su pantalla solo podía decir
+      // "pendiente", sin indicar en qué paso está.
+      .select(
+        // `isSolicitudCajaChica` es imprescindible: de él depende que la línea
+        // de tiempo se arme como SOLICITUD y no como un viático de dos fases
+        // (`viaticoEnteredRendicion`). Sin traerlo, al pagarse el presupuesto
+        // la solicitud mostraba pasos de una rendición que nunca va sobre este
+        // documento: los comprobantes van en una rendición de caja chica aparte.
+        'type status createdAt isSolicitudCajaChica isCajaChica isDirecta ' +
+        'viaticoAmount cajaChicaNuevoPresupuesto cajaChicaPresupuestoAnterior title ' +
+        'rejectionReason viaticoRejectionReason rejectedByRole viaticoRejectedByRole ' +
+        'viaticoApproverChain viaticoApprovalLevel viaticoRequiredLevels ' +
+        'viaticoSolicitudContabilidadApprovedAt viaticoSolicitudContabilidadApprovedBy ' +
+        'viaticoPaidAmount viaticoPaymentInfo viaticoPayments closedAt'
+      )
+      // Nombres reales en la línea de tiempo: sin poblar, cada paso decía
+      // "Aprobador" en vez de quién es.
+      .populate('viaticoApproverChain.approverIds', 'name email')
+      .populate('viaticoSolicitudContabilidadApprovedBy', 'name email')
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec()
+  }
+
+  /**
+   * Solicitudes de fondos del colaborador. La solicitud de caja chica viaja
+   * como `type: 'viatico'` para reutilizar ese flujo, pero para el colaborador
+   * es otra cosa y se muestra en su propia pestaña, así que aquí se excluye.
+   */
   async findMyViaticos(userId: string, clientId: string) {
     return this.expenseReportModel.find({
       type: 'viatico',
+      isSolicitudCajaChica: { $ne: true },
       userId: new Types.ObjectId(userId),
       clientId: new Types.ObjectId(clientId),
     })

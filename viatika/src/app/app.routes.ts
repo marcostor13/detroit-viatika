@@ -404,6 +404,14 @@ export const routes: Routes = [
         canActivate: [authModuleGuard('caja-chica')],
       },
       {
+        path: 'mis-rendiciones/solicitud-caja-chica',
+        loadComponent: () =>
+          import('./modules/mis-rendiciones/solicitud-caja-chica/solicitud-caja-chica.component').then(
+            (m) => m.SolicitudCajaChicaComponent
+          ),
+        canActivate: [authModuleGuard('caja-chica')],
+      },
+      {
         path: 'rendiciones-caja-chica',
         redirectTo: '/rendiciones?tab=caja-chica',
         pathMatch: 'full',

@@ -62,6 +62,10 @@ export const httpInterceptor: HttpInterceptorFn = (req, next) => {
     '/notifications/',
     '/bulk-import',
     '/caja-chica-report',
+    // El fondo de caja chica ya recibe el clientId del JWT y sus rutas llevan
+    // id propio (`/mine`, `/:id`): si el interceptor le pegara el companyId al
+    // final, ninguna resolvería.
+    '/fondo-caja-chica',
     '/accounting-entries',
     '/upload',
     '/upload/',

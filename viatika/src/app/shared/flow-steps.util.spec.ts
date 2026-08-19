@@ -254,6 +254,111 @@ describe('buildReportFlowSteps', () => {
   });
 });
 
+describe('rendición de caja chica', () => {
+  const labels = (r: any) => buildReportFlowSteps(r).map(s => s.label);
+
+  /**
+   * Rendición de caja chica ya aprobada por sus dos niveles y por Contabilidad.
+   * Su `settlement` todavía no existe: el backend recién lo persiste cuando
+   * Tesorería registra el depósito (ver `findPendingReimbursements`).
+   */
+  const cajaChicaAprobada = () => ({
+    _id: 'cc1',
+    isCajaChica: true,
+    status: 'approved',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    contabilidadApprovedAt: '2026-08-05T00:00:00.000Z',
+    contabilidadApprovedBy: { _id: 'u9', name: 'Contabilidad' },
+    expenseIds: [
+      {
+        status: 'approved',
+        approverChain: [
+          { level: 1, approved: true, approvedAt: '2026-08-03T00:00:00.000Z', approverIds: [{ _id: 'u1', name: 'Ana' }] },
+        ],
+      },
+    ],
+  });
+
+  /** La misma rendición cuando todavía está esperando a su primer aprobador. */
+  const cajaChicaEnAprobacion = () => ({
+    _id: 'cc1',
+    isCajaChica: true,
+    status: 'submitted',
+    createdAt: '2026-08-18T00:00:00.000Z',
+    expenseIds: [
+      {
+        status: 'submitted',
+        approverChain: [
+          { level: 1, approved: false, approverIds: [{ _id: 'u1', name: 'Ana' }] },
+        ],
+      },
+    ],
+  });
+
+  it('anuncia el reembolso y el cierre desde que la rendición está en aprobación', () => {
+    // El desenlace se conoce al abrirla: lo rendido sale del fondo del
+    // responsable, así que el saldo queda a su favor y lo repone Tesorería.
+    // Antes la línea de tiempo terminaba en "Finalizada" y no decía que
+    // después de Contabilidad todavía venían dos pasos.
+    const steps = buildReportFlowSteps(cajaChicaEnAprobacion());
+
+    expect(steps.map(s => s.label)).toContain('Reembolso de Tesorería');
+    expect(steps.map(s => s.label)).toContain('Cierre de Tesorería');
+    expect(steps.map(s => s.label)).not.toContain('Finalizada');
+  });
+
+  it('no adelanta el paso activo a Tesorería mientras faltan aprobaciones', () => {
+    const steps = buildReportFlowSteps(cajaChicaEnAprobacion());
+    const activos = steps.filter(s => s.state === 'active').map(s => s.label);
+
+    expect(activos).toEqual(['N1 · Falta aprobación de Ana']);
+    expect(steps.find(s => s.label === 'Reembolso de Tesorería')!.state).toBe('upcoming');
+    expect(steps.find(s => s.label === 'Cierre de Tesorería')!.state).toBe('upcoming');
+  });
+
+  it('tras la aprobación de Contabilidad espera la reposición y el cierre de Tesorería', () => {
+    const steps = buildReportFlowSteps(cajaChicaAprobada());
+
+    expect(steps.map(s => s.label)).toContain('Reembolso de Tesorería');
+    expect(steps.find(s => s.label === 'Reembolso de Tesorería')!.state).toBe('active');
+    expect(steps.map(s => s.label)).toContain('Cierre de Tesorería');
+    // El paso genérico "Aprobada" ya no cierra la línea: quedaba como estado
+    // final y ocultaba que Tesorería todavía tenía que depositar.
+    expect(steps.map(s => s.label)).not.toContain('Aprobada');
+  });
+
+  it('marca la reposición hecha y deja pendiente el cierre cuando Tesorería depositó', () => {
+    const steps = buildReportFlowSteps({
+      ...cajaChicaAprobada(),
+      status: 'reimbursed',
+      reimbursedAt: '2026-08-07T00:00:00.000Z',
+      reimbursementPaymentInfo: { transferDate: '2026-08-07' },
+      settlement: { type: 'reembolso', difference: -300 },
+    });
+
+    expect(steps.find(s => s.label === 'Reembolsado por Tesorería')!.state).toBe('completed');
+    expect(steps.find(s => s.label === 'Cierre de Tesorería')!.state).toBe('active');
+  });
+
+  it('usa el camino de la devolución cuando el saldo va a favor de la empresa', () => {
+    const steps = labels({
+      ...cajaChicaAprobada(),
+      settlement: { type: 'devolucion', difference: 120 },
+    });
+
+    expect(steps).toContain('Devolución del colaborador');
+    expect(steps).toContain('Cierre de Tesorería');
+    expect(steps).not.toContain('Reembolso de Tesorería');
+  });
+
+  it('no cambia la rendición normal, que sí termina en "Aprobada"', () => {
+    const steps = labels({ ...cajaChicaAprobada(), isCajaChica: false });
+
+    expect(steps).toContain('Aprobada');
+    expect(steps).not.toContain('Reembolso de Tesorería');
+  });
+});
+
 describe('isSolicitudPhase', () => {
   it('is true for a viatico that has not been paid yet', () => {
     expect(isSolicitudPhase({ type: 'viatico', status: 'viatico_approved', viaticoPaidAmount: 0 })).toBeTrue();
@@ -274,5 +379,16 @@ describe('isSolicitudPhase', () => {
 
   it('is false for a directa, which is born in the rendicion phase', () => {
     expect(isSolicitudPhase({ type: 'directa', isDirecta: true, status: 'open' })).toBeFalse();
+  });
+
+  it('sigue siendo solicitud la de caja chica ya depositada: no se rinde sobre ese documento', () => {
+    expect(
+      isSolicitudPhase({
+        type: 'viatico',
+        isSolicitudCajaChica: true,
+        status: 'paid',
+        viaticoPaidAmount: 3000,
+      })
+    ).toBeTrue();
   });
 });

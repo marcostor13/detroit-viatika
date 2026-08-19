@@ -188,6 +188,72 @@
     </div>
     }
   </div>
+
+  <!-- Caja chica: el sobrante que deja bajar el presupuesto se devuelve contra
+       el FONDO, no contra una rendición, así que su comprobante no aparece en
+       la tabla de arriba. Misma conciliacion bancaria, misma pestaña. -->
+  @if (cajaChicaConDevoluciones().length > 0) {
+  <div class="mt-6">
+    <h3 class="text-sm font-semibold text-secondary mb-3">Caja chica — sobrantes por devolver</h3>
+    <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft divide-y divide-tertiary/10">
+      @for (f of cajaChicaConDevoluciones(); track f._id) {
+      <div class="p-5">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-secondary">{{ fondoResponsableName(f) }}</p>
+            <p class="text-xs text-tertiary font-mono mt-0.5">{{ f.code }}</p>
+          </div>
+          @if (f.pendingReturnAmount > 0) {
+          <div class="text-right">
+            <p class="text-xs text-tertiary">Pendiente por devolver</p>
+            <p class="text-base font-bold text-error">S/ {{ f.pendingReturnAmount | number:'1.2-2' }}</p>
+          </div>
+          } @else {
+          <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-success/10 text-success-ink">
+            Sobrante devuelto
+          </span>
+          }
+        </div>
+
+        @if (fondoDevoluciones(f).length > 0) {
+        <div class="mt-4 space-y-3">
+          @for (mov of fondoDevoluciones(f); track mov.registeredAt) {
+          <div class="rounded-xl border border-divider bg-background p-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="text-xs text-secondary space-y-0.5">
+                <p>
+                  <span class="text-tertiary">Monto devuelto:</span>
+                  <strong>S/ {{ mov.amount | number:'1.2-2' }}</strong>
+                </p>
+                @if (mov.depositDate) {
+                <p><span class="text-tertiary">Fecha del depósito:</span> {{ mov.depositDate | date:'dd/MM/yyyy' }}</p>
+                }
+                @if (mov.bankOrigin) {
+                <p><span class="text-tertiary">Banco origen:</span> {{ mov.bankOrigin }}</p>
+                }
+                @if (mov.operationNumber) {
+                <p><span class="text-tertiary">N° operación:</span> {{ mov.operationNumber }}</p>
+                }
+                <p><span class="text-tertiary">Registrado:</span> {{ mov.registeredAt | date:'dd/MM/yyyy HH:mm' }}</p>
+              </div>
+              @if (mov.receiptUrl) {
+              <a [href]="mov.receiptUrl" target="_blank" rel="noopener noreferrer"
+                class="inline-flex items-center px-4 py-2 rounded-lg bg-warning text-white font-semibold text-sm hover:bg-warning">
+                Ver comprobante
+              </a>
+              }
+            </div>
+          </div>
+          }
+        </div>
+        } @else {
+        <p class="text-xs text-tertiary mt-3">Esperando el comprobante del responsable.</p>
+        }
+      </div>
+      }
+    </div>
+  </div>
+  }
   }
 
   <!-- Rendiciones Directas tab (iniciadas por Contabilidad) -->
@@ -876,11 +942,15 @@
           <p class="text-xs text-tertiary">{{ selectedReturnAdvance.returnRecord?.proof?.note }}</p>
         </div>
         }
+        @if (selectedReturnAdvance.returnRecord?.proof?.fileUrl) {
         <a [href]="selectedReturnAdvance.returnRecord?.proof?.fileUrl" target="_blank"
           class="flex items-center gap-1.5 text-xs text-primary font-semibold hover:underline pt-1">
           <app-icon name="file-text" size="sm" />
           Ver documento adjunto
         </a>
+        } @else {
+        <span class="flex items-center gap-1.5 text-xs text-tertiary pt-1">Sin documento adjunto</span>
+        }
       </div>
       }
       <div class="flex flex-col gap-1.5 mb-5">

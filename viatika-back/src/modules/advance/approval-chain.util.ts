@@ -390,9 +390,79 @@ export function buildSolicitudChain(opts: {
 }
 
 /**
+ * Cadena de CAJA CHICA, usada tanto por la solicitud del fondo como por la
+ * rendición del responsable. Se aparta de `buildRendicionChain` en dos puntos,
+ * los dos por la misma razón: en caja chica el centro de costo es OPCIONAL y se
+ * elige por comprobante, así que no puede ser el que decide quién aprueba.
+ *
+ * - No mira el centro de costo del documento. La cadena sale entera de los
+ *   niveles del RESPONSABLE del fondo y es la misma para todos sus gastos, así
+ *   que no aparece el caso de tres comprobantes con tres aprobadores distintos.
+ * - Recorre TODOS los niveles configurados, no solo N1/N2: cuántos aprobadores
+ *   tiene cada responsable varía por usuario.
+ *
+ * Cada nivel se resuelve con el mismo algoritmo que el resto del motor (omisión
+ * del nivel vacío por regla 1.6, escalamiento por regla 1.5 si el creador es su
+ * propio aprobador) y los pasos consecutivos con idéntico conjunto de
+ * aprobadores se colapsan, que es lo que absorbe el escalamiento.
+ *
+ * `fallbackProject` es el centro de costo principal del responsable. Solo
+ * rellena `projectId`, obligatorio en el subdocumento persistido, y sirve de
+ * fuente de niveles si el responsable no tiene ninguno propio (regla 1.10).
+ *
+ * Con `throwOnEmpty` (por defecto) una cadena vacía es error: con centro de
+ * costo la omisión total es improbable, pero sin él un responsable sin
+ * aprobadores configurados dejaría el fondo aprobándose solo. Se desactiva al
+ * armar la cadena de comprobantes ya guardados, donde lanzar dejaría el gasto
+ * a medio registrar; ahí la cadena vacía se comporta como en el resto del
+ * motor (regla 1.6) y quien avisa es el envío.
+ */
+export function buildCajaChicaChain(opts: {
+  /** Niveles propios del responsable del fondo (regla 1.10). */
+  ownerApproverLevels?: ApproverLevel[]
+  /** Centro de costo principal del responsable. */
+  fallbackProject: ChainProject
+  creatorId: string
+  throwOnEmpty?: boolean
+}): ChainStep[] {
+  const source = ownerOrProjectSource({
+    ownerApproverLevels: opts.ownerApproverLevels,
+    fallbackProject: opts.fallbackProject,
+    projectRole: 'principal',
+  })
+
+  const levels = [
+    ...new Set(
+      (source.approverLevels ?? [])
+        .filter(l => (l.userIds?.length ?? 0) > 0)
+        .map(l => l.level)
+    ),
+  ].sort((a, b) => a - b)
+
+  const steps: ChainStep[] = []
+  for (const level of levels) {
+    const step = resolveStepFromSource({
+      source,
+      requestedLevel: level,
+      creatorId: opts.creatorId,
+    })
+    if (step) steps.push(step)
+  }
+
+  const chain = collapseConsecutiveSameApprovers(steps)
+  if (chain.length === 0 && opts.throwOnEmpty !== false) {
+    throw new BadRequestException(
+      'El responsable de la caja chica no tiene aprobadores configurados. Un administrador debe asignarle al menos uno en sus permisos.'
+    )
+  }
+  return chain
+}
+
+/**
  * Cadena de RENDICIÓN por documento (regla 1.4, con la sustitución de la regla
- * 1.10), usada por cada comprobante (`Expense`) — de rendición normal, directa
- * y caja chica por igual:
+ * 1.10), usada por cada comprobante (`Expense`) de rendición normal y directa.
+ * La caja chica ya NO pasa por aquí: su centro de costo es opcional, así que
+ * usa `buildCajaChicaChain`.
  * - Centro del comprobante asignado al colaborador → N1 → N2 del COLABORADOR.
  * - No asignado → N1 → N2 del COLABORADOR → N2(seleccionado).
  * Si el colaborador no tiene niveles propios, N1/N2 salen del centro de costo

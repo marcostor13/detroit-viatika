@@ -27,6 +27,7 @@ import { CreateDirectaDepositDto } from './dto/create-directa-deposit.dto'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
 import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
+import { CreateSolicitudCajaChicaDto } from './dto/create-solicitud-caja-chica.dto'
 import { ProjectService } from '../project/project.service'
 
 @Controller('expense-report')
@@ -341,6 +342,21 @@ export class ExpenseReportController {
       // VD-114: el filtro "Me falta aprobar" necesita saber quién consulta.
       actorUserId: String(req.user._id || req.user.sub),
     })
+  }
+
+  /**
+   * Centro de costo por defecto de una rendición de caja chica: el mismo que
+   * el backend imputa cuando el comprobante llega sin elegir
+   * (`resolveCentroCostoCajaChica`). El formulario del gasto lo precarga para
+   * que el responsable no tenga que adivinarlo, y sigue pudiendo cambiarlo.
+   * Devuelve `null` cuando no hay ninguno que deducir.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get(':id/caja-chica/centro-costo')
+  async findCajaChicaCentroCosto(@Param('id') id: string) {
+    const projectId =
+      await this.expenseReportService.resolveCentroCostoCajaChica(id)
+    return { projectId: projectId ? String(projectId) : null }
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -777,6 +793,62 @@ export class ExpenseReportController {
       userName: req.user.name || req.user.email || 'Usuario',
       action: 'create_viatico',
       module: 'viaticos',
+      entityId: (result as any)?._id?.toString(),
+      clientId: req.user.clientId,
+    })
+    return result
+  }
+
+  /**
+   * Cuántos documentos de caja chica esperan una acción de quien pregunta, para
+   * el contador de la pestaña. Sin roles: cada usuario recibe lo que le toca
+   * según el suyo, y un aprobador sin rol especial sigue viendo su cuenta.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('caja-chica/pendientes')
+  countCajaChicaPendientes(@Request() req: any) {
+    const userId = String(req.user._id || req.user.sub)
+    const clientId = this.resolveClientId(req)
+    const role = req.user?.roles?.[0] || req.user?.role
+    return this.expenseReportService.countCajaChicaPendientes(userId, clientId, {
+      esContabilidad: role === ROLES.CONTABILIDAD,
+      esTesoreria: role === ROLES.TESORERIA,
+      esAdmin: role === ROLES.ADMIN || role === ROLES.SUPER_ADMIN,
+    })
+  }
+
+  /** Mis solicitudes de caja chica (asignación inicial y cambios de presupuesto). */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('solicitudes-caja-chica/my')
+  findMySolicitudesCajaChica(@Request() req: any) {
+    const userId = String(req.user._id || req.user.sub)
+    const clientId = this.resolveClientId(req)
+    return this.expenseReportService.findMySolicitudesCajaChica(userId, clientId)
+  }
+
+  /**
+   * Crear la SOLICITUD de asignación de caja chica. Reusa el flujo de viáticos
+   * (mismos endpoints de aprobación, Contabilidad y pago), por eso vive acá.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Post('solicitud-caja-chica')
+  async createSolicitudCajaChica(
+    @Body() dto: CreateSolicitudCajaChicaDto,
+    @Request() req: any
+  ) {
+    const userId = String(req.user._id || req.user.sub)
+    const clientId = this.resolveClientId(req)
+    if (!clientId) throw new BadRequestException('Cliente no identificado en la sesión.')
+    const result = await this.expenseReportService.createSolicitudCajaChica(
+      dto,
+      userId,
+      clientId
+    )
+    await this.auditLogService.log({
+      userId: req.user._id || req.user.sub,
+      userName: req.user.name || req.user.email || 'Usuario',
+      action: 'create_fondo_caja_chica',
+      module: 'caja-chica',
       entityId: (result as any)?._id?.toString(),
       clientId: req.user.clientId,
     })

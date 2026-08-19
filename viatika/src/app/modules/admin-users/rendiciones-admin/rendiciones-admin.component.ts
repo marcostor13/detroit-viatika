@@ -1,10 +1,11 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, Input, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
 import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
 import { buildReportFlowSteps, isSolicitudPhase, FlowStep } from '../../../shared/flow-steps.util';
+import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UserStateService } from '../../../services/user-state.service';
@@ -16,6 +17,12 @@ import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../..
 import { IUserResponse } from '../../../interfaces/user.interface';
 import { IProject } from '../../invoices/interfaces/project.interface';
 import { expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
+import {
+  SOLICITUD_CAJA_CHICA_STATUS_LABELS,
+  SOLICITUD_CAJA_CHICA_STATUS_COLORS,
+  rendicionCajaChicaStatusLabel,
+  rendicionCajaChicaStatusColor,
+} from '../../../interfaces/fondo-caja-chica.interface';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 
@@ -63,7 +70,7 @@ export type UnifiedRendicionItem = {
   _id: string;
   source: 'report' | 'advance';
   /** Tipo de solicitud, para distinguirlas en la tabla. */
-  kind: 'viatico' | 'directa' | 'anticipo';
+  kind: 'viatico' | 'directa' | 'anticipo' | 'caja-chica';
   kindLabel: string;
   kindColor: string;
   userName: string;
@@ -94,10 +101,19 @@ export type UnifiedRendicionItem = {
 @Component({
   selector: 'app-rendiciones-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent],
   templateUrl: './rendiciones-admin.component.html',
 })
 export class RendicionesAdminComponent implements OnInit {
+  /**
+   * Qué documentos lista la bandeja. La caja chica tiene su propio ciclo
+   * (solicitud del fondo + rendición contra el fondo) y su propia pestaña, así
+   * que sale de "Solicitud de Fondos" en vez de mezclarse con los viáticos —
+   * mismo corte que ya hace el colaborador en /mis-rendiciones, donde
+   * `findMyViaticos` excluye las solicitudes de caja chica.
+   */
+  @Input() mode: 'fondos' | 'caja-chica' = 'fondos';
+
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private expenseReportsService = inject(ExpenseReportsService);
@@ -290,27 +306,74 @@ export class RendicionesAdminComponent implements OnInit {
       const name = this.getReportUserName(r);
       const isViatico = r.type === 'viatico';
       const isDirectaChain = r.isDirecta === true;
+      // Caja chica: tanto la solicitud del fondo (que viaja como viático) como
+      // la rendición contra el fondo. Se marcan aparte porque el aprobador
+      // necesita distinguirlas de una solicitud de viáticos de un vistazo.
+      const isCajaChica = r.isSolicitudCajaChica === true || r.isCajaChica === true;
+      const kind: UnifiedRendicionItem['kind'] = isCajaChica
+        ? 'caja-chica'
+        : isDirectaChain
+          ? 'directa'
+          : 'viatico';
       return {
         _id: r._id,
         source: 'report' as const,
-        kind: (isDirectaChain ? 'directa' : 'viatico') as UnifiedRendicionItem['kind'],
-        kindLabel: isDirectaChain ? 'Directa' : 'Solicitud de Fondos',
-        kindColor: isDirectaChain ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700',
+        kind,
+        // Una sola etiqueta por `kind`: el filtro por tipo se arma con el primer
+        // label visto de cada kind, así que dos textos distintos lo dejarían
+        // mostrando uno solo. La caja chica sí distingue solicitud de rendición
+        // porque tiene pestaña propia y ahí el filtro por tipo no se muestra.
+        kindLabel: isCajaChica
+          ? (r.isSolicitudCajaChica ? 'Solicitud de caja chica' : 'Rendición de caja chica')
+          : isDirectaChain
+            ? 'Directa'
+            : 'Solicitud de Fondos',
+        // Un color por tipo, tambien dentro de caja chica: solicitud y rendicion
+        // conviven en la misma pestana y compartir el morado obligaba a leer la
+        // etiqueta entera para distinguirlas.
+        kindColor: isCajaChica
+          ? (r.isSolicitudCajaChica
+            ? 'bg-purple-100 text-purple-700'
+            : 'bg-teal-100 text-teal-700')
+          : isDirectaChain
+            ? 'bg-amber-100 text-amber-700'
+            : 'bg-blue-100 text-blue-700',
         userName: name,
         userInitials: this.initials(name),
         userId: uid ?? '',
         title: r.title || r.viaticoPlace || '—',
         projectName: this.getProjectName(r),
         projectId: pid ?? '',
-        // Directa: el monto a mostrar es la suma de los gastos cargados por el
-        // colaborador (no `budget`, que en una directa es 0). VD-25.
-        amount: isDirectaChain
-          ? this.reportExpensesTotal(r)
-          : (r.viaticoAmount ?? r.budget ?? 0),
-        currencySymbol: isDirectaChain ? monedaSymbol(undefined) : monedaSymbol(r.viaticoMoneda),
+        // Directa y rendición de caja chica: el monto a mostrar es la suma de
+        // los gastos cargados por el colaborador, no `budget`, que en ambas es
+        // 0 (VD-25). En la SOLICITUD de caja chica lo que se aprueba es el
+        // PRESUPUESTO pedido; `viaticoAmount` es solo la diferencia a depositar
+        // (0 cuando el responsable baja su presupuesto), que como "monto
+        // solicitado" no dice nada.
+        amount:
+          isDirectaChain || r.isCajaChica === true
+            ? this.reportExpensesTotal(r)
+            : r.isSolicitudCajaChica
+              ? (r.cajaChicaNuevoPresupuesto ?? r.viaticoAmount ?? 0)
+              : (r.viaticoAmount ?? r.budget ?? 0),
+        currencySymbol:
+          isDirectaChain || r.isCajaChica === true
+            ? monedaSymbol(undefined)
+            : monedaSymbol(r.viaticoMoneda),
         status: r.status,
-        statusLabel: REPORT_STATUS_LABELS[r.status] ?? r.status,
-        statusColor: REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700',
+        // La solicitud de caja chica viaja como viático pero sus estados
+        // significan otra cosa: `paid` es "presupuesto aplicado", no un anticipo
+        // pagado que ahora hay que rendir. Diccionario propio (VD caja chica).
+        statusLabel: r.isSolicitudCajaChica
+          ? (SOLICITUD_CAJA_CHICA_STATUS_LABELS[r.status] ?? r.status)
+          : r.isCajaChica === true
+            ? rendicionCajaChicaStatusLabel(r as any)
+            : (REPORT_STATUS_LABELS[r.status] ?? r.status),
+        statusColor: r.isSolicitudCajaChica
+          ? (SOLICITUD_CAJA_CHICA_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700')
+          : r.isCajaChica === true
+            ? rendicionCajaChicaStatusColor(r as any)
+            : (REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700'),
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
         // La rendición directa ya no tiene aprobación a nivel de reporte — cada
@@ -372,7 +435,11 @@ export class RendicionesAdminComponent implements OnInit {
       };
     });
 
-    const items = [...reportItems, ...advanceItems];
+    // Corte por pestaña: la caja chica vive en la suya y no vuelve a aparecer
+    // entre las solicitudes de fondos.
+    const items = [...reportItems, ...advanceItems].filter(i =>
+      this.mode === 'caja-chica' ? i.kind === 'caja-chica' : i.kind !== 'caja-chica'
+    );
 
     // Opciones del filtro por estado HOMOLOGADAS con la columna Estado de la tabla
     // (VD-30): se agrupan por la ETIQUETA visible, no por el status crudo. Así se
@@ -507,6 +574,26 @@ export class RendicionesAdminComponent implements OnInit {
   /** Líneas por categoría de la solicitud abierta en el modal de detalle. */
   detailLines(): any[] {
     return this.linesForItem(this.detailItem());
+  }
+
+  /** ¿Lo abierto en el modal es una solicitud de fondo de caja chica? */
+  detailIsSolicitudCajaChica(): boolean {
+    return (this.detailItem()?.raw as IExpenseReport | undefined)?.isSolicitudCajaChica === true;
+  }
+
+  /** Presupuesto que tenía la caja antes de esta solicitud (0 en la primera). */
+  detailCajaChicaPresupuestoAnterior(): number {
+    const raw = this.detailItem()?.raw as IExpenseReport | undefined;
+    return Number(raw?.cajaChicaPresupuestoAnterior ?? 0);
+  }
+
+  /**
+   * Lo que Tesorería tiene que depositar: solo la DIFERENCIA contra el
+   * presupuesto vigente. Es 0 cuando el responsable baja su presupuesto.
+   */
+  detailCajaChicaDeposito(): number {
+    const raw = this.detailItem()?.raw as IExpenseReport | undefined;
+    return Number(raw?.viaticoAmount ?? 0);
   }
 
   /** Centro de costo con código (ej. "CC-01 — Obra Norte"). */
