@@ -65,3 +65,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 !/scripts/inspeccionar-ot-smi.mjs
 !/scripts/migrar-ot-varios-centros-costo.mjs
 !/scripts/test-smtp.js
+
+# Datos de idioma de tesseract.js. Se descargan solos del CDN la primera vez que
+# corre el OCR (facturas escaneadas, PDF de pagos BBVA) y quedan en el cwd del
+# backend. Son artefactos de 3-4 MB regenerables, no fuente.
+*.traineddata

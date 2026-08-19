@@ -1,4 +1,4 @@
-import { parsePdfInfo, pdfInfoArgs } from './poppler.util'
+import { parsePdfInfo, pdfInfoArgs, resolvePopplerBin } from './poppler.util'
 
 describe('pdfInfoArgs', () => {
   it('pide todas las páginas hasta el tope', () => {
@@ -98,5 +98,32 @@ describe('parsePdfInfo', () => {
     const geo = parsePdfInfo('')
     expect(geo.pageCount).toBeGreaterThanOrEqual(0)
     expect(geo.encrypted).toBe(false)
+  })
+})
+
+describe('resolvePopplerBin', () => {
+  const original = process.env.POPPLER_BIN_DIR
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.POPPLER_BIN_DIR
+    else process.env.POPPLER_BIN_DIR = original
+  })
+
+  it('sin la variable invoca por nombre y deja que lo resuelva el PATH', () => {
+    delete process.env.POPPLER_BIN_DIR
+    expect(resolvePopplerBin('pdftoppm')).toBe('pdftoppm')
+  })
+
+  it('una variable vacía o en blanco se ignora', () => {
+    process.env.POPPLER_BIN_DIR = '   '
+    expect(resolvePopplerBin('pdfinfo')).toBe('pdfinfo')
+  })
+
+  it('con la variable arma la ruta completa del binario', () => {
+    process.env.POPPLER_BIN_DIR = '/opt/poppler/bin'
+    const esperado =
+      process.platform === 'win32' ? 'pdftoppm.exe' : 'pdftoppm'
+    expect(resolvePopplerBin('pdftoppm')).toContain('poppler')
+    expect(resolvePopplerBin('pdftoppm').endsWith(esperado)).toBe(true)
   })
 })

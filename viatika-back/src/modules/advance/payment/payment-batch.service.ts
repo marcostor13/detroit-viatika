@@ -5,8 +5,19 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common'
+import { readdir } from 'fs/promises'
+import * as path from 'path'
 import { AdvanceService } from '../advance.service'
 import { ExpenseReportService } from '../../expense-report/expense-report.service'
+// Rasterizado de PDF por binarios de sistema. Se reusa el envoltorio del OCR de
+// facturas en vez de duplicarlo: es un util puro, sin estado ni dependencias de
+// Nest, y el Dockerfile ya instala poppler-utils para ese flujo.
+import {
+  parsePdfInfo,
+  pdfInfoArgs,
+  runPoppler,
+  withTempPdf,
+} from '../../expense/utils/poppler.util'
 import { ClientService } from '../../client/client.service'
 import { AccountingConfigService } from '../../accounting-config/accounting-config.service'
 import { DEFAULT_MONEDA, normalizeMoneda } from '../../../common/moneda.constants'
@@ -124,6 +135,20 @@ export interface ReconcileResult {
 @Injectable()
 export class PaymentBatchService {
   private readonly logger = new Logger(PaymentBatchService.name)
+
+  /**
+   * 216 DPI: a 150 los importes chicos de la tabla empiezan a confundirse y a
+   * 300 el reconocimiento tarda el doble sin leer mejor este reporte.
+   */
+  private readonly OCR_DPI = 216
+  /**
+   * Tope de páginas a reconocer (~2 s por página). Se dimensiona para que una
+   * planilla de toda la empresa entre completa: si se recortan filas, la
+   * validación contra la cabecera falla cerrado y NO se paga a nadie, así que
+   * quedarse corto no es un riesgo de pago errado pero sí deja el trámite
+   * bloqueado sin motivo.
+   */
+  private readonly OCR_MAX_PAGINAS = 30
 
   constructor(
     @Inject(forwardRef(() => AdvanceService))
@@ -503,14 +528,144 @@ export class PaymentBatchService {
     actor: BatchActor,
     moneda?: string
   ): Promise<ReconcileResult> {
-    const text = await this.extractPdfText(pdfBuffer)
-    const parsed = parseBbvaPdfText(text)
+    // Cascada de lectura. No se le puede pedir a Tesorería que consiga un
+    // formato concreto: el PDF llega como lo dé el banco o como lo reimprima
+    // quien lo baja.
+    //   1) capa de texto  — exacta e instantánea cuando el PDF es digital;
+    //   2) OCR            — para el PDF reimpreso ("Microsoft: Print To PDF"),
+    //                       que no trae texto sino el dibujo de las letras.
+    let parsed = parseBbvaPdfText(await this.extractPdfText(pdfBuffer))
+    let viaOcr = false
+
+    let paginasOmitidas = 0
+
+    if (!parsed.rows.length) {
+      const ocr = await this.extractPdfTextByOcr(pdfBuffer)
+      if (ocr.texto) {
+        const porOcr = parseBbvaPdfText(ocr.texto)
+        if (porOcr.rows.length) {
+          parsed = porOcr
+          viaOcr = true
+          paginasOmitidas = Math.max(ocr.paginasTotales - ocr.paginasLeidas, 0)
+          this.logger.log(
+            `Conciliación por OCR: ${porOcr.rows.length} abonos leídos de ${ocr.paginasLeidas}/${ocr.paginasTotales} páginas.`
+          )
+        }
+      }
+    }
+
     if (!parsed.rows.length) {
       throw new BadRequestException(
-        'No se pudieron leer abonos del PDF. Verifica que sea la "Consulta de Pagos Masivos" de BBVA, o usa la confirmación manual.'
+        'No se pudieron leer abonos del PDF, ni siquiera por OCR. Verifica que sea la ' +
+          '"Consulta de Pagos Masivos" de BBVA y que se vea la tabla "Relación de las ' +
+          'cuentas de abono". Si el archivo es correcto, registra los pagos con la ' +
+          'confirmación manual indicando el N° de operación.'
       )
     }
-    return this.reconcileParsedRows(clientId, parsed, actor, moneda)
+
+    const result = await this.reconcileParsedRows(
+      clientId,
+      parsed,
+      actor,
+      moneda
+    )
+    // Que quede rastro en pantalla de CÓMO se leyó y de si la situación por fila
+    // hubo que deducirla: son los dos datos que Tesorería necesita para decidir
+    // si revisa el resultado contra el reporte del banco antes de darlo por bueno.
+    if (viaOcr) {
+      result.advertencias.push(
+        'El PDF no tenía texto seleccionable y se leyó por OCR. Contrasta los importes con el reporte del banco antes de darlos por buenos.'
+      )
+    }
+    if (parsed.situacionResueltaPorCabecera) {
+      result.advertencias.push(
+        `La columna "Situación" no era legible. Se dieron por abonados los ${parsed.rows.length} pagos porque la cabecera declara ` +
+          `${parsed.declared?.procesados} procesados, 0 no procesados y un importe de ${parsed.declared?.importeAbonado?.toFixed(2)} que coincide con la suma de las filas.`
+      )
+    }
+    // Sin este aviso, una planilla más larga que el tope se veía como un simple
+    // "no cuadra con sus totales" y Tesorería no tenía cómo saber que el motivo
+    // era que faltaron páginas por leer.
+    if (paginasOmitidas > 0) {
+      result.advertencias.push(
+        `El PDF tiene ${paginasOmitidas} página(s) más de las que se alcanzaron a leer (tope: ${this.OCR_MAX_PAGINAS}). ` +
+          'Si faltan abonos, divide la consulta del banco en varios PDF o usa la confirmación manual.'
+      )
+    }
+    if (parsed.inconsistenteConCabecera) {
+      result.advertencias.push(
+        `Lo leído del PDF no cuadra con sus propios totales: se leyeron ${parsed.rows.length} abonos, ` +
+          `pero la cabecera declara ${parsed.declared?.procesados} procesados y ${parsed.declared?.noProcesados} no procesados ` +
+          `por ${parsed.declared?.importeAbonado?.toFixed(2)}. No se marcó ningún pago; regístralos con la confirmación manual.`
+      )
+    }
+    return result
+  }
+
+  /**
+   * Lee el PDF por OCR cuando no trae capa de texto. Ocurre con el reporte
+   * reimpreso desde el navegador ("Microsoft: Print To PDF"), donde las letras
+   * quedan como trazos vectoriales y ningún extractor de texto encuentra nada.
+   *
+   * Rasteriza con `pdftoppm` y reconoce con tesseract.js. Ambos ya estaban en el
+   * proyecto por el OCR de facturas: poppler lo instala el Dockerfile y
+   * tesseract.js es dependencia directa. Se evita a propósito un rasterizador
+   * nativo de Node — @napi-rs/canvas ya se probó y crasheaba con SIGILL en este
+   * servidor por requerir AVX2 (ver el comentario del Dockerfile).
+   *
+   * Nunca lanza: si el entorno no tiene poppler (Windows en desarrollo) o el OCR
+   * falla, devuelve '' y el llamador da el mensaje de confirmación manual.
+   */
+  private async extractPdfTextByOcr(
+    buffer: Buffer
+  ): Promise<{ texto: string; paginasTotales: number; paginasLeidas: number }> {
+    try {
+      return await withTempPdf(buffer, async (pdfPath, tmpDir) => {
+        const info = parsePdfInfo(
+          await runPoppler('pdfinfo', pdfInfoArgs(pdfPath, this.OCR_MAX_PAGINAS))
+        )
+        const paginasTotales = info.pageCount || 1
+        const paginas = Math.min(paginasTotales, this.OCR_MAX_PAGINAS)
+
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { createWorker } = require('tesseract.js')
+        const worker = await createWorker('spa')
+        try {
+          const partes: string[] = []
+          for (let page = 1; page <= paginas; page++) {
+            const prefijo = path.join(tmpDir, `ocr-p${page}`)
+            await runPoppler('pdftoppm', [
+              '-png',
+              '-r',
+              String(this.OCR_DPI),
+              '-f',
+              String(page),
+              '-l',
+              String(page),
+              pdfPath,
+              prefijo,
+            ])
+            const png = (await readdir(tmpDir))
+              .filter(f => f.startsWith(`ocr-p${page}`) && f.endsWith('.png'))
+              .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[0]
+            if (!png) continue
+            const { data } = await worker.recognize(path.join(tmpDir, png))
+            partes.push(String(data?.text ?? ''))
+          }
+          return {
+            texto: partes.join('\n'),
+            paginasTotales,
+            paginasLeidas: paginas,
+          }
+        } finally {
+          await worker.terminate().catch(() => undefined)
+        }
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.logger.warn(`No se pudo leer el PDF por OCR: ${msg}`)
+      return { texto: '', paginasTotales: 0, paginasLeidas: 0 }
+    }
   }
 
   /**

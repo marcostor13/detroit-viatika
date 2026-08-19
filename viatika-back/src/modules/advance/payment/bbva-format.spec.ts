@@ -642,3 +642,201 @@ describe('bbva-format · saneo del resto de campos', () => {
     expect(linea.slice(147, 227)).toBe(padRight('EDQGPE@DETROIT.PE', 80))
   })
 })
+
+describe('bbva-format · PDF sin capa de texto, leído por OCR', () => {
+  // Texto tal cual lo devuelve tesseract.js sobre el reporte reimprimido con
+  // "Microsoft: Print To PDF" (incidente del 19/08/2026, orden 0818002). Ese PDF
+  // dibuja las letras como trazos: pdf-parse devuelve 4 caracteres y el flujo
+  // moría con "No se pudieron leer abonos del PDF".
+  const ocr = readFileSync(
+    join(__dirname, '__fixtures__', 'consulta-pagos-masivos-ocr.txt'),
+    'utf8'
+  )
+
+  it('extrae los 3 abonos, el N° de operación y la fecha real del banco', () => {
+    const parsed = parseBbvaPdfText(ocr)
+
+    expect(parsed.operationNumber).toBe('000025714')
+    expect(parsed.executedAt).toBe('18/08/2026 - 19:53:28')
+    expect(parsed.rows.length).toBe(3)
+    expect(parsed.rows.map(r => [r.documentNumber, r.amount])).toEqual([
+      ['00506814', 1700],
+      ['44932276', 56.7],
+      ['71939725', 48],
+    ])
+    const suma = parsed.rows.reduce((s, r) => s + r.amount, 0)
+    expect(Math.round(suma * 100)).toBe(180470) // S/ 1,804.70
+  })
+
+  it('da por abonadas las 3 filas pese a la columna "Situación" cortada', () => {
+    const parsed = parseBbvaPdfText(ocr)
+
+    // El PDF recorta la columna en el borde de la página: el OCR lee "ABONC" /
+    // "ENVIAL" / "CORREC" en vez de "ABONO ENVIADO" / "ABONO CORRECTO". Con los
+    // patrones completos las tres quedaban en success=false y no se conciliaba
+    // ninguna; con los recortados se leen, y la cabecera lo confirma.
+    expect(parsed.rows.every(r => r.success)).toBe(true)
+    expect(parsed.declared).toEqual({
+      procesados: 3,
+      noProcesados: 0,
+      importeAbonado: 1804.7,
+    })
+    expect(parsed.inconsistenteConCabecera).toBe(false)
+  })
+
+  it('rescata por cabecera cuando la situación es del todo ilegible', () => {
+    // Peor caso: el OCR no deja ni un fragmento reconocible de la columna. La
+    // cabecera sigue alcanzando para saber que las 3 se abonaron.
+    const sinSituacion = ocr
+      .replace(/ABONC/g, '')
+      .replace(/ENVIA[LR]/g, '')
+      .replace(/CORREC/g, '')
+    const parsed = parseBbvaPdfText(sinSituacion)
+
+    expect(parsed.rows.length).toBe(3)
+    expect(parsed.rows.every(r => r.success)).toBe(true)
+    expect(parsed.situacionResueltaPorCabecera).toBe(true)
+  })
+
+  it('NO deduce nada si la cabecera no cuadra con las filas leídas', () => {
+    // Un importe cargado que no coincide con la suma significa que se leyó mal
+    // alguna fila (o que faltan filas): el flujo debe caer a confirmación manual
+    // en vez de dar por pagado a quien quizá no cobró.
+    const adulterado = ocr.replace('1,804.70 - SOLES', '1,900.00 - SOLES')
+    const parsed = parseBbvaPdfText(adulterado)
+
+    expect(parsed.rows.length).toBe(3)
+    expect(parsed.rows.every(r => !r.success)).toBe(true)
+    expect(parsed.situacionResueltaPorCabecera).toBe(false)
+    expect(parsed.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('NO deduce nada si el banco declara abonos no procesados', () => {
+    // Con al menos un abono fallido no hay forma de saber CUÁL falló leyendo una
+    // columna ilegible, así que ninguna fila puede darse por buena.
+    const conFallos = ocr.replace(
+      'Abonos NO procesados 0',
+      'Abonos NO procesados 1'
+    )
+    const parsed = parseBbvaPdfText(conFallos)
+
+    expect(parsed.situacionResueltaPorCabecera).toBe(false)
+    expect(parsed.rows.some(r => r.success)).toBe(false)
+  })
+
+  it('un fallo declarado en una fila nunca se reinterpreta por la cabecera', () => {
+    // Situación legible y negativa en la primera fila: aunque los totales
+    // cuadraran, esa fila manda y el resto no se auto-aprueba.
+    const conRechazo = ocr.replace('1,700.00', '1,700.00 ABONO RECHAZADO')
+    const parsed = parseBbvaPdfText(conRechazo)
+
+    expect(parsed.rows[0].success).toBe(false)
+    expect(parsed.situacionResueltaPorCabecera).toBe(false)
+  })
+})
+
+describe('bbva-format · casos límite de la conciliación por OCR', () => {
+  /** Cabecera del bloque "Después del proceso" con los totales declarados. */
+  const cabecera = (procesados: number, noProcesados: number, importe: string) =>
+    [
+      'No. Movimiento de Cargo 000030001',
+      'Fecha y Hora de Ejecución 20/08/2026 - 10:00:00',
+      `Abonos procesados ${procesados}`,
+      `Importe cargado por abonos ${importe} - SOLES`,
+      `Abonos NO procesados ${noProcesados}`,
+    ].join('\n')
+
+  it('la página de condiciones de BBVA no inyecta filas falsas', () => {
+    // El servicio hace OCR de TODAS las páginas y las concatena. La 2ª del
+    // reporte real son las condiciones (tipos de documento "R : RUC / L : DNI",
+    // horarios, "transferencias mayores a S/. 310,000"): texto con letras y
+    // montos que podría colarse como abono.
+    const dosPaginas = readFileSync(
+      join(__dirname, '__fixtures__', 'consulta-pagos-masivos-ocr-2pag.txt'),
+      'utf8'
+    )
+    const parsed = parseBbvaPdfText(dosPaginas)
+
+    expect(parsed.rows.length).toBe(3)
+    expect(parsed.rows.map(r => r.documentNumber)).toEqual([
+      '00506814',
+      '44932276',
+      '71939725',
+    ])
+    expect(parsed.rows.every(r => r.success)).toBe(true)
+  })
+
+  it('con un abono rechazado y situación LEGIBLE, concilia solo los buenos', () => {
+    const text = [
+      cabecera(2, 1, '300.00'),
+      'ANA TORRES     L - 11111111 100.00 ABONO ENVIADO',
+      'LUIS PEREZ     L - 22222222  50.00 ABONO RECHAZADO',
+      'ROSA DIAZ      L - 33333333 200.00 ABONO CORRECTO',
+    ].join('\n')
+    const p = parseBbvaPdfText(text)
+
+    expect(p.rows.length).toBe(3)
+    expect(p.rows.map(r => r.success)).toEqual([true, false, true])
+    expect(p.inconsistenteConCabecera).toBe(false)
+  })
+
+  it('con un abono rechazado y situación ILEGIBLE, no paga a nadie', () => {
+    // Peor combinación: el banco dejó uno sin procesar y la columna no se lee.
+    // No hay forma de saber CUÁL falló, así que no puede pagarse ninguno.
+    const text = [
+      cabecera(2, 1, '300.00'),
+      'ANA TORRES     L - 11111111 100.00',
+      'LUIS PEREZ     L - 22222222  50.00',
+      'ROSA DIAZ      L - 33333333 200.00',
+    ].join('\n')
+    const p = parseBbvaPdfText(text)
+
+    expect(p.rows.length).toBe(3)
+    expect(p.rows.some(r => r.success)).toBe(false)
+    expect(p.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('si se leyeron MENOS filas de las declaradas, falla cerrado', () => {
+    // Planilla larga recortada por el tope de páginas del OCR.
+    const text = [
+      cabecera(3, 0, '600.00'),
+      'ANA TORRES     L - 11111111 100.00 ABONO ENVIADO',
+      'LUIS PEREZ     L - 22222222 200.00 ABONO ENVIADO',
+    ].join('\n')
+    const p = parseBbvaPdfText(text)
+
+    expect(p.rows.length).toBe(2)
+    expect(p.rows.some(r => r.success)).toBe(false)
+    expect(p.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('un "Enviados" suelto en el texto no basta para dar por pagado', () => {
+    // Los patrones de situación van recortados por la columna cortada, así que
+    // "ENVIA" casa con texto vecino. La cabecera es la que evita el falso pago.
+    const text = [
+      cabecera(1, 1, '100.00'),
+      'ANA TORRES     L - 11111111 100.00 ABONO ENVIADO',
+      'LUIS PEREZ     L - 22222222  50.00',
+      'Total Abonos Enviados 1',
+    ].join('\n')
+    const p = parseBbvaPdfText(text)
+
+    // La 2ª fila se leyó como exitosa por el "Enviados" del pie...
+    // ...pero los totales no cuadran, así que no se paga ninguna.
+    expect(p.rows.length).toBe(2)
+    expect(p.rows.some(r => r.success)).toBe(false)
+    expect(p.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('sin cabecera legible se respeta lo leído fila por fila', () => {
+    const text = [
+      'ANA TORRES     L - 11111111 100.00 ABONO ENVIADO',
+      'LUIS PEREZ     L - 22222222  50.00 ABONO RECHAZADO',
+    ].join('\n')
+    const p = parseBbvaPdfText(text)
+
+    expect(p.declared).toBeUndefined()
+    expect(p.rows.map(r => r.success)).toEqual([true, false])
+    expect(p.inconsistenteConCabecera).toBe(false)
+  })
+})

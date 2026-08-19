@@ -348,12 +348,39 @@ export interface BbvaPdfRow {
   success: boolean
 }
 
+/**
+ * Totales que el propio reporte declara en el bloque "Después del proceso".
+ * Son la fuente de verdad a nivel documento y permiten validar lo que se leyó
+ * fila por fila (ver `parseBbvaPdfText`).
+ */
+export interface BbvaPdfTotals {
+  /** "Abonos procesados". */
+  procesados?: number
+  /** "Abonos NO procesados". */
+  noProcesados?: number
+  /** "Importe cargado por abonos" (sin comisiones). */
+  importeAbonado?: number
+}
+
 export interface BbvaPdfSummary {
   rows: BbvaPdfRow[]
   /** N° de movimiento de cargo (N° de operación del lote), si se detecta. */
   operationNumber?: string
   /** Fecha/hora de ejecución del lote, si se detecta. */
   executedAt?: string
+  /** Totales declarados en la cabecera, si se detectan. */
+  declared?: BbvaPdfTotals
+  /**
+   * La columna "Situación" era ilegible y el resultado se resolvió cuadrando
+   * las filas contra los totales de la cabecera. El llamador lo informa como
+   * advertencia para que quede rastro de por qué se dieron por abonadas.
+   */
+  situacionResueltaPorCabecera?: boolean
+  /**
+   * Lo leído fila por fila contradice los totales de la cabecera. Ninguna fila
+   * se da por abonada: el llamador debe mandar a confirmación manual.
+   */
+  inconsistenteConCabecera?: boolean
 }
 
 /**
@@ -462,6 +489,8 @@ function extractTitularBefore(before: string): string {
  */
 export function parseBbvaPdfText(text: string): BbvaPdfSummary {
   const rows: BbvaPdfRow[] = []
+  /** Estado leído por fila, en paralelo a `rows` (misma longitud y orden). */
+  const estados: Array<'ok' | 'fallo' | 'ilegible'> = []
   const clean = (text ?? '').replace(/\r/g, '')
 
   // N° de movimiento de cargo (N° de operación del lote).
@@ -495,12 +524,24 @@ export function parseBbvaPdfText(text: string): BbvaPdfSummary {
     // situación de la fila siguiente. Un abono fallido gana sobre uno exitoso.
     const nextIdx = k + 1 < hits.length ? hits[k + 1].index : clean.length
     const sit = clean.slice(cur.end, Math.min(nextIdx, cur.end + 120)).toUpperCase()
-    let success = false
-    if (/RECHAZ|DEVUELT|NO\s*ABON|NO\s*PROCES|OBSERV|PENDIENT/.test(sit)) {
-      success = false
-    } else if (/ENVIAD|CORRECT|ABONAD|PROCESAD/.test(sit)) {
-      success = true
+    // Tres estados, no dos: hay que distinguir "el banco dice que falló" de "no
+    // se pudo leer la situación". Sólo el segundo caso admite resolverse por la
+    // cabecera más abajo; un fallo declarado nunca se reinterpreta.
+    //
+    // Los patrones van RECORTADOS respecto de la palabra completa porque la
+    // columna "Situación" es la última de la tabla y el PDF real la corta en el
+    // borde de la página: "ABONO ENVIADO" llega como "ABONC"/"ENVIAL" y
+    // "ABONO CORRECTO" como "CORREC". Los patrones negativos se recortan MÁS
+    // que los positivos: ante la duda conviene equivocarse hacia "no abonado",
+    // que manda a confirmación manual, y nunca hacia dar por pagado a alguien.
+    let estado: 'ok' | 'fallo' | 'ilegible' = 'ilegible'
+    if (/RECHA|DEVUEL|NO\s*ABON|NO\s*PROCES|OBSERV|PENDIEN|ANULA|EXTORN/.test(sit)) {
+      estado = 'fallo'
+    } else if (/ENVIA|CORREC|ABONAD|PROCESAD/.test(sit)) {
+      estado = 'ok'
     }
+    estados.push(estado)
+    const success = estado === 'ok'
 
     // Titular ACOTADO entre el documento anterior y el actual (mejor esfuerzo).
     const prevEnd = k > 0 ? hits[k - 1].end : 0
@@ -517,9 +558,127 @@ export function parseBbvaPdfText(text: string): BbvaPdfSummary {
     })
   }
 
+  // ── Contraste contra los totales que declara el propio reporte ─────────────
+  //
+  // La lectura fila por fila depende de una tabla que el PDF recorta y que el
+  // OCR puede equivocar. La cabecera ("Abonos procesados", "Abonos NO
+  // procesados", "Importe cargado por abonos") es un invariante a nivel
+  // documento: sirve para CONFIRMAR la lectura, para RESCATARLA cuando la
+  // columna "Situación" es ilegible, y para DESAUTORIZARLA cuando no cuadra.
+  //
+  // Sólo se aplica si los tres datos están; con la cabecera incompleta no hay
+  // invariante que verificar y se respeta lo leído por fila.
+  const declared = parseDeclaredTotals(clean)
+  let situacionResueltaPorCabecera = false
+  let inconsistenteConCabecera = false
+  const hayIlegibles = estados.includes('ilegible')
+  const hayFallos = estados.includes('fallo')
+
+  if (declared && declaracionCompleta(declared)) {
+    if (!coincideConCabecera(rows, declared)) {
+      if (hayIlegibles && !hayFallos && cuadraConCabecera(rows, declared)) {
+        // La columna venía cortada, pero el banco declara que procesó todas las
+        // filas leídas por el importe exacto: no hay otra combinación posible.
+        for (const row of rows) {
+          row.success = true
+          row.situacion = 'ABONO ENVIADO'
+        }
+        situacionResueltaPorCabecera = true
+      } else {
+        // Lo leído contradice a la cabecera: se leyó de más, de menos o mal.
+        // Se falla cerrado — ninguna fila se da por abonada y el flujo cae a la
+        // confirmación manual. Equivocarse hacia "no pagado" se corrige a mano;
+        // marcar pagado a quien no cobró, no.
+        for (const row of rows) {
+          row.success = false
+          row.situacion = ''
+        }
+        inconsistenteConCabecera = true
+      }
+    }
+  }
+
   return {
     rows,
     operationNumber: opMatch?.[1],
     executedAt: dateMatch?.[1],
+    declared,
+    situacionResueltaPorCabecera,
+    inconsistenteConCabecera,
   }
+}
+
+/** ¿La cabecera trae los tres datos que hacen falta para verificar? */
+function declaracionCompleta(d: BbvaPdfTotals): boolean {
+  return (
+    d.procesados !== undefined &&
+    d.noProcesados !== undefined &&
+    d.importeAbonado !== undefined
+  )
+}
+
+/**
+ * ¿Lo leído fila por fila concuerda con la cabecera? Compara las filas dadas por
+ * exitosas contra "Abonos procesados" y su suma contra "Importe cargado por
+ * abonos", y exige además que el total de filas sea procesados + no procesados
+ * (si no, se leyeron de más o de menos).
+ */
+export function coincideConCabecera(
+  rows: BbvaPdfRow[],
+  declared?: BbvaPdfTotals
+): boolean {
+  if (!declared || !declaracionCompleta(declared)) return false
+  const { procesados = 0, noProcesados = 0, importeAbonado = 0 } = declared
+  if (rows.length !== procesados + noProcesados) return false
+  const exitosas = rows.filter(r => r.success)
+  if (exitosas.length !== procesados) return false
+  const suma = exitosas.reduce((s, r) => s + r.amount, 0)
+  return Math.abs(suma - importeAbonado) < 0.01
+}
+
+/** Totales del bloque "Consulta de la Orden - Después del proceso". */
+export function parseDeclaredTotals(text: string): BbvaPdfTotals | undefined {
+  const entero = (re: RegExp): number | undefined => {
+    const m = text.match(re)
+    return m ? Number(m[1]) : undefined
+  }
+  // "Abonos NO procesados" se busca primero: su patrón es más específico y
+  // "Abonos procesados" también casaría con esa línea si se probara antes.
+  const noProcesados = entero(/Abonos\s+NO\s+procesados[^\d]*(\d+)/i)
+  const procesados = entero(/Abonos\s+procesados[^\d]*(\d+)/i)
+  const importeMatch = text.match(
+    /Importe\s+cargado\s+por\s+abonos[^\d]*([\d,]+\.\d{2})/i
+  )
+  const importeAbonado = importeMatch
+    ? Number(importeMatch[1].replace(/,/g, ''))
+    : undefined
+
+  if (
+    procesados === undefined &&
+    noProcesados === undefined &&
+    importeAbonado === undefined
+  ) {
+    return undefined
+  }
+  return { procesados, noProcesados, importeAbonado }
+}
+
+/**
+ * ¿Las filas leídas cuadran exactamente con lo que declara la cabecera? Exige
+ * las TRES condiciones; si falta cualquiera de los tres datos devuelve false,
+ * porque sin el invariante completo no hay garantía y el flujo debe caer a la
+ * confirmación manual.
+ */
+export function cuadraConCabecera(
+  rows: BbvaPdfRow[],
+  declared?: BbvaPdfTotals
+): boolean {
+  if (!rows.length || !declared) return false
+  const { procesados, noProcesados, importeAbonado } = declared
+  if (procesados === undefined || noProcesados === undefined) return false
+  if (importeAbonado === undefined) return false
+  if (noProcesados !== 0) return false
+  if (procesados !== rows.length) return false
+  const suma = rows.reduce((s, r) => s + r.amount, 0)
+  return Math.abs(suma - importeAbonado) < 0.01
 }
