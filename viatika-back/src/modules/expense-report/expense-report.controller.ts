@@ -344,6 +344,21 @@ export class ExpenseReportController {
     })
   }
 
+  /**
+   * Centro de costo por defecto de una rendición de caja chica: el mismo que
+   * el backend imputa cuando el comprobante llega sin elegir
+   * (`resolveCentroCostoCajaChica`). El formulario del gasto lo precarga para
+   * que el responsable no tenga que adivinarlo, y sigue pudiendo cambiarlo.
+   * Devuelve `null` cuando no hay ninguno que deducir.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get(':id/caja-chica/centro-costo')
+  async findCajaChicaCentroCosto(@Param('id') id: string) {
+    const projectId =
+      await this.expenseReportService.resolveCentroCostoCajaChica(id)
+    return { projectId: projectId ? String(projectId) : null }
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Get(':id')
   findOne(@Param('id') id: string) {
