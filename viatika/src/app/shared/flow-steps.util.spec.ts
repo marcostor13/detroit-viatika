@@ -279,6 +279,43 @@ describe('rendición de caja chica', () => {
     ],
   });
 
+  /** La misma rendición cuando todavía está esperando a su primer aprobador. */
+  const cajaChicaEnAprobacion = () => ({
+    _id: 'cc1',
+    isCajaChica: true,
+    status: 'submitted',
+    createdAt: '2026-08-18T00:00:00.000Z',
+    expenseIds: [
+      {
+        status: 'submitted',
+        approverChain: [
+          { level: 1, approved: false, approverIds: [{ _id: 'u1', name: 'Ana' }] },
+        ],
+      },
+    ],
+  });
+
+  it('anuncia el reembolso y el cierre desde que la rendición está en aprobación', () => {
+    // El desenlace se conoce al abrirla: lo rendido sale del fondo del
+    // responsable, así que el saldo queda a su favor y lo repone Tesorería.
+    // Antes la línea de tiempo terminaba en "Finalizada" y no decía que
+    // después de Contabilidad todavía venían dos pasos.
+    const steps = buildReportFlowSteps(cajaChicaEnAprobacion());
+
+    expect(steps.map(s => s.label)).toContain('Reembolso de Tesorería');
+    expect(steps.map(s => s.label)).toContain('Cierre de Tesorería');
+    expect(steps.map(s => s.label)).not.toContain('Finalizada');
+  });
+
+  it('no adelanta el paso activo a Tesorería mientras faltan aprobaciones', () => {
+    const steps = buildReportFlowSteps(cajaChicaEnAprobacion());
+    const activos = steps.filter(s => s.state === 'active').map(s => s.label);
+
+    expect(activos).toEqual(['N1 · Falta aprobación de Ana']);
+    expect(steps.find(s => s.label === 'Reembolso de Tesorería')!.state).toBe('upcoming');
+    expect(steps.find(s => s.label === 'Cierre de Tesorería')!.state).toBe('upcoming');
+  });
+
   it('tras la aprobación de Contabilidad espera la reposición y el cierre de Tesorería', () => {
     const steps = buildReportFlowSteps(cajaChicaAprobada());
 
