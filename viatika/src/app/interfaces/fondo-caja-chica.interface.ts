@@ -127,6 +127,110 @@ export const SOLICITUD_CAJA_CHICA_STATUS_COLORS: Record<string, string> = {
 };
 
 /**
+ * ¿El saldo de esta rendición de caja chica lo devuelve el COLABORADOR (gastó
+ * menos de lo que tenía) en vez de reembolsarlo Tesorería?
+ *
+ * Mismo criterio que `isDevolucionExpected` en el detalle: manda el tipo de
+ * liquidación si ya está calculado y, mientras no exista, el signo de la
+ * diferencia. En caja chica lo normal es que no haya `settlement` hasta que
+ * Tesorería paga, y ahí el saldo es a favor del responsable: se reembolsa.
+ */
+export function cajaChicaEsperaDevolucion(report: {
+  settlement?: { type?: string; difference?: number } | null
+  returnVoucher?: unknown
+} | null | undefined): boolean {
+  if (!report) return false
+  if (report.returnVoucher) return true
+  const tipo = report.settlement?.type
+  if (tipo) return tipo === 'devolucion'
+  return Number(report.settlement?.difference ?? 0) > 0.01
+}
+
+/**
+ * Estado de la RENDICIÓN de caja chica (los comprobantes que el responsable
+ * rinde contra su fondo). No alcanza un diccionario plano por estado: después
+ * de Contabilidad el flujo tiene DOS pasos más que el `status` solo no
+ * distingue, y sin ellos la rendición parecía terminada al aprobarse.
+ *
+ *   Contabilidad aprueba
+ *     └─ reembolsa Tesorería (`approved` → `reimbursed`)
+ *        o devuelve el colaborador (`approved` + `returnVoucher`)
+ *          └─ Tesorería cierra definitivamente (`closed`)
+ *
+ * La devolución no cambia el `status` —solo escribe `returnVoucher`—, así que
+ * ese campo se mira aparte para no dejar la rendición en "Aprobada" cuando el
+ * colaborador ya depositó y lo único que falta es el cierre.
+ */
+export function rendicionCajaChicaStatusLabel(report: {
+  status?: string
+  settlement?: { type?: string; difference?: number } | null
+  returnVoucher?: unknown
+}): string {
+  const status = String(report?.status ?? '')
+  switch (status) {
+    case 'open':
+      return 'Registrando gastos'
+    case 'submitted':
+      return 'Pendiente de aprobación'
+    case 'pending_accounting':
+      return 'En Contabilidad'
+    case 'rejected':
+      return 'Observada'
+    case 'cancelled':
+      return 'Cancelada'
+    case 'closed':
+      return 'Cerrada por Tesorería'
+    case 'returned':
+      return 'Devuelta, por cerrar Tesorería'
+    case 'reimbursed':
+    case 'settled':
+      return 'Reembolsada, por cerrar Tesorería'
+    case 'approved':
+      return report?.returnVoucher
+        ? 'Devuelta, por cerrar Tesorería'
+        : cajaChicaEsperaDevolucion(report)
+          ? 'Aprobada, por devolver el colaborador'
+          : 'Aprobada, por reembolsar Tesorería'
+    default:
+      return status
+  }
+}
+
+/** Color del chip de estado. Mismo reparto de casos que la etiqueta. */
+export function rendicionCajaChicaStatusColor(report: {
+  status?: string
+  settlement?: { type?: string; difference?: number } | null
+  returnVoucher?: unknown
+}): string {
+  const status = String(report?.status ?? '')
+  switch (status) {
+    case 'open':
+      return 'bg-emerald-100 text-emerald-700'
+    case 'submitted':
+      return 'bg-yellow-100 text-yellow-700'
+    case 'pending_accounting':
+      return 'bg-violet-100 text-violet-700'
+    case 'rejected':
+      return 'bg-red-100 text-red-700'
+    case 'cancelled':
+      return 'bg-gray-100 text-gray-500'
+    case 'closed':
+      return 'bg-gray-100 text-gray-500'
+    // Falta el cierre: ámbar, la rendición sigue viva aunque el dinero ya se movió.
+    case 'returned':
+    case 'reimbursed':
+    case 'settled':
+      return 'bg-amber-100 text-amber-700'
+    case 'approved':
+      return report?.returnVoucher
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-green-100 text-green-700'
+    default:
+      return 'bg-gray-100 text-gray-600'
+  }
+}
+
+/**
  * Presupuesto que pidió una solicitud. Las creadas antes de que existiera
  * `cajaChicaNuevoPresupuesto` solo tienen `viaticoAmount`, que en la primera
  * solicitud es el mismo número.

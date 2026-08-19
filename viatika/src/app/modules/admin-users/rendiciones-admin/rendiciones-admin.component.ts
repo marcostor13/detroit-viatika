@@ -20,6 +20,8 @@ import { expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
 import {
   SOLICITUD_CAJA_CHICA_STATUS_LABELS,
   SOLICITUD_CAJA_CHICA_STATUS_COLORS,
+  rendicionCajaChicaStatusLabel,
+  rendicionCajaChicaStatusColor,
 } from '../../../interfaces/fondo-caja-chica.interface';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
@@ -364,10 +366,14 @@ export class RendicionesAdminComponent implements OnInit {
         // pagado que ahora hay que rendir. Diccionario propio (VD caja chica).
         statusLabel: r.isSolicitudCajaChica
           ? (SOLICITUD_CAJA_CHICA_STATUS_LABELS[r.status] ?? r.status)
-          : (REPORT_STATUS_LABELS[r.status] ?? r.status),
+          : r.isCajaChica === true
+            ? rendicionCajaChicaStatusLabel(r as any)
+            : (REPORT_STATUS_LABELS[r.status] ?? r.status),
         statusColor: r.isSolicitudCajaChica
           ? (SOLICITUD_CAJA_CHICA_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700')
-          : (REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700'),
+          : r.isCajaChica === true
+            ? rendicionCajaChicaStatusColor(r as any)
+            : (REPORT_STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-700'),
         createdAt: r.createdAt,
         canDeleteItem: this.canDeleteReport(r),
         // La rendición directa ya no tiene aprobación a nivel de reporte — cada

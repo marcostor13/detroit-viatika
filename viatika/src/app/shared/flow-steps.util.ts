@@ -235,6 +235,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
 
   const isViatico = r.type === 'viatico';
   const isDirecta = !!r.isDirecta;
+  const isCajaChica = !!r.isCajaChica;
   const status: string = r.status;
 
   if (viaticoEnteredRendicion(r)) {
@@ -256,10 +257,23 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
     !!r.reimbursementPaymentInfo || !!r.reimbursedAt || status === 'reimbursed';
   const collaboratorDirecta =
     isDirecta && !(Number(r.directaDeposit?.amount ?? 0) > 0);
+  // Caja chica: cuando Contabilidad aprueba, el siguiente hito es el depósito
+  // con que Tesorería REPONE el presupuesto del responsable, y después el
+  // cierre. Aritméticamente es el mismo reembolso de una directa sin depósito
+  // (así lo trata el backend en `findPendingReimbursements`), pero su
+  // `settlement` no se persiste hasta que Tesorería paga: sin este caso la
+  // línea de tiempo se detenía en "Aprobada" y no mostraba que aún faltaba
+  // Tesorería. Si la rendición terminó en devolución, manda ese otro camino.
+  const enDevolucion =
+    r.settlement?.type === 'devolucion' ||
+    !!r.returnVoucher ||
+    status === 'returned';
+  const cajaChicaReposicion = isCajaChica && terminal && !enDevolucion;
   const expectsReembolso =
     reembolsoDone ||
     r.settlement?.type === 'reembolso' ||
-    (collaboratorDirecta && terminal);
+    (collaboratorDirecta && terminal) ||
+    cajaChicaReposicion;
 
   // Devolución: el colaborador debe devolver el saldo a favor de la empresa
   // (settlement 'devolucion'). Se completa al cargarse/validarse el comprobante
@@ -504,7 +518,13 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
       label: reembolsoState === 'completed' ? 'Reembolsado por Tesorería' : 'Reembolso de Tesorería',
       state: reembolsoState,
       date: reembolsoState === 'completed' ? fmt(r.reimbursedAt) : undefined,
-      description: reembolsoState === 'active' ? 'Pendiente de pago de Tesorería' : undefined,
+      // En caja chica ese depósito no cubre un gasto del bolsillo del
+      // responsable: repone su presupuesto, que vuelve al tope.
+      description: reembolsoState === 'active'
+        ? (isCajaChica
+          ? 'Pendiente del depósito de Tesorería, que repone el presupuesto'
+          : 'Pendiente de pago de Tesorería')
+        : undefined,
     });
   }
 
