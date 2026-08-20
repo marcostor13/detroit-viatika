@@ -2249,7 +2249,17 @@
             }" class="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 mt-0.5">
               {{ getExpenseTypeLabel(expense) }}
             </span>
-            <span class="text-xs font-semibold text-secondary shrink-0">{{ expenseSymbol(expense) }} {{ getExpenseTotal(expense) | number:'1.2-2' }}</span>
+            <!-- El importe manda en la moneda de la RENDICIÓN, que es la del
+                 total de arriba. Un comprobante emitido en otra moneda muestra
+                 debajo su cifra original con el TC, para poder relacionarlas:
+                 antes se veía "S/ 30.00" junto a un total de "$ 8.89" sin
+                 ninguna pista de cómo uno salía del otro. -->
+            <span class="text-xs font-semibold text-secondary shrink-0 text-right">
+              {{ currencySymbol }} {{ expenseAmountInReportCurrency(expense) | number:'1.2-2' }}
+              @if (isExpenseForeign(expense)) {
+                <span class="block text-[11px] font-normal text-tertiary">{{ expenseOriginalText(expense) }}</span>
+              }
+            </span>
           </div>
           <p class="text-xs text-tertiary mt-1 leading-relaxed">{{ getExpenseDescription(expense) }}</p>
         </div>

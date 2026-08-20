@@ -63,6 +63,60 @@ describe('InicioComponent — rendiciones por aprobar', () => {
     component = TestBed.createComponent(InicioComponent).componentInstance;
   });
 
+  describe('monto que ve el aprobador', () => {
+    /**
+     * Ni la directa ni la rendición de caja chica tienen presupuesto propio
+     * (`budget` es 0), así que su monto sale de los comprobantes. Y el símbolo
+     * es el de la moneda del documento: sumar el `total` crudo y rotularlo con
+     * la moneda de la rendición mostraba "$ 30.00" donde eran "$ 8.89".
+     */
+    const gasto = (over: Record<string, unknown>) => ({
+      ...expense(ME, false),
+      ...over,
+    });
+
+    it('una directa en dólares se muestra en dólares y por su equivalente', () => {
+      component.teamReports.set([
+        report({
+          isDirecta: true,
+          viaticoMoneda: 'USD',
+          expenseIds: [gasto({ total: 30, moneda: 'PEN', montoReporte: 8.89, monedaReporte: 'USD' })],
+        } as any),
+      ]);
+      const fila = component.rendicionesRows()[0];
+      expect(fila.currencySymbol).toBe('$');
+      expect(fila.amount).toBe(8.89);
+    });
+
+    it('una rendición de caja chica muestra lo gastado, no su presupuesto vacío', () => {
+      component.teamReports.set([
+        report({
+          isCajaChica: true,
+          budget: 0,
+          expenseIds: [gasto({ total: 215.5 }), gasto({ _id: 'e2', total: 140 })],
+        } as any),
+      ]);
+      const fila = component.rendicionesRows()[0];
+      expect(fila.amount).toBe(355.5);
+      expect(fila.currencySymbol).toBe('S/');
+    });
+
+    it('una solicitud de fondos sigue mostrando el monto pedido', () => {
+      component.teamReports.set([
+        report({
+          type: 'viatico',
+          status: 'submitted',
+          viaticoAmount: 800,
+          viaticoMoneda: 'USD',
+          expenseIds: [],
+        } as any),
+      ]);
+      const fila = component.rendicionesRows()[0];
+      expect(fila.amount).toBe(800);
+      expect(fila.currencySymbol).toBe('$');
+    });
+  });
+
   it('lists a directa with a comprobante awaiting my signature', () => {
     component.teamReports.set([
       report({ isDirecta: true, expenseIds: [expense(ME, false)] } as any),

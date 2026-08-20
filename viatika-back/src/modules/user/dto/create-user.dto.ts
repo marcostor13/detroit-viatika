@@ -126,6 +126,12 @@ export class CreateUserDto {
   @Type(() => CreateBankAccountDto)
   bankAccount?: CreateBankAccountDto
 
+  /** Cuenta en dólares, para los depósitos de solicitudes en USD. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateBankAccountDto)
+  bankAccountUsd?: CreateBankAccountDto
+
   @IsBoolean()
   @IsOptional()
   isCompanyAdmin?: boolean

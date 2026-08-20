@@ -60,6 +60,13 @@ export interface IUserResponse {
     cci: string
     accountType: string
   }
+  /** Cuenta en dólares, para los depósitos de solicitudes en USD. */
+  bankAccountUsd?: {
+    bankName: string
+    accountNumber: string
+    cci: string
+    accountType: string
+  }
   profilePic?: string
   emailNotificationsEnabled?: boolean
 }
@@ -285,6 +292,7 @@ export class UserService {
       coordinatorId: (user as any).coordinatorId,
       approverIds: (user as any).approverIds,
       bankAccount: (user as any).bankAccount,
+      bankAccountUsd: (user as any).bankAccountUsd,
       signature: (user as any).signature,
       mustChangePassword: !!(user as any).mustChangePassword,
       profilePic: (user as any).profilePic,

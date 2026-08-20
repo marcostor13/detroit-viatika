@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { MisRendicionesComponent } from './mis-rendiciones.component';
@@ -8,6 +10,7 @@ import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
 import { AdvanceService } from '../../services/advance.service';
 import { CajaChicaReportService } from '../../services/caja-chica-report.service';
+import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 import { IAdvance } from '../../interfaces/advance.interface';
@@ -89,15 +92,30 @@ describe('MisRendicionesComponent', () => {
     advanceService.findMy.and.returnValue(of([]));
     expenseService.getMyDirectExpenses.and.returnValue(of({ data: [], total: 0, page: 1, limit: 50, pages: 0 }));
 
+    // El componente consulta la caja chica del usuario al cargar; sin este
+    // doble el spec pedia el HttpClient real y toda la suite moria en el inyector.
+    const fondoCajaChicaService = jasmine.createSpyObj('FondoCajaChicaService', [
+      'findMyActive',
+      'misSolicitudes',
+    ]);
+    fondoCajaChicaService.findMyActive.and.returnValue(of(null));
+    fondoCajaChicaService.misSolicitudes.and.returnValue(of([]));
+
     TestBed.configureTestingModule({
       imports: [MisRendicionesComponent],
       providers: [
+        // Servicios que el componente inyecta sin doble propio (UploadService y
+        // compania) solo necesitan un HttpClient; con este no hay que declarar
+        // un spy por cada uno ni la suite muere en el inyector.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ExpenseReportsService, useValue: expenseReportsService },
         { provide: ExpenseService, useValue: expenseService },
         { provide: UserStateService, useValue: userState },
         { provide: NotificationService, useValue: notification },
         { provide: AdvanceService, useValue: advanceService },
         { provide: CajaChicaReportService, useValue: cajaChicaReportService },
+        { provide: FondoCajaChicaService, useValue: fondoCajaChicaService },
         { provide: InvoicesService, useValue: invoicesService },
         { provide: Router, useValue: router },
         {

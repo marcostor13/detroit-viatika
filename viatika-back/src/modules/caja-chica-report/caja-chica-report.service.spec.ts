@@ -61,6 +61,9 @@ describe('CajaChicaReportService', () => {
       lean: jest.fn().mockReturnThis(),
       exec: jest.fn().mockResolvedValue([]),
     })
+    // El correlativo comprueba que el código generado no esté ya usado, para
+    // no chocar contra el índice único cuando el contador viene atrasado.
+    mockCajaChicaModel.exists = jest.fn().mockResolvedValue(null)
     mockCajaChicaModel.findById = jest.fn()
     mockCajaChicaModel.updateOne = jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue({ modifiedCount: 1 }),

@@ -359,6 +359,67 @@ describe('rendición de caja chica', () => {
   });
 });
 
+describe('rendición directa del colaborador', () => {
+  const labels = (r: any) => buildReportFlowSteps(r).map(s => s.label);
+  const paso = (r: any, label: string) => buildReportFlowSteps(r).find(s => s.label === label);
+
+  /**
+   * Directa SIN depósito: todo lo rendido salió del bolsillo del colaborador,
+   * así que el saldo siempre queda a su favor y lo paga Tesorería. Se anuncia
+   * desde que está en trámite, igual que la caja chica: esperar al estado
+   * terminal escondía el paso justo cuando sirve saberlo.
+   */
+  const directaEnAprobacion = () => ({
+    _id: 'rd1',
+    isDirecta: true,
+    status: 'submitted',
+    createdAt: '2026-08-19T00:00:00.000Z',
+    expenseIds: [
+      {
+        status: 'submitted',
+        approverChain: [
+          { level: 1, approved: true, approvedAt: '2026-08-19T00:00:00.000Z', approverIds: [{ _id: 'u1', name: 'Ivan' }] },
+        ],
+      },
+    ],
+  });
+
+  it('anuncia el pago de Tesorería mientras la rendición está en trámite', () => {
+    const l = labels(directaEnAprobacion());
+    expect(l).toContain('Reembolso de Tesorería');
+    expect(l.indexOf('Reembolso de Tesorería')).toBeGreaterThan(l.indexOf('Aprobación de Contabilidad'));
+  });
+
+  it('lo marca pendiente, no completado', () => {
+    // Sin descripción: como el resto de la cronología, el detalle de "qué falta"
+    // solo se escribe en el paso que está activo ahora mismo.
+    expect(paso(directaEnAprobacion(), 'Reembolso de Tesorería')?.state).toBe('upcoming');
+  });
+
+  it('lo pinta activo y explica qué falta una vez que Contabilidad aprobó', () => {
+    const r: any = { ...directaEnAprobacion(), status: 'approved', contabilidadApprovedAt: '2026-08-20T00:00:00.000Z' };
+    const p = paso(r, 'Reembolso de Tesorería');
+    expect(p?.state).toBe('active');
+    expect(p?.description).toContain('Pendiente de pago de Tesorería');
+  });
+
+  it('lo da por hecho cuando Tesorería ya pagó', () => {
+    const r: any = { ...directaEnAprobacion(), status: 'reimbursed', contabilidadApprovedAt: '2026-08-20T00:00:00.000Z' };
+    expect(paso(r, 'Reembolsado por Tesorería')?.state).toBe('completed');
+  });
+
+  it('una directa CON depósito no lo anuncia: su desenlace no se sabe hasta liquidar', () => {
+    // Puede terminar en reembolso, en devolución o equilibrada.
+    const r: any = { ...directaEnAprobacion(), directaDeposit: { amount: 500 } };
+    expect(labels(r)).not.toContain('Reembolso de Tesorería');
+  });
+
+  it('una directa que terminó en devolución sigue el otro camino', () => {
+    const r: any = { ...directaEnAprobacion(), status: 'returned', settlement: { type: 'devolucion' } };
+    expect(labels(r)).not.toContain('Reembolso de Tesorería');
+  });
+});
+
 describe('isSolicitudPhase', () => {
   it('is true for a viatico that has not been paid yet', () => {
     expect(isSolicitudPhase({ type: 'viatico', status: 'viatico_approved', viaticoPaidAmount: 0 })).toBeTrue();

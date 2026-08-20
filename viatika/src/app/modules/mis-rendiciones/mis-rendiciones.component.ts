@@ -494,7 +494,10 @@ export class MisRendicionesComponent implements OnInit {
 
   cajaChicaTotalExpenses(report: any): number {
     if (!Array.isArray(report?.expenseIds)) return 0;
-    return report.expenseIds.reduce((s: number, e: any) => s + (Number(e?.total) || 0), 0);
+    // La caja chica va solo en soles, así que hoy `expenseAmountInReport` cae
+    // en `total`; se usa igual para no repetir el error de sumar monedas
+    // distintas si algún día deja de ser así.
+    return report.expenseIds.reduce((s: number, e: any) => s + expenseAmountInReport(e), 0);
   }
 
   /** Rendiciones directas del colaborador (creadas primero, luego se agregan gastos). */

@@ -73,6 +73,28 @@
         }
       </div>
 
+      <!-- Moneda: la rendicion se rinde, se aprueba y se paga en esta moneda, y
+           sus comprobantes la heredan si no traen una propia. -->
+      <div class="px-5 pb-5">
+        <app-form-field
+          #monedaField
+          label="Moneda"
+          [required]="true"
+          helperText="Los comprobantes que agregues se registran en esta moneda."
+        >
+          <select
+            [id]="monedaField.fieldId"
+            [attr.aria-describedby]="monedaField.describedBy()"
+            formControlName="moneda"
+            class="w-full h-[42px] px-3.5 rounded-xl border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors"
+          >
+            @for (m of monedasDisponibles(); track m.code) {
+              <option [value]="m.code">{{ m.label }} ({{ m.symbol }})</option>
+            }
+          </select>
+        </app-form-field>
+      </div>
+
       <!-- Centro de costo: los comprobantes que agregues heredaran este centro de costo -->
       <div class="px-5 pb-5">
         <app-form-field

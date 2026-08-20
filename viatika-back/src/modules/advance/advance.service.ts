@@ -34,6 +34,10 @@ import { UserService } from '../user/user.service'
 import { EmailService } from '../email/email.service'
 import { NotificationsService } from '../notifications/notifications.service'
 import { monedaSymbol, DEFAULT_MONEDA } from '../../common/moneda.constants'
+import {
+  isBankAccountUsable,
+  resolveUserBankAccount,
+} from '../../common/bank-account.util'
 
 @Injectable()
 export class AdvanceService implements OnModuleInit {
@@ -783,8 +787,11 @@ export class AdvanceService implements OnModuleInit {
       bankMetaL2 = { bankName: doc.requestBankName, accountNumber: doc.requestAccountNumber, cci: doc.requestCci }
     } else {
       const collabFull = await this.userService.findOne(collabId)
-      if (collabFull?.bankAccount?.accountNumber || collabFull?.bankAccount?.cci) {
-        bankMetaL2 = { bankName: collabFull.bankAccount.bankName, accountNumber: collabFull.bankAccount.accountNumber, cci: collabFull.bankAccount.cci }
+      // La cuenta se elige por la moneda de la solicitud: en dólares se
+      // deposita en la cuenta en dólares del colaborador.
+      const cuenta = resolveUserBankAccount(collabFull, advance.moneda)
+      if (isBankAccountUsable(cuenta)) {
+        bankMetaL2 = { bankName: cuenta?.bankName, accountNumber: cuenta?.accountNumber, cci: cuenta?.cci }
       }
     }
 
@@ -1065,8 +1072,11 @@ export class AdvanceService implements OnModuleInit {
       bankMeta = { bankName: doc.requestBankName, accountNumber: doc.requestAccountNumber, cci: doc.requestCci }
     } else {
       const collabFull = await this.userService.findOne(collabId)
-      if (collabFull?.bankAccount?.accountNumber || collabFull?.bankAccount?.cci) {
-        bankMeta = { bankName: collabFull.bankAccount.bankName, accountNumber: collabFull.bankAccount.accountNumber, cci: collabFull.bankAccount.cci }
+      // La cuenta se elige por la moneda de la solicitud: en dólares se
+      // deposita en la cuenta en dólares del colaborador.
+      const cuenta = resolveUserBankAccount(collabFull, advance.moneda)
+      if (isBankAccountUsable(cuenta)) {
+        bankMeta = { bankName: cuenta?.bankName, accountNumber: cuenta?.accountNumber, cci: cuenta?.cci }
       }
     }
 
@@ -1215,7 +1225,7 @@ export class AdvanceService implements OnModuleInit {
   async findAllByClient(clientId: string) {
     return this.advanceModel
       .find({ clientId: new Types.ObjectId(clientId) })
-      .populate('userId', 'name email bankAccount dni')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni')
       .populate('expenseReportId', 'title status')
       .populate('projectId', 'code name isActive clientId')
       .sort({ createdAt: -1 })
@@ -1233,7 +1243,7 @@ export class AdvanceService implements OnModuleInit {
         clientId: new Types.ObjectId(clientId),
         status: { $in: ['approved', 'partially_paid'] },
       })
-      .populate('userId', 'name email dni documentType bankAccount')
+      .populate('userId', 'name email dni documentType bankAccount bankAccountUsd')
       .sort({ createdAt: 1 })
       .lean()
       .exec()
@@ -1241,15 +1251,16 @@ export class AdvanceService implements OnModuleInit {
     return rows
       .map((a: any) => {
         const remaining = Number(a.amount ?? 0) - Number(a.paidAmount ?? 0)
+        // La cuenta del perfil se elige por la moneda del anticipo.
+        const cuenta = resolveUserBankAccount(a.userId, a.moneda)
         return {
           advanceId: String(a._id),
           user: a.userId,
           remaining: Math.round(remaining * 100) / 100,
           moneda: a.moneda,
-          bankName: a.requestBankName ?? a.userId?.bankAccount?.bankName ?? '',
-          accountNumber:
-            a.requestAccountNumber ?? a.userId?.bankAccount?.accountNumber ?? '',
-          cci: a.requestCci ?? a.userId?.bankAccount?.cci ?? '',
+          bankName: a.requestBankName ?? cuenta?.bankName ?? '',
+          accountNumber: a.requestAccountNumber ?? cuenta?.accountNumber ?? '',
+          cci: a.requestCci ?? cuenta?.cci ?? '',
         }
       })
       .filter(x => x.remaining > 0.009)
@@ -1328,7 +1339,7 @@ export class AdvanceService implements OnModuleInit {
         clientId: new Types.ObjectId(clientId),
         status: { $in: ['pending_l1', 'pending_l2', 'approved'] },
       })
-      .populate('userId', 'name email bankAccount dni')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni')
       .populate('expenseReportId', 'title status')
       .populate('projectId', 'code name isActive clientId')
       .sort({ createdAt: -1 })
@@ -1338,7 +1349,7 @@ export class AdvanceService implements OnModuleInit {
   async findOne(id: string) {
     const advance = await this.advanceModel
       .findById(id)
-      .populate('userId', 'name email bankAccount dni')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni')
       .populate('expenseReportId', 'title status budget')
       .populate('projectId')
       .populate('approverChain', 'name email')
@@ -2136,7 +2147,7 @@ export class AdvanceService implements OnModuleInit {
           $in: ['pending', 'proof_uploaded', 'rejected'],
         },
       })
-      .populate('userId', 'name email bankAccount dni')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni')
       .exec() as Promise<Advance[]>
   }
 

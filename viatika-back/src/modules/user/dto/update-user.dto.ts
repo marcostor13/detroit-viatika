@@ -204,6 +204,12 @@ export class UpdateUserDto {
   @Type(() => UpdateBankAccountDto)
   bankAccount?: UpdateBankAccountDto
 
+  /** Cuenta en dólares, para los depósitos de solicitudes en USD. */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateBankAccountDto)
+  bankAccountUsd?: UpdateBankAccountDto
+
   @IsBoolean()
   @IsOptional()
   emailNotificationsEnabled?: boolean
