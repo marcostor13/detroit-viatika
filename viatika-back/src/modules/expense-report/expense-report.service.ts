@@ -3299,8 +3299,10 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * Importe del reembolso EN LA MONEDA DE LA RENDICIÓN, que es en la que
-   * Tesorería lo paga y en la que sale la planilla del banco.
+   * Saldo de la liquidación EN LA MONEDA DEL DOCUMENTO. Sirve para las dos
+   * direcciones: el reembolso que Tesorería paga y la devolución que el
+   * colaborador transfiere. En ambas, el dinero se mueve en la moneda en que
+   * se entregó, no en soles.
    *
    * `settlement.difference` se guarda siempre en moneda base: la liquidación
    * suma el `montoBase` de cada gasto para no mezclar monedas. Se deshace esa
@@ -3309,7 +3311,42 @@ export class ExpenseReportService implements OnModuleInit {
    * correo coincida con lo que se deposita. Espejo de
    * `PaymentBatchService.reembolsoEnMonedaDelReporte`.
    */
-  private reembolsoEnMonedaDelReporte(report: any): number {
+  /**
+   * Cuenta de la empresa a la que el colaborador debe transferir la devolución,
+   * en la moneda del documento. Sin este dato el correo le pedía transferir
+   * "a la cuenta de la empresa" sin decir a cuál, y para una solicitud en
+   * dólares la cuenta correcta ni siquiera es la habitual.
+   *
+   * Se toma la marcada como cuenta de pagos de esa moneda, que es la operativa
+   * de la empresa para esa divisa; si hay una sola, esa.
+   */
+  private async cuentaEmpresaParaDevolucion(
+    clientId: string,
+    moneda: string
+  ): Promise<{ bankName?: string; accountNumber?: string; cci?: string }> {
+    try {
+      const config = await this.currencyService.getConfig(clientId)
+      const candidatas = (config.bankAccounts ?? []).filter(
+        b =>
+          b.activo !== false &&
+          normalizeMoneda(b.moneda || config.monedaBase) === moneda &&
+          !!String(b.nroCuenta ?? '').trim()
+      )
+      const cuenta = candidatas.find(b => b.esCuentaPagos) ?? candidatas[0]
+      if (!cuenta) return {}
+      return {
+        bankName: cuenta.banco,
+        accountNumber: String(cuenta.nroCuenta ?? '').trim() || undefined,
+        cci: String(cuenta.cci ?? '').trim() || undefined,
+      }
+    } catch {
+      // El correo sale igual sin los datos bancarios: es peor no avisar de la
+      // devolución que avisar sin la cuenta.
+      return {}
+    }
+  }
+
+  private saldoLiquidadoEnMonedaDelReporte(report: any): number {
     const base = Math.abs(Number(report?.settlement?.difference ?? 0))
     if (normalizeMoneda(report?.viaticoMoneda) === DEFAULT_MONEDA) return base
     const tc = Number(report?.tipoCambio)
@@ -3891,7 +3928,7 @@ export class ExpenseReportService implements OnModuleInit {
     // al colaborador "S/ 716.46" por un depósito de $ 212.41 es el mismo error
     // que ya salió en el correo de aprobación: el número de una moneda contado
     // como si fuera de otra.
-    const amountFormatted = this.reembolsoEnMonedaDelReporte(report).toFixed(2)
+    const amountFormatted = this.saldoLiquidadoEnMonedaDelReporte(report).toFixed(2)
 
     const platformUrl = this.emailService.buildAppUrl('/mis-documentos')
 
@@ -6799,18 +6836,37 @@ export class ExpenseReportService implements OnModuleInit {
     if (!report.settlement || report.settlement.type !== 'devolucion') throw new BadRequestException('Esta solicitud de fondos no tiene saldo a devolver')
 
     const dueDate = this.addViaticoBusinessDays(new Date(), 10)
+    // El colaborador tiene el dinero en la moneda en que se le entregó y eso es
+    // lo que va a transferir. `settlement.difference` viene en soles, así que
+    // se guardan las dos cifras: la base para los agregados y la de la
+    // solicitud para pedírsela y para validar su comprobante.
+    const moneda = normalizeMoneda(report.viaticoMoneda)
+    const aDevolver = this.saldoLiquidadoEnMonedaDelReporte(report)
     await this.expenseReportModel.findByIdAndUpdate(id, {
-      $set: { viaticoReturnRecord: { status: 'pending', amountDue: report.settlement.difference, dueDate, isOverdue: false, remindersSent: 0 } },
+      $set: {
+        viaticoReturnRecord: {
+          status: 'pending',
+          amountDue: Math.abs(Number(report.settlement.difference) || 0),
+          amountDueMoneda: aDevolver,
+          moneda,
+          dueDate,
+          isOverdue: false,
+          remindersSent: 0,
+        },
+      },
     })
     const collaborator = await this.userService.findEmailNameClient(report.userId.toString())
     if (collaborator?.email) {
+      const cuenta = await this.cuentaEmpresaParaDevolucion(
+        report.clientId.toString(),
+        moneda
+      )
       this.emailService.sendDevolucionPendiente(collaborator.email, {
         clientId: report.clientId.toString(), recipientName: collaborator.name,
-        amountDue: this.viaticoFormatMoney(report.settlement.difference),
-        // `difference` está en moneda base, no en la del viático: rotularlo con
-        // el símbolo de la solicitud diría "$ 1639.72" por una deuda de S/ 1639.72.
-        currencySymbol: this.settlementCurrencySymbol(report),
+        amountDue: this.viaticoFormatMoney(aDevolver),
+        currencySymbol: this.viaticoMoneySymbol(moneda),
         dueDate: this.emailService.formatDateDDMMYYYY(dueDate), advanceId: id,
+        ...cuenta,
       }).catch(() => {})
     }
     return this.findOne(id) as Promise<ExpenseReportDocument>
@@ -6822,7 +6878,12 @@ export class ExpenseReportService implements OnModuleInit {
     if (report.type !== 'viatico') throw new BadRequestException('Esta rendición no es de tipo solicitud de fondos')
     const rr = (report as any).viaticoReturnRecord
     if (!rr || rr.status !== 'pending') throw new BadRequestException('No hay devolución pendiente de comprobante')
-    if (proof.amountReturned < rr.amountDue) throw new BadRequestException(`El monto devuelto (${proof.amountReturned}) es menor al monto adeudado (${rr.amountDue})`)
+    // Se compara contra la cifra en la moneda de la solicitud, que es la que
+    // se le pidió y la que dice su comprobante. Las devoluciones anteriores al
+    // multimoneda no la tienen y ya estaban en soles.
+    const adeudado = Number(rr.amountDueMoneda ?? rr.amountDue) || 0
+    const simbolo = this.viaticoMoneySymbol(rr.moneda)
+    if (proof.amountReturned < adeudado) throw new BadRequestException(`El monto devuelto (${simbolo} ${proof.amountReturned}) es menor al monto adeudado (${simbolo} ${adeudado})`)
     await this.expenseReportModel.findByIdAndUpdate(id, { $set: { viaticoReturnRecord: { ...rr, status: 'proof_uploaded', proof: { ...proof, uploadedAt: new Date() } } } })
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }

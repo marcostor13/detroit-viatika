@@ -47,7 +47,22 @@ export interface ReturnValidation {
 
 export interface ReturnRecord {
   status: ReturnRecordStatus
+  /**
+   * Saldo a devolver EN MONEDA BASE. Es el que suman los agregados del
+   * dashboard, que cruzan solicitudes de varias monedas.
+   */
   amountDue: number
+  /**
+   * El mismo saldo en la moneda de la solicitud, que es la que el colaborador
+   * tiene en la mano y la que va a transferir. Contra este se compara lo que
+   * deposita: pedirle S/ 1642.79 por un anticipo de US$ 500 lo obligaba a
+   * convertir por su cuenta, y el comprobante en dólares no pasaba la
+   * validación. Ausente en las devoluciones anteriores al multimoneda, que ya
+   * estaban en soles.
+   */
+  amountDueMoneda?: number
+  /** Moneda de `amountDueMoneda`. */
+  moneda?: string
   dueDate: Date
   proof?: ReturnProof
   validation?: ReturnValidation

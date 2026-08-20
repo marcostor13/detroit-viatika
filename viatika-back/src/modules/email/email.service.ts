@@ -2010,6 +2010,10 @@ export class EmailService {
       dueDate: string
       advanceId: string
       currencySymbol?: string
+      /** Cuenta de la empresa a la que debe transferir, en la moneda que debe. */
+      bankName?: string
+      accountNumber?: string
+      cci?: string
     }
   ) {
     try {
@@ -2022,6 +2026,8 @@ export class EmailService {
           year: new Date().getFullYear(),
           ...data,
           currencySymbol: data.currencySymbol ?? 'S/',
+          // Sin cuenta no se pinta el bloque: mejor omitirlo que mostrarlo vacío.
+          hasCuentaEmpresa: !!(data.accountNumber || data.cci),
           dueDate: this.formatDateDDMMYYYY(data.dueDate),
         },
       })
