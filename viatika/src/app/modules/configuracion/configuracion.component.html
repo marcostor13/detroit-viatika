@@ -466,56 +466,130 @@
     <div class="flex justify-between items-center mb-6">
       <div>
         <h2 class="text-xl font-semibold text-secondary">Cuenta de cargo (pagos BBVA)</h2>
-        <p class="text-sm text-tertiary mt-1">Cuenta de la empresa que BBVA usa como origen en el archivo de pagos masivos.</p>
+        <p class="text-sm text-tertiary mt-1">
+          Cuentas de la empresa: de aquí sale el dinero en el archivo de pagos masivos y con ellas se arma la cuenta contable 104.
+          El archivo del banco admite una moneda por planilla, así que hace falta una cuenta por cada moneda en que se pague.
+        </p>
       </div>
-      @if (!showPaymentAccountForm) {
-      <app-button label="Editar" variant="primary" size="md" (clicked)="editPaymentAccount()" />
+      @if (!showBancosForm) {
+      <app-button label="Editar" variant="primary" size="md" (clicked)="editBancosEmpresa()" />
       }
     </div>
 
-    @if (!showPaymentAccountForm) {
-    <div class="flex items-center justify-between py-3 border-b border-divider">
-      <div>
-        <p class="text-sm font-medium text-secondary">Cuenta de cargo</p>
-        <p class="text-xs text-tertiary mt-0.5">Se escribe en la cabecera del archivo TXT que sube Tesorería.</p>
+    @if (!showBancosForm) {
+    <div class="divide-y divide-divider">
+      @for (b of accountingConfig?.bankAccounts ?? []; track $index) {
+      <div class="flex items-center justify-between py-3 gap-4">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-secondary">
+            {{ b.banco || 'Banco' }} · {{ simboloMoneda(b.moneda) }}
+            @if (b.esCuentaPagos) {
+              <span class="ml-2 text-xs font-normal text-primary">origen de los pagos</span>
+            }
+          </p>
+          <p class="text-xs text-tertiary mt-0.5">
+            Cuenta contable {{ b.cuentaContable || '—' }}@if (b.cci) { · CCI {{ b.cci }}}
+          </p>
+        </div>
+        <span class="text-sm font-semibold text-secondary tabular-nums whitespace-nowrap">{{ b.nroCuenta || '—' }}</span>
       </div>
-      <span class="text-sm font-semibold text-secondary">
-        @if (companyConfig?.paymentAccount) {
-          {{ companyConfig!.paymentAccount }}
-        } @else {
-          <span class="text-warning-ink font-normal">Sin configurar</span>
-        }
-      </span>
+      }
+      @if (!(accountingConfig?.bankAccounts ?? []).length) {
+      <p class="text-sm text-warning-ink py-3">Sin cuentas registradas. Sin al menos una no se puede generar el archivo de pagos.</p>
+      }
     </div>
+
+    <!-- Aviso por cada moneda que se pueda usar y no tenga cuenta: el archivo
+         del banco declara una cuenta de cargo por moneda, y sin ella esa
+         planilla no se emite. -->
+    @for (m of monedasParaCuentas; track m.code) {
+      @if (!cuentaDePagosDe(m.code)) {
+      <p class="mt-3 text-xs text-warning-ink">
+        No hay cuenta de la empresa para pagos en {{ m.label }} ({{ m.symbol }}): las planillas en esa moneda no se van a poder generar.
+      </p>
+      }
     }
 
-    @if (showPaymentAccountForm) {
+    <!-- La cuenta suelta de la configuración anterior. Solo se sigue usando
+         mientras no haya una cuenta en soles en la lista, así que se muestra
+         nada más en ese caso, para no dejar que alguien la edite creyendo que
+         manda. -->
+    @if (paymentAccountSigueEnUso) {
+    <div class="mt-4 rounded-xl border border-warning/40 bg-warning/10 p-3">
+      <p class="text-sm text-warning-ink">
+        <span class="font-semibold">Configuración anterior:</span>
+        la cuenta <span class="font-mono">{{ companyConfig!.paymentAccount }}</span> se sigue usando como origen de los pagos en soles porque no hay ninguna cuenta en soles en la lista.
+        Regístrala arriba con su cuenta contable y quedará todo en un solo lugar.
+      </p>
+    </div>
+    }
+    }
+
+    @if (showBancosForm) {
     <div class="space-y-6">
       <div>
-        <label for="paymentAccount" class="block text-sm font-medium text-secondary mb-1">Cuenta de cargo</label>
-        <p class="text-xs text-tertiary mb-2">Número de cuenta de cargo tal como lo indica BBVA Net Cash (solo dígitos). Obligatoria para generar el archivo de pagos.</p>
-        <input
-          id="paymentAccount"
-          type="text"
-          [(ngModel)]="paymentAccount"
-          placeholder="Ej: 000110380350100056833"
-          class="w-full sm:w-96 px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary text-sm"
-        />
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-secondary">Cuentas de la empresa</h3>
+          <app-button variant="ghost" size="sm" label="+ Añadir banco" (clicked)="addBankAccount()" />
+        </div>
+<div class="space-y-3">
+          @for (bank of accountingForm.bankAccounts; track $index) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end border border-divider rounded-md p-3">
+            <div>
+              <label class="block text-xs font-medium text-secondary mb-1">Banco</label>
+              <input type="text" [(ngModel)]="bank.banco" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="BCP" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-secondary mb-1">Nro. cuenta</label>
+              <input type="text" [(ngModel)]="bank.nroCuenta" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-secondary mb-1">Cuenta contable (104)</label>
+              <input type="text" [(ngModel)]="bank.cuentaContable" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="10.4.1.100" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-secondary mb-1">Moneda</label>
+              <select [(ngModel)]="bank.moneda" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm">
+                @for (m of monedasDisponibles; track m.code) {
+                  <option [value]="m.code">{{ m.label }} ({{ m.symbol }})</option>
+                }
+              </select>
+            </div>
+            <div class="flex items-center gap-3">
+              <input type="text" [(ngModel)]="bank.cci" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="CCI (opcional)" />
+              <app-button variant="ghost" size="sm" label="Quitar" class="whitespace-nowrap" (clicked)="removeBankAccount($index)" />
+            </div>
+            <div class="sm:col-span-2 lg:col-span-5 flex items-center gap-2">
+              <input type="checkbox" [id]="'cuentaPagos' + $index" [checked]="!!bank.esCuentaPagos"
+                (change)="onCuentaPagosChange(bank, $any($event.target).checked)"
+                class="h-4 w-4 rounded border-tertiary/40" />
+              <label [for]="'cuentaPagos' + $index" class="text-xs text-secondary">
+                Usar esta cuenta para los pagos masivos en {{ bank.moneda || 'PEN' }}
+                <span class="text-tertiary">(solo una por moneda)</span>
+              </label>
+            </div>
+          </div>
+          }
+          @if (!accountingForm.bankAccounts.length) {
+          <p class="text-xs text-tertiary/70 italic">No hay bancos registrados.</p>
+          }
+        </div>
       </div>
+
       <div class="flex space-x-3">
         <app-button
-          [label]="isSavingPaymentAccount ? 'Guardando...' : 'Guardar'"
+          [label]="isSavingAccounting ? 'Guardando...' : 'Guardar Configuración'"
           variant="primary"
           size="md"
-          [disabled]="isSavingPaymentAccount"
-          (clicked)="savePaymentAccount()"
+          [disabled]="isSavingAccounting"
+          (clicked)="saveAccountingConfig()"
         />
         <app-button
           label="Cancelar"
           variant="secondary"
           size="md"
-          [disabled]="isSavingPaymentAccount"
-          (clicked)="cancelPaymentAccountEdit()"
+          [disabled]="isSavingAccounting"
+          (clicked)="cancelBancosEdit()"
         />
       </div>
     </div>
@@ -700,7 +774,10 @@
         </div>
         <div class="py-2 border-b border-divider">
           <p class="text-xs text-tertiary">Bancos registrados</p>
-          <p class="text-sm font-medium text-secondary">{{ accountingConfig.bankAccounts.length || 0 }}</p>
+          <p class="text-sm font-medium text-secondary">
+            {{ accountingConfig.bankAccounts.length || 0 }}
+            <span class="text-xs font-normal text-tertiary">— se configuran en «Cuenta de cargo (pagos BBVA)»</span>
+          </p>
         </div>
         <div class="py-2 border-b border-divider">
           <p class="text-xs text-tertiary">Cuenta de reembolso</p>
@@ -828,55 +905,8 @@
         </div>
       </div>
 
-      <!-- Bancos -->
-      <div>
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-sm font-semibold text-secondary">Bancos de la empresa (cuenta 104)</h3>
-          <app-button variant="ghost" size="sm" label="+ Añadir banco" (clicked)="addBankAccount()" />
-        </div>
-        <div class="space-y-3">
-          @for (bank of accountingForm.bankAccounts; track $index) {
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end border border-divider rounded-md p-3">
-            <div>
-              <label class="block text-xs font-medium text-secondary mb-1">Banco</label>
-              <input type="text" [(ngModel)]="bank.banco" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="BCP" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-secondary mb-1">Nro. cuenta</label>
-              <input type="text" [(ngModel)]="bank.nroCuenta" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-secondary mb-1">Cuenta contable (104)</label>
-              <input type="text" [(ngModel)]="bank.cuentaContable" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="10.4.1.100" />
-            </div>
-            <div>
-              <label class="block text-xs font-medium text-secondary mb-1">Moneda</label>
-              <select [(ngModel)]="bank.moneda" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm">
-                @for (m of monedasDisponibles; track m.code) {
-                  <option [value]="m.code">{{ m.label }} ({{ m.symbol }})</option>
-                }
-              </select>
-            </div>
-            <div class="flex items-center gap-3">
-              <input type="text" [(ngModel)]="bank.cci" class="w-full px-3 py-2 border border-tertiary/30 rounded-md text-sm" placeholder="CCI (opcional)" />
-              <app-button variant="ghost" size="sm" label="Quitar" class="whitespace-nowrap" (clicked)="removeBankAccount($index)" />
-            </div>
-            <div class="sm:col-span-2 lg:col-span-5 flex items-center gap-2">
-              <input type="checkbox" [id]="'cuentaPagos' + $index" [checked]="!!bank.esCuentaPagos"
-                (change)="onCuentaPagosChange(bank, $any($event.target).checked)"
-                class="h-4 w-4 rounded border-tertiary/40" />
-              <label [for]="'cuentaPagos' + $index" class="text-xs text-secondary">
-                Usar esta cuenta para los pagos masivos en {{ bank.moneda || 'PEN' }}
-                <span class="text-tertiary">(solo una por moneda)</span>
-              </label>
-            </div>
-          </div>
-          }
-          @if (!accountingForm.bankAccounts.length) {
-          <p class="text-xs text-tertiary/70 italic">No hay bancos registrados.</p>
-          }
-        </div>
-      </div>
+      <!-- Los bancos de la empresa se configuran en "Cuenta de cargo (pagos
+           BBVA)": es donde el usuario los busca y ahí se ve para qué sirven. -->
 
       <div class="flex space-x-3">
         <app-button
