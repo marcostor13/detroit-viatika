@@ -11,7 +11,17 @@
         <div class="row"><strong>Fecha límite:</strong> {{dueDate}}</div>
       </div>
 
+      {{#if hasCuentaEmpresa}}
+      <p class="label">Transfiera a esta cuenta de la empresa:</p>
+      <div class="box">
+        {{#if bankName}}<div class="row"><strong>Banco:</strong> {{bankName}}</div>{{/if}}
+        {{#if accountNumber}}<div class="row"><strong>N° de cuenta:</strong> {{accountNumber}}</div>{{/if}}
+        {{#if cci}}<div class="row"><strong>CCI:</strong> {{cci}}</div>{{/if}}
+      </div>
+      <p>Realice la transferencia por el monto indicado y cargue el comprobante en la plataforma antes de la fecha límite.</p>
+      {{else}}
       <p>Por favor realice la transferencia a la cuenta de la empresa y cargue el comprobante en la plataforma antes de la fecha límite.</p>
+      {{/if}}
 
       <div class="btn-container">
         <a href="{{platformUrl}}" class="btn">Ir a la plataforma</a>

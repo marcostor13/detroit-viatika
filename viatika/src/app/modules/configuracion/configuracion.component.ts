@@ -19,7 +19,7 @@ import {
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { environment } from '../../../environments/environment';
-import { MONEDA_CATALOG, MonedaInfo } from '../../constants/moneda';
+import { MONEDA_CATALOG, MonedaInfo, DEFAULT_MONEDA, monedaSymbol } from '../../constants/moneda';
 
 @Component({
   selector: 'app-configuracion',
@@ -58,9 +58,6 @@ export class ConfiguracionComponent implements OnInit {
   isSavingLimits = false;
 
   // Cuenta de cargo para pagos BBVA (VD-7)
-  showPaymentAccountForm = false;
-  paymentAccount: string = '';
-  isSavingPaymentAccount = false;
 
   // Notifications
   showNotificationsForm = false;
@@ -121,7 +118,6 @@ export class ConfiguracionComponent implements OnInit {
       (config: ICompanyConfig | null) => {
         this.companyConfig = config;
         this.readLimitsFromConfig();
-        this.paymentAccount = config?.paymentAccount ?? '';
         this.notificationsEnabled = config?.notificationSettings?.enabled ?? false;
         this.notificationsFrequency = config?.notificationSettings?.frequency ?? 'semanal';
         this.notificationsDay = config?.notificationSettings?.notificationDay ?? 1;
@@ -187,32 +183,11 @@ export class ConfiguracionComponent implements OnInit {
     });
   }
 
-  editPaymentAccount() {
-    this.paymentAccount = this.companyConfig?.paymentAccount ?? '';
-    this.showPaymentAccountForm = true;
-  }
-
-  cancelPaymentAccountEdit() {
-    this.showPaymentAccountForm = false;
-    this.paymentAccount = this.companyConfig?.paymentAccount ?? '';
-  }
-
-  savePaymentAccount() {
-    const companyId = this.companyConfig?._id || this.companyConfig?.companyId;
-    if (!companyId) return;
-    this.isSavingPaymentAccount = true;
-    this.companyConfigService.updatePaymentAccount(companyId, (this.paymentAccount ?? '').trim()).subscribe({
-      next: () => {
-        this.notificationService.show('Cuenta de cargo actualizada correctamente', 'success');
-        this.showPaymentAccountForm = false;
-        this.isSavingPaymentAccount = false;
-      },
-      error: () => {
-        this.notificationService.show('Error al guardar la cuenta de cargo', 'error');
-        this.isSavingPaymentAccount = false;
-      },
-    });
-  }
+  // El editor de la cuenta suelta se retiró: las cuentas de la empresa se
+  // configuran en la lista, con su moneda y su cuenta contable. `paymentAccount`
+  // sobrevive como respaldo de solo lectura para las empresas que aún no
+  // migraron (ver `paymentAccountSigueEnUso`), y deja de leerse en cuanto
+  // registran su cuenta en soles.
 
   editNotifications() {
     this.notificationsEnabled = this.companyConfig?.notificationSettings?.enabled ?? false;
@@ -614,7 +589,12 @@ export class ConfiguracionComponent implements OnInit {
         this.accountingConfig = config;
       },
       error: (error: HttpErrorResponse) => {
+        // 404 = la empresa todavía no configuró nada; es un arranque normal.
+        // Cualquier otro error deja `accountingConfig` en null SIN que eso
+        // signifique "vacía", y guardar desde ahí mandaría los defaults encima
+        // de la configuración real. Se marca para poder bloquear la edición.
         if (error.status !== 404) {
+          this.accountingConfigCargaFallida = true;
           this.notificationService.show(
             'Error al cargar configuración contable: ' + error.message,
             'error'
@@ -642,6 +622,70 @@ export class ConfiguracionComponent implements OnInit {
       })),
     };
     this.showAccountingForm = true;
+  }
+
+  // ── Bancos de la empresa (card "Cuenta de cargo") ────────────────────────
+  //
+  // Viven en la misma `accounting-config` que el plan de cuentas, porque cada
+  // cuenta lleva su cuenta contable 104. Pero se configuran acá: es donde el
+  // usuario las busca, y tenerlas en dos sitios —una sola cuenta suelta arriba
+  // y la lista abajo— hacía imposible saber cuál manda.
+  showBancosForm = false;
+
+  /**
+   * La configuración contable no se pudo leer (y no fue un 404). Guardar en ese
+   * estado escribiría los defaults sobre lo que ya existe, así que se prefiere
+   * no dejar editar hasta releerla.
+   */
+  accountingConfigCargaFallida = false;
+
+  editBancosEmpresa() {
+    if (this.accountingConfigCargaFallida) {
+      this.notificationService.show(
+        'No se pudo leer la configuración contable, así que no se puede editar sin arriesgar lo ya guardado. Recarga la página e intenta de nuevo.',
+        'error'
+      );
+      return;
+    }
+    this.editAccountingConfig();
+    this.showAccountingForm = false;
+    this.showBancosForm = true;
+  }
+
+  cancelBancosEdit() {
+    this.showBancosForm = false;
+    this.accountingForm = { ...DEFAULT_ACCOUNTING_CONFIG };
+  }
+
+  /** Monedas que la empresa puede usar, para listar sus cuentas de pago. */
+  get monedasParaCuentas(): MonedaInfo[] {
+    return this.monedasDisponibles;
+  }
+
+  simboloMoneda(codigo?: string | null): string {
+    return monedaSymbol(codigo);
+  }
+
+  /** Cuenta de la empresa marcada para los pagos masivos de esa moneda. */
+  cuentaDePagosDe(moneda: string) {
+    const cuentas = (this.accountingConfig?.bankAccounts ?? []).filter(
+      (b) => b.activo !== false && (b.moneda || DEFAULT_MONEDA) === moneda
+    );
+    return cuentas.find((b) => b.esCuentaPagos) ?? (cuentas.length === 1 ? cuentas[0] : null);
+  }
+
+  /**
+   * La cuenta suelta de la configuración anterior solo se sigue usando cuando
+   * NO hay ninguna cuenta en la moneda base registrada abajo, y únicamente
+   * para soles. Mientras eso pase hay que mostrarla; una vez migrada, deja de
+   * existir para el sistema y esconderla evita que alguien la edite creyendo
+   * que sirve.
+   */
+  get paymentAccountSigueEnUso(): boolean {
+    if (!this.companyConfig?.paymentAccount) return false;
+    return !(this.accountingConfig?.bankAccounts ?? []).some(
+      (b) => b.activo !== false && (b.moneda || DEFAULT_MONEDA) === DEFAULT_MONEDA && !!b.nroCuenta?.trim()
+    );
   }
 
   cancelAccountingEdit() {
@@ -733,6 +777,9 @@ export class ConfiguracionComponent implements OnInit {
           this.accountingConfig = config;
           this.isSavingAccounting = false;
           this.showAccountingForm = false;
+          // El mismo guardado sirve al plan de cuentas y a las cuentas
+          // bancarias, que se editan desde el card de "Cuenta de cargo".
+          this.showBancosForm = false;
           this.notificationService.show(
             'Configuración contable guardada correctamente',
             'success'
