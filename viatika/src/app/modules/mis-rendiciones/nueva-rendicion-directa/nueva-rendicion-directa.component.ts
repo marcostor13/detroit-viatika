@@ -19,6 +19,12 @@ import {
 } from '../../../interfaces/orden-trabajo.interface';
 import { FormFieldComponent } from '../../../design-system/form-field/form-field.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
+import { AccountingConfigService } from '../../../services/accounting-config.service';
+import {
+  MONEDA_CATALOG,
+  DEFAULT_MONEDA,
+  MonedaInfo,
+} from '../../../constants/moneda';
 
 @Component({
   selector: 'app-nueva-rendicion-directa',
@@ -34,8 +40,16 @@ export class NuevaRendicionDirectaComponent implements OnInit {
   private userState = inject(UserStateService);
   private invoicesService = inject(InvoicesService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
+  private accountingConfigService = inject(AccountingConfigService);
 
   submitting = signal(false);
+
+  /**
+   * Monedas habilitadas para la empresa (Plan de Cuentas y Bancos). La
+   * rendición se aprueba, se rinde y se paga en la que se elija aquí, y sus
+   * comprobantes la heredan. Fallback: solo soles.
+   */
+  monedasDisponibles = signal<MonedaInfo[]>([MONEDA_CATALOG[DEFAULT_MONEDA]]);
 
   // Centros de costo asignables: el colaborador elige uno al crear la rendición;
   // sus documentos heredarán ese centro de costo (ya no se elige por-comprobante).
@@ -61,6 +75,7 @@ export class NuevaRendicionDirectaComponent implements OnInit {
     // dejaba al colaborador sin poder crear la rendición. Si no se elige aquí,
     // la planilla de movilidad la pide por comprobante (formato ADF-FOR-005).
     ordenTrabajoId: [''],
+    moneda: [DEFAULT_MONEDA, Validators.required],
   });
 
   ngOnInit(): void {
@@ -69,6 +84,15 @@ export class NuevaRendicionDirectaComponent implements OnInit {
       this.invoicesService.getProjects(clientId).subscribe({
         next: list => this.projects.set((list || []).filter(p => p.isActive !== false)),
         error: () => this.projects.set([]),
+      });
+      this.accountingConfigService.getAvailableCurrencies(clientId).subscribe({
+        next: (codes) => {
+          const infos = (codes || [])
+            .map((c) => MONEDA_CATALOG[c])
+            .filter((m): m is MonedaInfo => !!m);
+          this.monedasDisponibles.set(infos.length ? infos : [MONEDA_CATALOG[DEFAULT_MONEDA]]);
+        },
+        error: () => this.monedasDisponibles.set([MONEDA_CATALOG[DEFAULT_MONEDA]]),
       });
     }
 
@@ -127,6 +151,7 @@ export class NuevaRendicionDirectaComponent implements OnInit {
         userId,
         clientId,
         projectId: this.form.value.projectId,
+        moneda: this.form.value.moneda || DEFAULT_MONEDA,
         // Solo se manda si se eligió: el backend valida que sea un ObjectId y
         // una cadena vacía le haría rechazar la creación.
         ...(this.form.value.ordenTrabajoId

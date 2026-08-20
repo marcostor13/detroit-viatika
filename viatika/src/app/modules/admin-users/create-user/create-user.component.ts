@@ -58,6 +58,11 @@ export class CreateUserComponent implements OnInit {
     accountNumber: [''],
     cci: [''],
     accountType: [''],
+    // Cuenta en dólares: el abono de una solicitud en USD va aquí.
+    bankNameUsd: [''],
+    accountNumberUsd: [''],
+    cciUsd: [''],
+    accountTypeUsd: [''],
   });
   step = 1;
   roles: IRoleResponse[] = [];
@@ -199,7 +204,40 @@ export class CreateUserComponent implements OnInit {
       accountNumber: user.bankAccount?.accountNumber || '',
       cci: user.bankAccount?.cci || '',
       accountType: user.bankAccount?.accountType || '',
+      bankNameUsd: user.bankAccountUsd?.bankName || '',
+      accountNumberUsd: user.bankAccountUsd?.accountNumber || '',
+      cciUsd: user.bankAccountUsd?.cci || '',
+      accountTypeUsd: user.bankAccountUsd?.accountType || '',
     });
+  }
+
+  /**
+   * Saca los campos de las dos cuentas bancarias del formulario y los deja
+   * como objetos anidados, tal como los espera el backend. Cada cuenta solo
+   * viaja si tiene algún dato: mandarla vacía borraría la que ya estaba.
+   */
+  private splitBankAccounts(value: any): { rest: any; bankAccount?: any; bankAccountUsd?: any } {
+    const {
+      bankName, accountNumber, cci, accountType,
+      bankNameUsd, accountNumberUsd, cciUsd, accountTypeUsd,
+      ...rest
+    } = value;
+    return {
+      rest,
+      bankAccount:
+        bankName || accountNumber || cci
+          ? { bankName, accountNumber, cci, accountType: accountType || undefined }
+          : undefined,
+      bankAccountUsd:
+        bankNameUsd || accountNumberUsd || cciUsd
+          ? {
+              bankName: bankNameUsd,
+              accountNumber: accountNumberUsd,
+              cci: cciUsd,
+              accountType: accountTypeUsd || undefined,
+            }
+          : undefined,
+    };
   }
 
   getUser() {
@@ -210,11 +248,10 @@ export class CreateUserComponent implements OnInit {
 
   createUser() {
     if (this.form.valid) {
-      const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
+      const { rest, bankAccount, bankAccountUsd } = this.splitBankAccounts(this.form.value);
       const payload: any = { ...rest };
-      if (bankName || accountNumber || cci) {
-        payload.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };
-      }
+      if (bankAccount) payload.bankAccount = bankAccount;
+      if (bankAccountUsd) payload.bankAccountUsd = bankAccountUsd;
       if (this.selectedRoleNeedsPermissions) {
         payload.permissions = { ...this.permissions };
       }
@@ -239,13 +276,12 @@ export class CreateUserComponent implements OnInit {
 
   updateUser() {
     if (this.form.valid) {
-      const { bankName, accountNumber, cci, accountType, ...rest } = this.form.value;
+      const { rest, bankAccount, bankAccountUsd } = this.splitBankAccounts(this.form.value);
       const updateData: any = { ...rest };
       delete updateData['password'];
 
-      if (bankName || accountNumber || cci) {
-        updateData.bankAccount = { bankName, accountNumber, cci, accountType: accountType || undefined };
-      }
+      if (bankAccount) updateData.bankAccount = bankAccount;
+      if (bankAccountUsd) updateData.bankAccountUsd = bankAccountUsd;
 
       this.adminUsersService
         .updateUser(this.id, updateData as Partial<IUser>)

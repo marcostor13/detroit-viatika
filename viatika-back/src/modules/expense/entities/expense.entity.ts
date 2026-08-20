@@ -447,7 +447,17 @@ export class Expense {
   @Prop({ type: String, required: false })
   contabilidadRejectionReason?: string
 
-  /** Sub-tipo para 'otros_gastos': TK (Ticket), RC (Recibos diversos), DJ (Declaración Jurada), DJE (DJ al exterior), OT (Otros) */
+  /**
+   * Sub-tipo para 'otros_gastos': AL (Alimentación sin documentación),
+   * TK (Ticket), BV (Boleta de venta), RC (Recibos diversos),
+   * DJ (Declaración Jurada nacional, legado), OT (Otros).
+   *
+   * Los dos del viaje al extranjero, que en el formulario viven bajo la
+   * pestaña "Viaje en el extranjero":
+   *  - DJE: Declaración Jurada al exterior (detalle diario por rubro).
+   *  - EXD: Documentos. Comprobante emitido fuera del Perú, sin RUC ni
+   *    validación SUNAT, siempre en dólares.
+   */
   @Prop({ type: String, required: false })
   subTipo?: string
 

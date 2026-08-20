@@ -148,6 +148,13 @@ export interface IUserResponse {
     cci?: string;
     accountType?: 'ahorros' | 'corriente';
   };
+  /** Cuenta en dólares, para los depósitos de solicitudes en USD. */
+  bankAccountUsd?: {
+    bankName?: string;
+    accountNumber?: string;
+    cci?: string;
+    accountType?: 'ahorros' | 'corriente';
+  };
   emailNotificationsEnabled?: boolean;
 }
 

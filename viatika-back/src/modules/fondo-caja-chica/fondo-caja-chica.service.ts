@@ -547,7 +547,7 @@ export class FondoCajaChicaService {
       .populate('solicitudReportId', 'status viaticoAmount createdAt')
       // La cuenta bancaria del responsable prellena el banco origen al devolver
       // el sobrante: ya está en su perfil, no tiene por qué volver a escribirlo.
-      .populate('responsibleId', 'name email bankAccount')
+      .populate('responsibleId', 'name email bankAccount bankAccountUsd')
       .sort({ createdAt: -1 })
       .exec()
   }

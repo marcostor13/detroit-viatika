@@ -551,8 +551,22 @@ describe('RendicionDetailComponent', () => {
   });
 
   describe('canSubmitReport', () => {
-    it('is false for caja chica reports', () => {
+    // La caja chica dejó de ser un depósito de comprobantes para Contabilidad:
+    // desde el presupuesto revolvente (dfc657e) se envía y se aprueba como
+    // cualquier otra rendición. Lo único que la frena es que Contabilidad ya
+    // la haya incluido en un reporte finalizado (`lockedByCajaChica`).
+    it('is true for caja chica reports with expenses', () => {
       component.report = makeReport({ status: 'open', isCajaChica: true, expenseIds: [{ _id: 'e1' }] });
+      expect(component.canSubmitReport).toBeTrue();
+    });
+
+    it('is false once accounting locked the caja chica', () => {
+      component.report = makeReport({
+        status: 'open',
+        isCajaChica: true,
+        lockedByCajaChica: true,
+        expenseIds: [{ _id: 'e1' }],
+      } as any);
       expect(component.canSubmitReport).toBeFalse();
     });
 
@@ -774,7 +788,27 @@ describe('RendicionDetailComponent', () => {
     it('navigates to /mis-rendiciones for the report owner', () => {
       component.report = makeReport({ userId: { _id: 'u1', name: 'Juan' } as any });
       component.goBack();
-      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones'], {});
+      // La pestaña se deduce del propio documento, no del ?tab= de la URL: una
+      // caja chica volvía a la primera pestaña y parecía sacada de su lista (33c1c3f).
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones'], {
+        queryParams: { tab: 'viaticos' },
+      });
+    });
+
+    it('devuelve al dueño a la pestaña de caja chica', () => {
+      component.report = makeReport({ userId: { _id: 'u1', name: 'Juan' } as any, isCajaChica: true } as any);
+      component.goBack();
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones'], {
+        queryParams: { tab: 'caja-chica' },
+      });
+    });
+
+    it('devuelve al dueño a la pestaña de directas', () => {
+      component.report = makeReport({ userId: { _id: 'u1', name: 'Juan' } as any, isDirecta: true });
+      component.goBack();
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones'], {
+        queryParams: { tab: 'directas' },
+      });
     });
   });
 

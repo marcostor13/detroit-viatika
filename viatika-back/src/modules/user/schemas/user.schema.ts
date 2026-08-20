@@ -73,6 +73,8 @@ export interface UserDocument extends Document {
   address?: string
   phone?: string
   bankAccount?: BankAccount
+  /** Cuenta en dólares, para los depósitos de solicitudes en USD. */
+  bankAccountUsd?: BankAccount
   permissions?: UserPermissions
   signature?: string
   /** @deprecated usar approverIds. Se conserva para migración. */
@@ -130,6 +132,7 @@ export class User {
   @Prop()
   phone?: string
 
+  /** Cuenta en soles. Es la de siempre; sin moneda explícita para no migrar. */
   @Prop({
     type: {
       bankName: { type: String },
@@ -140,6 +143,22 @@ export class User {
     },
   })
   bankAccount?: BankAccount
+
+  /**
+   * Cuenta en dólares. Se usa cuando la solicitud se abre en USD: el banco
+   * rechaza el abono si la moneda de la cuenta no coincide con la de la
+   * planilla. Ver `resolveUserBankAccount` en `common/bank-account.util.ts`.
+   */
+  @Prop({
+    type: {
+      bankName: { type: String },
+      accountNumber: { type: String },
+      cci: { type: String },
+      accountType: { type: String, enum: ['ahorros', 'corriente'] },
+      _id: false,
+    },
+  })
+  bankAccountUsd?: BankAccount
 
   @Prop({
     type: {

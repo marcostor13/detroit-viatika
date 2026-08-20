@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { DEFAULT_MONEDA, monedaSymbol } from '../../constants/moneda';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { UserStateService } from '../../services/user-state.service';
 import { InvoicesService } from '../invoices/services/invoices.service';
@@ -260,8 +261,38 @@ export class RendicionesDirectasComponent implements OnInit {
     this.router.navigate(['/mis-rendiciones', String(r._id), 'detalle']);
   }
 
+  /** La rendición se lleva en una moneda distinta a la base de la empresa. */
+  esMonedaExtranjera(r: any): boolean {
+    return !!r?.moneda && r.moneda !== DEFAULT_MONEDA;
+  }
+
+  /** Símbolo de la moneda propia de esa rendición. */
+  monedaSimbolo(r: any): string {
+    return monedaSymbol(r?.moneda);
+  }
+
   get reportsTotalGastado(): number {
     return this.reports().reduce((sum, r) => sum + (Number(r?.totalGastado) || 0), 0);
+  }
+
+  /**
+   * Total gastado desglosado por moneda ("S/ 86.70 · $ 220.41").
+   *
+   * Las rendiciones se muestran cada una en su moneda, así que un único número
+   * no representaría nada: sumar soles con dólares da una cifra que no existe.
+   * Se agrupa y se ordena dejando la moneda base primero.
+   */
+  get totalGastadoPorMoneda(): string {
+    const porMoneda = new Map<string, number>();
+    for (const r of this.reports()) {
+      const codigo = (r?.moneda as string) || DEFAULT_MONEDA;
+      porMoneda.set(codigo, (porMoneda.get(codigo) ?? 0) + (Number(r?.totalGastadoMoneda) || 0));
+    }
+    if (porMoneda.size === 0) return `${monedaSymbol(DEFAULT_MONEDA)} 0.00`;
+    return [...porMoneda.entries()]
+      .sort(([a], [b]) => (a === DEFAULT_MONEDA ? -1 : b === DEFAULT_MONEDA ? 1 : a.localeCompare(b)))
+      .map(([codigo, total]) => `${monedaSymbol(codigo)} ${total.toFixed(2)}`)
+      .join(' · ');
   }
 
   goToPage(p: number): void { if (p < 1 || p > this.pages()) return; this.page = p; this.loadData(); }

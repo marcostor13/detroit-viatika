@@ -177,3 +177,118 @@ describe('EmailService — símbolo de moneda en las plantillas', () => {
     expect(enviados[0].context.currencySymbol).toBe('S/')
   })
 })
+
+/**
+ * El default de 'S/' en `send()` es una red de seguridad para que Handlebars en
+ * modo strict no aborte el render, pero caer en él siempre es un olvido de
+ * quien arma el correo: los importes salen con la cifra correcta y la moneda
+ * equivocada, y nada falla en ningún log. Pasó de verdad con la confirmación
+ * de rendición enviada al colaborador, que copiaba los campos de `emailData`
+ * uno por uno y se saltaba justo este.
+ */
+describe('EmailService.send — aviso cuando falta la moneda', () => {
+  const nuevoServicio = () => {
+    const svc = Object.create(EmailService.prototype) as any
+    const enviados: any[] = []
+    svc.mailerService = { sendMail: jest.fn(async (o: any) => { enviados.push(o) }) }
+    svc.logger = { warn: jest.fn(), debug: jest.fn(), error: jest.fn() }
+    svc.normalizeIsoDatesInText = (t: string) => t
+    svc.getLogoUrl = () => 'logo.png'
+    svc.getPublicAppBaseUrl = () => 'https://app'
+    return { svc, enviados }
+  }
+
+  it('avisa por log cuando el correo llega sin símbolo de moneda', async () => {
+    const { svc, enviados } = nuevoServicio()
+    await svc.send({
+      to: 'a@b.com',
+      subject: 'Rendición enviada',
+      template: './rendicion-submitted-colaborador',
+      context: { budgetFormatted: '212.41' },
+    })
+    expect(svc.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('sin currencySymbol')
+    )
+    // El correo igual sale: el aviso no bloquea, solo deja rastro.
+    expect(enviados[0].context.currencySymbol).toBe('S/')
+  })
+
+  it('nombra la plantilla en el aviso, para poder ubicar al culpable', async () => {
+    const { svc } = nuevoServicio()
+    await svc.send({ to: 'a@b.com', subject: 'x', template: './rendicion-submitted-colaborador', context: {} })
+    expect(svc.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('rendicion-submitted-colaborador')
+    )
+  })
+
+  it('no avisa cuando sí le pasan la moneda', async () => {
+    const { svc, enviados } = nuevoServicio()
+    await svc.send({
+      to: 'a@b.com',
+      subject: 'x',
+      template: './rendicion-submitted-colaborador',
+      context: { currencySymbol: '$', budgetFormatted: '212.41' },
+    })
+    expect(svc.logger.warn).not.toHaveBeenCalled()
+    expect(enviados[0].context.currencySymbol).toBe('$')
+  })
+})
+
+/**
+ * El envío no bloquea a quien pidió la acción: aprobar una rendición tardaba
+ * 14 s esperando a que Office365 aceptara cada correo, contra 30 ms de trabajo
+ * real en base. El correo ya era no crítico (cada `sendXxx` traga su error y
+ * solo lo registra), así que esperar por él solo servía para dejar al usuario
+ * mirando un botón girando.
+ */
+describe('EmailService.send — no bloquea la respuesta', () => {
+  const nuevoServicio = (demoraMs: number, falla = false) => {
+    const svc = Object.create(EmailService.prototype) as any
+    const enviados: any[] = []
+    svc.mailerService = {
+      sendMail: jest.fn(
+        (o: any) =>
+          new Promise((resolve, reject) =>
+            setTimeout(() => {
+              if (falla) return reject(new Error('SMTP caído'))
+              enviados.push(o)
+              resolve(null)
+            }, demoraMs)
+          )
+      ),
+    }
+    svc.logger = { warn: jest.fn(), debug: jest.fn(), error: jest.fn() }
+    svc.normalizeIsoDatesInText = (t: string) => t
+    svc.getLogoUrl = () => 'logo.png'
+    svc.getPublicAppBaseUrl = () => 'https://app'
+    return { svc, enviados }
+  }
+
+  const correo = { to: 'a@b.com', subject: 'Rendición aprobada', template: './x', context: { currencySymbol: '$' } }
+
+  it('devuelve el control antes de que el proveedor responda', async () => {
+    const { svc, enviados } = nuevoServicio(60)
+    const t0 = Date.now()
+    await svc.send({ ...correo })
+    expect(Date.now() - t0).toBeLessThan(50)
+    // Todavía no salió: se despachó y se siguió.
+    expect(enviados).toHaveLength(0)
+  })
+
+  it('el correo igual se manda, después', async () => {
+    const { svc, enviados } = nuevoServicio(20)
+    await svc.send({ ...correo })
+    await new Promise(r => setTimeout(r, 60))
+    expect(enviados).toHaveLength(1)
+  })
+
+  it('un fallo del proveedor queda en el log y no revienta el proceso', async () => {
+    const { svc } = nuevoServicio(10, true)
+    await svc.send({ ...correo })
+    await new Promise(r => setTimeout(r, 60))
+    expect(svc.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Fallo al enviar')
+    )
+    expect(svc.logger.error).toHaveBeenCalledWith(expect.stringContaining('a@b.com'))
+  })
+})

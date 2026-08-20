@@ -10,7 +10,7 @@
     <div class="flex items-center gap-2">
       <app-button variant="primary" size="sm"
         [label]="isGeneratingTxt() ? 'Generando...' : 'Generar archivo de pagos'"
-        [disabled]="isGeneratingTxt()" (clicked)="generatePaymentsTxt()" />
+        [disabled]="isGeneratingTxt()" (clicked)="generateAllPaymentsTxt()" />
       <label
         class="inline-flex items-center gap-2 h-[38px] px-3 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium cursor-pointer"
         [class.opacity-50]="isReconciling()" [class.pointer-events-none]="isReconciling()">
@@ -70,7 +70,7 @@
           <tr class="hover:bg-background/60 transition-colors">
             <td class="px-5 py-3.5 font-medium text-secondary">{{ collaboratorReportName(rep) }}</td>
             <td class="px-5 py-3.5 text-tertiary">{{ rep.title }}</td>
-            <td class="px-5 py-3.5 text-right font-bold text-success-ink">S/ {{ reimbursementAmount(rep) }}</td>
+            <td class="px-5 py-3.5 text-right font-bold text-success-ink">{{ reimbursementSymbol(rep) }} {{ reimbursementAmount(rep) }}</td>
             <td class="px-5 py-3.5 text-right">
               <div class="flex items-center justify-end gap-2">
                 <a [routerLink]="['/mis-rendiciones', rep._id, 'detalle']"
@@ -94,7 +94,7 @@
             <p class="text-sm font-semibold text-secondary">{{ collaboratorReportName(rep) }}</p>
             <p class="text-xs text-tertiary mt-0.5 truncate max-w-[180px]">{{ rep.title }}</p>
           </div>
-          <span class="text-base font-bold text-success-ink shrink-0">S/ {{ reimbursementAmount(rep) }}</span>
+          <span class="text-base font-bold text-success-ink shrink-0">{{ reimbursementSymbol(rep) }} {{ reimbursementAmount(rep) }}</span>
         </div>
         <div class="flex gap-2">
           <a [routerLink]="['/mis-rendiciones', rep._id, 'detalle']"
@@ -784,7 +784,7 @@
       </div>
       <p class="text-sm text-tertiary mb-5">
         <span class="font-semibold text-secondary">{{ collaboratorReportName(selectedReportReimbursement) }}</span>
-        &nbsp;·&nbsp;S/ {{ reimbursementAmount(selectedReportReimbursement) }}
+        &nbsp;·&nbsp;{{ reimbursementSymbol(selectedReportReimbursement) }} {{ reimbursementAmount(selectedReportReimbursement) }}
         <br><span class="text-xs">{{ selectedReportReimbursement.title }}</span>
       </p>
 
@@ -1165,35 +1165,70 @@
     <!-- Resumen de generación -->
     @if (batchMode() === 'generate' && generateResult(); as gen) {
     @if (gen.count > 0) {
-    <h2 class="text-lg font-bold text-secondary mb-1">Archivo de pagos generado</h2>
-    <p class="text-sm text-tertiary mb-4">Se descargó <span class="font-medium text-secondary">{{ gen.fileName }}</span>. Súbelo a BBVA Net Cash → Pagos Masivos.</p>
+<h2 class="text-lg font-bold text-secondary mb-1">
+      {{ archivosConPagos().length > 1 ? archivosConPagos().length + ' archivos de pago generados' : 'Archivo de pagos generado' }}
+    </h2>
+    <p class="text-sm text-tertiary mb-4">
+      {{ archivosConPagos().length > 1 ? 'Se descargaron' : 'Se descargó' }}
+      <span class="font-medium text-secondary">{{ nombresArchivosGenerados() }}</span>.
+      {{ archivosConPagos().length > 1 ? 'Súbelos' : 'Súbelo' }} a BBVA Net Cash → Pagos Masivos.
+    </p>
     <!-- Un archivo válido pero INCOMPLETO es el peor caso: el banco lo acepta y
          los excluidos no cobran, sin que nada haya fallado. Se avisa arriba, no
          solo en el detalle de más abajo. -->
-    @if (gen.excluded.length > 0) {
+    @if (excluidosTodos().length > 0) {
     <div class="rounded-xl border border-warning/40 bg-warning/10 p-3 mb-4 flex gap-2">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="w-5 h-5 shrink-0 text-warning-ink">
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
       </svg>
       <p class="text-sm text-warning-ink">
         <span class="font-semibold">El archivo está incompleto:</span>
-        {{ gen.excluded.length }} pago(s) por {{ gen.moneda }} {{ totalExcluido() | number:'1.2-2' }} NO se incluyeron.
+        {{ excluidosTodos().length }} pago(s) por {{ totalExcluidoPorMoneda() }} NO se incluyeron.
         El banco aceptará el archivo igual y esas personas no cobrarán. Revisa el detalle al final y corrige antes de subirlo.
       </p>
     </div>
     }
     } @else {
     <h2 class="text-lg font-bold text-warning-ink mb-1">No se generó el archivo</h2>
-    <p class="text-sm text-tertiary mb-4">Hay pagos pendientes, pero ninguno tiene datos bancarios completos. Corrige los datos de los beneficiarios y vuelve a intentarlo.</p>
+    <p class="text-sm text-tertiary mb-4">{{ motivoArchivoVacio() }}</p>
+    }
+    <!-- El archivo BBVA admite una moneda por planilla: se emiten todas las
+         que hagan falta en una sola acción y se listan acá. -->
+    @if (archivosGenerados().length > 1) {
+    <div class="rounded-xl border border-primary/30 bg-primary/5 p-3 mb-4">
+      <p class="text-sm font-semibold text-secondary mb-2">Se generaron {{ archivosGenerados().length }} archivos, uno por moneda:</p>
+      <ul class="space-y-1">
+        @for (a of archivosGenerados(); track a.moneda) {
+        <li class="flex justify-between gap-3 text-xs">
+          <span class="text-secondary font-medium">{{ a.fileName }}</span>
+          <span class="text-tertiary whitespace-nowrap">{{ a.count }} pago(s) · {{ monedaSimbolo(a.moneda) }} {{ a.totalSoles | number:'1.2-2' }}</span>
+        </li>
+        }
+      </ul>
+    </div>
+    }
+    @if (monedasSinEmitir().length > 0) {
+    <div class="rounded-xl border border-error/30 bg-error/5 p-3 mb-4">
+      <p class="text-sm font-semibold text-error mb-2">No se pudo emitir la planilla de estas monedas:</p>
+      <ul class="space-y-1.5">
+        @for (f of monedasSinEmitir(); track f.moneda) {
+        <li class="text-xs">
+          <span class="text-secondary font-medium">{{ f.moneda }} — {{ f.count }} pago(s) por {{ monedaSimbolo(f.moneda) }} {{ f.total | number:'1.2-2' }}</span>
+          <p class="text-tertiary mt-0.5">{{ f.motivo }}</p>
+        </li>
+        }
+      </ul>
+    </div>
     }
     <div class="grid grid-cols-2 gap-3 mb-4">
       <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3">
         <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Pagos incluidos</p>
-        <p class="text-2xl font-bold text-primary">{{ gen.count }}</p>
+        <p class="text-2xl font-bold text-primary">{{ pagosIncluidosTotal() }}</p>
       </div>
       <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3">
         <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Total</p>
-        <p class="text-2xl font-bold text-secondary">{{ gen.moneda }} {{ gen.totalSoles | number:'1.2-2' }}</p>
+        <!-- Desglosado: sumar soles con dólares daría una cifra que no existe. -->
+        <p class="text-2xl font-bold text-secondary">{{ totalGeneradoPorMoneda() || (gen.moneda + ' 0.00') }}</p>
       </div>
     </div>
     <!-- El archivo BBVA admite una sola moneda: el resto se emite aparte. -->
@@ -1216,15 +1251,15 @@
       </div>
     </div>
     }
-    @if (gen.excluded.length > 0) {
+    @if (excluidosTodos().length > 0) {
     <div class="rounded-xl border border-warning/30 bg-warning/5 p-3 mb-2">
-      <p class="text-sm font-semibold text-warning-ink mb-2">{{ gen.excluded.length }} beneficiario(s) excluido(s) del archivo — motivo de cada uno:</p>
+      <p class="text-sm font-semibold text-warning-ink mb-2">{{ excluidosTodos().length }} beneficiario(s) excluido(s) — motivo de cada uno:</p>
       <ul class="space-y-2">
-        @for (ex of gen.excluded; track ex.id) {
+        @for (ex of excluidosTodos(); track ex.id) {
         <li class="text-xs border-b border-warning/20 last:border-0 pb-2 last:pb-0">
           <div class="flex justify-between gap-3">
             <span class="text-secondary font-medium">{{ ex.beneficiaryName }}</span>
-            <span class="text-secondary font-semibold whitespace-nowrap">{{ gen.moneda }} {{ ex.amount | number:'1.2-2' }}</span>
+            <span class="text-secondary font-semibold whitespace-nowrap">{{ ex.moneda ?? gen.moneda }} {{ ex.amount | number:'1.2-2' }}</span>
           </div>
           <p class="text-tertiary mt-0.5">{{ ex.reason }}</p>
         </li>
@@ -1269,7 +1304,8 @@
       @for (c of rec.conciliados; track c.id) {
       <li class="flex justify-between gap-3 text-xs">
         <span class="text-secondary font-medium">{{ c.beneficiaryName }} <span class="text-tertiary">({{ c.documentNumber }})</span></span>
-        <span class="text-success-ink text-right font-medium">S/ {{ c.amount | number:'1.2-2' }}</span>
+        <!-- Los importes del lote van en la moneda de la planilla, no siempre soles. -->
+        <span class="text-success-ink text-right font-medium">{{ monedaSimbolo(rec.moneda) }} {{ c.amount | number:'1.2-2' }}</span>
       </li>
       }
     </ul>
@@ -1280,7 +1316,7 @@
       @for (s of rec.sinConciliar; track s.documentNumber + s.amount) {
       <li class="flex justify-between gap-3 text-xs">
         <span class="text-secondary font-medium">{{ s.titular || '—' }} <span class="text-tertiary">({{ s.documentNumber }})</span></span>
-        <span class="text-tertiary text-right">S/ {{ s.amount | number:'1.2-2' }} · {{ s.reason }}</span>
+        <span class="text-tertiary text-right">{{ monedaSimbolo(rec.moneda) }} {{ s.amount | number:'1.2-2' }} · {{ s.reason }}</span>
       </li>
       }
     </ul>

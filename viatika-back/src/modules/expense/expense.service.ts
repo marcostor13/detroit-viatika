@@ -1579,6 +1579,38 @@ export class ExpenseService {
     return candidates.length === 1 ? String((candidates[0] as any)._id) : ''
   }
 
+  /**
+   * Límite diario de la planilla de movilidad. Está configurado en soles, así
+   * que se compara contra el equivalente en moneda base: en una rendición en
+   * dólares las filas van en dólares y medirlas crudas dejaría pasar un día
+   * de $30 (S/ 101) contra un tope de S/ 30. Mismo criterio que el tope de
+   * comida y el tope por comprobante.
+   */
+  private async assertLimiteDiarioMovilidad(
+    clientId: string,
+    rows: { fecha?: string; total?: number }[],
+    tipoCambio: number
+  ): Promise<void> {
+    const client = await this.clientModel.findById(clientId).lean().exec()
+    const dailyLimit = client?.limits?.movilidadDiario ?? null
+    if (dailyLimit === null) return
+
+    const tc = Number(tipoCambio) || 1
+    const porDia = new Map<string, number>()
+    for (const row of rows) {
+      const fecha = row.fecha || ''
+      porDia.set(fecha, (porDia.get(fecha) ?? 0) + (row.total || 0))
+    }
+    for (const [fecha, totalDia] of porDia) {
+      const enBase = this.round2(totalDia * tc)
+      if (enBase > dailyLimit) {
+        throw new BadRequestException(
+          `El total del día ${fecha} (S/ ${enBase.toFixed(2)}) supera el límite diario de S/ ${dailyLimit.toFixed(2)}`
+        )
+      }
+    }
+  }
+
   async createMobilitySheet(body: CreateExpenseDto): Promise<Expense> {
     if (!body.clientId) {
       throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
@@ -1645,23 +1677,6 @@ export class ExpenseService {
     }
     body.categoryId = (movilidadCategory as any)._id.toString()
 
-    const client = await this.clientModel.findById(body.clientId).lean().exec()
-    const dailyLimit = client?.limits?.movilidadDiario ?? null
-    if (dailyLimit !== null) {
-      const dailyTotals = new Map<string, number>()
-      for (const row of body.mobilityRows) {
-        const date = row.fecha || ''
-        dailyTotals.set(date, (dailyTotals.get(date) ?? 0) + (row.total || 0))
-      }
-      for (const [date, dayTotal] of dailyTotals) {
-        if (dayTotal > dailyLimit) {
-          throw new BadRequestException(
-            `El total del día ${date} (S/ ${dayTotal.toFixed(2)}) supera el límite diario de S/ ${dailyLimit.toFixed(2)}`
-          )
-        }
-      }
-    }
-
     const total = body.mobilityRows.reduce(
       (sum, row) => sum + (row.total || 0),
       0
@@ -1686,6 +1701,11 @@ export class ExpenseService {
       fecha: this.normalizeFechaEmisionValue(body.fechaEmision) ?? body.fechaEmision,
       expenseReportId: body.expenseReportId,
     })
+    await this.assertLimiteDiarioMovilidad(
+      body.clientId,
+      body.mobilityRows,
+      fx.tipoCambio
+    )
     // El límite de la categoría está definido en la moneda base.
     const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
     const topeMeta = await this.evaluateTopeComprobante(
@@ -1754,17 +1774,21 @@ export class ExpenseService {
    * VD-109: el monto de un gasto de Alimentación sin documentación no puede
    * pasar del tope que la empresa configuró para esa comida. El tope se mide
    * por gasto, no por el acumulado del día. Sin tope configurado no valida.
+   *
+   * Se compara contra el monto en MONEDA BASE: el tope está en soles, así que
+   * una comida cargada en dólares tiene que medirse con la misma vara. Mismo
+   * criterio que `evaluateTopeComprobante`.
    */
   private async assertTopeComida(
     clientId: string,
     tipo: TipoComida,
-    total: number
+    montoBase: number
   ): Promise<void> {
     const client = await this.clientModel.findById(clientId).lean().exec()
     const tope = topeComida(client?.limits, tipo)
-    if (tope === null || total <= tope) return
+    if (tope === null || montoBase <= tope) return
     throw new HttpException(
-      `El monto de ${this.ETIQUETA_COMIDA[tipo].toLowerCase()} (S/ ${total.toFixed(2)}) supera el tope de S/ ${tope.toFixed(2)}`,
+      `El monto de ${this.ETIQUETA_COMIDA[tipo].toLowerCase()} (S/ ${montoBase.toFixed(2)}) supera el tope de S/ ${tope.toFixed(2)}`,
       HttpStatus.BAD_REQUEST
     )
   }
@@ -1825,8 +1849,14 @@ export class ExpenseService {
           HttpStatus.BAD_REQUEST
         )
       }
-      await this.assertTopeComida(body.clientId, tipoComida, body.total)
+      // El tope se valida más abajo, contra el monto en moneda base: hace
+      // falta la conversión congelada para poder compararlo.
     }
+
+    // EXD (Documentos del viaje al extranjero): el comprobante lo emitió un
+    // proveedor de fuera del Perú, así que no lleva RUC ni pasa por SUNAT, y
+    // se registra en dólares — que es la moneda en la que se rinde el viaje.
+    const moneda = subTipo === 'EXD' ? 'USD' : body.moneda
 
     // RUC Emisor obligatorio para los sub-tipos con documento físico (TK, BV, RC)
     if (['TK', 'BV', 'RC'].includes(subTipo) && !body.rucEmisor?.trim()) {
@@ -1864,10 +1894,13 @@ export class ExpenseService {
     const fx = await this.freezeExpenseCurrency({
       clientId: body.clientId,
       total: body.total,
-      moneda: body.moneda,
+      moneda,
       fecha: normalizedFecha ?? body.fechaEmision,
       expenseReportId: body.expenseReportId,
     })
+    if (tipoComida) {
+      await this.assertTopeComida(body.clientId, tipoComida, fx.montoBase)
+    }
     // El límite de la categoría está definido en la moneda base.
     const categoryMeta = await this.evaluateCategoryLimit(body, fx.montoBase)
     const topeMeta = await this.evaluateTopeComprobante(
@@ -1966,7 +1999,17 @@ export class ExpenseService {
     montoReporte?: number
   }> {
     const config = await this.currencyService.getConfig(opts.clientId)
-    const moneda = normalizeMoneda(opts.moneda ?? config.monedaBase)
+    // Sin moneda declarada manda la de la rendición, no la base de la empresa.
+    // Quien tipea 120 en una rendición directa en dólares está diciendo $120;
+    // asumir soles ahí metía un importe falso en el total del reporte. La
+    // factura escaneada sí trae su propia moneda del OCR y esta rama no aplica.
+    const monedaReporte = opts.expenseReportId
+      ? (await this.expenseReportService.findCurrencyMeta(opts.expenseReportId))
+          ?.moneda
+      : undefined
+    const moneda = normalizeMoneda(
+      opts.moneda ?? monedaReporte ?? config.monedaBase
+    )
     const fecha = opts.fecha || new Date()
     const { montoBase, tipoCambio, tcFecha } = await this.currencyService.toBase(
       opts.total,
@@ -2947,6 +2990,7 @@ export class ExpenseService {
       subTipo?: string
       tipoComida?: TipoComida
       total?: number
+      tipoCambio?: number
       clientId?: string
     }
     if (existingAsRecord.subTipo === 'AL') {
@@ -2958,30 +3002,26 @@ export class ExpenseService {
         )
       }
       const total = dto.total ?? existingAsRecord.total ?? 0
-      await this.assertTopeComida(String(existingAsRecord.clientId), tipo, total)
+      // El tope está en soles: se compara contra el equivalente en base, con
+      // el TC que el gasto congeló al registrarse. Los gastos anteriores al
+      // multimoneda no lo tienen y ya estaban asumidos en soles (TC 1).
+      const tc = Number(existingAsRecord.tipoCambio) || 1
+      await this.assertTopeComida(
+        String(existingAsRecord.clientId),
+        tipo,
+        this.round2(total * tc)
+      )
       dto.description = this.ETIQUETA_COMIDA[tipo]
     }
 
     if (dto.mobilityRows && dto.mobilityRows.length > 0) {
-      const client = await this.clientModel
-        .findById(existing.clientId)
-        .lean()
-        .exec()
-      const dailyLimit = client?.limits?.movilidadDiario ?? null
-      if (dailyLimit !== null) {
-        const dailyTotals = new Map<string, number>()
-        for (const row of dto.mobilityRows) {
-          const date = row.fecha || ''
-          dailyTotals.set(date, (dailyTotals.get(date) ?? 0) + (row.total || 0))
-        }
-        for (const [date, dayTotal] of dailyTotals) {
-          if (dayTotal > dailyLimit) {
-            throw new BadRequestException(
-              `El total del día ${date} (S/ ${dayTotal.toFixed(2)}) supera el límite diario de S/ ${dailyLimit.toFixed(2)}`
-            )
-          }
-        }
-      }
+      // El tope está en soles: se mide contra el equivalente, con el TC que la
+      // planilla congeló al registrarse (1 en las anteriores al multimoneda).
+      await this.assertLimiteDiarioMovilidad(
+        String(existing.clientId),
+        dto.mobilityRows,
+        Number((existing as any).tipoCambio) || 1
+      )
       dto.total = dto.mobilityRows.reduce(
         (sum, row) => sum + (row.total || 0),
         0

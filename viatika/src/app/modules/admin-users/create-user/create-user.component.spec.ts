@@ -314,6 +314,33 @@ describe('CreateUserComponent', () => {
       expect(payload.bankAccount).toEqual({ bankName: 'BCP', accountNumber: '123', cci: '456', accountType: undefined });
     });
 
+    it('adds bankAccountUsd to the payload when the dollar fields are present', () => {
+      component.form.patchValue({
+        bankName: 'BCP', accountNumber: '123', cci: '456',
+        bankNameUsd: 'BBVA', accountNumberUsd: '999', cciUsd: '888', accountTypeUsd: 'corriente',
+      });
+      adminUsersService.createUser.and.returnValue(of({ temporaryPassword: 'x' } as any));
+
+      component.createUser();
+
+      const payload = adminUsersService.createUser.calls.mostRecent().args[0] as any;
+      expect(payload.bankAccountUsd).toEqual({ bankName: 'BBVA', accountNumber: '999', cci: '888', accountType: 'corriente' });
+      // La cuenta en soles no se toca al registrar la de dólares.
+      expect(payload.bankAccount.accountNumber).toBe('123');
+    });
+
+    it('omits bankAccountUsd when no dollar account was filled in', () => {
+      component.form.patchValue({ bankName: 'BCP', accountNumber: '123', cci: '456' });
+      adminUsersService.createUser.and.returnValue(of({ temporaryPassword: 'x' } as any));
+
+      component.createUser();
+
+      const payload = adminUsersService.createUser.calls.mostRecent().args[0] as any;
+      expect(payload.bankAccountUsd).toBeUndefined();
+      // Los campos sueltos no deben llegar al backend fuera del objeto.
+      expect(payload.bankNameUsd).toBeUndefined();
+    });
+
     it('omits permissions for Superadministrador', () => {
       component.form.patchValue({ roleId: 'r-super' });
       adminUsersService.createUser.and.returnValue(of({ temporaryPassword: 'x' } as any));

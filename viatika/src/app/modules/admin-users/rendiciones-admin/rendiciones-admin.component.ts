@@ -356,10 +356,12 @@ export class RendicionesAdminComponent implements OnInit {
             : r.isSolicitudCajaChica
               ? (r.cajaChicaNuevoPresupuesto ?? r.viaticoAmount ?? 0)
               : (r.viaticoAmount ?? r.budget ?? 0),
-        currencySymbol:
-          isDirectaChain || r.isCajaChica === true
-            ? monedaSymbol(undefined)
-            : monedaSymbol(r.viaticoMoneda),
+        // Siempre la moneda del documento. La excepción que forzaba soles en
+        // directa y caja chica se puso cuando la directa no tenía moneda
+        // propia; ahora sí la tiene, y forzarla dejaba una directa en dólares
+        // rotulada "S/" sobre un importe que ya venía en dólares. La caja
+        // chica va en soles, así que para ella el resultado no cambia.
+        currencySymbol: monedaSymbol(r.viaticoMoneda),
         status: r.status,
         // La solicitud de caja chica viaja como viático pero sus estados
         // significan otra cosa: `paid` es "presupuesto aplicado", no un anticipo

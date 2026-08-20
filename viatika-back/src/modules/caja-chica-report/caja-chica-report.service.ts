@@ -14,6 +14,10 @@ import {
   ExpenseReportDocument,
 } from '../expense-report/entities/expense-report.entity'
 import { CreateCajaChicaReportDto } from './dto/create-caja-chica-report.dto'
+import {
+  generarCodigoCorrelativo,
+  maxSecuencia,
+} from '../../common/codigo-correlativo.util'
 
 @Injectable()
 export class CajaChicaReportService {
@@ -33,17 +37,27 @@ export class CajaChicaReportService {
     private readonly expenseReportModel: Model<ExpenseReportDocument>
   ) {}
 
+  /**
+   * Código autoincremental único por empresa (CC-0001), atómico y a prueba de
+   * que el contador quede por detrás de los códigos ya emitidos. Ver
+   * `generarCodigoCorrelativo`.
+   */
   private async generateCodigo(clientId: string): Promise<string> {
-    const key = `caja-chica-report:${clientId}`
-    const res: any = await this.model.db
-      .collection('counters')
-      .findOneAndUpdate(
-        { _id: key as any },
-        { $inc: { seq: 1 } },
-        { upsert: true, returnDocument: 'after' }
-      )
-    const seq = (res && (res.seq ?? res.value?.seq)) ?? 1
-    return `CC-${String(seq).padStart(4, '0')}`
+    const cid = new Types.ObjectId(clientId)
+    return generarCodigoCorrelativo({
+      counters: this.model.db.collection('counters') as any,
+      key: `caja-chica-report:${clientId}`,
+      prefijo: 'CC',
+      estaTomado: async codigo => !!(await this.model.exists({ clientId: cid, codigo })),
+      ultimoEmitido: async () => {
+        const docs = await this.model
+          .find({ clientId: cid, codigo: { $regex: '^CC-\\d+$' } })
+          .select('codigo')
+          .lean<{ codigo: string }[]>()
+          .exec()
+        return maxSecuencia(docs.map(d => d.codigo), 'CC')
+      },
+    })
   }
 
   async create(

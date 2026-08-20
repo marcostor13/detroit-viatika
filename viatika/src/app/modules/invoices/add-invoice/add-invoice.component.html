@@ -320,7 +320,7 @@
       <!-- Monto extraído por OCR -->
       <div class="flex flex-col gap-1 sm:col-span-2">
         <label class="text-xs font-medium text-secondary">
-          Monto S/.
+          Monto {{ ocrSymbol() }}
           <span class="text-tertiary font-normal">(extraído por OCR)</span>
         </label>
         <div class="flex items-center gap-2">
@@ -332,7 +332,7 @@
             [class.border-amber-300]="ocrAmountWasEdited"
             [class.bg-amber-50]="ocrAmountWasEdited"
             [class.text-amber-900]="ocrAmountWasEdited">
-            S/ {{ (ocrAmountWasEdited ? editedOcrTotal()! : ocrTotalAmount()) | number:'1.2-2' }}
+            {{ ocrSymbol() }} {{ (ocrAmountWasEdited ? editedOcrTotal()! : ocrTotalAmount()) | number:'1.2-2' }}
             @if (ocrAmountWasEdited) {
               <span class="ml-2 text-xs font-normal text-amber-600">(editado)</span>
             }
@@ -356,7 +356,7 @@
         @if (ocrAmountWasEdited) {
         <div class="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
           <app-icon name="triangle-alert" size="sm" class="shrink-0" />
-          Monto editado. OCR extrajo: S/ {{ ocrTotalAmount() | number:'1.2-2' }}.
+          Monto editado. OCR extrajo: {{ ocrSymbol() }} {{ ocrTotalAmount() | number:'1.2-2' }}.
         </div>
         }
       </div>
@@ -478,7 +478,7 @@
     </div>
     <!-- Monto editable en edición -->
     <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Monto S/.</label>
+      <label class="text-sm font-medium text-secondary">Monto {{ invoiceSymbol }}</label>
       <div class="flex items-center gap-2">
         @if (!editingInvoiceAmount()) {
         <div class="flex-1 h-[42px] px-4 flex items-center rounded-lg border text-sm font-semibold tabular-nums transition-colors"
@@ -488,7 +488,7 @@
           [class.border-amber-300]="invoiceAmountWasEdited"
           [class.bg-amber-50]="invoiceAmountWasEdited"
           [class.text-amber-900]="invoiceAmountWasEdited">
-          S/ {{ (invoiceAmountWasEdited ? editedInvoiceTotal()! : (originalInvoice?.total ?? 0)) | number:'1.2-2' }}
+          {{ invoiceSymbol }} {{ (invoiceAmountWasEdited ? editedInvoiceTotal()! : (originalInvoice?.total ?? 0)) | number:'1.2-2' }}
           @if (invoiceAmountWasEdited) {
             <span class="ml-2 text-xs font-normal text-amber-600">(editado)</span>
           }
@@ -512,7 +512,7 @@
       @if (invoiceAmountWasEdited) {
       <div class="flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
         <app-icon name="triangle-alert" size="sm" class="shrink-0" />
-        Monto editado. Valor anterior: S/ {{ (originalInvoice?.total ?? 0) | number:'1.2-2' }}.
+        Monto editado. Valor anterior: {{ invoiceSymbol }} {{ (originalInvoice?.total ?? 0) | number:'1.2-2' }}.
       </div>
       }
     </div>
@@ -733,7 +733,7 @@
           }
           <!-- Total -->
           <div class="flex flex-col gap-1">
-            <label class="text-xs font-medium text-secondary">Total S/. <span class="text-error">*</span></label>
+            <label class="text-xs font-medium text-secondary">Total {{ rendicionSymbol() }} <span class="text-error">*</span></label>
             <input type="number" formControlName="total" placeholder="0.00" min="0" step="0.01"
               [class.border-error]="isMobilityRowDateOverLimit(i)"
               [class.ring-error]="isMobilityRowDateOverLimit(i)"
@@ -765,7 +765,7 @@
     @if(mobilityRowsArray.length > 0) {
     <div class="flex justify-end mt-4 pt-4 border-t border-tertiary/20">
       <div class="flex items-center gap-3">
-        <span class="text-sm text-secondary font-medium">TOTAL S/.</span>
+        <span class="text-sm text-secondary font-medium">TOTAL {{ rendicionSymbol() }}</span>
         <span class="text-xl font-bold text-secondary">{{ getMobilityTotal() | number:'1.2-2' }}</span>
       </div>
     </div>
@@ -815,12 +815,12 @@
         <button type="button"
           (click)="selectOtrosSubTipo(opt.code)"
           class="flex flex-col items-center justify-center gap-1 p-3 rounded-xl border-2 transition-all text-center"
-          [class.border-primary]="otrosSubTipo() === opt.code"
-          [class.bg-primary]="otrosSubTipo() === opt.code"
-          [class.text-white]="otrosSubTipo() === opt.code"
-          [class.border-gray-200]="otrosSubTipo() !== opt.code"
-          [class.bg-white]="otrosSubTipo() !== opt.code"
-          [class.text-secondary]="otrosSubTipo() !== opt.code"
+          [class.border-primary]="subTipoBotonActivo(opt.code)"
+          [class.bg-primary]="subTipoBotonActivo(opt.code)"
+          [class.text-white]="subTipoBotonActivo(opt.code)"
+          [class.border-gray-200]="!subTipoBotonActivo(opt.code)"
+          [class.bg-white]="!subTipoBotonActivo(opt.code)"
+          [class.text-secondary]="!subTipoBotonActivo(opt.code)"
         >
           <span class="text-xs font-bold tabular-nums">{{ opt.code }}</span>
           <span class="text-xs leading-tight">{{ opt.label }}</span>
@@ -831,6 +831,31 @@
         }
       </div>
     </div>
+
+    <!-- Segundo nivel de "Viaje en el extranjero": la Declaración Jurada de
+         siempre, o un comprobante emitido fuera del Perú (Documentos). -->
+    @if (!id && esViajeExtranjero()) {
+    <div>
+      <label class="block text-sm font-medium text-secondary mb-3">¿Cómo vas a sustentar el gasto? <span class="text-error">*</span></label>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        @for (opt of viajeExtranjeroOpciones; track opt.code) {
+        <button type="button"
+          (click)="selectOtrosSubTipo(opt.code)"
+          class="flex flex-col items-center justify-center gap-0.5 p-3 rounded-xl border-2 transition-all text-center"
+          [class.border-primary]="otrosSubTipo() === opt.code"
+          [class.bg-primary]="otrosSubTipo() === opt.code"
+          [class.text-white]="otrosSubTipo() === opt.code"
+          [class.border-gray-200]="otrosSubTipo() !== opt.code"
+          [class.bg-white]="otrosSubTipo() !== opt.code"
+          [class.text-secondary]="otrosSubTipo() !== opt.code"
+        >
+          <span class="text-sm font-semibold leading-tight">{{ opt.label }}</span>
+          <span class="text-[11px] leading-tight opacity-70">{{ opt.hint }}</span>
+        </button>
+        }
+      </div>
+    </div>
+    }
 
     @if (otrosSubTipoMuestraDocumento()) {
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -927,7 +952,10 @@
     </div>
     }
     <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Monto Total S/. <span class="text-error">*</span></label>
+      <label class="text-sm font-medium text-secondary">Monto Total {{ otrosMonedaSimbolo }} <span class="text-error">*</span></label>
+      @if (isExtranjeroDocumento()) {
+      <p class="text-xs text-tertiary">El importe va en dólares, tal como figura en el comprobante. La conversión a soles la hace el sistema con el tipo de cambio del día.</p>
+      }
       <input type="number" formControlName="totalOtros" placeholder="0.00" min="0" step="0.01"
         [class.border-error]="montoSuperaTopeComida"
         class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
@@ -954,7 +982,15 @@
         (click)="fileInputOtros.click()">
         <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">
-          {{ selectedFile ? selectedFile.name : (otrosSubTipo() === 'AL' ? 'Haz clic para adjuntar un respaldo, si lo tienes' : 'Haz clic para adjuntar un comprobante') }}
+          @if (selectedFile) {
+            {{ selectedFile.name }}
+          } @else if (otrosSubTipo() === 'AL') {
+            Haz clic para adjuntar un respaldo, si lo tienes
+          } @else if (isExtranjeroDocumento()) {
+            Haz clic para adjuntar el recibo del exterior
+          } @else {
+            Haz clic para adjuntar un comprobante
+          }
         </p>
         <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
         <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputOtros />
@@ -1180,7 +1216,7 @@
         class="w-full rounded-lg border border-gray-200 px-4 py-2 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"></textarea>
     </div>
     <div class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-secondary">Monto total S/. <span class="text-error">*</span></label>
+      <label class="text-sm font-medium text-secondary">Monto total {{ rendicionSymbol() }} <span class="text-error">*</span></label>
       <input type="number" min="0" step="0.01" formControlName="receiptMonto"
         class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
     </div>

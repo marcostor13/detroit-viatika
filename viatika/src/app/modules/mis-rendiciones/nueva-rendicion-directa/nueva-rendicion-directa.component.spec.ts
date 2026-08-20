@@ -7,6 +7,7 @@ import { NotificationService } from '../../../services/notification.service';
 import { UserStateService } from '../../../services/user-state.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
+import { AccountingConfigService } from '../../../services/accounting-config.service';
 import { IExpenseReport } from '../../../interfaces/expense-report.interface';
 import { IOrdenTrabajo } from '../../../interfaces/orden-trabajo.interface';
 
@@ -17,6 +18,7 @@ describe('NuevaRendicionDirectaComponent', () => {
   let userState: jasmine.SpyObj<UserStateService>;
   let invoicesService: jasmine.SpyObj<InvoicesService>;
   let ordenTrabajoService: jasmine.SpyObj<OrdenTrabajoService>;
+  let accountingConfigService: jasmine.SpyObj<AccountingConfigService>;
   let router: jasmine.SpyObj<Router>;
 
   const ordenes: IOrdenTrabajo[] = [
@@ -35,6 +37,8 @@ describe('NuevaRendicionDirectaComponent', () => {
     userState.getUser.and.returnValue({ _id: 'u1', companyId: 'c1' } as any);
     invoicesService.getProjects.and.returnValue(of([{ _id: 'p1', name: 'Proyecto 1', code: 'P1', isActive: true }]));
     ordenTrabajoService.getAll.and.returnValue(of(ordenes));
+    accountingConfigService = jasmine.createSpyObj('AccountingConfigService', ['getAvailableCurrencies']);
+    accountingConfigService.getAvailableCurrencies.and.returnValue(of(['PEN', 'USD']));
 
     TestBed.configureTestingModule({
       imports: [NuevaRendicionDirectaComponent],
@@ -44,6 +48,7 @@ describe('NuevaRendicionDirectaComponent', () => {
         { provide: UserStateService, useValue: userState },
         { provide: InvoicesService, useValue: invoicesService },
         { provide: OrdenTrabajoService, useValue: ordenTrabajoService },
+        { provide: AccountingConfigService, useValue: accountingConfigService },
         { provide: Router, useValue: router },
       ],
     });
@@ -76,6 +81,35 @@ describe('NuevaRendicionDirectaComponent', () => {
       component.ngOnInit();
       component.form.get('projectId')?.setValue('p1');
       expect(component.filteredOrdenesTrabajo().map(o => o._id)).toEqual(['ot1']);
+    });
+  });
+
+  describe('moneda', () => {
+    it('ofrece las monedas habilitadas para la empresa', () => {
+      component.ngOnInit();
+      expect(accountingConfigService.getAvailableCurrencies).toHaveBeenCalledWith('c1');
+      expect(component.monedasDisponibles().map(m => m.code)).toEqual(['PEN', 'USD']);
+    });
+
+    it('arranca en soles', () => {
+      component.ngOnInit();
+      expect(component.form.get('moneda')?.value).toBe('PEN');
+    });
+
+    it('se queda solo con soles si la empresa no responde', () => {
+      accountingConfigService.getAvailableCurrencies.and.returnValue(throwError(() => new Error('x')));
+      component.ngOnInit();
+      expect(component.monedasDisponibles().map(m => m.code)).toEqual(['PEN']);
+    });
+
+    it('manda la moneda elegida al crear la rendicion', () => {
+      component.ngOnInit();
+      component.form.patchValue({ gestion: 'Viaje a Bogota', projectId: 'p1', moneda: 'USD' });
+      expenseReportsService.create.and.returnValue(of({ _id: 'r1' } as IExpenseReport));
+      component.submit();
+      expect(expenseReportsService.create).toHaveBeenCalledWith(
+        jasmine.objectContaining({ moneda: 'USD', isDirecta: true })
+      );
     });
   });
 

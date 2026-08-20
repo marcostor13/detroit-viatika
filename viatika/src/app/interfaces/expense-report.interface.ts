@@ -360,6 +360,8 @@ export interface ICreateExpenseReport {
   ordenTrabajoId?: string;
   motivo?: string;
   gestion?: string;
+  /** Moneda ISO de la rendición directa ('PEN' / 'USD'). Sin valor, la base. */
+  moneda?: string;
   isDirecta?: boolean;
   isCajaChica?: boolean;
   // New fields

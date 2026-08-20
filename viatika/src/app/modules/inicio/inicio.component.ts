@@ -11,7 +11,7 @@ import { IExpenseReport, IChainStep } from '../../interfaces/expense-report.inte
 import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../interfaces/advance.interface';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
-import { monedaSymbol } from '../../constants/moneda';
+import { monedaSymbol, expenseAmountInReport } from '../../constants/moneda';
 
 /** Fila normalizada que alimenta los listados del inicio (colaborador y coordinador). */
 export interface DashRow {
@@ -288,11 +288,18 @@ export class InicioComponent implements OnInit {
       .map((r) => this.reportRow(r))
   );
 
-  /** Suma de los comprobantes cargados; 0 si `expenseIds` no viene poblado. */
+  /**
+   * Suma de los comprobantes cargados, EN LA MONEDA DE LA RENDICIÓN; 0 si
+   * `expenseIds` no viene poblado.
+   *
+   * Sumar `total` a secas mezclaba monedas: una boleta de S/ 30 dentro de una
+   * rendición en dólares aportaba 30 a un total rotulado "$", así que al
+   * aprobador le aparecían $ 30.00 donde eran $ 8.89.
+   */
   private reportExpensesTotal(report: IExpenseReport): number {
     return (report.expenseIds ?? []).reduce(
       (sum: number, exp: any) =>
-        sum + (exp && typeof exp === 'object' ? Number(exp.total) || 0 : 0),
+        sum + (exp && typeof exp === 'object' ? expenseAmountInReport(exp) : 0),
       0
     );
   }
@@ -596,9 +603,14 @@ export class InicioComponent implements OnInit {
       title: r.title || (r as any).viaticoPlace || '—',
       userName: this.resolveUserName(r.userId),
       project: this.resolveProject((r as any).projectId),
-      // La directa no tiene presupuesto propio (`budget` es 0): su monto es la
-      // suma de los comprobantes cargados, igual que en /rendiciones (VD-25).
-      amount: (r as any).isDirecta
+      // Ni la directa ni la rendición de caja chica tienen presupuesto propio
+      // (`budget` es 0; en la caja chica el presupuesto es el del FONDO del
+      // responsable): su monto es la suma de los comprobantes cargados, igual
+      // que en /rendiciones (VD-25). Sin esto, al aprobador le aparecía una
+      // rendición de caja chica de S/ 0.00 con S/ 355.50 dentro.
+      // La SOLICITUD de caja chica no entra acá: es `type: 'viatico'` y sí
+      // lleva su monto pedido en `viaticoAmount`.
+      amount: (r as any).isDirecta || (r as any).isCajaChica
         ? this.reportExpensesTotal(r)
         : ((r as any).viaticoAmount ?? r.budget ?? 0),
       currencySymbol: monedaSymbol((r as any).viaticoMoneda),
