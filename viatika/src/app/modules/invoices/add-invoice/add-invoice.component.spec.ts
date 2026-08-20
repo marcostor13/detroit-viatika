@@ -72,8 +72,15 @@ describe('AddInvoiceComponent', () => {
 
     notificationService = jasmine.createSpyObj('NotificationService', ['show']);
 
-    expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', ['findAllByUser', 'findOne']);
+    expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
+      'findAllByUser',
+      'findOne',
+      // La rendición de caja chica precarga su centro de costo al abrir el
+      // formulario; sin el método en el doble, ngOnInit reventaba.
+      'findCajaChicaCentroCosto',
+    ]);
     expenseReportsService.findAllByUser.and.returnValue(of([]));
+    expenseReportsService.findCajaChicaCentroCosto.and.returnValue(of({ projectId: '' } as any));
 
     advanceService = jasmine.createSpyObj('AdvanceService', ['findMy']);
     advanceService.findMy.and.returnValue(of([]));
@@ -346,7 +353,7 @@ describe('AddInvoiceComponent', () => {
     it('is false when the daily limit is exceeded', () => {
       const component = createComponent();
       component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
-      component.mobilityDailyLimit = 15;
+      (component as any).mobilityDailyLimitRaw = 15;
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1' });
       component.setExpenseType('planilla_movilidad');
       component.addMobilityRow();
@@ -1229,6 +1236,107 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  describe('Viaje en el extranjero — pestaña con Declaración Jurada y Documentos', () => {
+    // Nombres reales del catálogo de Detroit (91x Servicios / 92x Comercial).
+    const catAlimentacionLima = { _id: 'cat-ali-lim', name: 'Alimentación - LIMA', cuenta: '91.2.5.00' } as any;
+    const catAlimentacionProv = { _id: 'cat-ali-pro', name: 'Alimentacion - PROVINCIA', cuenta: '91.3.1.40' } as any;
+    const catAlojamiento = { _id: 'cat-alo', name: 'Alojamiento - PROVINCIA', cuenta: '91.3.1.30' } as any;
+    const catTransporte = { _id: 'cat-tra', name: 'Transporte de personal', cuenta: '91.3.1.14' } as any;
+    const catGastosMenores = { _id: 'cat-men', name: 'Gastos menores - Área de servicios', cuenta: '91.5.9.31' } as any;
+    const catCombustible = { _id: 'cat-com', name: 'Combustible (camionetas de la empresa)', cuenta: '91.3.1.60' } as any;
+    const catUtiles = { _id: 'cat-uti', name: 'Utiles de Oficina', cuenta: '91.5.6.10' } as any;
+
+    const catalogoCompleto = [
+      catAlimentacionLima, catAlimentacionProv, catAlojamiento,
+      catTransporte, catGastosMenores, catCombustible, catUtiles,
+    ];
+
+    function extranjeroComponent(categories: any[] = catalogoCompleto) {
+      invoicesService.getCategories.and.returnValue(of(categories));
+      const component = createComponent();
+      component.ngOnInit();
+      component.setExpenseType('otros_gastos');
+      return component;
+    }
+
+    it('el selector muestra "Viaje en el extranjero" en vez de la DJ suelta', () => {
+      const component = extranjeroComponent();
+      const codigos = component.otrosSubTipoOpciones.map((o) => o.code);
+      expect(codigos).toContain('EXT');
+      expect(codigos).not.toContain('DJE');
+      expect(component.otrosSubTipoOpciones.find((o) => o.code === 'EXT')?.label)
+        .toBe('Viaje en el extranjero');
+    });
+
+    it('al entrar a la pestaña queda preseleccionada la Declaración Jurada', () => {
+      const component = extranjeroComponent();
+      component.selectOtrosSubTipo('EXT');
+      expect(component.otrosSubTipo()).toBe('DJE');
+      expect(component.isDj()).toBeTrue();
+    });
+
+    it('volver a tocar la pestaña no pisa la opción ya elegida', () => {
+      const component = extranjeroComponent();
+      component.selectOtrosSubTipo('EXT');
+      component.selectOtrosSubTipo('EXD');
+      component.selectOtrosSubTipo('EXT');
+      expect(component.otrosSubTipo()).toBe('EXD');
+    });
+
+    it('el botón de la pestaña queda marcado con cualquiera de sus dos opciones', () => {
+      const component = extranjeroComponent();
+      component.selectOtrosSubTipo('DJE');
+      expect(component.subTipoBotonActivo('EXT')).toBeTrue();
+      component.selectOtrosSubTipo('EXD');
+      expect(component.subTipoBotonActivo('EXT')).toBeTrue();
+      component.selectOtrosSubTipo('OT');
+      expect(component.subTipoBotonActivo('EXT')).toBeFalse();
+    });
+
+    it('Documentos se rinde en dólares y no es una declaración jurada', () => {
+      const component = extranjeroComponent();
+      component.selectOtrosSubTipo('EXD');
+      expect(component.isExtranjeroDocumento()).toBeTrue();
+      expect(component.otrosMonedaSimbolo).toBe('$');
+      expect(component.isDj()).toBeFalse();
+      // Sin RUC ni serie: el comprobante lo emitió un proveedor del exterior.
+      expect(component.otrosSubTipoMuestraDocumento()).toBeFalse();
+      expect(component.otrosSubTipoRequiereDeclaracion()).toBeFalse();
+    });
+
+    it('Documentos acota las categorías a los rubros del viaje, por nombre', () => {
+      const component = extranjeroComponent();
+      component.selectOtrosSubTipo('EXD');
+      const valores = component.otrosCategoryOptions.map((o) => o.value);
+      // Alimentación entra con sus dos variantes; Combustible y Útiles quedan fuera.
+      expect(valores).toEqual([
+        'cat-ali-lim', 'cat-ali-pro', 'cat-alo', 'cat-tra', 'cat-men',
+      ]);
+    });
+
+    it('respeta las tildes y las mayúsculas del catálogo', () => {
+      // "Alimentación - LIMA" y "Alimentacion - PROVINCIA" están escritas
+      // distinto en el Excel de origen y las dos tienen que entrar.
+      const component = extranjeroComponent([catAlimentacionLima, catAlimentacionProv]);
+      component.selectOtrosSubTipo('EXD');
+      expect(component.otrosCategoryOptions.length).toBe(2);
+    });
+
+    it('sin ningún rubro asignado se cae al catálogo completo', () => {
+      // Antes que dejar al colaborador sin poder registrar el gasto.
+      const component = extranjeroComponent([catCombustible, catUtiles]);
+      component.selectOtrosSubTipo('EXD');
+      expect(component.otrosCategoryOptions.length).toBe(2);
+    });
+
+    it('no acota las categorías del resto de sub-tipos', () => {
+      const component = extranjeroComponent();
+      component.selectOtrosSubTipo('OT');
+      expect(component.otrosCategoryOptions.length).toBe(catalogoCompleto.length);
+      expect(component.otrosMonedaSimbolo).toBe('S/');
+    });
+  });
+
   describe('VD-104: referencia de la dirección guardada', () => {
     const loadSavedSheet = () => {
       invoicesService.getInvoiceById.and.returnValue(
@@ -1406,7 +1514,7 @@ describe('AddInvoiceComponent', () => {
     it('blocks submission when the daily limit is exceeded', () => {
       const component = createComponent();
       component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
-      component.mobilityDailyLimit = 15;
+      (component as any).mobilityDailyLimitRaw = 15;
       component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', ordenTrabajoId: 'ot1' });
       component.addMobilityRow();
       component.mobilityRowsArray.at(0).patchValue({
@@ -1751,7 +1859,7 @@ describe('AddInvoiceComponent', () => {
 
     it('isMobilityRowDateOverLimit / hasAnyMobilityLimitExceeded reflect the configured daily limit', () => {
       const component = createComponent();
-      component.mobilityDailyLimit = 20;
+      (component as any).mobilityDailyLimitRaw = 20;
       component.addMobilityRow();
       component.mobilityRowsArray.at(0).patchValue({ fecha: '2026-02-01', total: 25 });
       expect(component.isMobilityRowDateOverLimit(0)).toBeTrue();
@@ -1864,8 +1972,37 @@ describe('AddInvoiceComponent', () => {
       const component = createComponent({}, { rendicionId: 'r1' });
       component.ngOnInit();
       component.back();
-      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'r1', 'detalle']);
+      // Vuelve al detalle marcando de qué pestaña salió, para que el "Volver"
+      // del detalle regrese a la misma lista y no a la primera (33c1c3f).
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'r1', 'detalle'], {
+        queryParams: { tab: 'viaticos' },
+      });
     });
+
+    it('marca la pestaña de caja chica al volver al detalle de una caja chica', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({ _id: 'r1', projectId: 'p1', isCajaChica: true } as any)
+      );
+      const component = createComponent({}, { rendicionId: 'r1' });
+      component.ngOnInit();
+      component.back();
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'r1', 'detalle'], {
+        queryParams: { tab: 'caja-chica' },
+      });
+    });
+
+    it('marca la pestaña de directas al volver al detalle de una directa', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({ _id: 'r1', projectId: 'p1', isDirecta: true } as any)
+      );
+      const component = createComponent({}, { rendicionId: 'r1' });
+      component.ngOnInit();
+      component.back();
+      expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'r1', 'detalle'], {
+        queryParams: { tab: 'directas' },
+      });
+    });
+
 
     it('navigates to /invoices by default', () => {
       const component = createComponent();

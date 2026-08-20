@@ -65,6 +65,33 @@ export class AdvanceController {
   }
 
   /**
+   * Emite TODAS las planillas pendientes de una vez, una por moneda. El formato
+   * BBVA declara una moneda y una cuenta de cargo por archivo, así que se
+   * separan; lo que se evita es que Tesorería tenga que pedirlas de a una y
+   * descubrir por el resumen que quedaban pagos fuera.
+   */
+  @Get('payments/txt-all/client/:clientId')
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA)
+  async generateAllPaymentsTxt(
+    @Param('clientId') clientId: string,
+    @Request() req
+  ) {
+    const result = await this.paymentBatchService.generateAllTxt(clientId)
+    const detalle = result.archivos
+      .map(a => `${a.moneda} ${a.count} pago(s) ${a.totalSoles.toFixed(2)}`)
+      .join(' · ')
+    this.auditLogService.log({
+      userId: req.user._id || req.user.sub,
+      userName: req.user.name || req.user.email,
+      action: 'generate_payments_txt',
+      module: 'tesoreria',
+      details: `${result.archivos.length} archivo(s) · ${detalle}${result.fallidos.length ? ` · sin emitir: ${result.fallidos.map(f => f.moneda).join(', ')}` : ''}`,
+      clientId: req.user.clientId,
+    })
+    return result
+  }
+
+  /**
    * Concilia el PDF "Consulta de Pagos Masivos" de BBVA: por cada abono exitoso
    * cruza titular + DNI + monto contra los pagos pendientes y los marca pagados.
    */
@@ -114,21 +141,26 @@ export class AdvanceController {
    */
   @Post('payments/simulate-reconcile/client/:clientId')
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA)
-  async simulateReconcile(@Param('clientId') clientId: string, @Request() req) {
+  async simulateReconcile(
+    @Param('clientId') clientId: string,
+    @Request() req,
+    @Query('moneda') moneda?: string
+  ) {
     const actor = {
       role: req.user?.roles?.[0] || req.user?.role,
       permissions: req.user?.permissions,
     }
     const result = await this.paymentBatchService.simulateReconcile(
       clientId,
-      actor
+      actor,
+      moneda
     )
     this.auditLogService.log({
       userId: req.user._id || req.user.sub,
       userName: req.user.name || req.user.email,
       action: 'simulate_reconcile_payments',
       module: 'tesoreria',
-      details: `SIMULADO · conciliados: ${result.conciliados.length}, sin conciliar: ${result.sinConciliar.length}`,
+      details: `SIMULADO ${result.moneda} · conciliados: ${result.conciliados.length}, sin conciliar: ${result.sinConciliar.length}`,
       clientId: req.user.clientId,
     })
     return result

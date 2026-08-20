@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of } from 'rxjs';
 import { RendicionesTabsComponent } from './rendiciones-tabs.component';
@@ -31,6 +33,10 @@ describe('RendicionesTabsComponent', () => {
     TestBed.configureTestingModule({
       imports: [RendicionesTabsComponent],
       providers: [
+        // Servicios sin doble propio (FondoCajaChicaService y compania) solo
+        // necesitan un HttpClient; sin esto la suite muere en el inyector.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { queryParamMap: queryParamMap$ } },
         { provide: Router, useValue: router },
         { provide: UserStateService, useValue: userState },

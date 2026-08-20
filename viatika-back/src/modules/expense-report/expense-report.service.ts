@@ -49,6 +49,11 @@ import {
 import { FondoCajaChicaService } from '../fondo-caja-chica/fondo-caja-chica.service'
 import { CreateSolicitudCajaChicaDto } from './dto/create-solicitud-caja-chica.dto'
 import { ApproverLevel } from '../../common/types/approver-level'
+import { resolveUserBankAccount } from '../../common/bank-account.util'
+import {
+  generarCodigoCorrelativo,
+  maxSecuencia,
+} from '../../common/codigo-correlativo.util'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
 import { PayViaticoDto } from './dto/pay-viatico.dto'
 import { ResubmitViaticoDto } from './dto/resubmit-viatico.dto'
@@ -248,6 +253,11 @@ export class ExpenseReportService implements OnModuleInit {
     // advances=0 hacían que los correos (incluida la notificación a Tesorería)
     // mostraran "S/ 0.00" (VD-52). El monto relevante es el total gastado = suma
     // de los gastos no-rechazados.
+    //
+    // EN LA MONEDA DE LA RENDICIÓN, que es con la que los correos rotulan esta
+    // cifra (`reportCurrencySymbol`). Sumarla en soles mandaba al colaborador
+    // un "Monto aprobado: $ 30.00" por una rendición de $ 8.89 con una boleta
+    // de S/ 30 adentro: la cifra de una moneda con el símbolo de la otra.
     if (report.isDirecta === true) {
       const directa = await this.expenseReportModel
         .findById(reportId)
@@ -258,7 +268,7 @@ export class ExpenseReportService implements OnModuleInit {
         (s: number, e: any) =>
           String(e?.status || '').toLowerCase() === 'rejected'
             ? s
-            : s + this.expenseSettlementAmountBase(e),
+            : s + this.expenseAmountInReport(e),
         0
       )
       return gastado > 0 ? gastado : Number(report.budget) || 0
@@ -547,20 +557,27 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * Genera un código autoincremental único por empresa de forma atómica
-   * usando una colección `counters` (a prueba de concurrencia). Ej: RD-0001.
+   * Código autoincremental único por empresa (RD-0001), atómico vía la
+   * colección `counters` y a prueba de que el contador quede por detrás de los
+   * códigos ya emitidos. Ver `generarCodigoCorrelativo`.
    */
   private async generateDirectaCodigo(clientId: string): Promise<string> {
-    const key = `rendicion-directa:${clientId}`
-    const res: any = await this.expenseReportModel.db
-      .collection('counters')
-      .findOneAndUpdate(
-        { _id: key as any },
-        { $inc: { seq: 1 } },
-        { upsert: true, returnDocument: 'after' }
-      )
-    const seq = (res && (res.seq ?? res.value?.seq)) ?? 1
-    return `RD-${String(seq).padStart(4, '0')}`
+    const cid = new Types.ObjectId(clientId)
+    return generarCodigoCorrelativo({
+      counters: this.expenseReportModel.db.collection('counters') as any,
+      key: `rendicion-directa:${clientId}`,
+      prefijo: 'RD',
+      estaTomado: async codigo =>
+        !!(await this.expenseReportModel.exists({ clientId: cid, codigo })),
+      ultimoEmitido: async () => {
+        const docs = await this.expenseReportModel
+          .find({ clientId: cid, codigo: { $regex: '^RD-\\d+$' } })
+          .select('codigo')
+          .lean<{ codigo: string }[]>()
+          .exec()
+        return maxSecuencia(docs.map(d => d.codigo), 'RD')
+      },
+    })
   }
 
   async create(
@@ -585,8 +602,33 @@ export class ExpenseReportService implements OnModuleInit {
       createExpenseReportDto.clientId
     )
 
+    // Moneda de la rendición directa, con su TC congelado al crearla. Es el
+    // que después usan sus comprobantes para expresarse en la moneda del
+    // reporte (`expressInReportCurrency`): sin él, una directa en dólares
+    // dejaría todos sus gastos sin equivalencia. Solo se congela cuando hay
+    // una moneda que congelar, para no tocar el resto de altas de rendición.
+    let currencyFields: Record<string, unknown> = {}
+    if (isDirecta || createExpenseReportDto.moneda) {
+      const moneda = normalizeMoneda(createExpenseReportDto.moneda)
+      const accountingConfig = await this.currencyService.getConfig(
+        createExpenseReportDto.clientId
+      )
+      const conversion = await this.currencyService.toBase(
+        0,
+        moneda,
+        new Date(),
+        accountingConfig
+      )
+      currencyFields = {
+        viaticoMoneda: moneda,
+        tipoCambio: conversion.tipoCambio,
+        tcFecha: conversion.tcFecha,
+      }
+    }
+
     const report = new this.expenseReportModel({
       ...createExpenseReportDto,
+      ...currencyFields,
       title,
       codigo,
       userId: new Types.ObjectId(createExpenseReportDto.userId),
@@ -731,10 +773,18 @@ export class ExpenseReportService implements OnModuleInit {
         0
       )
       const deposited = Number(r.directaDeposit?.amount ?? r.budget ?? 0)
+      // El depósito lo tipea Contabilidad en la moneda de la rendición: el
+      // saldo se calcula contra el gastado en esa misma moneda, no en soles.
+      const gastadoEnMoneda = expenses.reduce(
+        (sum, e) => sum + this.expenseAmountInReport(e),
+        0
+      )
       return {
         ...r,
         totalGastado,
-        saldoDisponible: deposited - totalGastado,
+        totalGastadoMoneda: gastadoEnMoneda,
+        moneda: r.viaticoMoneda ?? DEFAULT_MONEDA,
+        saldoDisponible: deposited - gastadoEnMoneda,
       }
     })
   }
@@ -788,7 +838,7 @@ export class ExpenseReportService implements OnModuleInit {
       .find({
         clientId: new Types.ObjectId(clientId),
       })
-      .populate('userId', 'name email signature bankAccount')
+      .populate('userId', 'name email signature bankAccount bankAccountUsd')
       .populate('createdBy', 'name email')
       // Centro de costo con su código (VD-113): el listado lo muestra como
       // "código — nombre" y sin este populate dependía del catálogo del front.
@@ -859,7 +909,7 @@ export class ExpenseReportService implements OnModuleInit {
             : []),
         ],
       })
-      .populate('userId', 'name email signature bankAccount')
+      .populate('userId', 'name email signature bankAccount bankAccountUsd')
       .populate('createdBy', 'name email')
       // Nombre de categoría por línea de viático (para el detalle al aprobar).
       .populate('viaticoLines.categoryId', 'name')
@@ -1300,7 +1350,7 @@ export class ExpenseReportService implements OnModuleInit {
   async findOne(id: string) {
     const report = await this.expenseReportModel
       .findById(id)
-      .populate('userId', 'name email signature bankAccount dni area')
+      .populate('userId', 'name email signature bankAccount bankAccountUsd dni area')
       .populate({
         path: 'expenseIds',
         populate: [
@@ -1958,8 +2008,15 @@ export class ExpenseReportService implements OnModuleInit {
             await this.userService.findTesoreriaNotifyRecipients(clientIdStr)
           const tesoreriaEmails = tesoreriaRecipients.map(r => r.email)
           if (tesoreriaEmails.length > 0) {
+            // La cuenta se elige por la moneda de la rendición, que es la que
+            // el correo muestra y con la que se arma la planilla del banco.
             const bank =
-              (typeof owner === 'object' && owner?.bankAccount) || null
+              (typeof owner === 'object' &&
+                resolveUserBankAccount(
+                  owner,
+                  (fullyUpdatedReport as any)?.viaticoMoneda
+                )) ||
+              null
             const hasBankAccount = !!bank?.accountNumber
             const tesoreriaEmailData = {
               clientId: clientIdStr,
@@ -2217,6 +2274,10 @@ export class ExpenseReportService implements OnModuleInit {
                 collaboratorName: creatorName,
                 reportTitle: emailData.reportTitle,
                 budgetFormatted: emailData.budgetFormatted,
+                // Sin la moneda, `EmailService.send` rellena 'S/' por defecto y
+                // una rendición en dólares le llegaba al colaborador con sus
+                // importes rotulados en soles.
+                currencySymbol: emailData.currencySymbol,
                 expenseCount: emailData.expenseCount,
                 hasDirectaDeposit: emailData.hasDirectaDeposit,
                 depositFormatted: emailData.depositFormatted,
@@ -2683,7 +2744,7 @@ export class ExpenseReportService implements OnModuleInit {
         // desde `pending_accounting`.
         '_id userId title motivo gestion budget createdAt createdBy directaDeposit status'
       )
-      .populate('userId', 'name email dni bankAccount')
+      .populate('userId', 'name email dni bankAccount bankAccountUsd')
       .populate({
         path: 'createdBy',
         select: 'name email roleId',
@@ -2923,7 +2984,7 @@ export class ExpenseReportService implements OnModuleInit {
     const reports = await this.expenseReportModel
       .find(query)
       .select(
-        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher'
+        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher viaticoMoneda'
       )
       .populate('userId', 'name email')
       .populate({
@@ -2952,6 +3013,10 @@ export class ExpenseReportService implements OnModuleInit {
         (s, e) => s + this.expenseSettlementAmountBase(e),
         0
       )
+      const gastadoEnMoneda = expenses.reduce(
+        (s, e) => s + this.expenseAmountInReport(e),
+        0
+      )
       const deposited = Number(r.directaDeposit?.amount ?? r.budget ?? 0)
       const hasFunds = !!r.directaDeposit
       return {
@@ -2966,8 +3031,18 @@ export class ExpenseReportService implements OnModuleInit {
         createdAt: r.createdAt,
         hasDeposit: hasFunds,
         deposited,
+        // `totalGastado` va en MONEDA BASE: la lista mezcla rendiciones de
+        // varias monedas y su total general no se podría sumar de otra forma.
+        // Lo que se muestra en cada fila es `totalGastadoMoneda`, en la moneda
+        // propia de la rendición.
         totalGastado,
-        saldo: hasFunds ? deposited - totalGastado : null,
+        moneda: r.viaticoMoneda ?? DEFAULT_MONEDA,
+        totalGastadoMoneda: gastadoEnMoneda,
+        // `directaDeposit.amount` lo tipea Contabilidad en la moneda de la
+        // rendición, así que el saldo se calcula contra el gastado en ESA
+        // moneda. Restarle el total en soles mezclaba unidades y en una
+        // directa en dólares habría dado un saldo sin sentido.
+        saldo: hasFunds ? deposited - gastadoEnMoneda : null,
         expenseCount: expenses.length,
         generatedByName: creator?.name || creator?.email || null,
         generatedByRole: creator?.roleId?.name || null,
@@ -3224,6 +3299,25 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Importe del reembolso EN LA MONEDA DE LA RENDICIÓN, que es en la que
+   * Tesorería lo paga y en la que sale la planilla del banco.
+   *
+   * `settlement.difference` se guarda siempre en moneda base: la liquidación
+   * suma el `montoBase` de cada gasto para no mezclar monedas. Se deshace esa
+   * conversión con el TC que la rendición congeló al crearse — el mismo con el
+   * que sus gastos calcularon su `montoReporte`—, para que lo que anuncia el
+   * correo coincida con lo que se deposita. Espejo de
+   * `PaymentBatchService.reembolsoEnMonedaDelReporte`.
+   */
+  private reembolsoEnMonedaDelReporte(report: any): number {
+    const base = Math.abs(Number(report?.settlement?.difference ?? 0))
+    if (normalizeMoneda(report?.viaticoMoneda) === DEFAULT_MONEDA) return base
+    const tc = Number(report?.tipoCambio)
+    if (!tc || tc <= 0) return base
+    return Math.round((base / tc) * 100) / 100
+  }
+
+  /**
    * Símbolo de la moneda en que está expresada una rendición. Solo los viáticos
    * pueden salirse de la moneda base; el resto (directas, caja chica) siempre
    * son soles y caen en el default.
@@ -3393,7 +3487,7 @@ export class ExpenseReportService implements OnModuleInit {
         type: 'viatico',
         status: { $in: ['viatico_approved', 'partially_paid'] },
       })
-      .populate('userId', 'name email dni documentType bankAccount')
+      .populate('userId', 'name email dni documentType bankAccount bankAccountUsd')
       .lean()
       .exec()
 
@@ -3401,6 +3495,8 @@ export class ExpenseReportService implements OnModuleInit {
       .map((r: any) => {
         const remaining =
           Number(r.viaticoAmount ?? 0) - Number(r.viaticoPaidAmount ?? 0)
+        // La cuenta del perfil se elige por la moneda del viático.
+        const cuenta = resolveUserBankAccount(r.userId, r.viaticoMoneda)
         return {
           reportId: String(r._id),
           user: r.userId,
@@ -3408,10 +3504,9 @@ export class ExpenseReportService implements OnModuleInit {
           // El importe queda en la moneda del viático: el archivo del banco
           // declara una sola moneda por planilla.
           moneda: r.viaticoMoneda,
-          bankName: r.viaticoBankName ?? r.userId?.bankAccount?.bankName ?? '',
-          accountNumber:
-            r.viaticoAccountNumber ?? r.userId?.bankAccount?.accountNumber ?? '',
-          cci: r.viaticoCci ?? r.userId?.bankAccount?.cci ?? '',
+          bankName: r.viaticoBankName ?? cuenta?.bankName ?? '',
+          accountNumber: r.viaticoAccountNumber ?? cuenta?.accountNumber ?? '',
+          cci: r.viaticoCci ?? cuenta?.cci ?? '',
         }
       })
       .filter(x => x.remaining > 0.009)
@@ -3432,7 +3527,7 @@ export class ExpenseReportService implements OnModuleInit {
         'settlement.type': 'reembolso',
         $or: noPayment,
       })
-      .populate('userId', 'name email bankAccount dni documentType')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni documentType')
       .sort({ updatedAt: -1 })
       .lean()
       .exec()
@@ -3455,7 +3550,7 @@ export class ExpenseReportService implements OnModuleInit {
         'settlement.type': { $ne: 'reembolso' },
         $and: [{ $or: noPayment }],
       })
-      .populate('userId', 'name email bankAccount dni documentType')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni documentType')
       .populate('expenseIds', 'total status montoBase moneda montoReporte monedaReporte')
       .sort({ updatedAt: -1 })
       .lean()
@@ -3791,8 +3886,12 @@ export class ExpenseReportService implements OnModuleInit {
     const ownerId = String(owner._id || owner.id)
     const ownerEmailEnabled = await this.userService.isEmailEnabled(ownerId)
 
-    const diff = report.settlement?.difference ?? 0
-    const amountFormatted = Math.abs(Number(diff)).toFixed(2)
+    // El reembolso se PAGA en la moneda de la rendición (así se arma la
+    // planilla del banco), aunque la liquidación lo calcule en soles. Avisarle
+    // al colaborador "S/ 716.46" por un depósito de $ 212.41 es el mismo error
+    // que ya salió en el correo de aprobación: el número de una moneda contado
+    // como si fuera de otra.
+    const amountFormatted = this.reembolsoEnMonedaDelReporte(report).toFixed(2)
 
     const platformUrl = this.emailService.buildAppUrl('/mis-documentos')
 
@@ -3806,7 +3905,7 @@ export class ExpenseReportService implements OnModuleInit {
       collaboratorName: owner.name || 'Colaborador',
       reportTitle: this.resolveReportTitle(report),
       amountFormatted,
-      currencySymbol: this.settlementCurrencySymbol(report),
+      currencySymbol: this.reportCurrencySymbol(report),
       transferDate,
       reference: pi?.reference || '—',
       paymentMethod: pi?.method || 'transferencia_bancaria',
@@ -3862,7 +3961,7 @@ export class ExpenseReportService implements OnModuleInit {
   async findOneWithAdvances(id: string) {
     const report = await this.expenseReportModel
       .findById(id)
-      .populate('userId', 'name email signature bankAccount dni area')
+      .populate('userId', 'name email signature bankAccount bankAccountUsd dni area')
       .populate({
         path: 'expenseIds',
         populate: [
@@ -6029,7 +6128,10 @@ export class ExpenseReportService implements OnModuleInit {
         const requestBank = report.viaticoAccountNumber?.trim()
           ? { bankName: report.viaticoBankName, accountNumber: report.viaticoAccountNumber, cci: report.viaticoCci, accountType: undefined as string | undefined }
           : null
-        const profileBank = collab?.bankAccount ?? null
+        // Sin datos en la solicitud, la cuenta del perfil se elige por la
+        // moneda del viático: en dólares va a la cuenta en dólares.
+        const profileBank =
+          resolveUserBankAccount(collab, report.viaticoMoneda) ?? null
         const bank = requestBank ?? profileBank
         const hasBankAccount = !!(bank?.accountNumber)
         console.log(`[TESORERÍA VIÁTICO] colaborador=${collab?.name}, hasBankAccount=${hasBankAccount}, source=${requestBank ? 'solicitud' : 'perfil'}`)
@@ -6474,7 +6576,7 @@ export class ExpenseReportService implements OnModuleInit {
     }
 
     return this.expenseReportModel.find(filter)
-      .populate('userId', 'name email bankAccount dni')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni')
       .populate('projectId', 'code name')
       .populate('viaticoOrdenTrabajoId', 'nombre costCenterId')
       .populate('viaticoApproverChain.approverIds', 'name email')
@@ -6752,7 +6854,7 @@ export class ExpenseReportService implements OnModuleInit {
       clientId: new Types.ObjectId(clientId),
       'viaticoReturnRecord.status': { $in: ['pending', 'proof_uploaded', 'rejected'] },
     })
-      .populate('userId', 'name email bankAccount dni')
+      .populate('userId', 'name email bankAccount bankAccountUsd dni')
       .exec()
   }
 

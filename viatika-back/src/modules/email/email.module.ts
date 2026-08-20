@@ -15,12 +15,30 @@ import { Client, ClientSchema } from '../client/entities/client.entity'
         const provider = (process.env.EMAIL_PROVIDER ?? 'outlook').toLowerCase()
         const user = process.env.USER_EMAIL
         const pass = process.env.PASSWORD_EMAIL
+        // `pool` reusa la conexión SMTP entre correos. Sin esto, cada mensaje
+        // abría TCP + TLS + AUTH contra el proveedor desde cero: medido contra
+        // Office365, ese saludo solo tarda ~3 s, y una acción que manda tres
+        // correos lo pagaba tres veces.
+        //
+        // El límite de envío va de la mano: como el correo ya no bloquea la
+        // respuesta (ver `EmailService.send`), una tanda de aprobaciones puede
+        // encolar varios mensajes de golpe, y Office365 corta la conexión si se
+        // pasa de ~30 por minuto. Con esto se encolan y salen a ritmo; nadie
+        // está esperando del otro lado.
+        const pool = {
+          pool: true,
+          maxConnections: 3,
+          maxMessages: 100,
+          rateDelta: 60_000,
+          rateLimit: 25,
+        }
         const smtpProviders: Record<string, object> = {
           gmail: {
             host: 'smtp.gmail.com',
             port: 587,
             secure: false,
             auth: { user, pass },
+            ...pool,
           },
           outlook: {
             host: 'smtp.office365.com',
@@ -29,6 +47,7 @@ import { Client, ClientSchema } from '../client/entities/client.entity'
             requireTLS: true,
             auth: { user, pass },
             tls: { ciphers: 'SSLv3', rejectUnauthorized: false },
+            ...pool,
           },
         }
         const transport = smtpProviders[provider] ?? smtpProviders['outlook']

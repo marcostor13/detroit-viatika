@@ -16,6 +16,25 @@ import { mkdtemp, rm, writeFile } from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
 
+/**
+ * Ruta completa del binario. Por defecto se invoca por nombre y lo resuelve el
+ * PATH, que es como funciona en el contenedor (`apk add poppler-utils`).
+ *
+ * `POPPLER_BIN_DIR` permite apuntar al directorio de forma explícita. Existe por
+ * Windows en desarrollo: al instalar poppler el PATH nuevo NO llega a los
+ * procesos que ya estaban vivos, y como el `start:dev` cuelga de una terminal
+ * abierta antes de la instalación, hereda el PATH viejo y sigue sin encontrar
+ * los binarios por mucho que se reinicie el servidor. Con esta variable la ruta
+ * deja de depender del entorno heredado. Mismo criterio que `NODE_DNS_SERVERS`
+ * en `main.ts`. En producción se deja sin definir.
+ */
+export function resolvePopplerBin(bin: string): string {
+  const dir = process.env.POPPLER_BIN_DIR?.trim()
+  if (!dir) return bin
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  return path.join(dir, `${bin}${ext}`)
+}
+
 /** El binario de poppler no está instalado en este entorno. */
 export class PopplerUnavailableError extends Error {
   constructor(bin: string) {
@@ -49,7 +68,7 @@ export function runPoppler(
   const { timeoutMs = 60_000, maxBuffer = 32 * 1024 * 1024 } = options
   return new Promise((resolve, reject) => {
     execFile(
-      bin,
+      resolvePopplerBin(bin),
       args,
       { timeout: timeoutMs, maxBuffer, windowsHide: true },
       (error, stdout, stderr) => {

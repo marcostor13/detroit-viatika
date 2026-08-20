@@ -27,6 +27,20 @@ export function monedaLabel(code?: string | null): string {
 }
 
 /**
+ * Normaliza a código ISO lo que devuelva el OCR. El escaneo puede entregar
+ * 'PEN'/'USD' o el símbolo ('S/', '$'), según cómo esté impreso el
+ * comprobante. Espejo de `normalizeMoneda` del backend; lo no reconocido cae
+ * en la moneda por defecto.
+ */
+export function normalizeMonedaCode(value?: string | null): string {
+  const raw = (value ?? '').toString().trim().toUpperCase();
+  if (!raw) return DEFAULT_MONEDA;
+  if (['USD', 'US$', '$', 'DOLARES', 'DÓLARES'].includes(raw)) return 'USD';
+  if (['PEN', 'S/', 'S/.', 'SOLES'].includes(raw)) return 'PEN';
+  return MONEDA_CATALOG[raw] ? raw : DEFAULT_MONEDA;
+}
+
+/**
  * Importe de un gasto en la moneda base de la empresa.
  *
  * Un comprobante emitido en otra moneda guarda su conversión congelada al

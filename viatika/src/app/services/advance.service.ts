@@ -116,13 +116,29 @@ export class AdvanceService {
   }
 
   /**
+   * Emite TODAS las planillas pendientes de una vez, una por moneda. El formato
+   * BBVA admite una moneda y una cuenta de cargo por archivo, así que se
+   * separan; lo que se evita es tener que pedirlas de a una.
+   */
+  generateAllPaymentsTxt(): Observable<IGenerateAllPaymentsTxt> {
+    return this.http.get<IGenerateAllPaymentsTxt>(
+      `${this.url}/payments/txt-all/client/${this.clientId}`
+    );
+  }
+
+  /**
    * PRUEBAS: simula el PDF de "Consulta de Pagos Masivos" de BBVA y concilia todos
    * los pagos pendientes (los marca como pagados) para continuar el flujo.
    */
-  simulateReconcile(): Observable<IReconcileResult> {
+  simulateReconcile(moneda?: string): Observable<IReconcileResult> {
+    // Una planilla del banco es de UNA moneda y el motor de conciliación
+    // descarta los pendientes de otra. Sin decirle cuál, simular con pagos en
+    // dólares emitía un lote en soles contra el que no cruzaba ninguno.
+    const params = moneda ? { params: { moneda } } : {};
     return this.http.post<IReconcileResult>(
       `${this.url}/payments/simulate-reconcile/client/${this.clientId}`,
-      {}
+      {},
+      params
     );
   }
 
@@ -160,6 +176,8 @@ export interface IExcludedPayment {
   id: string;
   beneficiaryName: string;
   amount: number;
+  /** Moneda de ESTE pago, que no siempre es la del archivo. */
+  moneda?: string;
   reason: string;
 }
 
@@ -173,6 +191,13 @@ export interface IGeneratePaymentsTxt {
   moneda: string;
   /** Pendientes por moneda, para poder pedir la planilla que falta. */
   monedasPendientes: Array<{ moneda: string; count: number; total: number }>;
+}
+
+export interface IGenerateAllPaymentsTxt {
+  /** Una planilla por moneda con pagos emitibles. */
+  archivos: IGeneratePaymentsTxt[];
+  /** Monedas que no se pudieron emitir, con el motivo. */
+  fallidos: Array<{ moneda: string; count: number; total: number; motivo: string }>;
 }
 
 export interface IReconcileResult {

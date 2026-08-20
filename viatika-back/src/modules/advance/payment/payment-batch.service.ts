@@ -5,11 +5,26 @@ import {
   Logger,
   BadRequestException,
 } from '@nestjs/common'
+import { readdir } from 'fs/promises'
+import * as path from 'path'
 import { AdvanceService } from '../advance.service'
 import { ExpenseReportService } from '../../expense-report/expense-report.service'
+// Rasterizado de PDF por binarios de sistema. Se reusa el envoltorio del OCR de
+// facturas en vez de duplicarlo: es un util puro, sin estado ni dependencias de
+// Nest, y el Dockerfile ya instala poppler-utils para ese flujo.
+import {
+  parsePdfInfo,
+  pdfInfoArgs,
+  runPoppler,
+  withTempPdf,
+} from '../../expense/utils/poppler.util'
 import { ClientService } from '../../client/client.service'
 import { AccountingConfigService } from '../../accounting-config/accounting-config.service'
 import { DEFAULT_MONEDA, normalizeMoneda } from '../../../common/moneda.constants'
+import {
+  hasBankAccountForCurrency,
+  resolveUserBankAccount,
+} from '../../../common/bank-account.util'
 import {
   BbvaDetailRecord,
   BbvaDocType,
@@ -65,6 +80,13 @@ export interface ExcludedPayment {
   id: string
   beneficiaryName: string
   amount: number
+  /**
+   * Moneda de ESTE pago, que no siempre es la del archivo: justamente el motivo
+   * de exclusión más común es que sea otra. Sin este dato la pantalla rotulaba
+   * los importes con la moneda de la planilla y mostraba "PEN 212.41" sobre un
+   * texto que decía "Pago en USD".
+   */
+  moneda?: string
   reason: string
 }
 
@@ -88,6 +110,14 @@ export interface GenerateTxtResult {
    * quedaba excluido para siempre y no había forma de emitirlo.
    */
   monedasPendientes: Array<{ moneda: string; count: number; total: number }>
+}
+
+/** Resultado de emitir todas las planillas pendientes de una vez. */
+export interface GenerateAllTxtResult {
+  /** Una planilla por moneda con pagos emitibles. */
+  archivos: GenerateTxtResult[]
+  /** Monedas que no se pudieron emitir, con el motivo (p. ej. sin cuenta de cargo). */
+  fallidos: Array<{ moneda: string; count: number; total: number; motivo: string }>
 }
 
 export interface BatchActor {
@@ -124,6 +154,20 @@ export interface ReconcileResult {
 @Injectable()
 export class PaymentBatchService {
   private readonly logger = new Logger(PaymentBatchService.name)
+
+  /**
+   * 216 DPI: a 150 los importes chicos de la tabla empiezan a confundirse y a
+   * 300 el reconocimiento tarda el doble sin leer mejor este reporte.
+   */
+  private readonly OCR_DPI = 216
+  /**
+   * Tope de páginas a reconocer (~2 s por página). Se dimensiona para que una
+   * planilla de toda la empresa entre completa: si se recortan filas, la
+   * validación contra la cabecera falla cerrado y NO se paga a nadie, así que
+   * quedarse corto no es un riesgo de pago errado pero sí deja el trámite
+   * bloqueado sin motivo.
+   */
+  private readonly OCR_MAX_PAGINAS = 30
 
   constructor(
     @Inject(forwardRef(() => AdvanceService))
@@ -187,7 +231,34 @@ export class PaymentBatchService {
     const documentNumber = (user?.dni ?? '').trim()
 
     if (!documentNumber) {
-      return { kind, id, beneficiaryName, amount, reason: 'Sin DNI/documento registrado' }
+      return { kind, id, beneficiaryName, amount, moneda: normalizeMoneda(moneda), reason: 'Sin DNI/documento registrado' }
+    }
+    // Un abono en dólares a una cuenta en soles lo rechaza el banco, y
+    // enterarse por el rechazo cuesta días. `resolveUserBankAccount` cae a la
+    // cuenta en soles cuando falta la de dólares —para que las pantallas y los
+    // correos tengan algo que mostrar—, y sin este corte esa cuenta prestada
+    // entraba al archivo como si fuera válida.
+    //
+    // Solo se corta ese caso exacto: pago en dólares usando la cuenta en soles
+    // DEL PERFIL. Una cuenta escrita en la propia solicitud (`requestCci`) no
+    // se cuestiona: la eligió quien pidió el dinero.
+    const monedaPago = normalizeMoneda(moneda)
+    if (monedaPago === 'USD' && !hasBankAccountForCurrency(user, 'USD')) {
+      const soles = user?.bankAccount
+      const usandoLaDeSoles =
+        (!!cci && cci === soles?.cci) ||
+        (!!accountNumber && accountNumber === soles?.accountNumber)
+      if (usandoLaDeSoles) {
+        return {
+          kind,
+          id,
+          beneficiaryName,
+          amount,
+          moneda: monedaPago,
+          reason:
+            'El pago va en dólares y el colaborador no tiene cuenta en dólares registrada: se estaría usando la de soles y el banco rechazaría el abono. Cárgala en su perfil y vuelve a generar la planilla.',
+        }
+      }
     }
     // Una cuenta BBVA de 18 dígitos alcanza: el campo del archivo es la misma
     // cuenta con el bloque alineado a 12 (ver `toBbvaAccount20`). Exigir el CCI
@@ -199,6 +270,7 @@ export class PaymentBatchService {
         id,
         beneficiaryName,
         amount,
+        moneda: normalizeMoneda(moneda),
         reason: this.motivoCuentaInvalida(bankName, cci, accountNumber),
       }
     }
@@ -212,6 +284,7 @@ export class PaymentBatchService {
         id,
         beneficiaryName,
         amount,
+        moneda: normalizeMoneda(moneda),
         reason:
           'Sin correo registrado (el archivo BBVA exige el correo de aviso)',
       }
@@ -299,11 +372,14 @@ export class PaymentBatchService {
       )
     }
     for (const r of reembolsos as any[]) {
-      const amount = Math.abs(Number(r?.settlement?.difference ?? 0))
+      const amount = this.reembolsoEnMonedaDelReporte(r)
       if (amount <= 0.009) continue
-      const cci = r?.userId?.bankAccount?.cci ?? ''
-      const accountNumber = r?.userId?.bankAccount?.accountNumber ?? ''
-      const bankName = r?.userId?.bankAccount?.bankName ?? ''
+      // La cuenta del colaborador debe estar en la misma moneda que la
+      // planilla; si no, el banco rechaza el abono.
+      const cuenta = resolveUserBankAccount(r?.userId, r?.viaticoMoneda)
+      const cci = cuenta?.cci ?? ''
+      const accountNumber = cuenta?.accountNumber ?? ''
+      const bankName = cuenta?.bankName ?? ''
       candidates.push(
         this.buildCandidate('reembolso', String(r._id), r.userId, amount, cci, accountNumber, bankName, r?.viaticoMoneda)
       )
@@ -313,6 +389,40 @@ export class PaymentBatchService {
       payable: candidates.filter(c => !this.isExcluded(c)) as PendingPayment[],
       excluded: candidates.filter(c => this.isExcluded(c)) as ExcludedPayment[],
     }
+  }
+
+  /**
+   * Importe a pagar de un reembolso, en la MONEDA DE SU RENDICIÓN.
+   *
+   * `settlement.difference` se calcula siempre en moneda base: la liquidación
+   * suma el `montoBase` de cada gasto para no mezclar monedas. Pero la planilla
+   * del banco se emite por moneda, y este pago entra en la de su rendición
+   * (`viaticoMoneda`). Sin deshacer la conversión, una rendición directa en
+   * dólares saldría a pagar la cifra en soles dentro del archivo en dólares.
+   *
+   * Se usa el TC que la rendición congeló al crearse, el mismo con el que sus
+   * gastos calcularon su `montoReporte`, para que el pago cuadre con el total
+   * que el colaborador y el aprobador vieron en pantalla.
+   */
+  private reembolsoEnMonedaDelReporte(report: {
+    settlement?: { difference?: number }
+    viaticoMoneda?: string
+    tipoCambio?: number
+  }): number {
+    const base = Math.abs(Number(report?.settlement?.difference ?? 0))
+    const moneda = normalizeMoneda(report?.viaticoMoneda)
+    if (moneda === DEFAULT_MONEDA) return base
+
+    const tc = Number(report?.tipoCambio)
+    if (!tc || tc <= 0) {
+      // Sin TC congelado no se inventa una cifra: el pago queda en 0 y cae en
+      // los excluidos, donde Tesorería lo ve en vez de pagar de más o de menos.
+      this.logger.warn(
+        `Reembolso ${(report as any)?._id} en ${moneda} sin tipo de cambio congelado: se excluye de la planilla.`
+      )
+      return 0
+    }
+    return Math.round((base / tc) * 100) / 100
   }
 
   // ── Generación del TXT ─────────────────────────────────────────────────────
@@ -325,6 +435,68 @@ export class PaymentBatchService {
    *
    * Sin `moneda` se emite la base, que es el comportamiento de siempre.
    */
+  /**
+   * Emite TODAS las planillas que hagan falta, una por moneda con pagos
+   * pendientes, en una sola acción.
+   *
+   * El formato BBVA declara una moneda y una cuenta de cargo por archivo, así
+   * que separarlos no es opcional. Lo que sí lo era es obligar a Tesorería a
+   * descubrirlo: se emitía la planilla de soles y recién en el resumen aparecía
+   * un aviso de que quedaban pagos en dólares, con un segundo botón. Quien no
+   * leía ese aviso dejaba a esa gente sin cobrar, y el archivo generado no
+   * tenía nada de malo a la vista.
+   *
+   * Una moneda que falle (por ejemplo, sin cuenta de cargo registrada) no tumba
+   * al resto: se emite lo que se puede y se informa qué quedó fuera y por qué.
+   */
+  async generateAllTxt(clientId: string): Promise<GenerateAllTxtResult> {
+    const { payable } = await this.collectPendingPayments(clientId)
+    const config = await this.accountingConfigService.getEffective(clientId)
+    const monedaBase = normalizeMoneda(config.monedaBase)
+
+    const resumen = this.resumirMonedas(payable)
+    if (resumen.length === 0) {
+      // Sin pagos emitibles: se delega en `generateTxt` para reusar su mensaje
+      // y su detalle de excluidos por datos incompletos.
+      return { archivos: [await this.generateTxt(clientId)], fallidos: [] }
+    }
+
+    // La moneda base primero: es la planilla habitual y la que Tesorería espera
+    // ver arriba en el resumen.
+    const monedas = resumen
+      .map(r => r.moneda)
+      .sort((a, b) => (a === monedaBase ? -1 : b === monedaBase ? 1 : a.localeCompare(b)))
+
+    const archivos: GenerateTxtResult[] = []
+    const fallidos: GenerateAllTxtResult['fallidos'] = []
+    for (const m of monedas) {
+      try {
+        archivos.push(await this.generateTxt(clientId, m))
+      } catch (error) {
+        const datos = resumen.find(r => r.moneda === m)
+        fallidos.push({
+          moneda: m,
+          count: datos?.count ?? 0,
+          total: datos?.total ?? 0,
+          motivo: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    // Cada planilla marca como "excluidos" los pagos de otra moneda, porque su
+    // archivo no los admite. Emitiéndolas todas juntas eso deja de ser una
+    // exclusión: ese pago SÍ sale, en el otro archivo. Dejarlo en la lista
+    // pintaba de rojo a gente que sí va a cobrar. Solo se quitan las monedas
+    // que se emitieron de verdad; las que fallaron siguen a la vista.
+    const emitidas = new Set(archivos.filter(a => a.count > 0).map(a => a.moneda))
+    for (const archivo of archivos) {
+      archivo.excluded = archivo.excluded.filter(
+        e => !(e.moneda && e.moneda !== archivo.moneda && emitidas.has(e.moneda))
+      )
+    }
+
+    return { archivos, fallidos }
+  }
+
   async generateTxt(
     clientId: string,
     moneda?: string
@@ -399,6 +571,7 @@ export class PaymentBatchService {
         id: p.id,
         beneficiaryName: p.beneficiaryName,
         amount: p.amount,
+        moneda: p.moneda,
         reason: `Pago en ${p.moneda}: el archivo BBVA admite una sola moneda por planilla. Genera una planilla aparte para ${p.moneda}.`,
       })
     }
@@ -503,14 +676,144 @@ export class PaymentBatchService {
     actor: BatchActor,
     moneda?: string
   ): Promise<ReconcileResult> {
-    const text = await this.extractPdfText(pdfBuffer)
-    const parsed = parseBbvaPdfText(text)
+    // Cascada de lectura. No se le puede pedir a Tesorería que consiga un
+    // formato concreto: el PDF llega como lo dé el banco o como lo reimprima
+    // quien lo baja.
+    //   1) capa de texto  — exacta e instantánea cuando el PDF es digital;
+    //   2) OCR            — para el PDF reimpreso ("Microsoft: Print To PDF"),
+    //                       que no trae texto sino el dibujo de las letras.
+    let parsed = parseBbvaPdfText(await this.extractPdfText(pdfBuffer))
+    let viaOcr = false
+
+    let paginasOmitidas = 0
+
+    if (!parsed.rows.length) {
+      const ocr = await this.extractPdfTextByOcr(pdfBuffer)
+      if (ocr.texto) {
+        const porOcr = parseBbvaPdfText(ocr.texto)
+        if (porOcr.rows.length) {
+          parsed = porOcr
+          viaOcr = true
+          paginasOmitidas = Math.max(ocr.paginasTotales - ocr.paginasLeidas, 0)
+          this.logger.log(
+            `Conciliación por OCR: ${porOcr.rows.length} abonos leídos de ${ocr.paginasLeidas}/${ocr.paginasTotales} páginas.`
+          )
+        }
+      }
+    }
+
     if (!parsed.rows.length) {
       throw new BadRequestException(
-        'No se pudieron leer abonos del PDF. Verifica que sea la "Consulta de Pagos Masivos" de BBVA, o usa la confirmación manual.'
+        'No se pudieron leer abonos del PDF, ni siquiera por OCR. Verifica que sea la ' +
+          '"Consulta de Pagos Masivos" de BBVA y que se vea la tabla "Relación de las ' +
+          'cuentas de abono". Si el archivo es correcto, registra los pagos con la ' +
+          'confirmación manual indicando el N° de operación.'
       )
     }
-    return this.reconcileParsedRows(clientId, parsed, actor, moneda)
+
+    const result = await this.reconcileParsedRows(
+      clientId,
+      parsed,
+      actor,
+      moneda
+    )
+    // Que quede rastro en pantalla de CÓMO se leyó y de si la situación por fila
+    // hubo que deducirla: son los dos datos que Tesorería necesita para decidir
+    // si revisa el resultado contra el reporte del banco antes de darlo por bueno.
+    if (viaOcr) {
+      result.advertencias.push(
+        'El PDF no tenía texto seleccionable y se leyó por OCR. Contrasta los importes con el reporte del banco antes de darlos por buenos.'
+      )
+    }
+    if (parsed.situacionResueltaPorCabecera) {
+      result.advertencias.push(
+        `La columna "Situación" no era legible. Se dieron por abonados los ${parsed.rows.length} pagos porque la cabecera declara ` +
+          `${parsed.declared?.procesados} procesados, 0 no procesados y un importe de ${parsed.declared?.importeAbonado?.toFixed(2)} que coincide con la suma de las filas.`
+      )
+    }
+    // Sin este aviso, una planilla más larga que el tope se veía como un simple
+    // "no cuadra con sus totales" y Tesorería no tenía cómo saber que el motivo
+    // era que faltaron páginas por leer.
+    if (paginasOmitidas > 0) {
+      result.advertencias.push(
+        `El PDF tiene ${paginasOmitidas} página(s) más de las que se alcanzaron a leer (tope: ${this.OCR_MAX_PAGINAS}). ` +
+          'Si faltan abonos, divide la consulta del banco en varios PDF o usa la confirmación manual.'
+      )
+    }
+    if (parsed.inconsistenteConCabecera) {
+      result.advertencias.push(
+        `Lo leído del PDF no cuadra con sus propios totales: se leyeron ${parsed.rows.length} abonos, ` +
+          `pero la cabecera declara ${parsed.declared?.procesados} procesados y ${parsed.declared?.noProcesados} no procesados ` +
+          `por ${parsed.declared?.importeAbonado?.toFixed(2)}. No se marcó ningún pago; regístralos con la confirmación manual.`
+      )
+    }
+    return result
+  }
+
+  /**
+   * Lee el PDF por OCR cuando no trae capa de texto. Ocurre con el reporte
+   * reimpreso desde el navegador ("Microsoft: Print To PDF"), donde las letras
+   * quedan como trazos vectoriales y ningún extractor de texto encuentra nada.
+   *
+   * Rasteriza con `pdftoppm` y reconoce con tesseract.js. Ambos ya estaban en el
+   * proyecto por el OCR de facturas: poppler lo instala el Dockerfile y
+   * tesseract.js es dependencia directa. Se evita a propósito un rasterizador
+   * nativo de Node — @napi-rs/canvas ya se probó y crasheaba con SIGILL en este
+   * servidor por requerir AVX2 (ver el comentario del Dockerfile).
+   *
+   * Nunca lanza: si el entorno no tiene poppler (Windows en desarrollo) o el OCR
+   * falla, devuelve '' y el llamador da el mensaje de confirmación manual.
+   */
+  private async extractPdfTextByOcr(
+    buffer: Buffer
+  ): Promise<{ texto: string; paginasTotales: number; paginasLeidas: number }> {
+    try {
+      return await withTempPdf(buffer, async (pdfPath, tmpDir) => {
+        const info = parsePdfInfo(
+          await runPoppler('pdfinfo', pdfInfoArgs(pdfPath, this.OCR_MAX_PAGINAS))
+        )
+        const paginasTotales = info.pageCount || 1
+        const paginas = Math.min(paginasTotales, this.OCR_MAX_PAGINAS)
+
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { createWorker } = require('tesseract.js')
+        const worker = await createWorker('spa')
+        try {
+          const partes: string[] = []
+          for (let page = 1; page <= paginas; page++) {
+            const prefijo = path.join(tmpDir, `ocr-p${page}`)
+            await runPoppler('pdftoppm', [
+              '-png',
+              '-r',
+              String(this.OCR_DPI),
+              '-f',
+              String(page),
+              '-l',
+              String(page),
+              pdfPath,
+              prefijo,
+            ])
+            const png = (await readdir(tmpDir))
+              .filter(f => f.startsWith(`ocr-p${page}`) && f.endsWith('.png'))
+              .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[0]
+            if (!png) continue
+            const { data } = await worker.recognize(path.join(tmpDir, png))
+            partes.push(String(data?.text ?? ''))
+          }
+          return {
+            texto: partes.join('\n'),
+            paginasTotales,
+            paginasLeidas: paginas,
+          }
+        } finally {
+          await worker.terminate().catch(() => undefined)
+        }
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.logger.warn(`No se pudo leer el PDF por OCR: ${msg}`)
+      return { texto: '', paginasTotales: 0, paginasLeidas: 0 }
+    }
   }
 
   /**
@@ -522,12 +825,24 @@ export class PaymentBatchService {
    */
   async simulateReconcile(
     clientId: string,
-    actor: BatchActor
+    actor: BatchActor,
+    moneda?: string
   ): Promise<ReconcileResult> {
-    const { payable } = await this.collectPendingPayments(clientId)
+    const { payable: todos } = await this.collectPendingPayments(clientId)
+    // Una planilla del banco es de UNA sola moneda, y el motor de conciliación
+    // descarta los pendientes de otra. Sin acotar aquí, simular con pagos en
+    // dólares emitía un lote en soles contra el que no cruzaba ninguno: cinco
+    // "sin conciliar" sin explicar por qué.
+    const config = await this.accountingConfigService.getEffective(clientId)
+    const monedaLote = normalizeMoneda(moneda || config.monedaBase)
+    const payable = todos.filter(p => normalizeMoneda(p.moneda) === monedaLote)
     if (!payable.length) {
+      const otras = [...new Set(todos.map(p => normalizeMoneda(p.moneda)))]
+        .filter(m => m !== monedaLote)
       throw new BadRequestException(
-        'No hay pagos pendientes con datos bancarios completos para simular.'
+        otras.length
+          ? `No hay pagos pendientes en ${monedaLote} para simular. Sí los hay en ${otras.join(', ')}: genera primero la planilla de esa moneda.`
+          : 'No hay pagos pendientes con datos bancarios completos para simular.'
       )
     }
     const now = new Date()
@@ -544,7 +859,7 @@ export class PaymentBatchService {
       operationNumber: `SIM${String(now.getTime()).slice(-9)}`,
       executedAt: `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`,
     }
-    return this.reconcileParsedRows(clientId, parsed, actor)
+    return this.reconcileParsedRows(clientId, parsed, actor, monedaLote)
   }
 
   /** Núcleo de conciliación: cruza los abonos parseados con los pendientes y aplica el pago. */

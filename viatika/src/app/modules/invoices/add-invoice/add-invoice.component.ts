@@ -37,7 +37,12 @@ import {
 } from '../../../design-system/search-select/search-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
-import { DEFAULT_MONEDA, expenseAmountInReport, monedaSymbol } from '../../../constants/moneda';
+import {
+  DEFAULT_MONEDA,
+  expenseAmountInReport,
+  monedaSymbol,
+  normalizeMonedaCode,
+} from '../../../constants/moneda';
 import { PERU_LOCATIONS, Departamento } from '../../../constants/peru-locations';
 import { OrdenTrabajoService } from '../../../services/orden-trabajo.service';
 import {
@@ -137,9 +142,12 @@ export default class AddInvoiceComponent implements OnInit {
 
   /**
    * Opciones del selector "Tipo de documento" de Otros Gastos (VD-91). Las dos
-   * opcionales — RC (Recibos diversos) y DJE (DJ al extranjero) — se ocultan
-   * según la configuración por usuario (`permissions.otrosGastosOpcionales`);
-   * por defecto ambas están habilitadas.
+   * opcionales — RC (Recibos diversos) y EXT (Viaje en el extranjero) — se
+   * ocultan según la configuración por usuario
+   * (`permissions.otrosGastosOpcionales`); por defecto ambas están habilitadas.
+   *
+   * `EXT` no es un sub-tipo que se guarde: es la pestaña que agrupa a los dos
+   * que sí se guardan (DJE y EXD). Ver `viajeExtranjeroOpciones`.
    */
   get otrosSubTipoOpciones(): { code: string; label: string; hint?: string }[] {
     const cfg = this.userStateService.getUser()?.permissions?.otrosGastosOpcionales;
@@ -151,10 +159,68 @@ export default class AddInvoiceComponent implements OnInit {
       opciones.push({ code: 'RC', label: 'Recibos diversos', hint: 'trámites legales' });
     }
     if (cfg?.djExtranjero !== false) {
-      opciones.push({ code: 'DJE', label: 'DJ. Declaración jurada', hint: 'viajes al extranjero' });
+      opciones.push({ code: 'EXT', label: 'Viaje en el extranjero', hint: 'declaración jurada o documentos' });
     }
     opciones.push({ code: 'OT', label: 'Otros' });
     return opciones;
+  }
+
+  /** Sub-tipos que se guardan bajo la pestaña "Viaje en el extranjero". */
+  readonly SUBTIPOS_EXTRANJERO = ['DJE', 'EXD'];
+
+  /** Las dos opciones que se muestran al entrar a "Viaje en el extranjero". */
+  readonly viajeExtranjeroOpciones: { code: string; label: string; hint: string }[] = [
+    { code: 'DJE', label: 'Declaración Jurada', hint: 'alimentación y movilidad, sin comprobante' },
+    { code: 'EXD', label: 'Documentos', hint: 'comprobante del exterior, en dólares' },
+  ];
+
+  /** True mientras se esté trabajando dentro de la pestaña del extranjero. */
+  esViajeExtranjero = computed(() =>
+    this.SUBTIPOS_EXTRANJERO.includes(this.otrosSubTipo())
+  );
+
+  /**
+   * ¿Está marcado el botón `code` del selector superior? "Viaje en el
+   * extranjero" (EXT) se marca con cualquiera de sus dos sub-tipos.
+   */
+  subTipoBotonActivo(code: string): boolean {
+    if (code === 'EXT') return this.esViajeExtranjero();
+    return this.otrosSubTipo() === code;
+  }
+
+  /**
+   * EXD = Documentos del viaje al extranjero. Comprobante emitido fuera del
+   * Perú: sin RUC ni SUNAT, monto en dólares y recibo adjunto. Solo al crear;
+   * al editar el gasto se comporta como cualquier otro.
+   */
+  isExtranjeroDocumento(): boolean {
+    return (
+      !this.id &&
+      this.expenseType() === 'otros_gastos' &&
+      this.otrosSubTipo() === 'EXD'
+    );
+  }
+
+  /**
+   * Símbolo del importe dentro de Otros Gastos. Los documentos del extranjero
+   * se rinden siempre en dólares; el resto hereda la moneda de la rendición,
+   * que es como los registra el backend.
+   */
+  get otrosMonedaSimbolo(): string {
+    return this.isExtranjeroDocumento() ? '$' : this.rendicionSymbol();
+  }
+
+  /**
+   * Moneda del comprobante recién escaneado. La manda el documento vía OCR, no
+   * la rendición: una factura en dólares dentro de una rendición en soles es
+   * correcta y se muestra en su propia moneda.
+   */
+  ocrMoneda = signal<string>(DEFAULT_MONEDA);
+  ocrSymbol = computed(() => monedaSymbol(this.ocrMoneda()));
+
+  /** Símbolo del gasto que se está editando, con la moneda que se le guardó. */
+  get invoiceSymbol(): string {
+    return monedaSymbol((this.originalInvoice as any)?.moneda);
   }
   rendicionBudget = signal<number>(0);
   rendicionSpent = signal<number>(0);
@@ -172,7 +238,19 @@ export default class AddInvoiceComponent implements OnInit {
   rucLookupLoading = signal(false);
   fetchedRazonSocial = signal<string | null>(null);
   rucNotFound = signal(false);
-  mobilityDailyLimit: number | null = null;
+  /** Tope diario de movilidad tal como lo configuró la empresa, en soles. */
+  private mobilityDailyLimitRaw: number | null = null;
+
+  /**
+   * Tope diario aplicable en pantalla. Está configurado en soles, así que en
+   * una rendición en otra moneda no se muestra ni se valida aquí: el navegador
+   * no conoce el tipo de cambio del día y avisaría mal en los dos sentidos. El
+   * backend sí lo valida, contra el equivalente en soles.
+   */
+  get mobilityDailyLimit(): number | null {
+    if (this.rendicionMoneda() !== DEFAULT_MONEDA) return null;
+    return this.mobilityDailyLimitRaw;
+  }
   readonly departamentos = PERU_LOCATIONS;
   isLoading = signal(false);
   readonly todayIso = new Date().toISOString().split('T')[0];
@@ -532,7 +610,7 @@ export default class AddInvoiceComponent implements OnInit {
 
   ngOnInit() {
     this.companyConfigService.companyConfig$.subscribe(config => {
-      this.mobilityDailyLimit = config?.limits?.movilidadDiario ?? null;
+      this.mobilityDailyLimitRaw = config?.limits?.movilidadDiario ?? null;
     });
     this.rendicionId = this.route.snapshot.queryParamMap.get('rendicionId');
     this.isDirectaMode = this.route.snapshot.queryParamMap.get('mode') === 'directa';
@@ -868,6 +946,35 @@ export default class AddInvoiceComponent implements OnInit {
     });
   }
 
+  /**
+   * Los cuatro rubros más comunes de un viaje al extranjero. Se resuelven por
+   * nombre entre las categorías asignadas al colaborador, igual que la planilla
+   * de movilidad y Gastos Reparables, en vez de mantener una lista de ids.
+   *
+   * Cada rubro puede aparecer en más de una variante: Detroit tiene la de
+   * Servicios (91x) y la Comercial (92x " COM"), y Alimentación además está
+   * partida en LIMA y PROVINCIA. El colaborador ve solo las que tiene
+   * asignadas. Para cambiar los rubros basta con tocar esta lista.
+   */
+  private readonly VIAJE_EXTRANJERO_RUBROS = [
+    'alimentacion',
+    'alojamiento',
+    'transporte',
+    'gastos menores',
+  ];
+
+  /**
+   * Categorías del colaborador que corresponden a alguno de esos rubros.
+   * Vacío si no tiene ninguna asignada, y ahí el selector se cae al catálogo
+   * completo para no dejarlo sin poder registrar el gasto.
+   */
+  get viajeExtranjeroCategories(): ICategory[] {
+    return this.categories.filter((c) => {
+      const nombre = this.normalizeStr(c.name || '');
+      return this.VIAJE_EXTRANJERO_RUBROS.some((rubro) => nombre.includes(rubro));
+    });
+  }
+
   loadProjects() {
     this.invoiceService.getProjects().subscribe({
       next: (projects) => {
@@ -1120,8 +1227,16 @@ export default class AddInvoiceComponent implements OnInit {
     ];
   }
 
-  /** Tope de la comida elegida, o null si no hay comida o no tiene tope. */
+  /**
+   * Tope de la comida elegida, o null si no hay comida o no tiene tope.
+   *
+   * Los topes están configurados en soles. Si la rendición va en otra moneda
+   * no se muestran ni se valida en pantalla: el navegador no conoce el tipo de
+   * cambio del día, así que compararlos aquí daría un aviso equivocado en los
+   * dos sentidos. El backend sí valida, contra el equivalente en soles.
+   */
   get topeComidaSeleccionada(): number | null {
+    if (this.rendicionMoneda() !== DEFAULT_MONEDA) return null;
     const key = this.form?.get('tipoComida')?.value;
     return this.comidasDisponibles.find((c) => c.key === key)?.tope ?? null;
   }
@@ -1141,6 +1256,11 @@ export default class AddInvoiceComponent implements OnInit {
     // completo para no dejarlo sin poder registrar el gasto.
     if (this.isAlimentacionSinDoc() && this.gastosReparablesCategories.length > 1) {
       return this.toCategoryOptions(this.gastosReparablesCategories);
+    }
+    // Documentos del extranjero: solo los rubros básicos del viaje. Sin ninguno
+    // asignado se cae al catálogo completo, mismo criterio que arriba.
+    if (this.isExtranjeroDocumento() && this.viajeExtranjeroCategories.length) {
+      return this.toCategoryOptions(this.viajeExtranjeroCategories);
     }
     return this.categoryOptions;
   }
@@ -1318,9 +1438,21 @@ export default class AddInvoiceComponent implements OnInit {
     if (movCtrl && movilidad) movCtrl.setValue(movValue);
   }
 
-  /** Cambia el sub-tipo de "Otros gastos" y reevalúa lo que depende de él. */
+  /**
+   * Cambia el sub-tipo de "Otros gastos" y reevalúa lo que depende de él.
+   *
+   * "Viaje en el extranjero" (EXT) no es un sub-tipo guardable: al elegirlo se
+   * entra a la pestaña con la Declaración Jurada preseleccionada, y desde ahí
+   * se puede pasar a Documentos. Si ya se estaba dentro de la pestaña se
+   * respeta la opción elegida, para que volver a tocar el botón no la pise.
+   */
   selectOtrosSubTipo(code: string): void {
-    this.otrosSubTipo.set(code);
+    if (code === 'EXT') {
+      if (this.esViajeExtranjero()) return;
+      this.otrosSubTipo.set('DJE');
+    } else {
+      this.otrosSubTipo.set(code);
+    }
     this.autoSelectDjCategories();
     // syncTopValidators reasigna la categoría de "Alimentación sin documentación".
     this.syncTopValidators();
@@ -2659,6 +2791,8 @@ export default class AddInvoiceComponent implements OnInit {
       // El gasto aún no existe; se guardan los datos OCR para crearlo al confirmar.
       this.postOcrBaseInvoice = { data: res.data, total: res.total, status: res.status };
       this.ocrTotalAmount.set(parseFloat(String(res.total)) || 0);
+      // El OCR devuelve la moneda del comprobante ('PEN'/'USD', o su símbolo).
+      this.ocrMoneda.set(normalizeMonedaCode(dataObj?.moneda));
       this.isEditingOcrAmount.set(false);
       this.editedOcrTotal.set(null);
       this.sunatValidationResult = dataObj?.sunatValidation ?? null;

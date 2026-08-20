@@ -7,6 +7,7 @@ import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
 import { UploadService } from '../../services/upload.service';
+import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
 import { IAdvance } from '../../interfaces/advance.interface';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 
@@ -17,6 +18,7 @@ describe('TesoreriaComponent', () => {
   let userState: jasmine.SpyObj<UserStateService>;
   let notifications: jasmine.SpyObj<NotificationService>;
   let uploadService: jasmine.SpyObj<UploadService>;
+  let fondoCajaChicaService: jasmine.SpyObj<FondoCajaChicaService>;
   let router: jasmine.SpyObj<Router>;
 
   function makeAdvance(overrides: Partial<IAdvance> = {}): IAdvance {
@@ -82,6 +84,11 @@ describe('TesoreriaComponent', () => {
     userState.isAdmin.and.returnValue(false);
     userState.isContabilidad.and.returnValue(false);
 
+    // El componente lista los fondos de caja chica al cargar; sin este doble
+    // el spec pedia el HttpClient real y toda la suite moria en el inyector.
+    fondoCajaChicaService = jasmine.createSpyObj('FondoCajaChicaService', ['findAllByClient']);
+    fondoCajaChicaService.findAllByClient.and.returnValue(of([]));
+
     const activatedRoute = { snapshot: { queryParamMap: { get: () => null } } };
 
     TestBed.configureTestingModule({
@@ -94,6 +101,7 @@ describe('TesoreriaComponent', () => {
         { provide: UploadService, useValue: uploadService },
         { provide: Router, useValue: router },
         { provide: ActivatedRoute, useValue: activatedRoute },
+        { provide: FondoCajaChicaService, useValue: fondoCajaChicaService },
       ],
     });
 
@@ -129,6 +137,7 @@ describe('TesoreriaComponent', () => {
           { provide: UploadService, useValue: uploadService },
           { provide: Router, useValue: router },
           { provide: ActivatedRoute, useValue: activatedRoute },
+        { provide: FondoCajaChicaService, useValue: fondoCajaChicaService },
         ],
       });
       const fixture = TestBed.createComponent(TesoreriaComponent);

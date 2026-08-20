@@ -26,7 +26,7 @@ import { RouterModule, Router, ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { TabsComponent, TabItem } from '../../design-system/tabs/tabs.component';
-import { monedaSymbol } from '../../constants/moneda';
+import { monedaSymbol, normalizeMonedaCode, DEFAULT_MONEDA } from '../../constants/moneda';
 type Tab = 'pendientes' | 'aprobados' | 'reembolsos' | 'devoluciones' | 'rendiciones-directas';
 
 @Component({
@@ -877,10 +877,35 @@ export class TesoreriaComponent implements OnInit {
     return '—';
   }
 
+  /**
+   * Importe del reembolso en la moneda de su rendición, que es la moneda en la
+   * que se paga y en la que sale la planilla del banco.
+   *
+   * `settlement.difference` se guarda en moneda base porque la liquidación
+   * suma los `montoBase` de los gastos. Para una rendición en dólares hay que
+   * deshacer esa conversión con el TC que congeló al crearse, o Tesorería
+   * vería la cifra en soles junto al símbolo de dólares.
+   */
   reimbursementAmount(report: IExpenseReport): string {
     const d = report.settlement?.difference;
     if (d == null) return '—';
-    return Math.abs(Number(d)).toFixed(2);
+    const base = Math.abs(Number(d));
+    if (normalizeMonedaCode(report.viaticoMoneda) === DEFAULT_MONEDA) {
+      return base.toFixed(2);
+    }
+    const tc = Number(report.tipoCambio);
+    if (!tc || tc <= 0) return '—';
+    return (base / tc).toFixed(2);
+  }
+
+  /** Símbolo de un código de moneda ISO, para los importes de un lote de pagos. */
+  monedaSimbolo(codigo?: string | null): string {
+    return monedaSymbol(codigo);
+  }
+
+  /** Símbolo de la moneda en la que se paga ese reembolso. */
+  reimbursementSymbol(report: IExpenseReport): string {
+    return monedaSymbol(report.viaticoMoneda);
   }
 
   confirmPayment() {
@@ -1111,15 +1136,151 @@ export class TesoreriaComponent implements OnInit {
   monedasPorEmitir = computed(() => {
     const res = this.generateResult();
     if (!res) return [];
-    return (res.monedasPendientes ?? []).filter((m) => m.moneda !== res.moneda);
+    // Las monedas que YA se emitieron en esta misma tanda no siguen pendientes:
+    // el aviso "quedan pagos en otra moneda" con su botón sobraba y hacía
+    // pensar que algo había quedado sin pagar.
+    const emitidas = new Set(
+      this.archivosGenerados().filter((a) => a.count > 0).map((a) => a.moneda)
+    );
+    return (res.monedasPendientes ?? []).filter(
+      (m) => m.moneda !== res.moneda && !emitidas.has(m.moneda)
+    );
   });
 
-  /** Importe total que quedó fuera del archivo, para dimensionar el aviso. */
-  totalExcluido = computed(() =>
-    (this.generateResult()?.excluded ?? []).reduce((s, e) => s + Number(e.amount ?? 0), 0)
+  /** Planillas de esta tanda que sí llevan pagos. */
+  archivosConPagos = computed(() => this.archivosGenerados().filter((a) => a.count > 0));
+
+  /** Pagos incluidos sumando TODAS las planillas emitidas. */
+  pagosIncluidosTotal = computed(() =>
+    this.archivosConPagos().reduce((n, a) => n + a.count, 0)
   );
 
+  /**
+   * Total emitido, desglosado por moneda ("S/ 45.00 · $ 212.41"). Un solo
+   * número no representaría nada: sumar soles con dólares da una cifra que no
+   * existe.
+   */
+  totalGeneradoPorMoneda = computed(() =>
+    this.archivosConPagos()
+      .map((a) => `${monedaSymbol(a.moneda)} ${a.totalSoles.toFixed(2)}`)
+      .join(' · ')
+  );
+
+  /** Nombres de los archivos descargados, para el encabezado del resumen. */
+  nombresArchivosGenerados = computed(() => {
+    const nombres = this.archivosConPagos().map((a) => a.fileName);
+    if (nombres.length <= 1) return nombres[0] ?? '';
+    return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+  });
+
+  /**
+   * Por qué salió vacío el archivo. El texto fijo culpaba a los datos
+   * bancarios, pero el motivo más común es otro: los pendientes están en otra
+   * moneda y el archivo BBVA admite una sola. Decirle a Tesorería que corrija
+   * cuentas que están bien la manda a buscar un problema inexistente.
+   */
+  motivoArchivoVacio = computed(() => {
+    const res = this.generateResult();
+    const excluidos = res?.excluded ?? [];
+    if (!excluidos.length) return 'No hay pagos pendientes para incluir en el archivo.';
+    const otraMoneda = excluidos.filter((e) => e.moneda && e.moneda !== res?.moneda);
+    if (otraMoneda.length === excluidos.length) {
+      const monedas = [...new Set(otraMoneda.map((e) => e.moneda))].join(', ');
+      return `Todos los pagos pendientes están en ${monedas} y este archivo es en ${res?.moneda}. El archivo BBVA admite una sola moneda por planilla: genera la de ${monedas}.`;
+    }
+    if (otraMoneda.length > 0) {
+      return 'Ninguno de los pagos entró: unos están en otra moneda y otros tienen datos bancarios incompletos. Revisa el detalle de abajo.';
+    }
+    return 'Hay pagos pendientes, pero ninguno tiene datos bancarios completos. Corrige los datos de los beneficiarios y vuelve a intentarlo.';
+  });
+
+  /**
+   * Excluidos de TODAS las planillas de la tanda, no solo de la primera. Cada
+   * uno trae su moneda, así que se listan juntos sin mezclar nada.
+   */
+  excluidosTodos = computed(() => {
+    const archivos = this.archivosGenerados();
+    if (archivos.length) return archivos.flatMap((a) => a.excluded ?? []);
+    return this.generateResult()?.excluded ?? [];
+  });
+
+  /** Importe excluido por moneda ("S/ 45.00 · $ 212.41"), para dimensionar el aviso. */
+  totalExcluidoPorMoneda = computed(() => {
+    const porMoneda = new Map<string, number>();
+    for (const e of this.excluidosTodos()) {
+      const codigo = e.moneda ?? this.generateResult()?.moneda ?? DEFAULT_MONEDA;
+      porMoneda.set(codigo, (porMoneda.get(codigo) ?? 0) + Number(e.amount ?? 0));
+    }
+    return [...porMoneda.entries()]
+      .map(([codigo, total]) => `${monedaSymbol(codigo)} ${total.toFixed(2)}`)
+      .join(' · ');
+  });
+
   /** Genera el TXT, lo descarga y muestra el resumen (excluidos por datos incompletos). */
+  /**
+   * Emite TODAS las planillas pendientes de una vez, una por moneda.
+   *
+   * El formato BBVA declara una moneda y una cuenta de cargo por archivo, así
+   * que se separan; lo que ya no hace falta es pedirlas de a una. Antes se
+   * emitía la de soles y recién en el resumen aparecía un aviso de que
+   * quedaban pagos en dólares: quien no lo leía dejaba a esa gente sin cobrar.
+   */
+  generateAllPaymentsTxt(): void {
+    if (this.isGeneratingTxt()) return;
+    this.isGeneratingTxt.set(true);
+    this.reconcileResult.set(null);
+    this.advanceService.generateAllPaymentsTxt().subscribe({
+      next: (res) => {
+        this.isGeneratingTxt.set(false);
+        this.archivosGenerados.set(res.archivos);
+        this.monedasSinEmitir.set(res.fallidos);
+        // El detalle de abajo (excluidos, totales) muestra una planilla a la
+        // vez: se abre en la primera con pagos, o en la primera a secas.
+        const principal = res.archivos.find((a) => a.count > 0) ?? res.archivos[0] ?? null;
+        this.generateResult.set(principal);
+        this.monedaPlanilla.set(principal?.moneda ?? null);
+        this.batchMode.set('generate');
+        this.showBatchModal.set(true);
+
+        for (const a of res.archivos) {
+          if (a.count > 0) this.downloadTxtFile(a.fileBase64, a.fileName);
+        }
+
+        const emitidos = res.archivos.filter((a) => a.count > 0);
+        const excluidos = res.archivos.reduce((n, a) => n + a.excluded.length, 0);
+        if (!emitidos.length) {
+          this.notificationService.show(
+            `No se generó ningún archivo: ${excluidos} beneficiario(s) sin poder pagar. Revisa el detalle.`,
+            'warning'
+          );
+        } else if (excluidos > 0 || res.fallidos.length > 0) {
+          this.notificationService.show(
+            `${emitidos.length} archivo(s) generado(s), pero quedaron pagos fuera. Revisa el detalle antes de subirlos al banco.`,
+            'warning'
+          );
+        } else {
+          this.notificationService.show(
+            `${emitidos.length} archivo(s) generado(s): ${emitidos.map((a) => `${a.moneda} ${a.count} pago(s)`).join(' · ')}.`,
+            'success'
+          );
+        }
+      },
+      error: (e) => {
+        this.isGeneratingTxt.set(false);
+        this.notificationService.show(
+          e.error?.message || 'No se pudo generar el archivo de pagos.',
+          'error'
+        );
+      },
+    });
+  }
+
+  /** Planillas emitidas en la última generación, una por moneda. */
+  archivosGenerados = signal<IGeneratePaymentsTxt[]>([]);
+
+  /** Monedas que no se pudieron emitir (p. ej. sin cuenta de cargo registrada). */
+  monedasSinEmitir = signal<Array<{ moneda: string; count: number; total: number; motivo: string }>>([]);
+
   generatePaymentsTxt(moneda?: string): void {
     if (this.isGeneratingTxt()) return;
     this.isGeneratingTxt.set(true);
@@ -1232,7 +1393,10 @@ export class TesoreriaComponent implements OnInit {
     if (this.isSimulatingPdf() || this.isReconciling()) return;
     this.isSimulatingPdf.set(true);
     this.generateResult.set(null);
-    this.advanceService.simulateReconcile().subscribe({
+    // Misma regla que al conciliar el PDF real: se simula la moneda de la
+    // última planilla generada. Sin ese dato el backend asume la base y un
+    // pendiente en dólares no cruza con nada.
+    this.advanceService.simulateReconcile(this.monedaPlanilla() ?? undefined).subscribe({
       next: (res) => {
         this.isSimulatingPdf.set(false);
         this.reconcileResult.set(res);

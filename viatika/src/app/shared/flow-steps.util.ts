@@ -275,10 +275,19 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   // de tiempo terminando en "Finalizada", sin decir que después venían el
   // reembolso y el cierre.
   const cajaChicaReposicion = isCajaChica && !enDevolucion;
+  // Misma razón que la caja chica, y sin `terminal` por lo mismo: en una
+  // directa del colaborador todo lo rendido salió de su bolsillo, no hay
+  // depósito previo contra el cual compensarlo, así que el saldo siempre queda
+  // a su favor y lo paga Tesorería. Exigir que la rendición ya estuviera
+  // terminal escondía ese paso justo cuando sirve —mientras está en trámite— y
+  // la línea de tiempo terminaba en "Finalizada" como si después no faltara
+  // nada. Una directa CON depósito sí queda fuera: ahí el desenlace puede ser
+  // reembolso, devolución o quedar equilibrada, y no se sabe hasta liquidar.
+  const directaSinDeposito = collaboratorDirecta && !enDevolucion;
   const expectsReembolso =
     reembolsoDone ||
     r.settlement?.type === 'reembolso' ||
-    (collaboratorDirecta && terminal) ||
+    directaSinDeposito ||
     cajaChicaReposicion;
 
   // Devolución: el colaborador debe devolver el saldo a favor de la empresa

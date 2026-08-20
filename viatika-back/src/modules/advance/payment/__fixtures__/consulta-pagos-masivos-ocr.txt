@@ -1,0 +1,37 @@
+DETROIT POWER SYSTEM PERU LIMITADA SRL 2026/08/19 08:56:28
+x
+Consulta de Pagos Masivos
+Consulta de la Orden - Antes del proceso
+Enviada
+Nro. Orden Planilla Descripción Cuenta de Cargo
+Fecha Hora
+0818002 PAGO DE PROVEEDORES PROVEEDORES SOL 18 A 18/08/2026 19:53:28 0011-0380-0100056833
+Abonos Enviados Moneda de Cargo Importe Inicialmente informado Horario de Ejecución Situación de Proceso
+3 SOLES 1,804.70 INMEDIATA TERMINADA OK
+Consulta de la Orden - Después del proceso
+No. Movimiento de Cargo 000025714
+Fecha y Hora de Ejecución 18/08/2026 - 19:53:28
+Abonos procesados 3
+Importe cargado por abonos 1,804.70 - SOLES
+Abonos NO procesados 0
+Importe NO abonado 0.00 - SOLES
+Comisión por Otra Plaza 0.00 - SOLES
+Comisión Interbancaria 20.00 - SOLES
+TOTAL CARGADO 1,824.70 - SOLES
+Ver contenido de la planilla
+Relación de las cuentas de abono
+Sel No. Cuenta Banco Titular(Archivo) Titular(Banco) Doc.Identidad Importe Situacié
+MORRIS FLORES
+002-540-104815190051-39 CREDITO ABONC
+1 GUILLERMO L - 00506814 1,700.00
+DEL PERU ENVIAL
+JOSE
+QUISPE
+ABONC
+2 00336501324130900249 INTERBANK GUTIERREZ L - 44932276 56.70 ENVIAR
+DIEGO ZOSIMO
+PILLACA AZA PILLACA AZA
+ABONC
+3 0011-0814-02-50914356 SERGIO SERGIO L-71939725 48.00
+CORREC
+MAURICIO MAURICIO

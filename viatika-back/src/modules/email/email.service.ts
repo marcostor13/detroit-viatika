@@ -125,10 +125,30 @@ export class EmailService {
         ctx.currencySymbol === null ||
         ctx.currencySymbol === ''
       ) {
+        // El default existe para que Handlebars en modo strict no aborte el
+        // render, pero caer en él SIEMPRE es un olvido de quien arma el correo:
+        // una rendición en dólares sale rotulada "S/" y nada falla. Se avisa
+        // para que el olvido aparezca en el log en vez de en la bandeja del
+        // colaborador. Ver `moneda-correos.service.spec.ts`.
+        this.logger.warn(
+          `Correo '${options.template ?? options.subject}' sin currencySymbol: se rotula en soles por defecto. Si el documento puede ir en otra moneda, pásale su símbolo.`
+        )
         ctx.currencySymbol = 'S/'
       }
     }
-    await this.mailerService.sendMail(options)
+    // El envío NO bloquea a quien pidió la acción. Aprobar una rendición
+    // tardaba 14 s porque la respuesta HTTP esperaba a que Office365 aceptara
+    // cada correo, uno por uno; el trabajo en base terminaba en 30 ms. El
+    // correo ya era no crítico —cada `sendXxx` traga su error y solo lo
+    // registra—, así que esperar por él solo servía para que el usuario mirara
+    // un botón girando. Se despacha y se sigue; si falla, queda en el log.
+    void this.mailerService.sendMail(options).catch((error: unknown) => {
+      this.logger.error(
+        `Fallo al enviar '${options.subject}' a ${String(options.to)}: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    })
   }
 
   /** URL configurada por entorno, sin la barra final. */
@@ -944,6 +964,10 @@ export class EmailService {
           userName: data.userName,
           title: this.normalizeIsoDatesInText(data.title),
           budget: `${data.currencySymbol ?? 'S/'} ${Number(data.budget).toFixed(2)}`,
+          // La plantilla no lo usa —el símbolo ya viene dentro de `budget`—,
+          // pero se pasa igual para que el aviso de "correo sin moneda" de
+          // `send()` no salte en falso y siga siendo señal de un olvido real.
+          currencySymbol: data.currencySymbol ?? 'S/',
           platformUrl: this.resolvePlatformHref(data.platformUrl),
           year: new Date().getFullYear(),
         },

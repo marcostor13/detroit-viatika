@@ -62,10 +62,10 @@
     </div>
   </div>
 
-  <!-- Datos bancarios -->
+  <!-- Datos bancarios en soles -->
   @if (user.bankAccount?.bankName || user.bankAccount?.accountNumber || user.bankAccount?.cci) {
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6 mb-6">
-    <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-4">Datos Bancarios</h2>
+    <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-4">Cuenta en Soles</h2>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       @if (user.bankAccount?.bankName) {
       <div class="min-w-0">
@@ -89,6 +89,39 @@
       <div class="min-w-0">
         <p class="text-xs text-tertiary mb-0.5">Tipo de cuenta</p>
         <p class="font-semibold text-secondary capitalize truncate">{{ user.bankAccount?.accountType }}</p>
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- Datos bancarios en dólares -->
+  @if (user.bankAccountUsd?.bankName || user.bankAccountUsd?.accountNumber || user.bankAccountUsd?.cci) {
+  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 sm:p-6 mb-6">
+    <h2 class="text-sm font-bold text-secondary uppercase tracking-wider mb-4">Cuenta en Dólares</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      @if (user.bankAccountUsd?.bankName) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">Banco</p>
+        <p class="font-semibold text-secondary truncate" [title]="user.bankAccountUsd?.bankName ?? ''">{{ user.bankAccountUsd?.bankName }}</p>
+      </div>
+      }
+      @if (user.bankAccountUsd?.accountNumber) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">N° de Cuenta</p>
+        <p class="font-semibold text-secondary font-mono truncate" [title]="user.bankAccountUsd?.accountNumber ?? ''">{{ user.bankAccountUsd?.accountNumber }}</p>
+      </div>
+      }
+      @if (user.bankAccountUsd?.cci) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">CCI</p>
+        <p class="font-semibold text-secondary font-mono truncate" [title]="user.bankAccountUsd?.cci ?? ''">{{ user.bankAccountUsd?.cci }}</p>
+      </div>
+      }
+      @if (user.bankAccountUsd?.accountType) {
+      <div class="min-w-0">
+        <p class="text-xs text-tertiary mb-0.5">Tipo de cuenta</p>
+        <p class="font-semibold text-secondary capitalize truncate">{{ user.bankAccountUsd?.accountType }}</p>
       </div>
       }
     </div>

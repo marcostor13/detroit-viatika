@@ -55,6 +55,15 @@ export class CreateExpenseReportDto {
   @IsOptional()
   gestion?: string
 
+  /**
+   * Moneda ISO 4217 ('PEN' / 'USD') de la rendición directa. Si no se envía se
+   * asume la moneda base. Es la moneda en la que se rinde, se aprueba y se
+   * paga; sus comprobantes se expresan en ella con el TC congelado al crear.
+   */
+  @IsString()
+  @IsOptional()
+  moneda?: string
+
   @IsBoolean()
   @IsOptional()
   isDirecta?: boolean
