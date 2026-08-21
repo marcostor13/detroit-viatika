@@ -504,15 +504,19 @@ export function buildReportFlowSteps(
 
   /**
    * Estado de una posición de la cadena de aprobadores (1..chainCount).
-   * Mientras la cadena sigue activa (aún se puede aprobar), cada paso usa su
-   * PROPIO `approved` — aprobación en paralelo entre niveles, así que más de
-   * un paso puede estar "activo" (pendiente) a la vez, no solo uno. Fuera de
-   * esa ventana (rechazada, o la cadena ya se completó) se usa el cascade
-   * genérico de `stateFor`, que sigue siendo válido.
+   *
+   * VD-133: la cadena es consecutiva, así que hay UN solo paso activo — el
+   * primero sin aprobar. Los siguientes quedan en `upcoming`. Antes se pintaban
+   * todos los pendientes en azul a la vez, coherente con la aprobación en
+   * paralelo de entonces, pero ahora eso anunciaría acción a quien todavía no
+   * puede hacer nada. Fuera de esa ventana (rechazada, o la cadena ya
+   * completada) se usa el cascade genérico de `stateFor`.
    */
+  const enCursoIdx = chain.findIndex((s: any) => !s?.approved) + 1;
   const stepStateFor = (idx: number): FlowStep['state'] => {
     if (chain.length > 0 && idx >= 1 && idx <= chainCount && chainActive && !rejected) {
-      return (chain[idx - 1] as any)?.approved ? 'completed' : 'active';
+      if ((chain[idx - 1] as any)?.approved) return 'completed';
+      return idx === enCursoIdx ? 'active' : 'upcoming';
     }
     return stateFor(idx);
   };

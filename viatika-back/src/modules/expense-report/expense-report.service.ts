@@ -38,6 +38,7 @@ import { ProjectService } from '../project/project.service'
 import { CategoryService } from '../category/category.service'
 import {
   findActionableChainStep,
+  currentChainStep,
   titularCubiertoEnPaso,
   isChainFullyApproved,
   plainChainStep,
@@ -5550,16 +5551,18 @@ export class ExpenseReportService implements OnModuleInit {
   private async notifyViaticoCoordinator(report: ExpenseReportDocument, collaboratorUserId: string, clientId: string): Promise<void> {
     const reportId = String((report as any)._id)
     const collaborator = await this.userService.findEmailNameClient(collaboratorUserId)
-    const pendingSteps = (report.viaticoApproverChain ?? []).filter(s => !s.approved)
-    const approverIds = await this.conSuplentes(
-      pendingSteps.flatMap(s => s.approverIds)
-    )
+    // VD-133: se avisa SOLO al paso en curso. Antes se notificaba a todos los
+    // pasos pendientes a la vez, lo que con la cadena consecutiva le pedía
+    // accion al N2 por algo que todavia no puede firmar: entraba, no veia el
+    // boton y volvia a preguntar por que.
+    const enCurso = currentChainStep(report.viaticoApproverChain ?? [])
+    const approverIds = await this.conSuplentes(enCurso ? enCurso.approverIds : [])
     if (approverIds.length === 0) {
       await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { status: 'skipped', sentAt: new Date(), errorMessage: 'Sin aprobador asignado en este paso' } } })
       return
     }
 
-    // Cualquiera de los aprobadores de cualquier paso pendiente puede actuar — se notifica a todos.
+    // Todos los aprobadores del paso en curso: cualquiera de ellos puede resolverlo.
     for (const approverId of approverIds) {
       const approver = await this.userService.findEmailNameClient(approverId.toString())
       if (!approver || !collaborator) {

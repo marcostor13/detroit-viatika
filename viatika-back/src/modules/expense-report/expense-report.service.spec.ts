@@ -1298,7 +1298,7 @@ describe('ExpenseReportService — Fase 6 (reembolso: tenant y registro)', () =>
   })
 })
 
-describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1.3, en paralelo entre niveles)', () => {
+describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1.3, cadena CONSECUTIVA VD-133)', () => {
   let service: ExpenseReportService
   let mockExpenseReportModel: Record<string, jest.Mock>
 
@@ -1408,8 +1408,27 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
   })
 
   describe('approveViatico', () => {
-    it('deja que N2(seleccionado) apruebe antes que N2(principal) — cualquier orden', async () => {
+    // VD-133: antes el segundo paso era accionable desde el envio.
+    it('el segundo paso NO se puede aprobar mientras el primero siga pendiente', async () => {
       const report = reportDoc({ viaticoApproverChain: makeTwoStepChain(), viaticoRequiredLevels: 2 })
+      mockExpenseReportModel.findById.mockResolvedValue(report)
+
+      await expect(
+        service.approveViatico(
+          solicitudReportId,
+          { approvedBy: n2Id.toString() },
+          n2Id.toString(),
+          ROLES.COLABORADOR
+        )
+      ).rejects.toThrow()
+      expect(report.viaticoApproverChain[1].approved).toBeFalsy()
+      expect(report.status).toBe('pending_l1')
+    })
+
+    it('el segundo paso se habilita cuando el primero ya firmo', async () => {
+      const chain = makeTwoStepChain()
+      chain[0].approved = true
+      const report = reportDoc({ viaticoApproverChain: chain, viaticoRequiredLevels: 2 })
       mockExpenseReportModel.findById.mockResolvedValue(report)
 
       await service.approveViatico(
@@ -1420,8 +1439,7 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
       )
 
       expect(report.viaticoApproverChain[1].approved).toBe(true)
-      expect(report.viaticoApproverChain[0].approved).toBeFalsy()
-      expect(report.status).toBe('pending_l1') // aún falta N2(principal)
+      expect(report.status).toBe('pending_contabilidad')
     })
 
     it('rechaza a quien no es aprobador de ningún paso pendiente', async () => {
@@ -1453,8 +1471,11 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
   })
 
   describe('rejectViatico', () => {
-    it('deja que cualquier aprobador de un paso pendiente rechace la solicitud', async () => {
-      const report = reportDoc({ viaticoApproverChain: makeTwoStepChain(), viaticoRequiredLevels: 2 })
+    // VD-133: el rechazo respeta el mismo orden que la aprobacion.
+    it('rechaza la solicitud el aprobador al que le toca, con el paso previo ya firmado', async () => {
+      const chain = makeTwoStepChain()
+      chain[0].approved = true
+      const report = reportDoc({ viaticoApproverChain: chain, viaticoRequiredLevels: 2 })
       mockExpenseReportModel.findById.mockResolvedValue(report)
 
       await service.rejectViatico(

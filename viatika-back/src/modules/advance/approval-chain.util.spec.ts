@@ -84,7 +84,7 @@ describe('approval-chain.util', () => {
     })
   })
 
-  describe('findActionableChainStep / isChainFullyApproved (aprobación en paralelo entre niveles)', () => {
+  describe('findActionableChainStep / isChainFullyApproved (cadena CONSECUTIVA, VD-133)', () => {
     function makeChain(): ChainStep[] {
       return [
         { level: 1, projectId, projectRole: 'principal', approverIds: [a1] },
@@ -92,9 +92,31 @@ describe('approval-chain.util', () => {
       ]
     }
 
-    it('lets N2 approve before N1 has acted (any order)', () => {
+    // VD-133. Antes esto devolvia 1: el N2 podia firmar sin que el N1 hubiera
+    // actuado, con lo que la aprobacion del jefe directo dejaba de ser una
+    // condicion para la del siguiente nivel.
+    it('el N2 NO puede aprobar mientras el N1 no haya actuado', () => {
       const chain = makeChain()
+      expect(findActionableChainStep({ chain, actorId: a2.toString(), actorRole: ROLES.COORDINADOR })).toBe(-1)
+    })
+
+    it('el N1 es el unico accionable al inicio', () => {
+      const chain = makeChain()
+      expect(findActionableChainStep({ chain, actorId: a1.toString(), actorRole: ROLES.COORDINADOR })).toBe(0)
+    })
+
+    it('el N2 se habilita en cuanto el N1 firma', () => {
+      const chain = makeChain()
+      chain[0].approved = true
       expect(findActionableChainStep({ chain, actorId: a2.toString(), actorRole: ROLES.COORDINADOR })).toBe(1)
+    })
+
+    it('SuperAdmin tampoco se salta el orden: actua sobre el paso en curso', () => {
+      const chain = makeChain()
+      // Devuelve 0 (el paso del N1), no 1, aunque sea llave maestra.
+      expect(findActionableChainStep({ chain, actorId: a3.toString(), actorRole: ROLES.SUPER_ADMIN })).toBe(0)
+      chain[0].approved = true
+      expect(findActionableChainStep({ chain, actorId: a3.toString(), actorRole: ROLES.SUPER_ADMIN })).toBe(1)
     })
 
     it('returns -1 for someone who is not an approver of any pending step', () => {
@@ -667,7 +689,10 @@ describe('approval-chain.util', () => {
       // Es lo que hace que la suplencia sirva para lo ya enviado: la cadena
       // sellada sigue nombrando al titular y no se toca.
       it('no necesita que la cadena mencione al suplente', () => {
+        // El primer paso va firmado a proposito: con la cadena consecutiva
+        // (VD-133) el paso del titular solo es accionable cuando le toca.
         const chain = [paso([a2]), paso([titular])]
+        chain[0].approved = true
         expect(
           findActionableChainStep({
             chain,

@@ -307,7 +307,7 @@ describe('ExpenseService — Fase 5 (plazos y límites de categoría)', () => {
   })
 })
 
-describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo entre niveles)', () => {
+describe('ExpenseService — aprobación por comprobante (regla 1.4, cadena CONSECUTIVA VD-133)', () => {
   let service: ExpenseService
   let mockExpenseModel: { findOne: jest.Mock; findByIdAndUpdate: jest.Mock }
   let mockNotificationsService: { create: jest.Mock }
@@ -463,8 +463,19 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
   })
 
   describe('approveByCoord', () => {
-    it('deja que N2 apruebe antes que N1 (cualquier orden)', async () => {
+    // VD-133: antes el N2 podia firmar sin que el N1 hubiera actuado.
+    it('no deja que N2 apruebe antes que N1', async () => {
       const expense = baseExpense()
+      mockLoadExpense(expense)
+      mockUpdate({ ...expense })
+
+      await expect(service.approveByCoord(expenseId, actorN2)).rejects.toThrow()
+      expect(mockExpenseModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('el N2 aprueba una vez que el N1 ya firmo', async () => {
+      const expense = baseExpense()
+      expense.approverChain[0].approved = true
       mockLoadExpense(expense)
       mockUpdate({ ...expense })
 
@@ -472,8 +483,6 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
 
       const [, updatePayload] = mockExpenseModel.findByIdAndUpdate.mock.calls[0]
       expect(updatePayload.$set.approverChain[1].approved).toBe(true)
-      expect(updatePayload.$set.approverChain[0].approved).toBeFalsy()
-      expect(updatePayload.$set.status).toBe('pending')
     })
 
     it('rechaza a quien no es aprobador de ningún paso pendiente', async () => {
@@ -508,14 +517,28 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
   })
 
   describe('rejectByCoord', () => {
-    it('deja que cualquier aprobador de un paso pendiente rechace, no solo "el turno actual"', async () => {
+    // VD-133: el rechazo sigue el mismo orden que la aprobacion. Si el N2 no
+    // puede firmar todavia, tampoco puede devolver el comprobante por delante
+    // del N1, que es quien aun no lo ha visto.
+    it('el N2 tampoco rechaza antes de que el N1 actue', async () => {
       const expense = baseExpense()
+      mockLoadExpense(expense)
+      mockUpdate({ ...expense, status: 'rejected' })
+
+      await expect(
+        service.rejectByCoord(expenseId, actorN2, 'Falta sustento suficiente')
+      ).rejects.toThrow()
+      expect(mockExpenseModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('el N2 rechaza cuando ya le toca', async () => {
+      const expense = baseExpense()
+      expense.approverChain[0].approved = true
       mockLoadExpense(expense)
       mockUpdate({ ...expense, status: 'rejected' })
 
       await service.rejectByCoord(expenseId, actorN2, 'Falta sustento suficiente')
 
-      expect(mockExpenseModel.findByIdAndUpdate).toHaveBeenCalled()
       const [, updatePayload] = mockExpenseModel.findByIdAndUpdate.mock.calls[0]
       expect(updatePayload.$set.status).toBe('rejected')
     })
