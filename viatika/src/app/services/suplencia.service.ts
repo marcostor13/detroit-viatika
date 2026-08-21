@@ -170,6 +170,33 @@ export class SuplenciaService {
     );
   }
 
+  /**
+   * Paso EN CURSO de una cadena: el primero sin aprobar, o `null` si terminó.
+   *
+   * VD-133: la cadena es consecutiva, así que solo hay un paso accionable en
+   * cada momento. Espejo de `currentChainStep` del backend; el front tiene que
+   * aplicar la misma regla porque decide por su cuenta qué botones muestra, y
+   * si diverge el aprobador ve un botón que el backend le va a rechazar.
+   */
+  pasoEnCurso(chain: any[] | null | undefined): any | null {
+    return (chain ?? []).find((paso: any) => !paso?.approved) ?? null;
+  }
+
+  /**
+   * ¿Le toca a este usuario resolver la cadena AHORA? Espejo de
+   * `findActionableChainStep`: solo cuenta el paso en curso, y el superadmin no
+   * se salta el orden — solo la pertenencia.
+   */
+  meTocaAhora(
+    chain: any[] | null | undefined,
+    miId: string | null | undefined,
+    esSuperAdmin = false
+  ): boolean {
+    const paso = this.pasoEnCurso(chain);
+    if (!paso) return false;
+    return esSuperAdmin || this.esAprobadorDelPaso(paso, miId);
+  }
+
   /** Nombre del titular que cubro dentro de este paso, si firmo en su lugar. */
   titularCubiertoEnPaso(step: any, miId: string | null | undefined): string | null {
     const enPaso = (step?.approverIds ?? []).map((a: any) =>
@@ -192,12 +219,10 @@ export class SuplenciaService {
     chain: any[] | null | undefined,
     miId: string | null | undefined
   ): string | null {
-    for (const paso of chain ?? []) {
-      if (paso?.approved) continue;
-      const titular = this.titularCubiertoEnPaso(paso, miId);
-      if (titular) return titular;
-    }
-    return null;
+    // Solo el paso en curso (VD-133): marcar "en reemplazo de X" por un paso
+    // que todavía no le toca al suplente le anuncia una tarea que no puede hacer.
+    const paso = this.pasoEnCurso(chain);
+    return paso ? this.titularCubiertoEnPaso(paso, miId) : null;
   }
 
   /** Programa mis vacaciones. Las fechas van como `YYYY-MM-DD`. */

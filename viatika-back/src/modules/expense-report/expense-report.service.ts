@@ -38,6 +38,7 @@ import { ProjectService } from '../project/project.service'
 import { CategoryService } from '../category/category.service'
 import {
   findActionableChainStep,
+  currentChainStep,
   titularCubiertoEnPaso,
   isChainFullyApproved,
   plainChainStep,
@@ -329,7 +330,20 @@ export class ExpenseReportService implements OnModuleInit {
    */
   private async resolveReportApproverRecipients(
     reportId: string,
-    opts: { excludeUserIds?: Array<string | undefined> } = {}
+    opts: {
+      excludeUserIds?: Array<string | undefined>
+      /**
+       * VD-133: solo los aprobadores del paso EN CURSO de cada comprobante, en
+       * vez de todos los niveles. Se usa en los avisos que PIDEN ACCIÓN ("te
+       * toca aprobar"): con la cadena consecutiva, escribirle al N2 por algo que
+       * todavía no puede firmar es pedirle que entre a una pantalla donde no va
+       * a encontrar el botón.
+       *
+       * Los avisos INFORMATIVOS (rechazo, reapertura, cancelación) no lo usan:
+       * ahí interesa que se entere toda la cadena, incluido quien ya firmó.
+       */
+      soloPasoEnCurso?: boolean
+    } = {}
   ): Promise<
     Array<{ userId: string; email: string; name: string; emailEnabled: boolean }>
   > {
@@ -356,7 +370,14 @@ export class ExpenseReportService implements OnModuleInit {
     // comprobantes / pasos).
     const approverIds = new Set<string>()
     for (const e of chainExpenses) {
-      for (const step of e.approverChain ?? []) {
+      const cadena = e.approverChain ?? []
+      // Cada comprobante lleva su propia cadena y por tanto su propio paso en
+      // curso: dos comprobantes de la misma rendición pueden ir por niveles
+      // distintos si uno ya fue firmado y el otro no.
+      const pasos = opts.soloPasoEnCurso
+        ? cadena.filter(step => !(step as any).approved).slice(0, 1)
+        : cadena
+      for (const step of pasos) {
         for (const aid of step.approverIds ?? []) {
           const id = String(aid)
           if (!exclude.has(id)) approverIds.add(id)
@@ -395,6 +416,11 @@ export class ExpenseReportService implements OnModuleInit {
    * Igual que `resolveReportApproverRecipients` pero para una SOLICITUD de
    * viático: los aprobadores viven en `viaticoApproverChain` (cadena por centro
    * de costo a nivel de reporte, no por comprobante). N-genérico.
+   *
+   * Sin la opción `soloPasoEnCurso` de su gemelo, y a propósito: su único uso es
+   * avisar de que el colaborador CANCELÓ la solicitud, que es informativo y no
+   * pide acción a nadie. El aviso que sí pide acción en esta cadena es
+   * `notifyViaticoCoordinator`, que ya va solo al paso en curso (VD-133).
    */
   private async resolveViaticoApproverRecipients(
     report: { viaticoApproverChain?: { approverIds?: Types.ObjectId[] }[] },
@@ -2335,6 +2361,7 @@ export class ExpenseReportService implements OnModuleInit {
           try {
             const approvers = await this.resolveReportApproverRecipients(id, {
               excludeUserIds: [ownerId2],
+              soloPasoEnCurso: true,
             })
             const sentDirecta = new Set<string>()
             for (const a of approvers) {
@@ -2377,6 +2404,7 @@ export class ExpenseReportService implements OnModuleInit {
           try {
             const approvers = await this.resolveReportApproverRecipients(id, {
               excludeUserIds: [ownerId2],
+              soloPasoEnCurso: true,
             })
             for (const a of approvers) {
               if (!a.emailEnabled || !a.email) continue
@@ -5140,12 +5168,10 @@ export class ExpenseReportService implements OnModuleInit {
       expense.requiredLevels = chain.length
       expense.approvalLevel = 0
       await expense.save()
-      // Aprobación en paralelo: TODOS los pasos son accionables desde que se
-      // construye la cadena (no solo el primero) — se notifica a los
-      // aprobadores de cada uno.
-      for (const step of chain) {
-        void this.notifyExpensePendingApprovers(expense, step)
-      }
+      // VD-133: la cadena es consecutiva, así que solo se avisa al primer paso.
+      // Los siguientes se enteran cuando les toca, al firmar el anterior.
+      const primerPaso = currentChainStep(chain)
+      if (primerPaso) void this.notifyExpensePendingApprovers(expense, primerPaso)
     }
   }
 
@@ -5236,8 +5262,7 @@ export class ExpenseReportService implements OnModuleInit {
 
   /**
    * Notifica (in-app) a los approverIds de un paso de un comprobante que les
-   * toca revisarlo. Se llama por cada paso pendiente al construir la cadena
-   * (aprobación en paralelo: todos son accionables desde el envío).
+   * toca revisarlo. VD-133: se llama solo con el paso EN CURSO.
    */
   async notifyExpensePendingApprovers(
     expense: { _id: unknown; total?: number; expenseReportId?: unknown },
@@ -5256,6 +5281,58 @@ export class ExpenseReportService implements OnModuleInit {
         })
       } catch (err: unknown) {
         this.logger.error(`Notif comprobante pendiente ${expenseId}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  }
+
+  /**
+   * Avisa (in-app + correo) a quien le toca AHORA, tras firmarse un paso de una
+   * cadena de rendición.
+   *
+   * VD-133 lo hace imprescindible. Con la aprobación en paralelo bastaba con
+   * avisar a todos los niveles al enviar la rendición, porque desde ese momento
+   * cualquiera podía firmar. Con la cadena consecutiva ese aviso inicial solo
+   * alcanza al primer nivel, así que sin este el N2 no se enteraría NUNCA de que
+   * le llegó su turno: la rendición se quedaría esperándolo en silencio.
+   *
+   * `chain` se pasa ya con el paso recién aprobado marcado, para que el "paso en
+   * curso" sea el siguiente y no el que se acaba de firmar.
+   */
+  async notifySiguientePasoDeCadena(
+    reportId: string,
+    chain: ChainStep[],
+    contexto: { collaboratorName?: string; reportTitle?: string }
+  ): Promise<void> {
+    const enCurso = currentChainStep(chain)
+    if (!enCurso) return
+    const destinatarios = await this.conSuplentes(enCurso.approverIds)
+    for (const approverId of destinatarios) {
+      const id = approverId.toString()
+      try {
+        await this.notificationsService.create({
+          userId: id,
+          title: 'Rendición pendiente de tu aprobación',
+          message: `Te toca revisar la rendición "${contexto.reportTitle ?? ''}" (nivel ${enCurso.level}). El nivel anterior ya la aprobó.`,
+          type: 'info',
+          actionUrl: `/mis-rendiciones/${reportId}/detalle`,
+        })
+        const u = await this.userService.findEmailNameClient(id)
+        if (!u?.email) continue
+        if (!(await this.userService.isEmailEnabled(id))) continue
+        await this.emailService.sendRendicionRecordatorioCoordinador(u.email, {
+          coordinatorName: u.name,
+          pendingCount: 1,
+          reports: [
+            {
+              collaboratorName: contexto.collaboratorName ?? '',
+              title: contexto.reportTitle ?? '',
+            },
+          ],
+        })
+      } catch (err: unknown) {
+        this.logger.error(
+          `Aviso de turno ${reportId} a ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
       }
     }
   }
@@ -5550,16 +5627,18 @@ export class ExpenseReportService implements OnModuleInit {
   private async notifyViaticoCoordinator(report: ExpenseReportDocument, collaboratorUserId: string, clientId: string): Promise<void> {
     const reportId = String((report as any)._id)
     const collaborator = await this.userService.findEmailNameClient(collaboratorUserId)
-    const pendingSteps = (report.viaticoApproverChain ?? []).filter(s => !s.approved)
-    const approverIds = await this.conSuplentes(
-      pendingSteps.flatMap(s => s.approverIds)
-    )
+    // VD-133: se avisa SOLO al paso en curso. Antes se notificaba a todos los
+    // pasos pendientes a la vez, lo que con la cadena consecutiva le pedía
+    // accion al N2 por algo que todavia no puede firmar: entraba, no veia el
+    // boton y volvia a preguntar por que.
+    const enCurso = currentChainStep(report.viaticoApproverChain ?? [])
+    const approverIds = await this.conSuplentes(enCurso ? enCurso.approverIds : [])
     if (approverIds.length === 0) {
       await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { status: 'skipped', sentAt: new Date(), errorMessage: 'Sin aprobador asignado en este paso' } } })
       return
     }
 
-    // Cualquiera de los aprobadores de cualquier paso pendiente puede actuar — se notifica a todos.
+    // Todos los aprobadores del paso en curso: cualquiera de ellos puede resolverlo.
     for (const approverId of approverIds) {
       const approver = await this.userService.findEmailNameClient(approverId.toString())
       if (!approver || !collaborator) {
@@ -5761,11 +5840,16 @@ export class ExpenseReportService implements OnModuleInit {
       .create({
         userId: report.userId.toString(),
         title: 'Rendición en revisión',
-        message: `Tu rendición fue aprobada por uno de sus aprobadores (nivel ${nextLevel} de ${report.rendicionRequiredLevels ?? chain.length}) y está pendiente de los demás.`,
+        message: `Tu rendición fue aprobada por el nivel ${nextLevel} de ${report.rendicionRequiredLevels ?? chain.length} y pasó al siguiente aprobador.`,
         type: 'info',
         actionUrl: `/mis-rendiciones/${id}/detalle`,
       })
       .catch(() => {})
+    // VD-133: le toca al siguiente nivel y hay que decírselo.
+    void this.notifySiguientePasoDeCadena(id, chain, {
+      collaboratorName: (report.userId as any)?.name,
+      reportTitle: report.title,
+    })
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
 

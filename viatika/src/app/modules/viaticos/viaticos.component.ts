@@ -103,19 +103,23 @@ export class ViaticosComponent implements OnInit {
   /**
    * ¿El usuario actual es aprobador de algún paso AÚN PENDIENTE de la cadena?
    * Aprobación en paralelo entre niveles: cualquier paso no aprobado es
-   * accionable, sin importar su posición (N2 puede aprobar antes que N1).
+   * accionable solo el paso en curso (VD-133): el N2 espera al N1.
    */
   private hasActionableStep(chain: IChainStep[] | undefined): boolean {
-    return (chain ?? []).some(
-      // Suplencia por vacaciones (VD-124): tambien cuentan los titulares que
-      // este usuario cubre mientras dure el periodo.
-      (step: any) => !step.approved && this.suplenciaService.esAprobadorDelPaso(step, this.currentUserId)
-    );
+    // VD-133: solo el paso EN CURSO. La suplencia por vacaciones (VD-124) sigue
+    // contando: el suplente actúa por su titular dentro de ese paso.
+    return this.suplenciaService.meTocaAhora(chain, this.currentUserId);
   }
 
-  /** Nombres de los aprobadores de todos los pasos aún pendientes (cualquiera puede completar el suyo), sin duplicar. */
+  /**
+   * Nombres de los aprobadores de quien tiene la solicitud AHORA, sin duplicar.
+   * VD-133: solo el paso en curso. Antes se listaban todos los pendientes, lo
+   * que hacía parecer que la solicitud estaba en manos de tres personas a la vez
+   * cuando en realidad solo una podía firmarla.
+   */
   private pendingStepApproverNames(chain: IChainStep[] | undefined): string {
-    const pending = (chain ?? []).filter((step: any) => !step.approved);
+    const enCurso = this.suplenciaService.pasoEnCurso(chain as any);
+    const pending = enCurso ? [enCurso] : [];
     if (pending.length === 0) return '—';
     const names = new Set<string>();
     for (const step of pending) {

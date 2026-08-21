@@ -415,6 +415,48 @@ describe('pago de Tesorería en la solicitud de fondos', () => {
   });
 });
 
+/**
+ * VD-133: la cadena es consecutiva. Antes todos los pasos pendientes se pintaban
+ * activos a la vez, coherente con la aprobación en paralelo de entonces.
+ */
+describe('cadena consecutiva en la línea de tiempo (VD-133)', () => {
+  const conDosPasos = (primeroFirmado: boolean) => ({
+    _id: 'r-seq',
+    type: 'viatico',
+    status: 'pending_l1',
+    createdAt: '2026-08-20T00:00:00.000Z',
+    viaticoRequiredLevels: 2,
+    viaticoApprovalLevel: primeroFirmado ? 1 : 0,
+    viaticoApproverChain: [
+      {
+        level: 1,
+        approved: primeroFirmado,
+        approvedAt: primeroFirmado ? '2026-08-20T00:00:00.000Z' : undefined,
+        approverIds: [{ _id: 'u1', name: 'ANA' }],
+      },
+      { level: 2, approved: false, approverIds: [{ _id: 'u2', name: 'BETO' }] },
+    ],
+  });
+  const pasos = (r: any) => buildReportFlowSteps(r).filter(s => /^N\d/.test(s.label));
+
+  it('solo el primer paso está activo; el segundo espera su turno', () => {
+    const [n1, n2] = pasos(conDosPasos(false));
+    expect(n1.state).toBe('active');
+    expect(n2.state).toBe('upcoming');
+  });
+
+  it('al firmar el primero, el activo pasa a ser el segundo', () => {
+    const [n1, n2] = pasos(conDosPasos(true));
+    expect(n1.state).toBe('completed');
+    expect(n2.state).toBe('active');
+  });
+
+  it('el paso que aún no toca no anuncia "pendiente de aprobación"', () => {
+    const [, n2] = pasos(conDosPasos(false));
+    expect(n2.description).toBeUndefined();
+  });
+});
+
 describe('rendición de caja chica', () => {
   const labels = (r: any) => buildReportFlowSteps(r).map(s => s.label);
 

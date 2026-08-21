@@ -318,11 +318,9 @@ export class InicioComponent implements OnInit {
     return (report.expenseIds ?? [])
       .filter((e: any) => e && typeof e === 'object' && e.status !== 'rejected')
       .some((e: any) =>
+        // VD-133: solo el paso en curso de la cadena del comprobante.
         // Suplencia por vacaciones (VD-124): incluye a los titulares cubiertos.
-        (e.approverChain ?? []).some(
-          (step: any) =>
-            !step.approved && this.suplenciaService.esAprobadorDelPaso(step, me)
-        )
+        this.suplenciaService.meTocaAhora(e.approverChain, me)
       );
   }
 
@@ -591,14 +589,12 @@ export class InicioComponent implements OnInit {
   /**
    * ¿El usuario actual es aprobador de algún paso AÚN PENDIENTE de la cadena
    * por centro de costo? Aprobación en paralelo entre niveles: cualquier paso
-   * no aprobado es accionable, sin importar su posición.
+   * accionable solo el paso en curso (VD-133): el N2 espera al N1.
    */
   private hasActionableStep(chain: IChainStep[] | undefined): boolean {
-    return (chain ?? []).some(
-      // Suplencia por vacaciones (VD-124): tambien cuentan los titulares que
-      // este usuario cubre mientras dure el periodo.
-      (step: any) => !step.approved && this.suplenciaService.esAprobadorDelPaso(step, this.currentUserId)
-    );
+    // VD-133: solo el paso EN CURSO. La suplencia por vacaciones (VD-124) sigue
+    // contando: el suplente actúa por su titular dentro de ese paso.
+    return this.suplenciaService.meTocaAhora(chain, this.currentUserId);
   }
 
   // ─── Mapeo a filas ────────────────────────────────────────────────

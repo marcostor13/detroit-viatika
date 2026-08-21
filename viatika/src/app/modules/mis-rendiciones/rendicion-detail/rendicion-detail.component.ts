@@ -970,14 +970,20 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return Array.isArray(chain) && chain.length > 0;
   }
 
-  /** Índice del paso pendiente de la cadena del reporte donde el usuario actual puede actuar (aprobación en paralelo), o -1. Superadmin: primer pendiente. */
+  /**
+   * Índice del paso de la cadena del reporte sobre el que el usuario puede
+   * actuar AHORA, o -1. VD-133: solo el paso en curso; el superadmin tampoco se
+   * salta el orden, solo la pertenencia.
+   */
   private reportChainActionableIndex(): number {
     const chain: IChainStep[] = (this.report as any)?.rendicionApproverChain ?? [];
-    if (this.userStateService.isSuperAdmin()) return chain.findIndex((s: any) => !s.approved);
-    return chain.findIndex(
-      // Suplencia por vacaciones (VD-124): tambien los titulares que cubre.
-      (s: any) => !s.approved && this.suplenciaService.esAprobadorDelPaso(s, this.currentUserId)
-    );
+    const enCurso = chain.findIndex((s: any) => !s.approved);
+    if (enCurso === -1) return -1;
+    if (this.userStateService.isSuperAdmin()) return enCurso;
+    // Suplencia por vacaciones (VD-124): tambien los titulares que cubre.
+    return this.suplenciaService.esAprobadorDelPaso(chain[enCurso], this.currentUserId)
+      ? enCurso
+      : -1;
   }
 
   /** Progreso de la cadena de aprobación del reporte: {approved, required}. */
@@ -3711,20 +3717,20 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   /**
    * Índice del paso PENDIENTE de la cadena donde el usuario actual puede
    * actuar — cualquiera de los pasos no aprobados, sin importar su posición
-   * (aprobación en paralelo entre niveles: N2 puede aprobar antes que N1).
-   * -1 si no le corresponde ningún paso pendiente. Superadmin: primer pendiente.
+   * VD-133: solo el paso EN CURSO, que es el único que el backend acepta.
+   * -1 si no le toca. Superadmin: el paso en curso, sin saltarse el orden.
    */
   private actionableChainStepIndex(expense: any): number {
     const chain: IChainStep[] = expense?.approverChain ?? [];
-    if (this.userStateService.isSuperAdmin()) {
-      return chain.findIndex((s: any) => !s.approved);
-    }
-    return chain.findIndex(
-      // Suplencia por vacaciones (VD-124): tambien los titulares que cubre. Es
-      // lo que hace aparecer el boton de aprobar cuando la cadena nombra al
-      // titular y no al suplente.
-      (s: any) => !s.approved && this.suplenciaService.esAprobadorDelPaso(s, this.currentUserId)
-    );
+    const enCurso = chain.findIndex((s: any) => !s.approved);
+    if (enCurso === -1) return -1;
+    if (this.userStateService.isSuperAdmin()) return enCurso;
+    // Suplencia por vacaciones (VD-124): tambien los titulares que cubre. Es
+    // lo que hace aparecer el boton de aprobar cuando la cadena nombra al
+    // titular y no al suplente.
+    return this.suplenciaService.esAprobadorDelPaso(chain[enCurso], this.currentUserId)
+      ? enCurso
+      : -1;
   }
 
   /**
@@ -3837,7 +3843,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const approvedCount = chain.filter((s: any) => s.approved).length;
     let status: 'pending' | 'approved' | 'rejected' = chainBuilt && chain.every((s: any) => s.approved) ? 'approved' : 'pending';
     if (status === 'pending' && expense?.status === 'rejected' && contStatus !== 'rejected') status = 'rejected';
-    const pendingSteps = chain.filter((s: any) => !s.approved);
+    // VD-133: quien falta es el paso EN CURSO, no todos los pendientes. Listar
+    // los tres niveles a la vez daba a entender que cualquiera podia firmar.
+    const enCursoPaso = chain.find((s: any) => !s.approved);
+    const pendingSteps = enCursoPaso ? [enCursoPaso] : [];
     return {
       status,
       approvedCount,

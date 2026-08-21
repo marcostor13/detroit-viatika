@@ -203,10 +203,22 @@ export function advanceChain(opts: {
 }
 
 /**
- * Índice del primer paso PENDIENTE de `chain` donde `actorId` es aprobador —
- * cualquier paso no aprobado todavía, sin importar su posición (aprobación en
- * paralelo entre niveles). Devuelve -1 si no le corresponde ningún paso
- * pendiente. SuperAdmin: llave maestra sobre el primer paso pendiente.
+ * Índice del paso de `chain` sobre el que `actorId` puede actuar AHORA, o -1.
+ *
+ * VD-133: la cadena es CONSECUTIVA. Solo hay un paso accionable en cada
+ * momento —el primero que siga pendiente— y únicamente pueden resolverlo sus
+ * propios aprobadores. Antes valía cualquier paso pendiente sin importar el
+ * orden ("aprobación en paralelo"), de modo que el N2 podía firmar antes que el
+ * N1 y la aprobación del jefe directo dejaba de ser una condición para la del
+ * siguiente nivel: era un visto bueno que podía llegar después, o nunca, si el
+ * N2 firmaba y el N1 se olvidaba.
+ *
+ * Este es el ÚNICO punto donde se decide, así que la regla vale igual para las
+ * cuatro cadenas: solicitud de fondos, comprobante, rendición a nivel de
+ * reporte y rendición directa.
+ *
+ * SuperAdmin conserva la llave maestra sobre el paso en curso; no se salta el
+ * orden, solo la pertenencia.
  */
 export function findActionableChainStep(opts: {
   chain: ChainStep[]
@@ -216,14 +228,21 @@ export function findActionableChainStep(opts: {
   cubreA?: string[]
 }): number {
   const { chain, actorId, actorRole, cubreA } = opts
-  if (actorRole === ROLES.SUPER_ADMIN) {
-    return chain.findIndex(step => !step.approved)
-  }
+  const enCurso = chain.findIndex(step => !step.approved)
+  if (enCurso === -1) return -1
+  if (actorRole === ROLES.SUPER_ADMIN) return enCurso
   const identidades = identidadesDelActor(actorId, cubreA)
-  return chain.findIndex(
-    step =>
-      !step.approved && step.approverIds.some(id => identidades.includes(id.toString()))
-  )
+  return chain[enCurso].approverIds.some(id => identidades.includes(id.toString()))
+    ? enCurso
+    : -1
+}
+
+/**
+ * Paso en curso de la cadena: el primero sin aprobar, o `null` si ya terminó.
+ * Es lo que hay que notificar y lo único accionable (VD-133).
+ */
+export function currentChainStep(chain: ChainStep[]): ChainStep | null {
+  return chain.find(step => !step.approved) ?? null
 }
 
 /**
