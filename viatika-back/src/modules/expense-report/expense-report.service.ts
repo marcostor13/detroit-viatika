@@ -3252,6 +3252,12 @@ export class ExpenseReportService implements OnModuleInit {
         generatedByName: creator?.name || creator?.email || null,
         generatedByRole: creator?.roleId?.name || null,
         origin,
+        // VD-122. Este endpoint no devuelve el documento: arma un objeto campo a
+        // campo, así que poblarlos en la consulta no basta — si no se listan
+        // aquí, no llegan al front. El centro de costo es obligatorio en una
+        // directa; la OT es opcional y puede venir nula.
+        projectId: r.projectId ?? null,
+        directaOrdenTrabajoId: r.directaOrdenTrabajoId ?? null,
       }
     })
   }

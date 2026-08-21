@@ -32,14 +32,17 @@ describe('ExpenseReportService.findDirectRendicionReports — filtros (VD-135)',
           populate: () => cadena,
           sort: () => cadena,
           lean: () => cadena,
-          exec: async () => [],
+          exec: async () => filas,
         }
         return cadena
       },
     }
   })
 
+  let filas: any[] = []
+
   const consultaCon = async (filtros: any) => {
+    filas = []
     await service.findDirectRendicionReports(clientId, filtros)
     return consultas[0]
   }
@@ -69,5 +72,35 @@ describe('ExpenseReportService.findDirectRendicionReports — filtros (VD-135)',
     const q = await consultaCon({ projectId: 'no-es-un-id', ordenTrabajoId: '123' })
     expect(q.projectId).toBeUndefined()
     expect(q.directaOrdenTrabajoId).toBeUndefined()
+  })
+
+  /**
+   * VD-122. Este endpoint no devuelve el documento: arma un objeto campo a
+   * campo. Poblar en la consulta no basta — hay que listarlos en la respuesta, y
+   * eso es justo lo que se olvido la primera vez: el populate estaba puesto y la
+   * columna igual salia vacia.
+   */
+  describe('respuesta: centro de costo y OT (VD-122)', () => {
+    it('devuelve el centro de costo y la OT poblados', async () => {
+      filas = [
+        {
+          _id: new Types.ObjectId(),
+          status: 'submitted',
+          projectId: { _id: projectId, code: '9101', name: 'Administracion' },
+          directaOrdenTrabajoId: { _id: ordenTrabajoId, nombre: 'SMI-001' },
+          expenseIds: [],
+        },
+      ]
+      const [fila]: any = await service.findDirectRendicionReports(clientId, {})
+      expect(fila.projectId?.code).toBe('9101')
+      expect(fila.directaOrdenTrabajoId?.nombre).toBe('SMI-001')
+    })
+
+    it('sin OT devuelve null, no undefined: la columna muestra el guion', async () => {
+      filas = [{ _id: new Types.ObjectId(), status: 'open', expenseIds: [] }]
+      const [fila]: any = await service.findDirectRendicionReports(clientId, {})
+      expect(fila.directaOrdenTrabajoId).toBeNull()
+      expect(fila.projectId).toBeNull()
+    })
   })
 })
