@@ -603,7 +603,7 @@ export class PaymentBatchService {
     const txt = buildBbvaTxt(records, {
       chargeAccount,
       currency: monedaArchivo,
-      description: this.buildPlanillaDescription(client),
+      description: this.buildPlanillaDescription(client, monedaArchivo),
     })
 
     return {
@@ -653,14 +653,32 @@ export class PaymentBatchService {
   ]
 
   /**
+   * Abreviatura de la moneda en la descripción de la planilla. `SOL`/`DOL` son
+   * las que usa BBVA Net Cash: el campo (pos 52-75) pasa por `sanitizeBankText`,
+   * que solo deja letras, dígitos y espacio, así que el símbolo `$` no puede ir
+   * —saldría convertido en un espacio y la referencia quedaría coja—.
+   */
+  private readonly MONEDA_PLANILLA: Record<string, string> = {
+    PEN: 'SOL',
+    USD: 'DOL',
+  }
+
+  /**
    * Descripción de la planilla (cabecera, 24 chars). Sigue la convención del
    * archivo real de BBVA: `PROVEEDORES SOL <día> <MES>` (ej. PROVEEDORES SOL 02 JUNIO).
+   *
+   * VD-125 / VD-131: la abreviatura sale de la moneda del archivo, no fija en
+   * `SOL`. Una planilla en dólares se descargaba rotulada como si fuera de
+   * soles, y esa referencia es lo que Tesorería ve en el banco.
    */
-  private buildPlanillaDescription(_client: any): string {
+  private buildPlanillaDescription(_client: any, moneda?: string): string {
     const now = new Date()
     const dd = String(now.getDate()).padStart(2, '0')
     const mes = this.MESES[now.getMonth()]
-    return `PROVEEDORES SOL ${dd} ${mes}`.slice(0, 24)
+    const abrev =
+      this.MONEDA_PLANILLA[normalizeMoneda(moneda)] ??
+      this.MONEDA_PLANILLA[DEFAULT_MONEDA]
+    return `PROVEEDORES ${abrev} ${dd} ${mes}`.slice(0, 24)
   }
 
   // ── Conciliación por PDF ───────────────────────────────────────────────────
