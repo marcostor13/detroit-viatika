@@ -570,6 +570,72 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
   // funcionalidad. La cadena se sella con el id del TITULAR y nunca se
   // reescribe, así que sin expandir los destinatarios el suplente puede firmar
   // pero jamás se entera de que tiene algo pendiente.
+  /**
+   * VD-133: los avisos que PIDEN ACCION van al paso en curso; los informativos
+   * (rechazo, reapertura, cancelacion) siguen alcanzando a toda la cadena.
+   */
+  describe('destinatarios del aviso "te toca aprobar" (VD-133)', () => {
+    const n1 = new Types.ObjectId()
+    const n2 = new Types.ObjectId()
+    const reportId = new Types.ObjectId().toString()
+    const expenseId = new Types.ObjectId()
+
+    // Los dos modelos se inyectan sobre la instancia, como hace el resto del
+    // spec: el provider los entrega vacios.
+    const montarCadena = (primeroFirmado: boolean) => {
+      ;(service as any).expenseReportModel = {
+        findById: () => ({
+          select: () => ({ lean: () => ({ exec: async () => ({ expenseIds: [expenseId] }) }) }),
+        }),
+      }
+      ;(service as any).expenseModel = {
+        find: () => ({
+          select: () => ({
+            lean: () => ({
+              exec: async () => [
+                {
+                  approverChain: [
+                    { level: 1, approved: primeroFirmado, approverIds: [n1] },
+                    { level: 2, approved: false, approverIds: [n2] },
+                  ],
+                },
+              ],
+            }),
+          }),
+        }),
+      }
+      mockUserService.resolverSuplenteVigente.mockResolvedValue(null)
+      mockUserService.findEmailNameClient.mockImplementation(async (id: string) => ({
+        _id: id,
+        name: id === n1.toString() ? 'ANA' : 'BETO',
+        email: id === n1.toString() ? 'ana@x.pe' : 'beto@x.pe',
+      }))
+      mockUserService.isEmailEnabled.mockResolvedValue(true)
+    }
+
+    it('solo escribe al nivel al que le toca', async () => {
+      montarCadena(false)
+      const rec = await (service as any).resolveReportApproverRecipients(reportId, {
+        soloPasoEnCurso: true,
+      })
+      expect(rec.map((r: any) => r.email)).toEqual(['ana@x.pe'])
+    })
+
+    it('cuando el N1 firma, el aviso pasa al N2', async () => {
+      montarCadena(true)
+      const rec = await (service as any).resolveReportApproverRecipients(reportId, {
+        soloPasoEnCurso: true,
+      })
+      expect(rec.map((r: any) => r.email)).toEqual(['beto@x.pe'])
+    })
+
+    it('sin la opcion alcanza a toda la cadena: es lo que usan los avisos informativos', async () => {
+      montarCadena(false)
+      const rec = await (service as any).resolveReportApproverRecipients(reportId)
+      expect(rec.map((r: any) => r.email).sort()).toEqual(['ana@x.pe', 'beto@x.pe'])
+    })
+  })
+
   describe('destinatarios con suplencia por vacaciones', () => {
     const titularId = new Types.ObjectId()
     const suplenteId = new Types.ObjectId()

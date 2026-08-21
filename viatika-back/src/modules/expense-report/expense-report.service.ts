@@ -330,7 +330,20 @@ export class ExpenseReportService implements OnModuleInit {
    */
   private async resolveReportApproverRecipients(
     reportId: string,
-    opts: { excludeUserIds?: Array<string | undefined> } = {}
+    opts: {
+      excludeUserIds?: Array<string | undefined>
+      /**
+       * VD-133: solo los aprobadores del paso EN CURSO de cada comprobante, en
+       * vez de todos los niveles. Se usa en los avisos que PIDEN ACCIÓN ("te
+       * toca aprobar"): con la cadena consecutiva, escribirle al N2 por algo que
+       * todavía no puede firmar es pedirle que entre a una pantalla donde no va
+       * a encontrar el botón.
+       *
+       * Los avisos INFORMATIVOS (rechazo, reapertura, cancelación) no lo usan:
+       * ahí interesa que se entere toda la cadena, incluido quien ya firmó.
+       */
+      soloPasoEnCurso?: boolean
+    } = {}
   ): Promise<
     Array<{ userId: string; email: string; name: string; emailEnabled: boolean }>
   > {
@@ -357,7 +370,14 @@ export class ExpenseReportService implements OnModuleInit {
     // comprobantes / pasos).
     const approverIds = new Set<string>()
     for (const e of chainExpenses) {
-      for (const step of e.approverChain ?? []) {
+      const cadena = e.approverChain ?? []
+      // Cada comprobante lleva su propia cadena y por tanto su propio paso en
+      // curso: dos comprobantes de la misma rendición pueden ir por niveles
+      // distintos si uno ya fue firmado y el otro no.
+      const pasos = opts.soloPasoEnCurso
+        ? cadena.filter(step => !(step as any).approved).slice(0, 1)
+        : cadena
+      for (const step of pasos) {
         for (const aid of step.approverIds ?? []) {
           const id = String(aid)
           if (!exclude.has(id)) approverIds.add(id)
@@ -396,6 +416,11 @@ export class ExpenseReportService implements OnModuleInit {
    * Igual que `resolveReportApproverRecipients` pero para una SOLICITUD de
    * viático: los aprobadores viven en `viaticoApproverChain` (cadena por centro
    * de costo a nivel de reporte, no por comprobante). N-genérico.
+   *
+   * Sin la opción `soloPasoEnCurso` de su gemelo, y a propósito: su único uso es
+   * avisar de que el colaborador CANCELÓ la solicitud, que es informativo y no
+   * pide acción a nadie. El aviso que sí pide acción en esta cadena es
+   * `notifyViaticoCoordinator`, que ya va solo al paso en curso (VD-133).
    */
   private async resolveViaticoApproverRecipients(
     report: { viaticoApproverChain?: { approverIds?: Types.ObjectId[] }[] },
@@ -2336,6 +2361,7 @@ export class ExpenseReportService implements OnModuleInit {
           try {
             const approvers = await this.resolveReportApproverRecipients(id, {
               excludeUserIds: [ownerId2],
+              soloPasoEnCurso: true,
             })
             const sentDirecta = new Set<string>()
             for (const a of approvers) {
@@ -2378,6 +2404,7 @@ export class ExpenseReportService implements OnModuleInit {
           try {
             const approvers = await this.resolveReportApproverRecipients(id, {
               excludeUserIds: [ownerId2],
+              soloPasoEnCurso: true,
             })
             for (const a of approvers) {
               if (!a.emailEnabled || !a.email) continue
@@ -5141,12 +5168,10 @@ export class ExpenseReportService implements OnModuleInit {
       expense.requiredLevels = chain.length
       expense.approvalLevel = 0
       await expense.save()
-      // Aprobación en paralelo: TODOS los pasos son accionables desde que se
-      // construye la cadena (no solo el primero) — se notifica a los
-      // aprobadores de cada uno.
-      for (const step of chain) {
-        void this.notifyExpensePendingApprovers(expense, step)
-      }
+      // VD-133: la cadena es consecutiva, así que solo se avisa al primer paso.
+      // Los siguientes se enteran cuando les toca, al firmar el anterior.
+      const primerPaso = currentChainStep(chain)
+      if (primerPaso) void this.notifyExpensePendingApprovers(expense, primerPaso)
     }
   }
 
@@ -5237,8 +5262,7 @@ export class ExpenseReportService implements OnModuleInit {
 
   /**
    * Notifica (in-app) a los approverIds de un paso de un comprobante que les
-   * toca revisarlo. Se llama por cada paso pendiente al construir la cadena
-   * (aprobación en paralelo: todos son accionables desde el envío).
+   * toca revisarlo. VD-133: se llama solo con el paso EN CURSO.
    */
   async notifyExpensePendingApprovers(
     expense: { _id: unknown; total?: number; expenseReportId?: unknown },
