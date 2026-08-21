@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { RendicionesAdminComponent } from './rendiciones-admin.component';
@@ -94,6 +96,9 @@ describe('RendicionesAdminComponent', () => {
     TestBed.configureTestingModule({
       imports: [RendicionesAdminComponent],
       providers: [
+        // SuplenciaBannerComponent (VD-124) inyecta HttpClient al crearse el padre.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
         { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
         { provide: ExpenseReportsService, useValue: expenseReportsService },
@@ -127,6 +132,9 @@ describe('RendicionesAdminComponent', () => {
       TestBed.configureTestingModule({
         imports: [RendicionesAdminComponent],
         providers: [
+          // SuplenciaBannerComponent (VD-124) inyecta HttpClient al crearse el padre.
+          provideHttpClient(),
+          provideHttpClientTesting(),
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => 'u1' } } } },
           { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
           { provide: ExpenseReportsService, useValue: expenseReportsService },

@@ -5,6 +5,7 @@ import { Router, ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, forkJoin } from 'rxjs';
 import { ExpenseReportsService, IExpenseReportDeletionPreview } from '../../../services/expense-reports.service';
 import { buildReportFlowSteps, isSolicitudPhase, FlowStep } from '../../../shared/flow-steps.util';
+import { SuplenciaBannerComponent } from '../../../components/suplencia-banner/suplencia-banner.component';
 import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { AdminUsersService } from '../services/admin-users.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
@@ -25,6 +26,7 @@ import {
 } from '../../../interfaces/fondo-caja-chica.interface';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
+import { SuplenciaService } from '../../../services/suplencia.service';
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   // Rendición normal
@@ -101,7 +103,7 @@ export type UnifiedRendicionItem = {
 @Component({
   selector: 'app-rendiciones-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent, SuplenciaBannerComponent],
   templateUrl: './rendiciones-admin.component.html',
 })
 export class RendicionesAdminComponent implements OnInit {
@@ -120,6 +122,7 @@ export class RendicionesAdminComponent implements OnInit {
   private adminUsersService = inject(AdminUsersService);
   private invoicesService = inject(InvoicesService);
   private userStateService = inject(UserStateService);
+  private suplenciaService = inject(SuplenciaService);
   private notifications = inject(NotificationService);
   private advanceService = inject(AdvanceService);
   private categoriaService = inject(CategoriaService);
@@ -205,7 +208,9 @@ export class RendicionesAdminComponent implements OnInit {
    */
   private hasActionableStep(chain: IChainStep[] | undefined): boolean {
     return (chain ?? []).some(
-      (step: any) => !step.approved && step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+      // Suplencia por vacaciones (VD-124): tambien cuentan los titulares que
+      // este usuario cubre mientras dure el periodo.
+      (step: any) => !step.approved && this.suplenciaService.esAprobadorDelPaso(step, this.currentUserId)
     );
   }
 
@@ -560,12 +565,18 @@ export class RendicionesAdminComponent implements OnInit {
     // Trazabilidad: solo para reportes (viático/directa/normal). Se trae el
     // reporte completo porque la lista no puebla cadenas de aprobadores ni
     // hitos de contabilidad; con eso el timeline sale con nombres y fechas.
-    this.detailFlowSteps.set(item.source === 'report' ? buildReportFlowSteps(item.raw) : []);
+    this.detailFlowSteps.set(
+      item.source === 'report'
+        ? buildReportFlowSteps(item.raw, this.suplenciaService.contextoParaLineaDeTiempo())
+        : []
+    );
     if (item.source === 'report') {
       this.expenseReportsService.findOne(item._id).subscribe({
         next: (full) => {
           if (this.detailItem()?._id === item._id) {
-            this.detailFlowSteps.set(buildReportFlowSteps(full));
+            this.detailFlowSteps.set(
+              buildReportFlowSteps(full, this.suplenciaService.contextoParaLineaDeTiempo())
+            );
           }
         },
         error: () => {},

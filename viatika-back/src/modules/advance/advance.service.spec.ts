@@ -90,6 +90,9 @@ const mockUserService = {
   }),
   findViaticoAccountingNotifyRecipients: jest.fn().mockResolvedValue([]),
   isEmailEnabled: jest.fn().mockResolvedValue(true),
+  idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+  idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+  resolverSuplenteVigente: jest.fn().mockResolvedValue(null),
 }
 
 const mockNotificationsService = {

@@ -43,6 +43,44 @@ export interface ChainStep {
   approved?: boolean
   approvedBy?: Types.ObjectId
   approvedAt?: Date
+  /**
+   * Titular al que cubría quien firmó, si el paso lo resolvió un suplente de
+   * vacaciones (VD-124). Ausente = firmó por sí mismo.
+   */
+  approvedOnBehalfOf?: Types.ObjectId
+}
+
+/**
+ * Identidades con las que actúa un usuario: la suya y las de los titulares que
+ * cubre por suplencia de vacaciones (VD-124). Es el único punto donde entra la
+ * suplencia al motor de cadena — de ahí que cubra todas las etapas por igual,
+ * porque todas preguntan lo mismo: si el actor está entre los `approverIds`
+ * del paso.
+ *
+ * La suplencia es ADITIVA: la identidad propia va siempre primero y nunca se
+ * pierde, así el titular sigue pudiendo firmar durante su propia vacación.
+ */
+export function identidadesDelActor(actorId: string, cubreA?: string[]): string[] {
+  if (!cubreA?.length) return [actorId]
+  return [...new Set([actorId, ...cubreA.map(String)])]
+}
+
+/**
+ * Titular al que el actor cubrió para resolver este paso, si lo hizo como
+ * suplente. Devuelve `undefined` cuando el actor figura por derecho propio
+ * entre los aprobadores: la suplencia es aditiva y la identidad propia manda,
+ * así que firmar "en nombre de" solo se registra cuando de verdad hizo falta.
+ */
+export function titularCubiertoEnPaso(
+  step: ChainStep,
+  actorId: string,
+  cubreA?: string[]
+): Types.ObjectId | undefined {
+  if (!cubreA?.length) return undefined
+  const ids = step.approverIds.map(id => id.toString())
+  if (ids.includes(actorId)) return undefined
+  const titular = cubreA.find(t => ids.includes(String(t)))
+  return titular ? new Types.ObjectId(titular) : undefined
 }
 
 /**
@@ -147,10 +185,13 @@ export function canActOnChain(opts: {
   approvalLevel: number
   actorId: string
   actorRole: string
+  /** Titulares que el actor cubre por suplencia de vacaciones (VD-124). */
+  cubreA?: string[]
 }): boolean {
   if (opts.actorRole === ROLES.SUPER_ADMIN) return true
   const approverIds = expectedApproverIds(opts.chain, opts.approvalLevel)
-  return approverIds.some(id => id.toString() === opts.actorId)
+  const identidades = identidadesDelActor(opts.actorId, opts.cubreA)
+  return approverIds.some(id => identidades.includes(id.toString()))
 }
 
 export function advanceChain(opts: {
@@ -171,13 +212,17 @@ export function findActionableChainStep(opts: {
   chain: ChainStep[]
   actorId: string
   actorRole: string
+  /** Titulares que el actor cubre por suplencia de vacaciones (VD-124). */
+  cubreA?: string[]
 }): number {
-  const { chain, actorId, actorRole } = opts
+  const { chain, actorId, actorRole, cubreA } = opts
   if (actorRole === ROLES.SUPER_ADMIN) {
     return chain.findIndex(step => !step.approved)
   }
+  const identidades = identidadesDelActor(actorId, cubreA)
   return chain.findIndex(
-    step => !step.approved && step.approverIds.some(id => id.toString() === actorId)
+    step =>
+      !step.approved && step.approverIds.some(id => identidades.includes(id.toString()))
   )
 }
 

@@ -84,6 +84,19 @@ function pendingRendicionCoordNames(expenses: any[]): string | undefined {
   return names.size > 0 ? Array.from(names).join(' / ') : undefined;
 }
 
+/**
+ * Lo que la línea de tiempo necesita saber sobre suplencias por vacaciones
+ * (VD-124). `vigentes` es de TODA la empresa a propósito: quien mira el
+ * documento —el colaborador que rindió, Contabilidad— tiene que saber quién va
+ * a firmar de verdad, no solo el suplente.
+ */
+export interface SuplenciaContexto {
+  /** Titulares que el usuario ACTUAL cubre. */
+  cubroA?: { _id: string; name: string }[];
+  /** Suplencias vigentes de la empresa: titular -> quien lo reemplaza. */
+  vigentes?: { titularId: string; suplenteName: string }[];
+}
+
 interface RendicionLevelApprovals {
   /** Nivel de la cadena (N1, N2, …). */
   level: number;
@@ -93,6 +106,17 @@ interface RendicionLevelApprovals {
   pendingNames: string[];
   /** Fecha de la última aprobación del nivel. */
   lastApprovedAt?: string;
+  /**
+   * El usuario actual cubre a alguno de los que faltan, por suplencia de
+   * vacaciones (VD-124). La cadena nombra al titular; esto es lo que le dice al
+   * suplente que la acción es suya.
+   */
+  cubiertoPorMi?: boolean;
+  /** Nombre del titular que cubre, para decirlo explícitamente. */
+  titularCubierto?: string;
+  /** Titular de vacaciones en este nivel y quién lo reemplaza — visible para todos. */
+  titularDeVacaciones?: string;
+  reemplazadoPor?: string;
 }
 
 /** Nombre de quien resolvió un paso, si el populate lo trajo. */
@@ -118,15 +142,33 @@ function levelApprovalStep(
     ? (approvedNames.length > 0 ? approvedNames : pendingNames)
     : pendingNames;
   const nombres = quienes.join(' / ') || 'aprobadores';
+  // Suplencia por vacaciones (VD-124): si el aprobador de este nivel está de
+  // vacaciones, el nombre que manda es el de quien lo reemplaza. La cadena
+  // sigue nombrando al titular, pero un documento que dice "falta aprobación de
+  // Fulano" cuando Fulano no está deja a todos esperando a nadie.
+  const pendienteConSuplente =
+    !done && nivel.reemplazadoPor
+      ? `${nivel.reemplazadoPor} (en reemplazo de ${nivel.titularDeVacaciones})`
+      : nombres;
   return {
-    label: done ? `N${level} · Aprobado por ${nombres}` : `N${level} · Falta aprobación de ${nombres}`,
+    label: done
+      ? `N${level} · Aprobado por ${nombres}`
+      : `N${level} · Falta aprobación de ${pendienteConSuplente}`,
     state: done ? 'completed' : 'active',
     date: done ? fmt(lastApprovedAt ?? fallbackDate) : undefined,
     description: done
       ? undefined
-      : approvedNames.length > 0
-        ? `Ya aprobó: ${approvedNames.join(' / ')}`
-        : `Pendiente de aprobación (nivel ${level})`,
+      // Suplencia por vacaciones (VD-124): el label sigue nombrando al titular
+      // — es quien figura en la cadena y lo que Contabilidad tiene que poder
+      // auditar — pero al suplente hay que decirle que la acción le toca a él,
+      // o lee "falta aprobación de Fulano" y no entiende por qué ve el botón.
+      : nivel.cubiertoPorMi
+        ? `Te toca a ti: reemplazas a ${nivel.titularCubierto ?? 'este aprobador'} mientras está de vacaciones`
+        : nivel.reemplazadoPor
+          ? `${nivel.titularDeVacaciones} está de vacaciones: los avisos y la aprobación van a su reemplazo.`
+          : approvedNames.length > 0
+            ? `Ya aprobó: ${approvedNames.join(' / ')}`
+            : `Pendiente de aprobación (nivel ${level})`,
     group: 'rendicion',
   };
 }
@@ -147,8 +189,23 @@ function levelApprovalStep(
  * [] si los comprobantes no traen la cadena poblada (p. ej. vistas con populate
  * ligero), para caer al paso agregado.
  */
-function aggregateRendicionApprovalsByLevel(expenses: any[]): RendicionLevelApprovals[] {
-  const byLevel = new Map<number, { approved: Set<string>; pending: Set<string>; lastApprovedAt?: string }>();
+function aggregateRendicionApprovalsByLevel(
+  expenses: any[],
+  suplencia: SuplenciaContexto = {}
+): RendicionLevelApprovals[] {
+  const cubroA = suplencia.cubroA ?? [];
+  const vigentes = suplencia.vigentes ?? [];
+  const byLevel = new Map<
+    number,
+    {
+      approved: Set<string>;
+      pending: Set<string>;
+      lastApprovedAt?: string;
+      titularCubierto?: string;
+      titularDeVacaciones?: string;
+      reemplazadoPor?: string;
+    }
+  >();
   for (const e of expenses ?? []) {
     if (e?.status === 'rejected') continue;
     const chain = e?.approverChain;
@@ -168,6 +225,22 @@ function aggregateRendicionApprovalsByLevel(expenses: any[]): RendicionLevelAppr
         }
       } else {
         for (const n of candidatos) cur.pending.add(n);
+        // ¿Alguno de los que faltan es un titular que estoy cubriendo? (VD-124)
+        const idsDelPaso = (step?.approverIds ?? []).map((a: any) =>
+          String(a && typeof a === 'object' ? a._id : a)
+        );
+        const titular = cubroA.find((t) => idsDelPaso.includes(t._id));
+        if (titular) cur.titularCubierto = titular.name;
+        // Para TODOS: si alguno de los que faltan esta de vacaciones, el que va
+        // a firmar es su reemplazo.
+        const deVacaciones = vigentes.find((v) => idsDelPaso.includes(v.titularId));
+        if (deVacaciones) {
+          cur.titularDeVacaciones =
+            candidatos.find((n: string) => n === (deVacaciones as any).titularName) ??
+            (deVacaciones as any).titularName ??
+            'el aprobador';
+          cur.reemplazadoPor = deVacaciones.suplenteName;
+        }
       }
       byLevel.set(level, cur);
     }
@@ -175,13 +248,17 @@ function aggregateRendicionApprovalsByLevel(expenses: any[]): RendicionLevelAppr
 
   return [...byLevel.entries()]
     .sort((x, y) => x[0] - y[0])
-    .map(([level, { approved, pending, lastApprovedAt }]) => ({
+    .map(([level, { approved, pending, lastApprovedAt, titularCubierto, titularDeVacaciones, reemplazadoPor }]) => ({
       level,
       // Quien tiene un paso pendiente figura como pendiente, aunque haya
       // aprobado otro comprobante del mismo nivel.
       approvedNames: [...approved].filter(n => !pending.has(n)).sort((a, b) => a.localeCompare(b)),
       pendingNames: [...pending].sort((a, b) => a.localeCompare(b)),
       lastApprovedAt,
+      cubiertoPorMi: !!titularCubierto,
+      titularCubierto,
+      titularDeVacaciones,
+      reemplazadoPor,
     }));
 }
 
@@ -227,7 +304,15 @@ export function isSolicitudPhase(r: any): boolean {
   return r.status === 'solicited';
 }
 
-export function buildReportFlowSteps(r: any): FlowStep[] {
+export function buildReportFlowSteps(
+  r: any,
+  /**
+   * Contexto de suplencias por vacaciones (VD-124). Se pasa desde el componente
+   * porque la línea de tiempo es una función pura y no puede consultar el
+   * estado de suplencia por su cuenta.
+   */
+  suplencia: SuplenciaContexto = {}
+): FlowStep[] {
   if (!r) return [];
 
   const fmt = (d?: string | Date) =>
@@ -239,7 +324,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
   const status: string = r.status;
 
   if (viaticoEnteredRendicion(r)) {
-    return buildViaticoTwoPhaseSteps(r, fmt);
+    return buildViaticoTwoPhaseSteps(r, fmt, suplencia);
   }
 
   const chain: any[] = (isViatico ? r.viaticoApproverChain : isDirecta ? r.directaApproverChain : []) ?? [];
@@ -461,7 +546,7 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
       ? r.coordinatorApprovedBy.name : undefined;
     // VD-112: un paso por nivel de la cadena por comprobante, para distinguir
     // quién aprueba en N1 y quién en N2. Antes salían todos en una sola línea.
-    const nivelesAprobacion = aggregateRendicionApprovalsByLevel(r.expenseIds);
+    const nivelesAprobacion = aggregateRendicionApprovalsByLevel(r.expenseIds, suplencia);
     if (state !== 'rejected' && nivelesAprobacion.length > 0) {
       for (const nivel of nivelesAprobacion) {
         steps.push(levelApprovalStep(nivel, state === 'completed', fmt, r.coordinatorApprovedAt));
@@ -593,7 +678,11 @@ export function buildReportFlowSteps(r: any): FlowStep[] {
  * gates compartían el mismo campo y el de la rendición pisaba el de la
  * solicitud (backend arreglado; ver `approveViaticoContabilidad`).
  */
-function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | undefined): FlowStep[] {
+function buildViaticoTwoPhaseSteps(
+  r: any,
+  fmt: (d?: string | Date) => string | undefined,
+  suplencia: SuplenciaContexto = {}
+): FlowStep[] {
   const steps: FlowStep[] = [];
 
   // ── Fase 1: SOLICITUD — congelada, siempre completada.
@@ -727,7 +816,7 @@ function buildViaticoTwoPhaseSteps(r: any, fmt: (d?: string | Date) => string | 
   // aprobadores N1/N2 esperados por comprobante (regla 1.4); una vez resuelto, quien
   // efectivamente hizo el clic de aprobación de la rendición (`coordinatorApprovedBy`).
   const coordState = stateFor(COORD_IDX);
-  const nivelesAprobacion = aggregateRendicionApprovalsByLevel(r.expenseIds);
+  const nivelesAprobacion = aggregateRendicionApprovalsByLevel(r.expenseIds, suplencia);
 
   if (!rejected && nivelesAprobacion.length > 0) {
     // Un paso por NIVEL de la cadena por comprobante (VD-112): antes salían

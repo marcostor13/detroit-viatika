@@ -42,6 +42,7 @@ import {
   ADVANCE_STATUS_COLORS,
 } from '../../interfaces/advance.interface';
 import { expenseAmountBase, expenseAmountInReport, monedaSymbol } from '../../constants/moneda';
+import { SuplenciaService } from '../../services/suplencia.service';
 
 type UnifiedViaticoItem = {
   _id: string;
@@ -73,6 +74,7 @@ export class MisRendicionesComponent implements OnInit {
   private expenseReportsService = inject(ExpenseReportsService);
   private expenseService = inject(ExpenseService);
   private userStateService = inject(UserStateService);
+  private suplenciaService = inject(SuplenciaService);
   private advanceService = inject(AdvanceService);
   private notificationService = inject(NotificationService);
   private cajaChicaReportService = inject(CajaChicaReportService);
@@ -255,7 +257,7 @@ export class MisRendicionesComponent implements OnInit {
    * la tabla.
    */
   solicitudFlowSteps(s: ISolicitudCajaChica): FlowStep[] {
-    return buildReportFlowSteps(s).map(step =>
+    return buildReportFlowSteps(s, this.suplenciaService.contextoParaLineaDeTiempo()).map(step =>
       step.label === 'Pagada'
         ? { ...step, label: 'Presupuesto aplicado' }
         : step

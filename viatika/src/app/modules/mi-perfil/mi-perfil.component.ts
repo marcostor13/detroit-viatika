@@ -1,23 +1,35 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterModule } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { NotificationService } from '../../services/notification.service';
 import { UserStateService } from '../../services/user-state.service';
 import { UploadService } from '../../services/upload.service';
 import { ButtonComponent } from '../../design-system/button/button.component';
+import {
+  SearchSelectComponent,
+  SearchSelectOption,
+} from '../../design-system/search-select/search-select.component';
 import { environment } from '../../../environments/environment';
+import {
+  SuplenciaService,
+  IMisSuplencias,
+  IColaboradorBasico,
+  IAprobadaEnReemplazo,
+} from '../../services/suplencia.service';
 
 @Component({
   selector: 'app-mi-perfil',
   templateUrl: './mi-perfil.component.html',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonComponent],
+  imports: [CommonModule, FormsModule, RouterModule, ButtonComponent, SearchSelectComponent],
 })
-export class MiPerfilComponent {
+export class MiPerfilComponent implements OnInit {
   private notificationService = inject(NotificationService);
   private userStateService = inject(UserStateService);
   private uploadService = inject(UploadService);
+  private suplenciaService = inject(SuplenciaService);
   private http = inject(HttpClient);
 
   get currentUser() { return this.userStateService.getUser(); }
@@ -149,6 +161,162 @@ export class MiPerfilComponent {
       error: () => {
         this.isSavingPassword = false;
         this.notificationService.show('Error al actualizar la contraseña', 'error');
+      },
+    });
+  }
+
+  // --- Vacaciones y suplente (VD-124) ---
+  //
+  // No hay nada que asignar documento por documento: mientras dure el período,
+  // el backend deja que el suplente firme con la identidad del titular. Por eso
+  // el formulario es solo período + persona, y cubre lo ya enviado igual que lo
+  // que llegue después.
+
+  misSuplencias: IMisSuplencias | null = null;
+  colaboradores: IColaboradorBasico[] = [];
+  showVacacionesForm = false;
+  vacDesde = '';
+  vacHasta = '';
+  vacSuplenteId = '';
+  isSavingVacaciones = false;
+  isLoadingSuplencias = true;
+
+  /**
+   * Historial de lo que firmó cubriendo a otro. Va aquí y no en la bandeja a
+   * proposito: la bandeja lista lo PENDIENTE y se vacia cuando termina la
+   * vacacion. El historial sale de `approvedOnBehalfOf`, grabado en cada
+   * documento, asi que sigue disponible despues.
+   */
+  aprobadasEnReemplazo: IAprobadaEnReemplazo[] = [];
+  isLoadingHistorial = true;
+
+  ngOnInit() {
+    this.cargarSuplencias();
+    this.suplenciaService.getAprobadasEnReemplazo().subscribe({
+      next: (lista) => {
+        this.aprobadasEnReemplazo = lista ?? [];
+        this.isLoadingHistorial = false;
+      },
+      error: () => {
+        this.isLoadingHistorial = false;
+      },
+    });
+  }
+
+  /** Nombre del colaborador que rindió, para la fila del historial. */
+  colaboradorDe(r: IAprobadaEnReemplazo): string {
+    const u = r.userId;
+    return (typeof u === 'object' ? u?.name : '') || '—';
+  }
+
+  private cargarSuplencias() {
+    this.isLoadingSuplencias = true;
+    this.suplenciaService.getMisSuplencias().subscribe({
+      next: (data) => {
+        this.misSuplencias = data;
+        this.isLoadingSuplencias = false;
+      },
+      error: () => {
+        this.isLoadingSuplencias = false;
+      },
+    });
+  }
+
+  /** Opciones del selector de suplente: cualquiera menos uno mismo. */
+  get opcionesSuplente(): SearchSelectOption[] {
+    const yo = this.currentUser?._id;
+    return this.colaboradores
+      .filter((c) => c._id !== yo)
+      .map((c) => ({ value: c._id, label: c.name, subLabel: c.email }));
+  }
+
+  get nombreSuplenteActual(): string {
+    const vac = this.misSuplencias?.vacaciones;
+    if (!vac) return '';
+    // El backend ya lo resuelve; la lista de colaboradores es solo el respaldo
+    // para cuando el formulario está abierto y se acaba de elegir a alguien.
+    return (
+      vac.suplenteName ||
+      this.colaboradores.find((c) => c._id === vac.suplenteId)?.name ||
+      'otro usuario'
+    );
+  }
+
+  /** `YYYY-MM-DD` de una fecha que puede venir como ISO completo del backend. */
+  private soloFecha(valor: string | undefined): string {
+    return (valor || '').slice(0, 10);
+  }
+
+  editVacaciones() {
+    const actual = this.misSuplencias?.vacaciones;
+    this.vacDesde = this.soloFecha(actual?.desde);
+    this.vacHasta = this.soloFecha(actual?.hasta);
+    this.vacSuplenteId = actual?.suplenteId || '';
+    this.showVacacionesForm = true;
+    if (this.colaboradores.length === 0) {
+      this.suplenciaService.getColaboradores().subscribe({
+        next: (lista) => { this.colaboradores = lista; },
+        error: () => {
+          this.notificationService.show('No se pudo cargar la lista de colaboradores', 'error');
+        },
+      });
+    }
+  }
+
+  cancelVacacionesEdit() {
+    this.showVacacionesForm = false;
+    this.vacDesde = '';
+    this.vacHasta = '';
+    this.vacSuplenteId = '';
+  }
+
+  saveVacaciones() {
+    if (!this.vacDesde || !this.vacHasta) {
+      this.notificationService.show('Indica desde y hasta cuándo estarás de vacaciones', 'error');
+      return;
+    }
+    if (this.vacHasta < this.vacDesde) {
+      this.notificationService.show('La fecha de fin no puede ser anterior a la de inicio', 'error');
+      return;
+    }
+    if (!this.vacSuplenteId) {
+      this.notificationService.show('Elige quién te reemplazará', 'error');
+      return;
+    }
+    this.isSavingVacaciones = true;
+    this.suplenciaService.setMisVacaciones({
+      desde: this.vacDesde,
+      hasta: this.vacHasta,
+      suplenteId: this.vacSuplenteId,
+    }).subscribe({
+      next: () => {
+        this.isSavingVacaciones = false;
+        this.notificationService.show('Vacaciones programadas correctamente', 'success');
+        this.cancelVacacionesEdit();
+        this.cargarSuplencias();
+      },
+      error: (err) => {
+        this.isSavingVacaciones = false;
+        this.notificationService.show(
+          err?.error?.message || 'Error al programar las vacaciones',
+          'error'
+        );
+      },
+    });
+  }
+
+  /** Vuelta anticipada: el titular retoma sus aprobaciones de inmediato. */
+  borrarVacaciones() {
+    this.isSavingVacaciones = true;
+    this.suplenciaService.borrarMisVacaciones().subscribe({
+      next: () => {
+        this.isSavingVacaciones = false;
+        this.notificationService.show('Se canceló el período de vacaciones', 'success');
+        this.cargarSuplencias();
+      },
+      error: () => {
+        this.isSavingVacaciones = false;
+        this.notificationService.show('Error al cancelar las vacaciones', 'error');
       },
     });
   }

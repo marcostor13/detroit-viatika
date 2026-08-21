@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { ViaticosComponent } from './viaticos.component';
@@ -49,6 +51,9 @@ describe('ViaticosComponent', () => {
     TestBed.configureTestingModule({
       imports: [ViaticosComponent],
       providers: [
+        // SuplenciaBannerComponent (VD-124) inyecta HttpClient al crearse el padre.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ExpenseReportsService, useValue: expenseReportsService },
         { provide: UserStateService, useValue: userState },
         { provide: NotificationService, useValue: notifications },

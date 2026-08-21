@@ -12,6 +12,7 @@ import { IAdvance, ADVANCE_STATUS_LABELS, ADVANCE_STATUS_COLORS } from '../../in
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { monedaSymbol, expenseAmountInReport } from '../../constants/moneda';
+import { SuplenciaService } from '../../services/suplencia.service';
 
 /** Fila normalizada que alimenta los listados del inicio (colaborador y coordinador). */
 export interface DashRow {
@@ -38,6 +39,7 @@ export interface DashRow {
 })
 export class InicioComponent implements OnInit {
   private userState = inject(UserStateService);
+  private suplenciaService = inject(SuplenciaService);
   private expenseReportsService = inject(ExpenseReportsService);
   private advanceService = inject(AdvanceService);
   private notifications = inject(NotificationService);
@@ -316,12 +318,10 @@ export class InicioComponent implements OnInit {
     return (report.expenseIds ?? [])
       .filter((e: any) => e && typeof e === 'object' && e.status !== 'rejected')
       .some((e: any) =>
+        // Suplencia por vacaciones (VD-124): incluye a los titulares cubiertos.
         (e.approverChain ?? []).some(
           (step: any) =>
-            !step.approved &&
-            (step.approverIds ?? []).some(
-              (a: any) => String(typeof a === 'object' ? a?._id : a) === me
-            )
+            !step.approved && this.suplenciaService.esAprobadorDelPaso(step, me)
         )
       );
   }
@@ -432,6 +432,10 @@ export class InicioComponent implements OnInit {
     // Trae los permisos vigentes del servidor (los de localStorage pueden estar
     // desactualizados si se cambiaron en otra sesión) para gatear bien las tarjetas.
     this.userState.refreshPermissions().subscribe();
+    // Suplencia por vacaciones (VD-124): el home cuenta pendientes mirando las
+    // cadenas, asi que necesita saber a quien cubre este usuario. Sin esto los
+    // pendientes del titular no se suman.
+    this.suplenciaService.cargar().subscribe({ error: () => {} });
 
     const user = this.userState.getUser() as any;
     const userId = user?._id;
@@ -591,7 +595,9 @@ export class InicioComponent implements OnInit {
    */
   private hasActionableStep(chain: IChainStep[] | undefined): boolean {
     return (chain ?? []).some(
-      (step: any) => !step.approved && step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+      // Suplencia por vacaciones (VD-124): tambien cuentan los titulares que
+      // este usuario cubre mientras dure el periodo.
+      (step: any) => !step.approved && this.suplenciaService.esAprobadorDelPaso(step, this.currentUserId)
     );
   }
 

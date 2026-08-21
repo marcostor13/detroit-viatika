@@ -1,4 +1,10 @@
 <div class="px-4 sm:px-5 py-4 sm:py-6" [ngClass]="collaboratorCanEdit ? 'pb-24 sm:pb-8' : 'pb-8'">
+  <!-- Suplencia por vacaciones (VD-124). Va aqui ademas de en la bandeja
+       porque la cadena sigue nombrando al TITULAR: sin el aviso, el suplente
+       lee "pendiente de aprobacion de <titular>" junto a un boton de aprobar
+       que si le funciona, y no entiende por que. -->
+  <app-suplencia-banner />
+
   <!-- ── PAGE HEADER ──────────────────────────────────────────────── -->
   <div class="mb-5 sm:mb-7">
 
@@ -1465,6 +1471,15 @@
                           </span>
                           @if (unifiedStatus.pendingApproverNames && unifiedStatus.pendingApproverNames !== '—') {
                             <span class="text-[10px] text-tertiary/70 max-w-[140px] truncate" [title]="unifiedStatus.pendingApproverNames">{{ unifiedStatus.pendingApproverNames }}</span>
+                          }
+                          <!-- Suplencia por vacaciones (VD-124): la cadena nombra al TITULAR,
+                               asi que sin esta marca el suplente no sabe por que le aparece
+                               un comprobante ajeno con boton de aprobar. -->
+                          @if (reemplazoDeGasto(expense); as titularCubierto) {
+                            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-900 whitespace-nowrap"
+                              [title]="'Firmas en lugar de ' + titularCubierto + ', que esta de vacaciones'">
+                              En reemplazo de {{ titularCubierto }}
+                            </span>
                           }
                         }
                         @case ('pending_cont') {
