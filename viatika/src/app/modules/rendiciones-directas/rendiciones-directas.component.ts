@@ -289,6 +289,32 @@ export class RendicionesDirectasComponent implements OnInit {
     return map[String(r?.status || '')] ?? 'bg-gray-100 text-gray-700';
   }
 
+  /**
+   * VD-122: centro de costo en la lista, SOLO EL NÚMERO. El nombre completo no
+   * cabe en una columna de tabla junto al resto y ademas se repite en casi todas
+   * las filas; el codigo es lo que Contabilidad usa para imputar. El nombre va
+   * en el `title`, para quien no se sepa el codigo de memoria.
+   */
+  reportCentroCostoCodigo(r: any): string {
+    const p = r?.projectId;
+    if (!p || typeof p !== 'object') return '—';
+    return String(p.code ?? '').trim() || String(p.name ?? '').trim() || '—';
+  }
+
+  /** Nombre del centro de costo, para el tooltip de la columna. */
+  reportCentroCostoNombre(r: any): string {
+    const p = r?.projectId;
+    if (!p || typeof p !== 'object') return '';
+    return String(p.name ?? '');
+  }
+
+  /** VD-122: orden de trabajo imputada, o '—' si la rendición no lleva. */
+  reportOrdenTrabajo(r: any): string {
+    const ot = r?.directaOrdenTrabajoId;
+    if (!ot || typeof ot !== 'object') return '—';
+    return String(ot.nombre ?? '').trim() || '—';
+  }
+
   reportFecha(r: any): string { return formatFechaEmisionDdMmYyyy(r?.createdAt) || '—'; }
 
   viewReport(r: any): void {

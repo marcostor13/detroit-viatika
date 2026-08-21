@@ -456,6 +456,9 @@
               <th class="px-2 py-3 w-8"></th>
               <th class="px-3 py-3 whitespace-nowrap">Código</th>
               <th class="px-3 py-3">Colaborador</th>
+              <!-- VD-122: centro de costo (solo el codigo) y orden de trabajo. -->
+              <th class="px-3 py-3 whitespace-nowrap">C. Costo</th>
+              <th class="px-3 py-3 whitespace-nowrap">OT</th>
               <th class="px-3 py-3 whitespace-nowrap">Estado</th>
               <th class="px-3 py-3 text-right whitespace-nowrap">Gastado</th>
               <th class="px-3 py-3 text-center whitespace-nowrap">Opciones</th>
@@ -476,6 +479,8 @@
               </td>
               <td class="px-3 py-2.5 font-mono text-xs font-semibold text-gray-800 whitespace-nowrap">{{ r.codigo || '—' }}</td>
               <td class="px-3 py-2.5 text-xs text-gray-700"><span class="block break-words" [title]="reportColaborador(r)">{{ reportColaborador(r) }}</span></td>
+              <td class="px-3 py-2.5 font-mono text-xs text-gray-700 whitespace-nowrap" [title]="reportCentroCostoNombre(r)">{{ reportCentroCostoCodigo(r) }}</td>
+              <td class="px-3 py-2.5 text-xs text-gray-700 max-w-[140px]"><span class="block truncate" [title]="reportOrdenTrabajo(r)">{{ reportOrdenTrabajo(r) }}</span></td>
               <td class="px-3 py-2.5 text-xs"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" [ngClass]="reportStatusBadgeClass(r)">{{ reportStatusLabel(r) }}</span></td>
               <!-- Cada rendición en SU moneda, que es la que ve el
                    colaborador. El total de la cabecera va desglosado. -->
@@ -499,7 +504,7 @@
             </tr>
             @if (isExpanded(r._id)) {
             <tr class="bg-gray-50/60">
-              <td class="px-3 pb-3 pt-0" colspan="6">
+              <td class="px-3 pb-3 pt-0" colspan="8">
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-2 text-xs pl-8">
                   <div>
                     <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Fecha</span>
@@ -556,6 +561,15 @@
             <div>
               <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">Generado por</span>
               <span class="text-gray-700 break-words">{{ r.generatedByName || '—' }}</span>
+            </div>
+            <!-- VD-122 -->
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">C. Costo</span>
+              <span class="text-gray-700 font-mono" [title]="reportCentroCostoNombre(r)">{{ reportCentroCostoCodigo(r) }}</span>
+            </div>
+            <div>
+              <span class="block text-gray-400 uppercase tracking-wide text-[10px] font-semibold">OT</span>
+              <span class="text-gray-700 break-words">{{ reportOrdenTrabajo(r) }}</span>
             </div>
           </div>
         </div>
