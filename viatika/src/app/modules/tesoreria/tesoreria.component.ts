@@ -405,16 +405,15 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
-   * Contabilidad puede completar el pago de un viático con saldo del anticipo
-   * pendiente. Incluye los estados posteriores al envío del colaborador
-   * (submitted/pending_accounting), donde el pago restante sigue siendo válido.
+   * Quién ve la ficha del pago en la pestaña "Pagar" (VD-129). Antes esto era
+   * `canCompleteViaticoPayment`, que ademas exigia saldo pendiente: tenia
+   * sentido cuando el boton COMPLETABA un pago, pero la ficha es informativa y
+   * lo que se quiere consultar —el N° de operacion del banco— solo existe
+   * cuando el pago YA se hizo. Con aquel filtro, las filas pagadas se quedaban
+   * sin boton justo cuando habia algo que mirar.
    */
-  canCompleteViaticoPayment(report: IExpenseReport): boolean {
-    return (
-      this.canPayAndSettle &&
-      this.viaticoRemaining(report) > 0.009 &&
-      ['viatico_approved', 'partially_paid', 'submitted', 'pending_accounting'].includes(report.status)
-    );
+  canSeeViaticoPaymentInfo(): boolean {
+    return this.canPayAndSettle;
   }
 
   /**

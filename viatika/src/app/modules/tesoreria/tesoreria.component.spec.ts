@@ -253,22 +253,17 @@ describe('TesoreriaComponent', () => {
       expect(component.viaticoRemaining(report)).toBe(350);
     });
 
-    it('canCompleteViaticoPayment true when remaining > 0 and status eligible', () => {
+    // VD-129: la ficha es informativa, asi que NO se esconde cuando ya no queda
+    // saldo — es justo cuando hay algo que consultar (el N° de operacion del
+    // banco). Solo manda el permiso.
+    it('canSeeViaticoPaymentInfo sigue al permiso de pago, no al saldo', () => {
       userState.canApproveL2.and.returnValue(true);
-      const report = makeReport({ viaticoAmount: 500, viaticoPaidAmount: 0, status: 'viatico_approved' });
-      expect(component.canCompleteViaticoPayment(report)).toBeTrue();
+      expect(component.canSeeViaticoPaymentInfo()).toBeTrue();
     });
 
-    it('canCompleteViaticoPayment false when fully paid', () => {
-      userState.canApproveL2.and.returnValue(true);
-      const report = makeReport({ viaticoAmount: 500, viaticoPaidAmount: 500, status: 'viatico_approved' });
-      expect(component.canCompleteViaticoPayment(report)).toBeFalse();
-    });
-
-    it('canCompleteViaticoPayment false when status not eligible', () => {
-      userState.canApproveL2.and.returnValue(true);
-      const report = makeReport({ viaticoAmount: 500, viaticoPaidAmount: 0, status: 'rejected' });
-      expect(component.canCompleteViaticoPayment(report)).toBeFalse();
+    it('canSeeViaticoPaymentInfo es false sin permiso de pago', () => {
+      userState.canApproveL2.and.returnValue(false);
+      expect(component.canSeeViaticoPaymentInfo()).toBeFalse();
     });
 
     it('viaticoUserName resolves populated user name', () => {
