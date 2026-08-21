@@ -2090,6 +2090,49 @@ export class ExpenseService {
   }
 
   /**
+   * Reexpresa las equivalencias de un gasto cuando su importe cambia al editarlo.
+   *
+   * `update` NO re-congela la moneda —el tipo de cambio de un gasto no se
+   * recalcula nunca—, pero `montoBase` y `montoReporte` sí tienen que seguir al
+   * nuevo `total`: son los campos que leen la ficha de la rendición, el PDF y la
+   * liquidación (`montoReporte ?? total`), no `total` a secas. Sin esto, agregar
+   * tramos a una planilla de movilidad ya guardada dejaba el importe del primer
+   * guardado a la vista aunque `total` ya estuviera bien.
+   *
+   * Se reusan las tasas que el gasto ya tenía congeladas: lo único que se
+   * recalcula es el producto.
+   */
+  private reexpressFrozenAmounts(
+    existing: Expense,
+    total: number
+  ): { montoBase: number; montoReporte?: number } {
+    const frozen = existing as unknown as {
+      moneda?: string
+      tipoCambio?: number
+      monedaReporte?: string
+      tcReporte?: number
+      montoReporte?: number
+    }
+    const montoBase = this.round2(total * (Number(frozen.tipoCambio) || 1))
+
+    // Sin equivalencia previa no se inventa una: o el gasto no pertenece a una
+    // rendición, o quedó adrede sin ella porque el reporte no tenía TC congelado
+    // (ver resolveMontoReporte). Recalcularla aquí metería un importe falso.
+    if (frozen.montoReporte == null) return { montoBase }
+
+    // Misma moneda que la rendición: no hay nada que convertir, igual que al
+    // registrarlo. Dividir por `tcReporte` daría el importe en la moneda base,
+    // que es otra cosa cuando la rendición no está en la base de la empresa.
+    if (frozen.monedaReporte === frozen.moneda) {
+      return { montoBase, montoReporte: this.round2(total) }
+    }
+
+    const tcReporte = Number(frozen.tcReporte)
+    if (!tcReporte || tcReporte <= 0) return { montoBase }
+    return { montoBase, montoReporte: this.round2(montoBase / tcReporte) }
+  }
+
+  /**
    * Convierte las filas de un rubro de la DJ a la moneda base.
    *
    * Se resuelve el tipo de cambio de la fecha de CADA fila, no uno solo para
@@ -3056,6 +3099,10 @@ export class ExpenseService {
       )
       updateDoc.superaTopeComprobante = topeMeta.superaTopeComprobante ?? false
       updateDoc.topeComprobante = topeMeta.topeComprobante ?? null
+      Object.assign(
+        updateDoc,
+        this.reexpressFrozenAmounts(existing, Number(dto.total))
+      )
     }
 
     // Corrección de un comprobante rechazado por el colaborador dueño: vuelve a
