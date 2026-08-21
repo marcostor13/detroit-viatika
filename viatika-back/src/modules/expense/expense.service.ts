@@ -3781,10 +3781,21 @@ export class ExpenseService {
       })
       .catch(() => {})
 
+    // VD-133: la cadena es consecutiva, así que al firmar este paso le toca al
+    // siguiente nivel — y hay que avisarle. Antes no hacía falta: se notificaba a
+    // todos los niveles al construir la cadena porque cualquiera podía firmar en
+    // cualquier momento. Sin esto, el N2 no se enteraría nunca de su turno.
+    const reportIdStr = this.expenseReportIdString(expense)
+    if (!isComplete && reportIdStr) {
+      void this.expenseReportService.notifySiguientePasoDeCadena(reportIdStr, chain, {
+        collaboratorName: (expense as any)?.userId?.name,
+        reportTitle: (expense as any)?.expenseReportId?.title,
+      })
+    }
+
     // VD-87: si con este comprobante quedaron aprobados TODOS los gastos de la
     // rendición, pasa directo a Contabilidad y se le envía el correo — sin un
     // segundo paso de "aprobar la rendición completa".
-    const reportIdStr = this.expenseReportIdString(expense)
     if (isComplete && reportIdStr) {
       await this.expenseReportService
         .advanceToAccountingIfAllExpensesApproved(reportIdStr)

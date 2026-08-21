@@ -33,6 +33,8 @@ const userId = new Types.ObjectId().toString()
 const mockEmailService = {
   sendRendicionFullyApprovedEmail: jest.fn().mockResolvedValue(undefined),
   sendRendicionReembolsoPagado: jest.fn().mockResolvedValue(undefined),
+  // VD-133: aviso de turno al siguiente nivel de la cadena.
+  sendRendicionRecordatorioCoordinador: jest.fn().mockResolvedValue(undefined),
   buildAppUrl: jest.fn().mockReturnValue('http://localhost:4200/app'),
   formatDateDDMMYYYY: jest.fn().mockReturnValue('01/01/2026'),
 }
@@ -574,6 +576,51 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
    * VD-133: los avisos que PIDEN ACCION van al paso en curso; los informativos
    * (rechazo, reapertura, cancelacion) siguen alcanzando a toda la cadena.
    */
+  /**
+   * VD-133. Con la cadena consecutiva el aviso del envio solo alcanza al primer
+   * nivel, asi que si nadie avisa al aprobar, el N2 no se entera NUNCA de su
+   * turno y la rendicion se queda esperandolo en silencio.
+   */
+  describe('aviso de turno al siguiente nivel (VD-133)', () => {
+    const n1 = new Types.ObjectId()
+    const n2 = new Types.ObjectId()
+
+    beforeEach(() => {
+      mockUserService.resolverSuplenteVigente.mockResolvedValue(null)
+      mockUserService.isEmailEnabled.mockResolvedValue(true)
+      mockUserService.findEmailNameClient.mockImplementation(async (id: string) => ({
+        _id: id,
+        name: id === n1.toString() ? 'ANA' : 'BETO',
+        email: id === n1.toString() ? 'ana@x.pe' : 'beto@x.pe',
+      }))
+      mockEmailService.sendRendicionRecordatorioCoordinador.mockClear()
+    })
+
+    it('escribe al nivel que acaba de recibir el turno, no al que ya firmo', async () => {
+      const chain = [
+        { level: 1, approved: true, approverIds: [n1] },
+        { level: 2, approved: false, approverIds: [n2] },
+      ]
+      await (service as any).notifySiguientePasoDeCadena('r1', chain, {
+        collaboratorName: 'COLAB',
+        reportTitle: 'Rendicion X',
+      })
+      const destinos = mockEmailService.sendRendicionRecordatorioCoordinador.mock.calls.map(
+        (c: any[]) => c[0]
+      )
+      expect(destinos).toEqual(['beto@x.pe'])
+    })
+
+    it('con la cadena completa no escribe a nadie', async () => {
+      const chain = [
+        { level: 1, approved: true, approverIds: [n1] },
+        { level: 2, approved: true, approverIds: [n2] },
+      ]
+      await (service as any).notifySiguientePasoDeCadena('r1', chain, {})
+      expect(mockEmailService.sendRendicionRecordatorioCoordinador).not.toHaveBeenCalled()
+    })
+  })
+
   describe('destinatarios del aviso "te toca aprobar" (VD-133)', () => {
     const n1 = new Types.ObjectId()
     const n2 = new Types.ObjectId()

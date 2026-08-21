@@ -5286,6 +5286,58 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Avisa (in-app + correo) a quien le toca AHORA, tras firmarse un paso de una
+   * cadena de rendición.
+   *
+   * VD-133 lo hace imprescindible. Con la aprobación en paralelo bastaba con
+   * avisar a todos los niveles al enviar la rendición, porque desde ese momento
+   * cualquiera podía firmar. Con la cadena consecutiva ese aviso inicial solo
+   * alcanza al primer nivel, así que sin este el N2 no se enteraría NUNCA de que
+   * le llegó su turno: la rendición se quedaría esperándolo en silencio.
+   *
+   * `chain` se pasa ya con el paso recién aprobado marcado, para que el "paso en
+   * curso" sea el siguiente y no el que se acaba de firmar.
+   */
+  async notifySiguientePasoDeCadena(
+    reportId: string,
+    chain: ChainStep[],
+    contexto: { collaboratorName?: string; reportTitle?: string }
+  ): Promise<void> {
+    const enCurso = currentChainStep(chain)
+    if (!enCurso) return
+    const destinatarios = await this.conSuplentes(enCurso.approverIds)
+    for (const approverId of destinatarios) {
+      const id = approverId.toString()
+      try {
+        await this.notificationsService.create({
+          userId: id,
+          title: 'Rendición pendiente de tu aprobación',
+          message: `Te toca revisar la rendición "${contexto.reportTitle ?? ''}" (nivel ${enCurso.level}). El nivel anterior ya la aprobó.`,
+          type: 'info',
+          actionUrl: `/mis-rendiciones/${reportId}/detalle`,
+        })
+        const u = await this.userService.findEmailNameClient(id)
+        if (!u?.email) continue
+        if (!(await this.userService.isEmailEnabled(id))) continue
+        await this.emailService.sendRendicionRecordatorioCoordinador(u.email, {
+          coordinatorName: u.name,
+          pendingCount: 1,
+          reports: [
+            {
+              collaboratorName: contexto.collaboratorName ?? '',
+              title: contexto.reportTitle ?? '',
+            },
+          ],
+        })
+      } catch (err: unknown) {
+        this.logger.error(
+          `Aviso de turno ${reportId} a ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+  }
+
+  /**
    * SOLICITUD de asignación de caja chica. Va sobre un reporte `type: 'viatico'`
    * a propósito: así reutiliza entero el flujo de Solicitud de Fondos que ya
    * existe (aprobación por la cadena, gate de Contabilidad, pago de Tesorería,
@@ -5788,11 +5840,16 @@ export class ExpenseReportService implements OnModuleInit {
       .create({
         userId: report.userId.toString(),
         title: 'Rendición en revisión',
-        message: `Tu rendición fue aprobada por uno de sus aprobadores (nivel ${nextLevel} de ${report.rendicionRequiredLevels ?? chain.length}) y está pendiente de los demás.`,
+        message: `Tu rendición fue aprobada por el nivel ${nextLevel} de ${report.rendicionRequiredLevels ?? chain.length} y pasó al siguiente aprobador.`,
         type: 'info',
         actionUrl: `/mis-rendiciones/${id}/detalle`,
       })
       .catch(() => {})
+    // VD-133: le toca al siguiente nivel y hay que decírselo.
+    void this.notifySiguientePasoDeCadena(id, chain, {
+      collaboratorName: (report.userId as any)?.name,
+      reportTitle: report.title,
+    })
     return this.findOne(id) as Promise<ExpenseReportDocument>
   }
 
