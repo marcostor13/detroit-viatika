@@ -294,6 +294,37 @@ describe('TesoreriaComponent', () => {
       expect(component.paymentForm.disabled).toBeTrue();
     });
 
+    it('muestra el centro de costo con su código y la OT', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        projectId: { _id: 'p1', code: 'CC-001', name: 'Proyecto Minera Antamina' },
+        viaticoOrdenTrabajoId: { _id: 'ot1', nombre: 'SMI-123' },
+      } as any);
+      expect(component.viaticoCentroCosto(rep)).toBe('CC-001 — Proyecto Minera Antamina');
+      expect(component.viaticoOrdenTrabajo(rep)).toBe('SMI-123');
+    });
+
+    it('sin OT no inventa una fila, y sin poblar no muestra el id crudo', () => {
+      expect(component.viaticoOrdenTrabajo(makeReport({ _id: 'r1' }))).toBe('');
+      const sinPoblar = makeReport({ _id: 'r1', projectId: 'p1' } as any);
+      expect(component.viaticoCentroCosto(sinPoblar)).toBe('—');
+    });
+
+    // Misma prioridad que la columna Descripción de la lista: si la ficha
+    // nombrara distinto a la fila que se acaba de pulsar, desorienta.
+    it('el título usa el lugar de destino y deja el title de respaldo', () => {
+      expect(
+        component.viaticoTitulo(
+          makeReport({ _id: 'r1', title: 'Rendicion', viaticoPlace: 'Lima, Perú' } as any)
+        )
+      ).toBe('Lima, Perú');
+      expect(
+        component.viaticoTitulo(
+          makeReport({ _id: 'r1', title: 'Caja chica', viaticoPlace: undefined } as any)
+        )
+      ).toBe('Caja chica');
+    });
+
     it('sin pago aún no hay N° de operación que mostrar', () => {
       expect(component.viaticoOperationReference(makeReport({ _id: 'r1' }))).toBeNull();
       expect(component.viaticoPaymentDate(makeReport({ _id: 'r1' }))).toBeNull();

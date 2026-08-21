@@ -1031,6 +1031,30 @@
       -->
       <dl class="divide-y divide-tertiary/15 rounded-xl border border-tertiary/20 overflow-hidden">
         <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Título</dt>
+          <dd class="font-medium text-secondary text-right break-words">{{ viaticoTitulo(selectedViaticoReport) }}</dd>
+        </div>
+        @if (selectedViaticoReport.description) {
+        <div class="px-3 py-2.5 text-sm">
+          <dt class="text-tertiary mb-0.5">Descripción</dt>
+          <dd class="text-secondary break-words">{{ selectedViaticoReport.description }}</dd>
+        </div>
+        }
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Centro de costo</dt>
+          <dd class="font-medium text-secondary text-right break-words">{{ viaticoCentroCosto(selectedViaticoReport) }}</dd>
+        </div>
+        @if (viaticoOrdenTrabajo(selectedViaticoReport); as ot) {
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Orden de trabajo</dt>
+          <dd class="font-medium text-secondary text-right break-words">{{ ot }}</dd>
+        </div>
+        }
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Fecha de solicitud</dt>
+          <dd class="font-medium text-secondary text-right">{{ selectedViaticoReport.createdAt | date:'dd/MM/yyyy' }}</dd>
+        </div>
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
           <dt class="text-tertiary shrink-0">Monto</dt>
           <dd class="font-semibold text-secondary text-right">{{ viaticoCurrencySymbol(selectedViaticoReport) }} {{ (selectedViaticoReport.viaticoAmount ?? 0) | number:'1.2-2' }}</dd>
         </div>

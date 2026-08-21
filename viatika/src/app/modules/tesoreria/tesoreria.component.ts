@@ -614,6 +614,35 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
+   * Centro de costo de la solicitud, como "CC-001 — Proyecto Minera Antamina".
+   * `findAllByClient` lo popula con `code name`; si llegara sin poblar se
+   * devuelve vacío antes que un id crudo, que no le dice nada a Tesorería.
+   */
+  viaticoCentroCosto(report: IExpenseReport | null): string {
+    const p = (report as any)?.projectId;
+    if (!p || typeof p !== 'object' || !p.name) return '—';
+    return p.code ? `${p.code} — ${p.name}` : p.name;
+  }
+
+  /** Orden de trabajo imputada. Cadena vacía cuando la solicitud no lleva OT. */
+  viaticoOrdenTrabajo(report: IExpenseReport | null): string {
+    const ot = (report as any)?.viaticoOrdenTrabajoId;
+    if (!ot || typeof ot !== 'object') return '';
+    return ot.nombre ?? '';
+  }
+
+  /**
+   * Título de la solicitud. El lugar de destino manda: es lo que la lista de
+   * Fondos ya muestra (`viaticoPlace || title`) y abrir la ficha con otro
+   * nombre distinto del de la fila que se acaba de pulsar desorienta. El
+   * `title` queda de respaldo para la caja chica, que sí lo guarda y no tiene
+   * destino.
+   */
+  viaticoTitulo(report: IExpenseReport | null): string {
+    return (report as any)?.viaticoPlace || report?.title || '—';
+  }
+
+  /**
    * N° de operación del abono, tal como lo dejó la conciliación del PDF de BBVA
    * (`reference`/`operationNumber`). Se prefiere el último pago registrado: un
    * viático admite pagos parciales y el vigente es el más reciente.
