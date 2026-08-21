@@ -231,25 +231,20 @@ describe('TesoreriaComponent', () => {
     });
   });
 
-  describe('canRegisterPayment / payButtonLabel', () => {
-    it('allows registering payment for approved/partially_paid/paid when canPayAndSettle', () => {
+  describe('canSeePaymentInfo', () => {
+    it('shows payment info for approved/partially_paid/paid when canPayAndSettle', () => {
       userState.canApproveL2.and.returnValue(true);
-      expect(component.canRegisterPayment(makeAdvance({ status: 'approved' }))).toBeTrue();
-      expect(component.canRegisterPayment(makeAdvance({ status: 'partially_paid' }))).toBeTrue();
-      expect(component.canRegisterPayment(makeAdvance({ status: 'paid' }))).toBeTrue();
-      expect(component.canRegisterPayment(makeAdvance({ status: 'pending_l2' }))).toBeFalse();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'approved' }))).toBeTrue();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'partially_paid' }))).toBeTrue();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'paid' }))).toBeTrue();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'pending_l2' }))).toBeFalse();
     });
 
-    it('denies registering payment when user cannot pay and settle', () => {
+    it('hides payment info when user cannot pay and settle', () => {
       userState.canApproveL2.and.returnValue(false);
-      expect(component.canRegisterPayment(makeAdvance({ status: 'approved' }))).toBeFalse();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'approved' }))).toBeFalse();
     });
 
-    it('returns correct label per status', () => {
-      expect(component.payButtonLabel(makeAdvance({ status: 'partially_paid' }))).toBe('Registrar pago');
-      expect(component.payButtonLabel(makeAdvance({ status: 'paid' }))).toBe('Pago adicional');
-      expect(component.payButtonLabel(makeAdvance({ status: 'approved' }))).toBe('Registrar pago');
-    });
   });
 
   describe('viatico payment helpers', () => {
@@ -375,6 +370,22 @@ describe('TesoreriaComponent', () => {
       component.openPaymentModal(makeAdvance());
       expect(component.paymentReceiptUrl).toBeNull();
       expect(component.paymentScannedAmount).toBeNull();
+    });
+
+    // VD-129: el pago se hace por la planilla BBVA; desde la lista solo se
+    // consulta. Un formulario habilitado aquí es un pago marcable a mano.
+    it('openPaymentInfo opens the modal read-only and disables the form', () => {
+      component.openPaymentInfo(makeAdvance());
+      expect(component.showPaymentModal).toBeTrue();
+      expect(component.paymentModalReadOnly).toBeTrue();
+      expect(component.paymentForm.disabled).toBeTrue();
+    });
+
+    it('openPaymentModal re-enables the form when it is not read-only', () => {
+      component.openPaymentInfo(makeAdvance());
+      component.openPaymentModal(makeAdvance());
+      expect(component.paymentModalReadOnly).toBeFalse();
+      expect(component.paymentForm.enabled).toBeTrue();
     });
   });
 

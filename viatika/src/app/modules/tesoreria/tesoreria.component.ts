@@ -121,6 +121,14 @@ export class TesoreriaComponent implements OnInit {
   reimbursementOperationDate: string | null = null;
   reimbursementOperationTime: string | null = null;
   showPaymentModal = false;
+  /**
+   * VD-129: el modal de pago individual es de SOLO LECTURA. Los abonos se hacen
+   * por la planilla BBVA ("Generar archivo de pagos") y se dan por pagados al
+   * conciliar el PDF del banco ("Cargar pagos"); marcarlos a mano desde aquí
+   * dejaba pagos reales con datos que el banco nunca emitió. El flag queda para
+   * poder reabrir el registro manual si el cliente lo vuelve a pedir.
+   */
+  paymentModalReadOnly = false;
   showReturnModal = false;
   showHistoryModal = false;
   pendingReturns: IAdvance[] = [];
@@ -559,8 +567,9 @@ export class TesoreriaComponent implements OnInit {
     }
   }
 
-  openPaymentModal(advance: IAdvance) {
+  openPaymentModal(advance: IAdvance, readOnly = false) {
     this.selectedAdvance = advance;
+    this.paymentModalReadOnly = readOnly;
     this.paymentForm.reset({
       amount: this.advanceRemaining(advance) > 0 ? this.advanceRemaining(advance) : null,
       method: 'transferencia_bancaria',
@@ -583,7 +592,16 @@ export class TesoreriaComponent implements OnInit {
         cci: user.bankAccount.cci,
       });
     }
+    // Un formulario deshabilitado no aporta su valor a `paymentForm.value`, así
+    // que hay que devolverlo a habilitado si algún día se reabre el registro.
+    if (readOnly) this.paymentForm.disable({ emitEvent: false });
+    else this.paymentForm.enable({ emitEvent: false });
     this.showPaymentModal = true;
+  }
+
+  /** VD-129: abre el modal de pago como ficha informativa, sin registrar nada. */
+  openPaymentInfo(advance: IAdvance) {
+    this.openPaymentModal(advance, true);
   }
 
   // ─── Pago de viático: acumulado y pagos parciales ────────────────────────────
@@ -600,18 +618,15 @@ export class TesoreriaComponent implements OnInit {
     return monedaSymbol(advance?.moneda);
   }
 
-  /** Contabilidad puede registrar/seguir registrando pagos mientras no se haya liquidado. */
-  canRegisterPayment(advance: IAdvance): boolean {
+  /**
+   * Quién ve la ficha de pago de una solicitud ya aprobada. Mismo permiso que
+   * antes habilitaba el registro manual (VD-129, ver `paymentModalReadOnly`).
+   */
+  canSeePaymentInfo(advance: IAdvance): boolean {
     return (
       this.canPayAndSettle &&
       ['approved', 'partially_paid', 'paid'].includes(advance.status)
     );
-  }
-
-  payButtonLabel(advance: IAdvance): string {
-    if (advance.status === 'partially_paid') return 'Registrar pago';
-    if (advance.status === 'paid') return 'Pago adicional';
-    return 'Registrar pago';
   }
 
   private resetPaymentScanState(): void {
@@ -1112,7 +1127,6 @@ export class TesoreriaComponent implements OnInit {
   batchMode = signal<'generate' | 'reconcile'>('generate');
   isGeneratingTxt = signal(false);
   isReconciling = signal(false);
-  isSimulatingPdf = signal(false);
   generateResult = signal<IGeneratePaymentsTxt | null>(null);
   reconcileResult = signal<IReconcileResult | null>(null);
 
@@ -1377,44 +1391,6 @@ export class TesoreriaComponent implements OnInit {
         this.isReconciling.set(false);
         this.notificationService.show(
           e.error?.message || 'No se pudo procesar el PDF de BBVA.',
-          'error'
-        );
-      },
-    });
-  }
-
-  /**
-   * PRUEBAS: simula el PDF de retorno de BBVA. Pide al backend que marque como
-   * abonados todos los pagos pendientes y los concilie por el mismo motor que el
-   * PDF real, para continuar el flujo sin depender del banco. Ocultar/quitar
-   * antes de producción (la vía real es "Cargar pagos" con el PDF de BBVA).
-   */
-  simulateBbvaPdf(): void {
-    if (this.isSimulatingPdf() || this.isReconciling()) return;
-    this.isSimulatingPdf.set(true);
-    this.generateResult.set(null);
-    // Misma regla que al conciliar el PDF real: se simula la moneda de la
-    // última planilla generada. Sin ese dato el backend asume la base y un
-    // pendiente en dólares no cruza con nada.
-    this.advanceService.simulateReconcile(this.monedaPlanilla() ?? undefined).subscribe({
-      next: (res) => {
-        this.isSimulatingPdf.set(false);
-        this.reconcileResult.set(res);
-        this.batchMode.set('reconcile');
-        this.showBatchModal.set(true);
-        const n = res.conciliados.length;
-        this.notificationService.show(
-          n > 0
-            ? `Simulación BBVA: ${n} pago(s) conciliado(s) y marcado(s) como pagados.`
-            : 'Simulación BBVA: no se concilió ningún pago. Revisa el resumen.',
-          n > 0 ? 'success' : 'warning'
-        );
-        this.loadData();
-      },
-      error: (e) => {
-        this.isSimulatingPdf.set(false);
-        this.notificationService.show(
-          e.error?.message || 'No se pudo simular el PDF de BBVA.',
           'error'
         );
       },

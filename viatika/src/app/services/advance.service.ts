@@ -127,22 +127,6 @@ export class AdvanceService {
   }
 
   /**
-   * PRUEBAS: simula el PDF de "Consulta de Pagos Masivos" de BBVA y concilia todos
-   * los pagos pendientes (los marca como pagados) para continuar el flujo.
-   */
-  simulateReconcile(moneda?: string): Observable<IReconcileResult> {
-    // Una planilla del banco es de UNA moneda y el motor de conciliación
-    // descarta los pendientes de otra. Sin decirle cuál, simular con pagos en
-    // dólares emitía un lote en soles contra el que no cruzaba ninguno.
-    const params = moneda ? { params: { moneda } } : {};
-    return this.http.post<IReconcileResult>(
-      `${this.url}/payments/simulate-reconcile/client/${this.clientId}`,
-      {},
-      params
-    );
-  }
-
-  /**
    * Sube el PDF de "Consulta de Pagos Masivos" de BBVA y concilia los abonos.
    * `moneda` es la de la planilla que se subió al banco: el PDF no la declara,
    * y sin ese dato un PDF de la planilla en dólares no cruzaría con nada.
