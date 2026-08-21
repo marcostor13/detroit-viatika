@@ -78,6 +78,20 @@ describe('PaymentBatchService.generateAllTxt', () => {
     expect(r.archivos[1].totalSoles).toBe(212.41)
   })
 
+  /**
+   * VD-125 / VD-131. La descripción de la cabecera (pos 52-75) es la referencia
+   * que Tesorería ve en BBVA Net Cash, y estaba fija en `PROVEEDORES SOL`: la
+   * planilla de dólares salía rotulada como si fuera de soles.
+   */
+  it('rotula cada planilla con la abreviatura de SU moneda', async () => {
+    await montar([enSoles, enDolares])
+    const r = await service.generateAllTxt('c1')
+    const referenciaDe = (a: any) =>
+      Buffer.from(a.fileBase64, 'base64').toString('latin1').slice(51, 75).trim()
+    expect(referenciaDe(r.archivos[0])).toMatch(/^PROVEEDORES SOL /)
+    expect(referenciaDe(r.archivos[1])).toMatch(/^PROVEEDORES DOL /)
+  })
+
   it('deja la moneda base primero', async () => {
     await montar([enDolares, enSoles])
     const r = await service.generateAllTxt('c1')

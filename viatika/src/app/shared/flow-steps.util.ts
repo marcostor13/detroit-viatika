@@ -13,7 +13,12 @@
  */
 export interface FlowStep {
   label: string;
-  state: 'completed' | 'active' | 'upcoming' | 'rejected';
+  /**
+   * `skipped` = el paso NO ocurrió y ya no va a ocurrir. Hoy solo lo usa la
+   * solicitud de fondos que se quedó sin cadena de aprobadores (regla 1.6) y
+   * saltó derecho a Contabilidad. Es distinto de `completed`: nadie firmó.
+   */
+  state: 'completed' | 'active' | 'upcoming' | 'rejected' | 'skipped';
   date?: string;
   description?: string;
   notes?: string;
@@ -147,9 +152,7 @@ function levelApprovalStep(
   // sigue nombrando al titular, pero un documento que dice "falta aprobación de
   // Fulano" cuando Fulano no está deja a todos esperando a nadie.
   const pendienteConSuplente =
-    !done && nivel.reemplazadoPor
-      ? `${nivel.reemplazadoPor} (en reemplazo de ${nivel.titularDeVacaciones})`
-      : nombres;
+    !done && nivel.reemplazadoPor ? nivel.reemplazadoPor : nombres;
   return {
     label: done
       ? `N${level} · Aprobado por ${nombres}`
@@ -163,9 +166,9 @@ function levelApprovalStep(
       // auditar — pero al suplente hay que decirle que la acción le toca a él,
       // o lee "falta aprobación de Fulano" y no entiende por qué ve el botón.
       : nivel.cubiertoPorMi
-        ? `Te toca a ti: reemplazas a ${nivel.titularCubierto ?? 'este aprobador'} mientras está de vacaciones`
+        ? `Te toca a ti, en reemplazo de ${nivel.titularCubierto ?? 'este aprobador'}`
         : nivel.reemplazadoPor
-          ? `${nivel.titularDeVacaciones} está de vacaciones: los avisos y la aprobación van a su reemplazo.`
+          ? `En reemplazo de ${nivel.titularDeVacaciones}`
           : approvedNames.length > 0
             ? `Ya aprobó: ${approvedNames.join(' / ')}`
             : `Pendiente de aprobación (nivel ${level})`,
@@ -322,6 +325,11 @@ export function buildReportFlowSteps(
   const isDirecta = !!r.isDirecta;
   const isCajaChica = !!r.isCajaChica;
   const status: string = r.status;
+  // Suplencia por vacaciones (VD-124): a quién cubro yo, y quién reemplaza a
+  // quién en toda la empresa. La cadena de la solicitud los necesita para
+  // nombrar a quien de verdad va a firmar.
+  const cubroA = suplencia.cubroA ?? [];
+  const vigentes = suplencia.vigentes ?? [];
 
   if (viaticoEnteredRendicion(r)) {
     return buildViaticoTwoPhaseSteps(r, fmt, suplencia);
@@ -528,18 +536,68 @@ export function buildReportFlowSteps(
       const name = approverName(level - 1);
       // VD-112: el nivel va en la etiqueta para distinguir N1 de N2.
       const nivel = `N${Number(step?.level ?? level)}`;
+
+      // Suplencia por vacaciones (VD-124). Esta rama —la cadena sellada de la
+      // SOLICITUD de fondos— se había quedado fuera: la suplencia solo se
+      // resolvía en la agregación por comprobante de la RENDICIÓN. El resultado
+      // era que la solicitud seguía diciendo "Aprobación de <titular>" aunque el
+      // titular estuviera de vacaciones, y ni el suplente sabía que le tocaba a
+      // él ni el colaborador entendía por qué su solicitud no avanzaba.
+      const idsDelPaso: string[] = (step?.approverIds ?? []).map((a: any) =>
+        String(a && typeof a === 'object' ? a._id : a)
+      );
+      const pendiente = state === 'active' || state === 'upcoming';
+      const titularCubierto = pendiente
+        ? cubroA.find((t) => idsDelPaso.includes(t._id))
+        : undefined;
+      const deVacaciones = pendiente
+        ? vigentes.find((v) => idsDelPaso.includes(v.titularId))
+        : undefined;
+
+      // El label del paso pendiente nombra a quien de verdad va a firmar; el
+      // titular baja a la descripción. Ponerlo también en el label dejaba una
+      // línea de dos renglones con el mismo nombre repetido, y el titular no se
+      // pierde: sigue visible, que es lo que Contabilidad necesita auditar.
+      const quienFirma = deVacaciones ? deVacaciones.suplenteName : name;
       const label =
         state === 'completed' ? `${nivel} · Aprobado por ${name}` :
         state === 'rejected' ? `${nivel} · Rechazado por ${name}` :
-        `${nivel} · Aprobación de ${name}`;
+        `${nivel} · Aprobación de ${quienFirma}`;
+
+      const description =
+        state !== 'active'
+          ? undefined
+          : titularCubierto
+            ? `Te toca a ti, en reemplazo de ${titularCubierto.name}`
+            : deVacaciones
+              ? `En reemplazo de ${name}`
+              : `Pendiente de aprobación (nivel ${level} de ${chainCount})`;
+
       steps.push({
         label,
         state,
         date: fmt(step?.approvedAt),
-        description: state === 'active' ? `Pendiente de aprobación (nivel ${level} de ${chainCount})` : undefined,
+        description,
         notes: state === 'rejected' ? rejectionReason : undefined,
       });
     }
+  } else if (isViatico) {
+    // Regla 1.6: la SOLICITUD se quedó sin cadena porque el nivel que pide
+    // (`requestedLevel: 2` en `buildSolicitudChain`) no existía ni en los
+    // niveles propios del colaborador ni en su centro de costo, así que el
+    // documento nació en `pending_contabilidad`.
+    //
+    // Antes caía en la rama del coordinador de abajo y, como el estado ya había
+    // pasado el gate del aprobador, se pintaba "Aprobado por el aprobador" con
+    // el check verde: un visto bueno que nunca ocurrió, sobre un aprobador que
+    // no existe. Se dice lo que pasó de verdad, y se dice que hay que
+    // arreglarlo — sin esto, una solicitud sin control de aprobación se lee
+    // igual que una aprobada.
+    steps.push({
+      label: 'Sin aprobador asignado',
+      state: 'skipped',
+      description: 'Sin N2 configurado: pasó directo a Contabilidad',
+    });
   } else {
     const state = stateFor(1);
     const coordApprovedByName = r.coordinatorApprovedBy && typeof r.coordinatorApprovedBy === 'object'
@@ -592,6 +650,30 @@ export function buildReportFlowSteps(
   // Tras el pago pasa a `open`/`partially_paid` y entra en la vista de dos fases.
   const isViaticoAwaitingPayment =
     isViatico && status === 'viatico_approved' && Number(r.viaticoPaidAmount ?? 0) <= 0;
+
+  /**
+   * La solicitud TODAVÍA en trámite también termina en un depósito de
+   * Tesorería, y hasta ahora ese hito solo aparecía al llegar a
+   * `viatico_approved`: mientras esperaba aprobación, la línea de tiempo iba
+   * de Contabilidad directo a "Finalizada" y escondía el paso que el
+   * colaborador más quiere ver — cuándo le depositan.
+   *
+   * Mismo criterio que ya sigue el reembolso de la caja chica: el hito se
+   * anuncia desde que se sabe que va a venir, en gris, y se activa cuando toca.
+   * Se excluye lo cancelado y lo ya terminal, donde no va a haber depósito.
+   */
+  const viaticoSolicitudPorPagar =
+    isViatico &&
+    !isViaticoAwaitingPayment &&
+    !terminal &&
+    status !== 'cancelled' &&
+    !expectsReembolso &&
+    !expectsDevolucion &&
+    Number(r.viaticoPaidAmount ?? 0) <= 0;
+
+  if (!rejected && viaticoSolicitudPorPagar) {
+    steps.push({ label: 'Pago de Tesorería', state: 'upcoming' });
+  }
 
   // finalIdx — Estado final genérico (solo si no fue rechazada, no hay reembolso y
   // no está cerrada). Cuando corresponde reembolso o cierre, esos pasos propios

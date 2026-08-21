@@ -231,25 +231,20 @@ describe('TesoreriaComponent', () => {
     });
   });
 
-  describe('canRegisterPayment / payButtonLabel', () => {
-    it('allows registering payment for approved/partially_paid/paid when canPayAndSettle', () => {
+  describe('canSeePaymentInfo', () => {
+    it('shows payment info for approved/partially_paid/paid when canPayAndSettle', () => {
       userState.canApproveL2.and.returnValue(true);
-      expect(component.canRegisterPayment(makeAdvance({ status: 'approved' }))).toBeTrue();
-      expect(component.canRegisterPayment(makeAdvance({ status: 'partially_paid' }))).toBeTrue();
-      expect(component.canRegisterPayment(makeAdvance({ status: 'paid' }))).toBeTrue();
-      expect(component.canRegisterPayment(makeAdvance({ status: 'pending_l2' }))).toBeFalse();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'approved' }))).toBeTrue();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'partially_paid' }))).toBeTrue();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'paid' }))).toBeTrue();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'pending_l2' }))).toBeFalse();
     });
 
-    it('denies registering payment when user cannot pay and settle', () => {
+    it('hides payment info when user cannot pay and settle', () => {
       userState.canApproveL2.and.returnValue(false);
-      expect(component.canRegisterPayment(makeAdvance({ status: 'approved' }))).toBeFalse();
+      expect(component.canSeePaymentInfo(makeAdvance({ status: 'approved' }))).toBeFalse();
     });
 
-    it('returns correct label per status', () => {
-      expect(component.payButtonLabel(makeAdvance({ status: 'partially_paid' }))).toBe('Registrar pago');
-      expect(component.payButtonLabel(makeAdvance({ status: 'paid' }))).toBe('Pago adicional');
-      expect(component.payButtonLabel(makeAdvance({ status: 'approved' }))).toBe('Registrar pago');
-    });
   });
 
   describe('viatico payment helpers', () => {
@@ -258,22 +253,17 @@ describe('TesoreriaComponent', () => {
       expect(component.viaticoRemaining(report)).toBe(350);
     });
 
-    it('canCompleteViaticoPayment true when remaining > 0 and status eligible', () => {
+    // VD-129: la ficha es informativa, asi que NO se esconde cuando ya no queda
+    // saldo — es justo cuando hay algo que consultar (el N° de operacion del
+    // banco). Solo manda el permiso.
+    it('canSeeViaticoPaymentInfo sigue al permiso de pago, no al saldo', () => {
       userState.canApproveL2.and.returnValue(true);
-      const report = makeReport({ viaticoAmount: 500, viaticoPaidAmount: 0, status: 'viatico_approved' });
-      expect(component.canCompleteViaticoPayment(report)).toBeTrue();
+      expect(component.canSeeViaticoPaymentInfo()).toBeTrue();
     });
 
-    it('canCompleteViaticoPayment false when fully paid', () => {
-      userState.canApproveL2.and.returnValue(true);
-      const report = makeReport({ viaticoAmount: 500, viaticoPaidAmount: 500, status: 'viatico_approved' });
-      expect(component.canCompleteViaticoPayment(report)).toBeFalse();
-    });
-
-    it('canCompleteViaticoPayment false when status not eligible', () => {
-      userState.canApproveL2.and.returnValue(true);
-      const report = makeReport({ viaticoAmount: 500, viaticoPaidAmount: 0, status: 'rejected' });
-      expect(component.canCompleteViaticoPayment(report)).toBeFalse();
+    it('canSeeViaticoPaymentInfo es false sin permiso de pago', () => {
+      userState.canApproveL2.and.returnValue(false);
+      expect(component.canSeeViaticoPaymentInfo()).toBeFalse();
     });
 
     it('viaticoUserName resolves populated user name', () => {
@@ -284,6 +274,101 @@ describe('TesoreriaComponent', () => {
     it('viaticoUserName defaults when user is not populated', () => {
       const report = makeReport({ userId: 'u1' });
       expect(component.viaticoUserName(report)).toBe('—');
+    });
+  });
+
+  // VD-129: el modal de la solicitud de fondos es una ficha de solo lectura. El
+  // abono sale de la planilla BBVA y el N° de operación lo trae la conciliación
+  // del PDF del banco, no un campo que alguien escriba.
+  describe('openViaticoPaymentModal (ficha informativa, VD-129)', () => {
+    beforeEach(() => component.initForms());
+
+    it('deja el formulario deshabilitado', () => {
+      component.openViaticoPaymentModal(makeReport({ _id: 'r1' }));
+      expect(component.showViaticoPaymentModal).toBeTrue();
+      expect(component.paymentForm.disabled).toBeTrue();
+    });
+
+    it('muestra el centro de costo con su código y la OT', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        projectId: { _id: 'p1', code: 'CC-001', name: 'Proyecto Minera Antamina' },
+        viaticoOrdenTrabajoId: { _id: 'ot1', nombre: 'SMI-123' },
+      } as any);
+      expect(component.viaticoCentroCosto(rep)).toBe('CC-001 — Proyecto Minera Antamina');
+      expect(component.viaticoOrdenTrabajo(rep)).toBe('SMI-123');
+    });
+
+    it('sin OT no inventa una fila, y sin poblar no muestra el id crudo', () => {
+      expect(component.viaticoOrdenTrabajo(makeReport({ _id: 'r1' }))).toBe('');
+      const sinPoblar = makeReport({ _id: 'r1', projectId: 'p1' } as any);
+      expect(component.viaticoCentroCosto(sinPoblar)).toBe('—');
+    });
+
+    // Misma prioridad que la columna Descripción de la lista: si la ficha
+    // nombrara distinto a la fila que se acaba de pulsar, desorienta.
+    it('el título usa el lugar de destino y deja el title de respaldo', () => {
+      expect(
+        component.viaticoTitulo(
+          makeReport({ _id: 'r1', title: 'Rendicion', viaticoPlace: 'Lima, Perú' } as any)
+        )
+      ).toBe('Lima, Perú');
+      expect(
+        component.viaticoTitulo(
+          makeReport({ _id: 'r1', title: 'Caja chica', viaticoPlace: undefined } as any)
+        )
+      ).toBe('Caja chica');
+    });
+
+    it('sin pago aún no hay N° de operación que mostrar', () => {
+      expect(component.viaticoOperationReference(makeReport({ _id: 'r1' }))).toBeNull();
+      expect(component.viaticoPaymentDate(makeReport({ _id: 'r1' }))).toBeNull();
+    });
+
+    it('toma el N° de operación del último pago registrado', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        viaticoPayments: [
+          { reference: '000025710', transferDate: '2026-08-18' },
+          { operationNumber: '000025714', transferDate: '2026-08-19' },
+        ],
+      } as any);
+      expect(component.viaticoOperationReference(rep)).toBe('000025714');
+      expect(component.viaticoPaymentDate(rep)).toBe('2026-08-19');
+    });
+
+    // `paymentForm` es compartido por los modales de Tesorería y `reset()` NO
+    // cambia habilitado/deshabilitado: cada apertura tiene que fijarlo, o hereda
+    // el estado del modal anterior. Con todas las fichas en solo lectura el
+    // sintoma seria al reves —un formulario que quedo escribible—, asi que se
+    // comprueba el ciclo completo en las dos direcciones.
+    it('cada modal fija el estado del formulario compartido', () => {
+      const rep = makeReport({ _id: 'r1' });
+      const reembolso = makeReport({
+        _id: 'r2',
+        settlement: { type: 'reembolso', difference: -50 },
+      } as any);
+
+      component.openViaticoPaymentModal(rep);
+      expect(component.paymentForm.disabled).toBeTrue();
+
+      component.openReimbursementModal(reembolso);
+      expect(component.paymentForm.disabled).toBeTrue();
+
+      // El unico camino que aun escribe: si el cliente reabre el registro manual.
+      component.openPaymentModal(makeAdvance({ _id: 'a1' }), false);
+      expect(component.paymentForm.enabled).toBeTrue();
+
+      component.openReimbursementModal(reembolso);
+      expect(component.paymentForm.disabled).toBeTrue();
+    });
+
+    it('cae a viaticoPaymentInfo cuando no hay pagos parciales', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        viaticoPaymentInfo: { reference: '000025714', transferDate: '2026-08-19' },
+      } as any);
+      expect(component.viaticoOperationReference(rep)).toBe('000025714');
     });
   });
 
@@ -375,6 +460,22 @@ describe('TesoreriaComponent', () => {
       component.openPaymentModal(makeAdvance());
       expect(component.paymentReceiptUrl).toBeNull();
       expect(component.paymentScannedAmount).toBeNull();
+    });
+
+    // VD-129: el pago se hace por la planilla BBVA; desde la lista solo se
+    // consulta. Un formulario habilitado aquí es un pago marcable a mano.
+    it('openPaymentInfo opens the modal read-only and disables the form', () => {
+      component.openPaymentInfo(makeAdvance());
+      expect(component.showPaymentModal).toBeTrue();
+      expect(component.paymentModalReadOnly).toBeTrue();
+      expect(component.paymentForm.disabled).toBeTrue();
+    });
+
+    it('openPaymentModal re-enables the form when it is not read-only', () => {
+      component.openPaymentInfo(makeAdvance());
+      component.openPaymentModal(makeAdvance());
+      expect(component.paymentModalReadOnly).toBeFalse();
+      expect(component.paymentForm.enabled).toBeTrue();
     });
   });
 
