@@ -4,7 +4,8 @@ import { FlowStep } from '../../shared/flow-steps.util';
 
 /**
  * Línea de tiempo del flujo de aprobación (VD-31): un punto por paso, con el
- * completado en verde, el pendiente en azul y el rechazo en rojo.
+ * completado en verde, el pendiente en azul, el rechazo en rojo y el paso
+ * OMITIDO (`skipped`) en ámbar con un guion — nadie firmó y ya no lo hará.
  *
  * El pendiente va con `info`, NO con `primary`: el primary de Detroit es rojo
  * (ver el comentario del token en tailwind.config.js) y pintaba "Falta
@@ -44,6 +45,12 @@ import { FlowStep } from '../../shared/flow-steps.util';
             <div class="w-7 h-7 rounded-full bg-info/10 border-2 border-info flex items-center justify-center shrink-0">
               <div class="w-2.5 h-2.5 rounded-full bg-info"></div>
             </div>
+          } @else if (step.state === 'skipped') {
+            <div class="w-7 h-7 rounded-full bg-warning/10 border-2 border-warning flex items-center justify-center shrink-0">
+              <svg class="w-3.5 h-3.5 text-warning-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 12h14" />
+              </svg>
+            </div>
           } @else if (step.state === 'rejected') {
             <div class="w-7 h-7 rounded-full bg-error/10 border-2 border-error flex items-center justify-center shrink-0">
               <svg class="w-3 h-3 text-error" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -61,6 +68,7 @@ import { FlowStep } from '../../shared/flow-steps.util';
                    'bg-success/40': step.state === 'completed',
                    'bg-info/40': step.state === 'active',
                    'bg-error/30': step.state === 'rejected',
+                   'bg-warning/40': step.state === 'skipped',
                    'bg-tertiary/20': step.state === 'upcoming'
                  }"></div>
           }
@@ -78,7 +86,8 @@ import { FlowStep } from '../../shared/flow-steps.util';
           @if (step.description) {
             <p class="text-xs font-medium mt-1"
                [class.text-info-ink]="step.state === 'active'"
-               [class.text-error]="step.state === 'rejected'">
+               [class.text-error]="step.state === 'rejected'"
+               [class.text-warning-ink]="step.state === 'skipped'">
               {{ step.description }}
             </p>
           }

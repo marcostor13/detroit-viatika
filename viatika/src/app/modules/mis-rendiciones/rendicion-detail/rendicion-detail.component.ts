@@ -1710,6 +1710,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       // Estados de viáticos
       pending_l1: 'En solicitud',
       pending_l2: 'Aprobada por aprobadores',
+      // Gate de Contabilidad de la SOLICITUD del viático. Es un estado distinto
+      // de `pending_accounting` (el de la rendición) y faltaba en este mapa, así
+      // que la cabecera mostraba el crudo "pending_contabilidad".
+      pending_contabilidad: 'Pendiente de Contabilidad',
       viatico_approved: 'Aprobada',
       partially_paid: 'Pago parcial',
       paid: 'Pagada',
