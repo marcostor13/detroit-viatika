@@ -447,7 +447,9 @@ describe('RendicionesAdminComponent', () => {
       expect(component.itemCentroCostoCodigo(i)).toBe('Administracion');
     });
 
-    it('sin poblar recorta el codigo de la etiqueta ya calculada', () => {
+    // El centro de costo es obligatorio y el listado lo trae poblado, asi que
+    // esta rama solo la usan las filas de anticipo, que arman su etiqueta.
+    it('en un anticipo recorta el codigo de la etiqueta ya calculada', () => {
       const i = item({ projectId: 'p9' }, '9201 — Comercial');
       expect(component.itemCentroCostoCodigo(i)).toBe('9201');
     });

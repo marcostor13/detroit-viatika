@@ -940,28 +940,25 @@ export class RendicionesAdminComponent implements OnInit {
    * filas; el código es lo que sirve para imputar. El nombre queda en el
    * `title` de la celda.
    *
-   * Se resuelve del `projectId` poblado y, si no vino, del catálogo ya cargado,
-   * igual que `detailCentroCosto`.
+   * El centro de costo es obligatorio en rendiciones y solicitudes, y el
+   * endpoint del listado lo trae poblado con `code name`, así que en la práctica
+   * siempre sale. La caída a `projectName` cubre las filas de anticipo, que
+   * arman su propia etiqueta "código — nombre" y de ahí se recorta el código.
    */
   itemCentroCostoCodigo(item: UnifiedRendicionItem): string {
     const p = (item.raw as any)?.projectId;
     if (p && typeof p === 'object' && (p.code || p.name)) {
-      return String(p.code ?? '').trim() || String(p.name ?? '').trim() || '—';
+      return String(p.code ?? '').trim() || String(p.name ?? '').trim();
     }
-    const project = this.projects.find(x => x._id === item.projectId);
-    if (project) return String(project.code ?? '').trim() || project.name || '—';
-    // `projectName` viene como "codigo — nombre": si es lo unico que hay, se
-    // recorta el codigo en vez de mostrar la etiqueta entera.
     const etiqueta = item.projectName || '';
-    return etiqueta.includes(' — ') ? etiqueta.split(' — ')[0] : etiqueta || '—';
+    return etiqueta.split(' — ')[0] || '—';
   }
 
   /** Nombre del centro de costo, para el tooltip de la columna. */
   itemCentroCostoNombre(item: UnifiedRendicionItem): string {
     const p = (item.raw as any)?.projectId;
     if (p && typeof p === 'object' && p.name) return String(p.name);
-    const project = this.projects.find(x => x._id === item.projectId);
-    return project?.name ?? item.projectName ?? '';
+    return item.projectName ?? '';
   }
 
   itemOrdenTrabajo(item: UnifiedRendicionItem): string {
