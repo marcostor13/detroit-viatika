@@ -1,4 +1,6 @@
 import { TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { RendicionDetailComponent } from './rendicion-detail.component';
@@ -112,6 +114,9 @@ describe('RendicionDetailComponent', () => {
     TestBed.configureTestingModule({
       imports: [RendicionDetailComponent],
       providers: [
+        // SuplenciaService (VD-124) inyecta HttpClient al crearse el componente.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ExpenseReportsService, useValue: expenseReportsService },
         { provide: AdvanceService, useValue: advanceService },
         { provide: NotificationService, useValue: notification },

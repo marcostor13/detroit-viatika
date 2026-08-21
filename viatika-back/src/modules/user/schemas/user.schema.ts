@@ -4,6 +4,10 @@ import {
   ApproverLevel,
   approverLevelSchemaDefinition,
 } from '../../../common/types/approver-level'
+import {
+  Suplencia,
+  suplenciaSchemaDefinition,
+} from '../../../common/types/suplencia'
 
 export interface BankAccount {
   bankName: string
@@ -85,6 +89,8 @@ export interface UserDocument extends Document {
   profilePic?: string
   isCompanyAdmin?: boolean
   emailNotificationsEnabled?: boolean
+  /** Vacaciones programadas y quién firma en su lugar (VD-124). */
+  vacaciones?: Suplencia
 }
 
 @Schema({ timestamps: true })
@@ -212,8 +218,24 @@ export class User {
 
   @Prop({ type: Boolean, default: false })
   emailNotificationsEnabled?: boolean
+
+  /**
+   * Vacaciones programadas del aprobador y su suplente (VD-124).
+   *
+   * Va en la RAÍZ del usuario y no dentro de `permissions` por dos razones.
+   * La de fondo: una suplencia describe la disponibilidad de la persona, no un
+   * permiso que se le otorga. La práctica: `permissions` lo reescriben en
+   * bloque las cargas masivas y el formulario de permisos, y una suplencia
+   * vigente ahí adentro desaparecería en la próxima corrida sin que nadie se
+   * entere.
+   */
+  @Prop({ type: suplenciaSchemaDefinition, required: false, default: undefined })
+  vacaciones?: Suplencia
 }
 
 export const UserSchema = SchemaFactory.createForClass(User)
 // Unique per (email, clientId) — allows same email across different companies
 UserSchema.index({ email: 1, clientId: 1 }, { unique: true })
+// Suplencias vigentes (VD-124): "¿a quién cubre este usuario ahora mismo?" se
+// resuelve en cada request de aprobación, así que la consulta va indexada.
+UserSchema.index({ 'vacaciones.suplenteId': 1, 'vacaciones.desde': 1, 'vacaciones.hasta': 1 })

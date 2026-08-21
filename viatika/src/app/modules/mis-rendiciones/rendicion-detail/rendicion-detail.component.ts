@@ -39,6 +39,8 @@ import {
   formatFechaEmisionDdMmYyyy,
   resolveExpenseFechaEmision,
 } from '../../../utils/fecha-emision.util';
+import { SuplenciaService } from '../../../services/suplencia.service';
+import { SuplenciaBannerComponent } from '../../../components/suplencia-banner/suplencia-banner.component';
 
 /** Paso del proceso de generación de asientos, para el modal de progreso. */
 interface AsientoStep {
@@ -56,6 +58,7 @@ interface AsientoStep {
     IconComponent,
     RouterModule,
     FlowTimelineComponent,
+    SuplenciaBannerComponent,
   ],
   templateUrl: './rendicion-detail.component.html',
   styleUrls: ['./rendicion-detail.component.scss']
@@ -67,6 +70,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private advanceService = inject(AdvanceService);
   private notificationService = inject(NotificationService);
   private userStateService = inject(UserStateService);
+  private suplenciaService = inject(SuplenciaService);
   private confirmationService = inject(ConfirmationService);
   private invoicesService = inject(InvoicesService);
   private rendicionExportService = inject(RendicionExportService);
@@ -970,8 +974,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private reportChainActionableIndex(): number {
     const chain: IChainStep[] = (this.report as any)?.rendicionApproverChain ?? [];
     if (this.userStateService.isSuperAdmin()) return chain.findIndex((s: any) => !s.approved);
-    return chain.findIndex((s: any) =>
-      !s.approved && (s.approverIds ?? []).some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    return chain.findIndex(
+      // Suplencia por vacaciones (VD-124): tambien los titulares que cubre.
+      (s: any) => !s.approved && this.suplenciaService.esAprobadorDelPaso(s, this.currentUserId)
     );
   }
 
@@ -1722,7 +1727,9 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   /** Trazabilidad del flujo de aprobación paso a paso (VD-31). Ver `buildReportFlowSteps`. */
   flowSteps(): FlowStep[] {
-    return buildReportFlowSteps(this.report);
+    // Suplencia por vacaciones (VD-124): la linea de tiempo tiene que decirle
+    // al suplente que la accion es suya, aunque nombre al titular.
+    return buildReportFlowSteps(this.report, this.suplenciaService.contextoParaLineaDeTiempo());
   }
 
   getCollaboratorDisplayName(): string {
@@ -3678,8 +3685,11 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (this.userStateService.isSuperAdmin()) {
       return chain.findIndex((s: any) => !s.approved);
     }
-    return chain.findIndex((s: any) =>
-      !s.approved && s.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+    return chain.findIndex(
+      // Suplencia por vacaciones (VD-124): tambien los titulares que cubre. Es
+      // lo que hace aparecer el boton de aprobar cuando la cadena nombra al
+      // titular y no al suplente.
+      (s: any) => !s.approved && this.suplenciaService.esAprobadorDelPaso(s, this.currentUserId)
     );
   }
 
@@ -3689,6 +3699,26 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
    * colaborador la envía, no sobre un borrador que todavía puede editar. El
    * backend lo rechaza igual; acá se evita ofrecer un botón que va a fallar.
    */
+  /**
+   * Nombre del titular al que cubro en este comprobante, o `null` si actúo por
+   * mí (VD-124). La cadena sigue nombrando al titular: sin esta marca el
+   * suplente ve documentos que no reconoce junto a un botón que sí le funciona.
+   */
+  reemplazoDeGasto(expense: any): string | null {
+    return this.suplenciaService.titularCubiertoEnCadena(
+      expense?.approverChain,
+      this.currentUserId
+    );
+  }
+
+  /** Igual, para la cadena a nivel de reporte (viáticos). */
+  reemplazoDelReporte(): string | null {
+    return this.suplenciaService.titularCubiertoEnCadena(
+      (this.report as any)?.rendicionApproverChain,
+      this.currentUserId
+    );
+  }
+
   canApproveExpenseAsCoord(expense: any): boolean {
     if ((this.report?.status ?? '') !== 'submitted') return false;
     return this.actionableChainStepIndex(expense) !== -1;
@@ -3881,7 +3911,16 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     for (const step of steps) {
       for (const a of step.approverIds ?? []) {
         const name = this.approverLabel(a);
-        if (name) names.add(name);
+        if (!name) continue;
+        // Suplencia por vacaciones (VD-124): si este aprobador está de
+        // vacaciones, quien va a firmar es su reemplazo. Lo ve CUALQUIERA que
+        // mire la rendición — el colaborador que la envió y Contabilidad
+        // incluidos — para que nadie quede esperando a alguien que no está.
+        const id = String(a && typeof a === 'object' ? (a as any)._id : a);
+        const suplencia = this.suplenciaService.suplenteDe(id);
+        names.add(
+          suplencia ? `${suplencia.suplenteName} (reemplaza a ${name})` : name
+        );
       }
     }
     return names.size > 0 ? Array.from(names).join(' / ') : '—';

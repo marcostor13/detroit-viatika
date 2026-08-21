@@ -36,6 +36,8 @@ export type AuditAction =
   | 'update_user'
   | 'update_permissions'
   | 'update_signature'
+  | 'set_vacaciones'
+  | 'clear_vacaciones'
   | 'generate_affidavit'
   | 'reset_password'
   | 'create_project'

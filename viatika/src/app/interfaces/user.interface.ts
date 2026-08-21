@@ -156,6 +156,12 @@ export interface IUserResponse {
     accountType?: 'ahorros' | 'corriente';
   };
   emailNotificationsEnabled?: boolean;
+  /** Vacaciones programadas y quién firma en su lugar (VD-124). */
+  vacaciones?: {
+    desde: string;
+    hasta: string;
+    suplenteId: string;
+  };
 }
 
 

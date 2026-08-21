@@ -34,6 +34,12 @@ const makeChain = (resolvedValue: any) => ({
   catch: (rej: any) => Promise.resolve(resolvedValue).catch(rej),
 })
 
+/** `findById(id).select(...).exec()` — la lectura del estado previo en `update`. */
+const makeSelectChain = (resolvedValue: any) => ({
+  select: jest.fn().mockReturnThis(),
+  exec: jest.fn().mockResolvedValue(resolvedValue),
+})
+
 const mockUserModel = {
   find: jest.fn(),
   findOne: jest.fn(),
@@ -170,6 +176,335 @@ describe('UserService', () => {
         expect.objectContaining({ roleId: expect.any(Types.ObjectId) }),
         { new: true }
       )
+    })
+
+    // Escritura PARCIAL de `permissions`: un PATCH que manda unas claves no
+    // puede borrar las demás. Antes `{ permissions }` reemplazaba el
+    // subdocumento entero y cada carga masiva se llevaba por delante
+    // `otrosGastosOpcionales`, `permitirFechasAnteriores` y hasta los
+    // centros de costo.
+    describe('permissions', () => {
+      const proyectoA = new Types.ObjectId().toString()
+      const proyectoB = new Types.ObjectId().toString()
+
+      it('escribe cada clave por separado, no el objeto completo', async () => {
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+        await service.update(userId, {
+          permissions: { modules: ['rendiciones'], canApproveL1: true },
+        } as any)
+        const escrito = mockUserModel.findByIdAndUpdate.mock.calls[0][1]
+        expect(escrito).toMatchObject({
+          'permissions.modules': ['rendiciones'],
+          'permissions.canApproveL1': true,
+        })
+        expect(escrito).not.toHaveProperty('permissions')
+      })
+
+      it('no toca las claves ausentes del payload', async () => {
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+        await service.update(userId, {
+          permissions: { modules: ['rendiciones'] },
+        } as any)
+        const escrito = mockUserModel.findByIdAndUpdate.mock.calls[0][1]
+        expect(
+          Object.keys(escrito).filter(k => k.startsWith('permissions.'))
+        ).toEqual(['permissions.modules'])
+      })
+
+      it('quita el principal que quedó fuera de los centros de costo', async () => {
+        mockUserModel.findById.mockReturnValue(
+          makeSelectChain({
+            clientId: new Types.ObjectId(clientId),
+            permissions: { projectIds: [proyectoA], primaryProjectId: proyectoA },
+          })
+        )
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+        await service.update(userId, {
+          permissions: { projectIds: [proyectoB] },
+        } as any)
+        expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
+          userId,
+          expect.objectContaining({
+            $set: expect.objectContaining({ 'permissions.projectIds': [proyectoB] }),
+            $unset: { 'permissions.primaryProjectId': '' },
+          }),
+          { new: true }
+        )
+      })
+
+      it('conserva el principal si sigue entre los centros de costo', async () => {
+        mockUserModel.findById.mockReturnValue(
+          makeSelectChain({
+            clientId: new Types.ObjectId(clientId),
+            permissions: { projectIds: [proyectoA], primaryProjectId: proyectoA },
+          })
+        )
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+        await service.update(userId, {
+          permissions: { projectIds: [proyectoA, proyectoB] },
+        } as any)
+        const escrito = mockUserModel.findByIdAndUpdate.mock.calls[0][1]
+        expect(escrito).not.toHaveProperty('$unset')
+      })
+
+      it('valida el principal contra los centros de costo ya guardados', async () => {
+        mockUserModel.findById.mockReturnValue(
+          makeSelectChain({
+            clientId: new Types.ObjectId(clientId),
+            permissions: { projectIds: [proyectoA] },
+          })
+        )
+        await expect(
+          service.update(userId, {
+            permissions: { primaryProjectId: proyectoB },
+          } as any)
+        ).rejects.toBeInstanceOf(BadRequestException)
+      })
+
+      it('acepta el principal cuando el payload trae su centro de costo', async () => {
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+        await service.update(userId, {
+          permissions: { projectIds: [proyectoA], primaryProjectId: proyectoA },
+        } as any)
+        expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalled()
+      })
+    })
+  })
+
+  // Suplencia por vacaciones (VD-124).
+  describe('vacaciones', () => {
+    const suplenteId = new Types.ObjectId().toString()
+    const otroClientId = new Types.ObjectId()
+
+    const titularDoc = {
+      _id: new Types.ObjectId(userId),
+      clientId: new Types.ObjectId(clientId),
+      name: 'Titular',
+    }
+    const suplenteDoc = {
+      _id: new Types.ObjectId(suplenteId),
+      clientId: new Types.ObjectId(clientId),
+      isActive: true,
+      name: 'Suplente',
+    }
+
+    /** `find(...).select(...).lean().exec()` */
+    const makeLeanChain = (value: any) => ({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue(value),
+    })
+
+    describe('setVacaciones', () => {
+      it('guarda el rango normalizado a días completos', async () => {
+        mockUserModel.findById
+          .mockReturnValueOnce(makeSelectChain(titularDoc))
+          .mockReturnValueOnce(makeSelectChain(suplenteDoc))
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+
+        await service.setVacaciones(userId, {
+          desde: '2026-09-01',
+          hasta: '2026-09-10',
+          suplenteId,
+        })
+
+        const [, update] = mockUserModel.findByIdAndUpdate.mock.calls[0]
+        expect(update.$set.vacaciones.suplenteId.toString()).toBe(suplenteId)
+        expect(update.$set.vacaciones.desde.getHours()).toBe(0)
+        expect(update.$set.vacaciones.hasta.getHours()).toBe(23)
+      })
+
+      // `new Date('2026-09-01')` es medianoche UTC: en Lima (UTC-5) cae el 31 de
+      // agosto y la vacacion arrancaria un dia antes del elegido. El dia tiene
+      // que sobrevivir intacto, no solo la hora.
+      it('guarda el mismo dia que se pidio, sin correrlo por UTC', async () => {
+        mockUserModel.findById
+          .mockReturnValueOnce(makeSelectChain(titularDoc))
+          .mockReturnValueOnce(makeSelectChain(suplenteDoc))
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+
+        await service.setVacaciones(userId, {
+          desde: '2026-09-01',
+          hasta: '2026-09-10',
+          suplenteId,
+        })
+
+        const [, update] = mockUserModel.findByIdAndUpdate.mock.calls[0]
+        const { desde, hasta } = update.$set.vacaciones
+        expect([desde.getFullYear(), desde.getMonth() + 1, desde.getDate()]).toEqual([2026, 9, 1])
+        expect([hasta.getFullYear(), hasta.getMonth() + 1, hasta.getDate()]).toEqual([2026, 9, 10])
+      })
+
+      it('rechaza que alguien sea su propio suplente', async () => {
+        mockUserModel.findById.mockReturnValue(makeSelectChain(titularDoc))
+        await expect(
+          service.setVacaciones(userId, {
+            desde: '2026-09-01',
+            hasta: '2026-09-10',
+            suplenteId: userId,
+          })
+        ).rejects.toBeInstanceOf(BadRequestException)
+      })
+
+      it('rechaza un fin anterior al inicio', async () => {
+        mockUserModel.findById.mockReturnValue(makeSelectChain(titularDoc))
+        await expect(
+          service.setVacaciones(userId, {
+            desde: '2026-09-10',
+            hasta: '2026-09-01',
+            suplenteId,
+          })
+        ).rejects.toBeInstanceOf(BadRequestException)
+      })
+
+      // La cadena de aprobación vive dentro de un cliente: un suplente de otra
+      // empresa abriría documentos ajenos.
+      it('rechaza un suplente de otra empresa', async () => {
+        mockUserModel.findById
+          .mockReturnValueOnce(makeSelectChain(titularDoc))
+          .mockReturnValueOnce(
+            makeSelectChain({ ...suplenteDoc, clientId: otroClientId })
+          )
+        await expect(
+          service.setVacaciones(userId, {
+            desde: '2026-09-01',
+            hasta: '2026-09-10',
+            suplenteId,
+          })
+        ).rejects.toBeInstanceOf(BadRequestException)
+      })
+
+      it('rechaza un suplente inactivo', async () => {
+        mockUserModel.findById
+          .mockReturnValueOnce(makeSelectChain(titularDoc))
+          .mockReturnValueOnce(makeSelectChain({ ...suplenteDoc, isActive: false }))
+        await expect(
+          service.setVacaciones(userId, {
+            desde: '2026-09-01',
+            hasta: '2026-09-10',
+            suplenteId,
+          })
+        ).rejects.toBeInstanceOf(BadRequestException)
+      })
+
+      it('con null borra la suplencia (vuelta anticipada)', async () => {
+        mockUserModel.findById.mockReturnValue(makeSelectChain(titularDoc))
+        mockUserModel.findByIdAndUpdate.mockReturnValue(makeChain(mockUserDoc))
+        await service.setVacaciones(userId, null)
+        expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
+          userId,
+          { $unset: { vacaciones: '' } },
+          { new: true }
+        )
+      })
+    })
+
+    describe('findTitularesCubiertosPor', () => {
+      it('filtra por suplente, rango vigente y empresa', async () => {
+        mockUserModel.find.mockReturnValue(makeLeanChain([titularDoc]))
+        const result = await service.findTitularesCubiertosPor(suplenteId, clientId)
+        const filtro = mockUserModel.find.mock.calls[0][0]
+        expect(filtro['vacaciones.suplenteId'].toString()).toBe(suplenteId)
+        expect(filtro['vacaciones.desde']).toHaveProperty('$lte')
+        expect(filtro['vacaciones.hasta']).toHaveProperty('$gte')
+        expect(filtro.isActive).toBe(true)
+        expect(filtro.clientId.toString()).toBe(clientId)
+        expect(result).toEqual([{ _id: userId, name: 'Titular' }])
+      })
+
+      it('devuelve vacío con un id inválido, sin consultar', async () => {
+        expect(await service.findTitularesCubiertosPor('no-es-un-id')).toEqual([])
+        expect(mockUserModel.find).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('idsTitularesCubiertosPara', () => {
+      it('no habilita al suplente a aprobar lo que él mismo creó', async () => {
+        const result = await service.idsTitularesCubiertosPara(suplenteId, {
+          clientId,
+          userId: suplenteId,
+        })
+        expect(result).toEqual([])
+        expect(mockUserModel.find).not.toHaveBeenCalled()
+      })
+
+      // Los comprobantes guardan al dueño en `createdBy`, no en `userId`.
+      it('reconoce al dueño también por createdBy', async () => {
+        const result = await service.idsTitularesCubiertosPara(suplenteId, {
+          clientId,
+          createdBy: suplenteId,
+        })
+        expect(result).toEqual([])
+        expect(mockUserModel.find).not.toHaveBeenCalled()
+      })
+
+      it('sí cubre al titular cuando el documento es de otro', async () => {
+        mockUserModel.find.mockReturnValue(makeLeanChain([titularDoc]))
+        const result = await service.idsTitularesCubiertosPara(suplenteId, {
+          clientId,
+          userId: new Types.ObjectId().toString(),
+        })
+        expect(result).toEqual([userId])
+      })
+    })
+
+    describe('resolverSuplenteVigente', () => {
+      const hoy = new Date()
+      const ayer = new Date(hoy.getTime() - 86400000)
+      const manana = new Date(hoy.getTime() + 86400000)
+
+      it('devuelve null si el titular no está de vacaciones', async () => {
+        mockUserModel.findById.mockReturnValue(makeLeanChain({ vacaciones: undefined }))
+        expect(await service.resolverSuplenteVigente(userId)).toBeNull()
+      })
+
+      it('devuelve el suplente cuando el rango está vigente', async () => {
+        mockUserModel.findById
+          .mockReturnValueOnce(
+            makeLeanChain({
+              vacaciones: {
+                desde: ayer,
+                hasta: manana,
+                suplenteId: new Types.ObjectId(suplenteId),
+              },
+            })
+          )
+          .mockReturnValueOnce(
+            makeLeanChain({
+              _id: new Types.ObjectId(suplenteId),
+              name: 'Suplente',
+              email: 'suplente@example.com',
+              isActive: true,
+            })
+          )
+        expect(await service.resolverSuplenteVigente(userId)).toEqual({
+          _id: suplenteId,
+          name: 'Suplente',
+          email: 'suplente@example.com',
+        })
+      })
+
+      it('devuelve null si el suplente quedó inactivo', async () => {
+        mockUserModel.findById
+          .mockReturnValueOnce(
+            makeLeanChain({
+              vacaciones: {
+                desde: ayer,
+                hasta: manana,
+                suplenteId: new Types.ObjectId(suplenteId),
+              },
+            })
+          )
+          .mockReturnValueOnce(
+            makeLeanChain({
+              _id: new Types.ObjectId(suplenteId),
+              name: 'Suplente',
+              email: 'suplente@example.com',
+              isActive: false,
+            })
+          )
+        expect(await service.resolverSuplenteVigente(userId)).toBeNull()
+      })
     })
   })
 

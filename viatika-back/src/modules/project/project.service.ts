@@ -327,7 +327,8 @@ export class ProjectService {
   }
 
   /**
-   * ¿Este usuario aparece como aprobador (cualquier nivel) en su empresa?
+   * ¿Este usuario aparece como aprobador (cualquier nivel) en su empresa, o
+   * cubre a alguien que sí lo es (suplencia por vacaciones, VD-124)?
    * Reemplaza el chequeo por rol "Coordinador" — la autorización real depende
    * de estar en `approverLevels`, no del rol.
    *
@@ -356,7 +357,38 @@ export class ProjectService {
       clientId: clientIdObject,
       'permissions.approverLevels.userIds': userIdObject,
     })
-    return !!enColaborador
+    if (enColaborador) return true
+
+    // Suplencia por vacaciones (VD-124): quien cubre a un aprobador es, para
+    // todo efecto, aprobador mientras dure el período — aunque él mismo no
+    // figure en ningún nivel. Sin esto el suplente entra por el filtro de "solo
+    // lo mío" y no ve nada de lo que tiene que firmar.
+    const ahora = new Date()
+    const titulares = await this.userModel
+      .find({
+        clientId: clientIdObject,
+        'vacaciones.suplenteId': userIdObject,
+        'vacaciones.desde': { $lte: ahora },
+        'vacaciones.hasta': { $gte: ahora },
+        isActive: true,
+      })
+      .select('_id')
+      .lean<{ _id: Types.ObjectId }[]>()
+      .exec()
+    if (titulares.length === 0) return false
+
+    const titularIds = titulares.map(t => t._id)
+    const titularEnCentroDeCosto = await this.projectModel.exists({
+      clientId: clientIdObject,
+      'approverLevels.userIds': { $in: titularIds },
+    })
+    if (titularEnCentroDeCosto) return true
+
+    const titularEnColaborador = await this.userModel.exists({
+      clientId: clientIdObject,
+      'permissions.approverLevels.userIds': { $in: titularIds },
+    })
+    return !!titularEnColaborador
   }
 
   /**

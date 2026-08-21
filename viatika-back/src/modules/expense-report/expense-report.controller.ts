@@ -225,6 +225,20 @@ export class ExpenseReportController {
     })
   }
 
+  /**
+   * Lo que este usuario aprobó EN REEMPLAZO de otro (VD-124). Ruta propia y no
+   * un filtro de la bandeja: la bandeja lista lo pendiente y se vacía al
+   * terminar la vacación; esto es historial y tiene que seguir ahí después.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('aprobadas-en-reemplazo')
+  async findAprobadasEnReemplazo(@Request() req: any) {
+    const userId = (req.user._id || req.user.sub).toString()
+    const clientId = req.user?.clientId?.toString()
+    if (!clientId) return []
+    return this.expenseReportService.findAprobadasEnReemplazo(userId, clientId)
+  }
+
   @UseGuards(AuthGuard('jwt'))
   @Get('client/:clientId')
   async findAllByClient(
