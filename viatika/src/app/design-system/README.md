@@ -151,6 +151,27 @@ get categoryOptions(): SearchSelectOption[] {
 ```
 Preferir este componente antes que copiar el patrón de dropdown-con-buscador en una pantalla nueva.
 
+### `appFileDrop` (directiva)
+Arrastrar y soltar archivos sobre una zona de subida (VD-134). Es una **directiva** y no un componente a propósito: las zonas de subida ya existen como cajas punteadas con su propio contenido (icono, textos, nombre del archivo, estados de error) y son distintas entre sí. La directiva se cuelga de la caja que ya está y solo añade el comportamiento.
+
+```html
+<div
+  appFileDrop
+  accept=".pdf,.jpg,.jpeg,.png"
+  (filesDropped)="onFilesDropped($event)"
+  (filesRejected)="onFilesRejected($event)"
+  (click)="fileInput.click()"
+>
+  ...contenido de la zona...
+  <input type="file" class="hidden" (change)="onFileSelected($event)" #fileInput />
+</div>
+```
+
+- `accept` usa la misma sintaxis que el `accept` de un input: extensión (`.pdf`), MIME (`image/png`) o comodín (`image/*`). Vacío acepta cualquier cosa.
+- `filesRejected` se emite aparte para que la pantalla **avise**. Descartar en silencio deja al usuario sin saber si el arrastre no funciona o su archivo no servía.
+- La directiva pone la clase `is-dragging` en el host mientras se arrastra encima; **el estilo lo define cada zona**, para no imponer colores desde el design system.
+- El archivo arrastrado debe pasar por el mismo camino que el del selector. Extraer un método común en vez de duplicarlo: si no, la vista previa o el `patchValue` se quedan solo en una de las dos vías.
+
 ## Íconos: por qué Lucide
 
 La plataforma no tenía librería de íconos — 65 archivos con SVG de Heroicons pegado a mano, en 3 tamaños distintos para el mismo ícono conceptual. `app-icon` reemplaza eso con Lucide (`@lucide/angular`): trazo uniforme de 2px, tree-shakeable, y un único punto de control de tamaño/color. La migración de los SVG existentes es progresiva (ver plan de UI kit) — no reemplazar todo de una vez.
