@@ -417,6 +417,13 @@ export class TesoreriaComponent implements OnInit {
     );
   }
 
+  /**
+   * VD-129: ficha informativa del pago de la solicitud de fondos. Ya no se
+   * registra el abono a mano — lo hace la planilla BBVA y se da por pagado al
+   * conciliar el PDF del banco, que es de donde sale el N° de operación. El
+   * formulario se sigue rellenando porque de él salen los datos bancarios que
+   * se muestran; queda deshabilitado para que nadie escriba sobre ellos.
+   */
   openViaticoPaymentModal(report: IExpenseReport): void {
     this.selectedViaticoReport = report;
     const remaining = this.viaticoRemaining(report);
@@ -457,6 +464,7 @@ export class TesoreriaComponent implements OnInit {
     this.viaticoOperationNumber = null;
     this.viaticoOperationDate = null;
     this.viaticoOperationTime = null;
+    this.paymentForm.disable({ emitEvent: false });
     this.showViaticoPaymentModal = true;
   }
 
@@ -523,6 +531,12 @@ export class TesoreriaComponent implements OnInit {
     });
   }
 
+  /**
+   * Registro manual del pago de una solicitud de fondos. VD-129 lo sacó de la
+   * interfaz —la ficha del modal es de solo lectura— pero el método se conserva,
+   * igual que `paymentModalReadOnly`: si el cliente vuelve a pedir el registro a
+   * mano, es volver a colgarlo de un botón. Sus pruebas siguen cubriéndolo.
+   */
   confirmViaticoPayment(): void {
     if (!this.selectedViaticoReport || this.paymentForm.invalid) return;
     const method = this.paymentForm.get('method')?.value;
@@ -597,6 +611,33 @@ export class TesoreriaComponent implements OnInit {
     if (readOnly) this.paymentForm.disable({ emitEvent: false });
     else this.paymentForm.enable({ emitEvent: false });
     this.showPaymentModal = true;
+  }
+
+  /**
+   * N° de operación del abono, tal como lo dejó la conciliación del PDF de BBVA
+   * (`reference`/`operationNumber`). Se prefiere el último pago registrado: un
+   * viático admite pagos parciales y el vigente es el más reciente.
+   */
+  viaticoOperationReference(report: IExpenseReport | null): string | null {
+    if (!report) return null;
+    const pagos = ((report as any).viaticoPayments ?? []) as Array<{
+      reference?: string;
+      operationNumber?: string;
+    }>;
+    for (let i = pagos.length - 1; i >= 0; i--) {
+      const ref = pagos[i]?.operationNumber || pagos[i]?.reference;
+      if (ref) return ref;
+    }
+    const info = (report as any).viaticoPaymentInfo as { reference?: string } | undefined;
+    return info?.reference || null;
+  }
+
+  /** Fecha del abono, para la ficha informativa. */
+  viaticoPaymentDate(report: IExpenseReport | null): string | Date | null {
+    if (!report) return null;
+    const pagos = ((report as any).viaticoPayments ?? []) as Array<{ transferDate?: string }>;
+    const ultimo = pagos.length ? pagos[pagos.length - 1]?.transferDate : undefined;
+    return ultimo ?? (report as any).viaticoPaymentInfo?.transferDate ?? null;
   }
 
   /** VD-129: abre el modal de pago como ficha informativa, sin registrar nada. */
@@ -749,6 +790,11 @@ export class TesoreriaComponent implements OnInit {
 
   openReimbursementModal(report: IExpenseReport): void {
     this.selectedReportReimbursement = report;
+    // `paymentForm` es COMPARTIDO con las fichas de solo lectura de VD-129, que
+    // lo dejan deshabilitado — y `reset()` no lo vuelve a habilitar. Sin esto,
+    // abrir una ficha de pago antes que este modal dejaba el reembolso mudo:
+    // los campos en gris y "Confirmar reembolso" siempre inhabilitado.
+    this.paymentForm.enable({ emitEvent: false });
     // El monto del reembolso es fijo (= |settlement.difference|). El modal no
     // tiene input de monto, así que lo seteamos aquí; de lo contrario el control
     // `amount` (requerido) quedaría en null y el formulario nunca sería válido,

@@ -282,6 +282,56 @@ describe('TesoreriaComponent', () => {
     });
   });
 
+  // VD-129: el modal de la solicitud de fondos es una ficha de solo lectura. El
+  // abono sale de la planilla BBVA y el N° de operación lo trae la conciliación
+  // del PDF del banco, no un campo que alguien escriba.
+  describe('openViaticoPaymentModal (ficha informativa, VD-129)', () => {
+    beforeEach(() => component.initForms());
+
+    it('deja el formulario deshabilitado', () => {
+      component.openViaticoPaymentModal(makeReport({ _id: 'r1' }));
+      expect(component.showViaticoPaymentModal).toBeTrue();
+      expect(component.paymentForm.disabled).toBeTrue();
+    });
+
+    it('sin pago aún no hay N° de operación que mostrar', () => {
+      expect(component.viaticoOperationReference(makeReport({ _id: 'r1' }))).toBeNull();
+      expect(component.viaticoPaymentDate(makeReport({ _id: 'r1' }))).toBeNull();
+    });
+
+    it('toma el N° de operación del último pago registrado', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        viaticoPayments: [
+          { reference: '000025710', transferDate: '2026-08-18' },
+          { operationNumber: '000025714', transferDate: '2026-08-19' },
+        ],
+      } as any);
+      expect(component.viaticoOperationReference(rep)).toBe('000025714');
+      expect(component.viaticoPaymentDate(rep)).toBe('2026-08-19');
+    });
+
+    // `paymentForm` es compartido: las fichas de solo lectura lo deshabilitan y
+    // `reset()` no lo revive. Sin re-habilitarlo, abrir una ficha antes que el
+    // modal de reembolso dejaba a Tesorería sin poder registrar el reembolso.
+    it('no deja mudo el modal de reembolso, que comparte el formulario', () => {
+      component.openViaticoPaymentModal(makeReport({ _id: 'r1' }));
+      expect(component.paymentForm.disabled).toBeTrue();
+      component.openReimbursementModal(
+        makeReport({ _id: 'r2', settlement: { type: 'reembolso', difference: -50 } } as any)
+      );
+      expect(component.paymentForm.enabled).toBeTrue();
+    });
+
+    it('cae a viaticoPaymentInfo cuando no hay pagos parciales', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        viaticoPaymentInfo: { reference: '000025714', transferDate: '2026-08-19' },
+      } as any);
+      expect(component.viaticoOperationReference(rep)).toBe('000025714');
+    });
+  });
+
   describe('confirmViaticoPayment', () => {
     beforeEach(() => {
       component.initForms();
