@@ -33,6 +33,8 @@ const userId = new Types.ObjectId().toString()
 const mockEmailService = {
   sendRendicionFullyApprovedEmail: jest.fn().mockResolvedValue(undefined),
   sendRendicionReembolsoPagado: jest.fn().mockResolvedValue(undefined),
+  // VD-133: aviso de turno al siguiente nivel de la cadena.
+  sendRendicionRecordatorioCoordinador: jest.fn().mockResolvedValue(undefined),
   buildAppUrl: jest.fn().mockReturnValue('http://localhost:4200/app'),
   formatDateDDMMYYYY: jest.fn().mockReturnValue('01/01/2026'),
 }
@@ -570,6 +572,117 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
   // funcionalidad. La cadena se sella con el id del TITULAR y nunca se
   // reescribe, así que sin expandir los destinatarios el suplente puede firmar
   // pero jamás se entera de que tiene algo pendiente.
+  /**
+   * VD-133: los avisos que PIDEN ACCION van al paso en curso; los informativos
+   * (rechazo, reapertura, cancelacion) siguen alcanzando a toda la cadena.
+   */
+  /**
+   * VD-133. Con la cadena consecutiva el aviso del envio solo alcanza al primer
+   * nivel, asi que si nadie avisa al aprobar, el N2 no se entera NUNCA de su
+   * turno y la rendicion se queda esperandolo en silencio.
+   */
+  describe('aviso de turno al siguiente nivel (VD-133)', () => {
+    const n1 = new Types.ObjectId()
+    const n2 = new Types.ObjectId()
+
+    beforeEach(() => {
+      mockUserService.resolverSuplenteVigente.mockResolvedValue(null)
+      mockUserService.isEmailEnabled.mockResolvedValue(true)
+      mockUserService.findEmailNameClient.mockImplementation(async (id: string) => ({
+        _id: id,
+        name: id === n1.toString() ? 'ANA' : 'BETO',
+        email: id === n1.toString() ? 'ana@x.pe' : 'beto@x.pe',
+      }))
+      mockEmailService.sendRendicionRecordatorioCoordinador.mockClear()
+    })
+
+    it('escribe al nivel que acaba de recibir el turno, no al que ya firmo', async () => {
+      const chain = [
+        { level: 1, approved: true, approverIds: [n1] },
+        { level: 2, approved: false, approverIds: [n2] },
+      ]
+      await (service as any).notifySiguientePasoDeCadena('r1', chain, {
+        collaboratorName: 'COLAB',
+        reportTitle: 'Rendicion X',
+      })
+      const destinos = mockEmailService.sendRendicionRecordatorioCoordinador.mock.calls.map(
+        (c: any[]) => c[0]
+      )
+      expect(destinos).toEqual(['beto@x.pe'])
+    })
+
+    it('con la cadena completa no escribe a nadie', async () => {
+      const chain = [
+        { level: 1, approved: true, approverIds: [n1] },
+        { level: 2, approved: true, approverIds: [n2] },
+      ]
+      await (service as any).notifySiguientePasoDeCadena('r1', chain, {})
+      expect(mockEmailService.sendRendicionRecordatorioCoordinador).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('destinatarios del aviso "te toca aprobar" (VD-133)', () => {
+    const n1 = new Types.ObjectId()
+    const n2 = new Types.ObjectId()
+    const reportId = new Types.ObjectId().toString()
+    const expenseId = new Types.ObjectId()
+
+    // Los dos modelos se inyectan sobre la instancia, como hace el resto del
+    // spec: el provider los entrega vacios.
+    const montarCadena = (primeroFirmado: boolean) => {
+      ;(service as any).expenseReportModel = {
+        findById: () => ({
+          select: () => ({ lean: () => ({ exec: async () => ({ expenseIds: [expenseId] }) }) }),
+        }),
+      }
+      ;(service as any).expenseModel = {
+        find: () => ({
+          select: () => ({
+            lean: () => ({
+              exec: async () => [
+                {
+                  approverChain: [
+                    { level: 1, approved: primeroFirmado, approverIds: [n1] },
+                    { level: 2, approved: false, approverIds: [n2] },
+                  ],
+                },
+              ],
+            }),
+          }),
+        }),
+      }
+      mockUserService.resolverSuplenteVigente.mockResolvedValue(null)
+      mockUserService.findEmailNameClient.mockImplementation(async (id: string) => ({
+        _id: id,
+        name: id === n1.toString() ? 'ANA' : 'BETO',
+        email: id === n1.toString() ? 'ana@x.pe' : 'beto@x.pe',
+      }))
+      mockUserService.isEmailEnabled.mockResolvedValue(true)
+    }
+
+    it('solo escribe al nivel al que le toca', async () => {
+      montarCadena(false)
+      const rec = await (service as any).resolveReportApproverRecipients(reportId, {
+        soloPasoEnCurso: true,
+      })
+      expect(rec.map((r: any) => r.email)).toEqual(['ana@x.pe'])
+    })
+
+    it('cuando el N1 firma, el aviso pasa al N2', async () => {
+      montarCadena(true)
+      const rec = await (service as any).resolveReportApproverRecipients(reportId, {
+        soloPasoEnCurso: true,
+      })
+      expect(rec.map((r: any) => r.email)).toEqual(['beto@x.pe'])
+    })
+
+    it('sin la opcion alcanza a toda la cadena: es lo que usan los avisos informativos', async () => {
+      montarCadena(false)
+      const rec = await (service as any).resolveReportApproverRecipients(reportId)
+      expect(rec.map((r: any) => r.email).sort()).toEqual(['ana@x.pe', 'beto@x.pe'])
+    })
+  })
+
   describe('destinatarios con suplencia por vacaciones', () => {
     const titularId = new Types.ObjectId()
     const suplenteId = new Types.ObjectId()
@@ -1298,7 +1411,7 @@ describe('ExpenseReportService — Fase 6 (reembolso: tenant y registro)', () =>
   })
 })
 
-describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1.3, en paralelo entre niveles)', () => {
+describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1.3, cadena CONSECUTIVA VD-133)', () => {
   let service: ExpenseReportService
   let mockExpenseReportModel: Record<string, jest.Mock>
 
@@ -1408,8 +1521,27 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
   })
 
   describe('approveViatico', () => {
-    it('deja que N2(seleccionado) apruebe antes que N2(principal) — cualquier orden', async () => {
+    // VD-133: antes el segundo paso era accionable desde el envio.
+    it('el segundo paso NO se puede aprobar mientras el primero siga pendiente', async () => {
       const report = reportDoc({ viaticoApproverChain: makeTwoStepChain(), viaticoRequiredLevels: 2 })
+      mockExpenseReportModel.findById.mockResolvedValue(report)
+
+      await expect(
+        service.approveViatico(
+          solicitudReportId,
+          { approvedBy: n2Id.toString() },
+          n2Id.toString(),
+          ROLES.COLABORADOR
+        )
+      ).rejects.toThrow()
+      expect(report.viaticoApproverChain[1].approved).toBeFalsy()
+      expect(report.status).toBe('pending_l1')
+    })
+
+    it('el segundo paso se habilita cuando el primero ya firmo', async () => {
+      const chain = makeTwoStepChain()
+      chain[0].approved = true
+      const report = reportDoc({ viaticoApproverChain: chain, viaticoRequiredLevels: 2 })
       mockExpenseReportModel.findById.mockResolvedValue(report)
 
       await service.approveViatico(
@@ -1420,8 +1552,7 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
       )
 
       expect(report.viaticoApproverChain[1].approved).toBe(true)
-      expect(report.viaticoApproverChain[0].approved).toBeFalsy()
-      expect(report.status).toBe('pending_l1') // aún falta N2(principal)
+      expect(report.status).toBe('pending_contabilidad')
     })
 
     it('rechaza a quien no es aprobador de ningún paso pendiente', async () => {
@@ -1453,8 +1584,11 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
   })
 
   describe('rejectViatico', () => {
-    it('deja que cualquier aprobador de un paso pendiente rechace la solicitud', async () => {
-      const report = reportDoc({ viaticoApproverChain: makeTwoStepChain(), viaticoRequiredLevels: 2 })
+    // VD-133: el rechazo respeta el mismo orden que la aprobacion.
+    it('rechaza la solicitud el aprobador al que le toca, con el paso previo ya firmado', async () => {
+      const chain = makeTwoStepChain()
+      chain[0].approved = true
+      const report = reportDoc({ viaticoApproverChain: chain, viaticoRequiredLevels: 2 })
       mockExpenseReportModel.findById.mockResolvedValue(report)
 
       await service.rejectViatico(

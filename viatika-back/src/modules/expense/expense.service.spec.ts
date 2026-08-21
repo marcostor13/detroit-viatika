@@ -307,7 +307,7 @@ describe('ExpenseService — Fase 5 (plazos y límites de categoría)', () => {
   })
 })
 
-describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo entre niveles)', () => {
+describe('ExpenseService — aprobación por comprobante (regla 1.4, cadena CONSECUTIVA VD-133)', () => {
   let service: ExpenseService
   let mockExpenseModel: { findOne: jest.Mock; findByIdAndUpdate: jest.Mock }
   let mockNotificationsService: { create: jest.Mock }
@@ -463,8 +463,19 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
   })
 
   describe('approveByCoord', () => {
-    it('deja que N2 apruebe antes que N1 (cualquier orden)', async () => {
+    // VD-133: antes el N2 podia firmar sin que el N1 hubiera actuado.
+    it('no deja que N2 apruebe antes que N1', async () => {
       const expense = baseExpense()
+      mockLoadExpense(expense)
+      mockUpdate({ ...expense })
+
+      await expect(service.approveByCoord(expenseId, actorN2)).rejects.toThrow()
+      expect(mockExpenseModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('el N2 aprueba una vez que el N1 ya firmo', async () => {
+      const expense = baseExpense()
+      expense.approverChain[0].approved = true
       mockLoadExpense(expense)
       mockUpdate({ ...expense })
 
@@ -472,8 +483,6 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
 
       const [, updatePayload] = mockExpenseModel.findByIdAndUpdate.mock.calls[0]
       expect(updatePayload.$set.approverChain[1].approved).toBe(true)
-      expect(updatePayload.$set.approverChain[0].approved).toBeFalsy()
-      expect(updatePayload.$set.status).toBe('pending')
     })
 
     it('rechaza a quien no es aprobador de ningún paso pendiente', async () => {
@@ -508,14 +517,28 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
   })
 
   describe('rejectByCoord', () => {
-    it('deja que cualquier aprobador de un paso pendiente rechace, no solo "el turno actual"', async () => {
+    // VD-133: el rechazo sigue el mismo orden que la aprobacion. Si el N2 no
+    // puede firmar todavia, tampoco puede devolver el comprobante por delante
+    // del N1, que es quien aun no lo ha visto.
+    it('el N2 tampoco rechaza antes de que el N1 actue', async () => {
       const expense = baseExpense()
+      mockLoadExpense(expense)
+      mockUpdate({ ...expense, status: 'rejected' })
+
+      await expect(
+        service.rejectByCoord(expenseId, actorN2, 'Falta sustento suficiente')
+      ).rejects.toThrow()
+      expect(mockExpenseModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('el N2 rechaza cuando ya le toca', async () => {
+      const expense = baseExpense()
+      expense.approverChain[0].approved = true
       mockLoadExpense(expense)
       mockUpdate({ ...expense, status: 'rejected' })
 
       await service.rejectByCoord(expenseId, actorN2, 'Falta sustento suficiente')
 
-      expect(mockExpenseModel.findByIdAndUpdate).toHaveBeenCalled()
       const [, updatePayload] = mockExpenseModel.findByIdAndUpdate.mock.calls[0]
       expect(updatePayload.$set.status).toBe('rejected')
     })
@@ -1399,5 +1422,192 @@ describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
       )
       expect(expenseModel.create).not.toHaveBeenCalled()
     })
+  })
+})
+
+/**
+ * Al editar un gasto, `total` siempre se recalculó bien; lo que se quedaba con
+ * el importe viejo eran `montoBase` y `montoReporte`, que es lo que de verdad
+ * leen la ficha de la rendición, el PDF y la liquidación (`montoReporte ?? total`).
+ * De ahí el síntoma: agregar tramos a una planilla ya guardada no movía el monto.
+ *
+ * El tipo de cambio NO se re-congela: se reusa el que el gasto ya tenía.
+ */
+describe('ExpenseService — update: las equivalencias siguen al nuevo importe', () => {
+  let service: ExpenseService
+  const clientId = new Types.ObjectId().toHexString()
+  const expenseId = new Types.ObjectId().toHexString()
+  const actor = {
+    userId: new Types.ObjectId().toHexString(),
+    roleName: ROLES.ADMIN,
+    clientId,
+  }
+
+  const expenseModel = {
+    findOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    aggregate: jest.fn().mockResolvedValue([]),
+  }
+  const clientModel = {
+    findById: jest.fn().mockReturnValue({
+      lean: () => ({ exec: () => Promise.resolve(null) }),
+    }),
+  }
+  const expenseReportService = {
+    findOne: jest.fn().mockResolvedValue(null),
+    resubmitSilent: jest.fn(),
+    advanceToAccountingIfAllExpensesApproved: jest.fn(),
+  }
+
+  /** El gasto tal como está guardado antes de la edición. */
+  const guardado = (extra: Record<string, unknown>) => ({
+    _id: new Types.ObjectId(expenseId),
+    clientId,
+    createdBy: actor.userId,
+    status: 'pending',
+    expenseType: 'planilla_movilidad',
+    ...extra,
+  })
+
+  /** Ejecuta la edición y devuelve el documento que se mandó a Mongo. */
+  const editar = async (
+    existente: Record<string, unknown>,
+    dto: Record<string, unknown>
+  ) => {
+    expenseModel.findOne.mockReturnValue({
+      populate: () => ({
+        populate: () => ({
+          populate: () => ({ exec: () => Promise.resolve(existente) }),
+        }),
+      }),
+    })
+    await service.update(expenseId, dto as never, actor)
+    return expenseModel.findOneAndUpdate.mock.calls[0][1]
+  }
+
+  const tramo = (fecha: string, total: number) => ({
+    fecha,
+    total,
+    origen: 'A',
+    destino: 'B',
+    gestion: 'g',
+  })
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    expenseModel.findOneAndUpdate.mockReturnValue({
+      populate: () => ({
+        populate: () => ({ exec: () => Promise.resolve({ _id: expenseId }) }),
+      }),
+    })
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue('sk-test') },
+        },
+        { provide: getModelToken(Expense.name), useValue: expenseModel },
+        { provide: getModelToken(Client.name), useValue: clientModel },
+        { provide: EmailService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: UserService, useValue: {} },
+        { provide: SunatConfigService, useValue: {} },
+        { provide: HttpService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ExpenseReportService, useValue: expenseReportService },
+        { provide: NotificationsService, useValue: {} },
+        { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
+      ],
+    }).compile()
+    service = module.get<ExpenseService>(ExpenseService)
+  })
+
+  it('agregar tramos a una planilla ya guardada mueve el monto que se muestra', async () => {
+    const doc = await editar(
+      guardado({
+        total: 55,
+        moneda: 'PEN',
+        montoBase: 55,
+        tipoCambio: 1,
+        monedaReporte: 'PEN',
+        tcReporte: 1,
+        montoReporte: 55,
+        mobilityRows: [tramo('2026-08-10', 25), tramo('2026-08-11', 30)],
+      }),
+      {
+        mobilityRows: [
+          tramo('2026-08-10', 25),
+          tramo('2026-08-11', 30),
+          tramo('2026-08-12', 145),
+        ],
+      }
+    )
+
+    expect(doc.total).toBe(200)
+    expect(doc.montoBase).toBe(200)
+    expect(doc.montoReporte).toBe(200)
+  })
+
+  it('un gasto en la moneda de la rendición no se convierte al reexpresarlo', async () => {
+    // Dólares dentro de una rendición en dólares: `montoReporte` son los mismos
+    // dólares. Dividir por `tcReporte` metería soles en la ficha del viático.
+    const doc = await editar(
+      guardado({
+        total: 13,
+        moneda: 'USD',
+        montoBase: 43.55,
+        tipoCambio: 3.35,
+        monedaReporte: 'USD',
+        tcReporte: 1,
+        montoReporte: 13,
+        expenseType: 'factura',
+      }),
+      { total: 52 }
+    )
+
+    expect(doc.montoBase).toBe(174.2)
+    expect(doc.montoReporte).toBe(52)
+  })
+
+  it('un gasto en otra moneda que la rendición se reexpresa con el TC congelado', async () => {
+    const doc = await editar(
+      guardado({
+        total: 55,
+        moneda: 'PEN',
+        montoBase: 55,
+        tipoCambio: 1,
+        monedaReporte: 'USD',
+        tcReporte: 3.35,
+        montoReporte: 16.42,
+        expenseType: 'factura',
+      }),
+      { total: 200 }
+    )
+
+    expect(doc.montoBase).toBe(200)
+    expect(doc.montoReporte).toBe(59.7)
+    // La tasa congelada no se toca: es lo que hace auditable el importe.
+    expect(doc.tipoCambio).toBeUndefined()
+    expect(doc.tcReporte).toBeUndefined()
+  })
+
+  it('sin equivalencia previa no se inventa una', async () => {
+    // Gasto suelto, fuera de una rendición: no tiene `montoReporte` que seguir.
+    const doc = await editar(
+      guardado({ total: 55, moneda: 'PEN', montoBase: 55, tipoCambio: 1, expenseType: 'factura' }),
+      { total: 200 }
+    )
+
+    expect(doc.montoBase).toBe(200)
+    expect(doc.montoReporte).toBeUndefined()
   })
 })
