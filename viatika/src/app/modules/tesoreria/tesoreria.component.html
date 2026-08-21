@@ -70,10 +70,13 @@
             <td class="px-5 py-3.5 text-right">
               <div class="flex items-center justify-end gap-2">
                 <a [routerLink]="['/mis-rendiciones', rep._id, 'detalle']"
-                  class="text-xs px-3 py-1.5 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors font-medium">
-                  Ver detalle
+                  class="text-xs px-3 py-1.5 border border-tertiary/30 text-secondary rounded-lg hover:bg-background transition-colors font-medium">
+                  Detalle
                 </a>
-                <app-button variant="success" size="sm" label="Ver información" (clicked)="openReimbursementModal(rep)" />
+                <button type="button" (click)="openReimbursementModal(rep)"
+                  class="text-xs px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium">
+                  Ver información
+                </button>
               </div>
             </td>
           </tr>
@@ -94,10 +97,13 @@
         </div>
         <div class="flex gap-2">
           <a [routerLink]="['/mis-rendiciones', rep._id, 'detalle']"
-            class="flex-1 h-10 flex items-center justify-center text-sm font-medium border border-primary/30 text-primary rounded-xl hover:bg-primary/5 transition-colors">
-            Ver detalle
+            class="text-xs px-3 py-1.5 border border-tertiary/30 text-secondary rounded-lg hover:bg-background transition-colors font-medium">
+            Detalle
           </a>
-          <app-button variant="success" [fullWidth]="true" label="Ver información" (clicked)="openReimbursementModal(rep)" />
+          <button type="button" (click)="openReimbursementModal(rep)"
+            class="flex-1 text-xs px-3 py-1.5 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium transition-colors">
+            Ver información
+          </button>
         </div>
       </div>
       }
