@@ -53,7 +53,7 @@ import { CreateSolicitudCajaChicaDto } from './dto/create-solicitud-caja-chica.d
 import { ApproverLevel } from '../../common/types/approver-level'
 import { resolveUserBankAccount } from '../../common/bank-account.util'
 import {
-  generarCodigoCorrelativo,
+  generarCodigoRendicion,
   maxSecuencia,
 } from '../../common/codigo-correlativo.util'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
@@ -595,28 +595,51 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * Código autoincremental único por empresa (RD-0001), atómico vía la
-   * colección `counters` y a prueba de que el contador quede por detrás de los
-   * códigos ya emitidos. Ver `generarCodigoCorrelativo`.
+   * Código de rendición con la nomenclatura de VD-123:
+   * `[Prefijo]-[Iniciales]-[Correlativo]`, ej. `RE-NMCB-0001`.
+   *
+   * - `RE`  rendición con solicitud de fondos previa (viático).
+   * - `RD`  rendición directa, sin solicitud previa.
+   * - `CCH` rendición de caja chica.
+   *
+   * El correlativo es por colaborador y por prefijo. Los códigos ANTERIORES
+   * (`RD-0001`, sin iniciales) NO se tocan: son los que la gente ya tiene
+   * anotados y los que viajaron en los archivos del banco. Conviven, y el
+   * contador nuevo arranca limpio porque su clave lleva el `userId`.
    */
-  private async generateDirectaCodigo(clientId: string): Promise<string> {
+  private async generateCodigoRendicion(
+    clientId: string,
+    userId: string,
+    prefijo: 'RE' | 'RD' | 'CCH'
+  ): Promise<string | undefined> {
     const cid = new Types.ObjectId(clientId)
-    return generarCodigoCorrelativo({
+    const usuario = await this.userService
+      .findEmailNameClient(userId)
+      .catch(() => null)
+    // Sin nombre no hay iniciales y el código sale con el prefijo solo: quedarse
+    // sin código sería peor que uno menos descriptivo.
+    return generarCodigoRendicion({
       counters: this.expenseReportModel.db.collection('counters') as any,
-      key: `rendicion-directa:${clientId}`,
-      prefijo: 'RD',
+      clientId,
+      userId,
+      nombreColaborador: usuario?.name ?? '',
+      prefijo,
       estaTomado: async codigo =>
         !!(await this.expenseReportModel.exists({ clientId: cid, codigo })),
-      ultimoEmitido: async () => {
+      ultimoEmitido: async prefijoConIniciales => {
         const docs = await this.expenseReportModel
-          .find({ clientId: cid, codigo: { $regex: '^RD-\\d+$' } })
+          .find({
+            clientId: cid,
+            codigo: { $regex: `^${prefijoConIniciales}-\d+$` },
+          })
           .select('codigo')
           .lean<{ codigo: string }[]>()
           .exec()
-        return maxSecuencia(docs.map(d => d.codigo), 'RD')
+        return maxSecuencia(docs.map(d => d.codigo), prefijoConIniciales)
       },
     })
   }
+
 
   async create(
     createExpenseReportDto: CreateExpenseReportDto,
@@ -631,9 +654,16 @@ export class ExpenseReportService implements OnModuleInit {
       createExpenseReportDto.gestion?.trim() ||
       'Rendición'
 
-    const codigo = isDirecta
-      ? await this.generateDirectaCodigo(createExpenseReportDto.clientId)
-      : undefined
+    // VD-123: la directa lleva RD y la caja chica CCH. La rendición que viene de
+    // una solicitud de fondos no pasa por aquí: se crea en `createViatico`.
+    const codigo =
+      isDirecta || isCajaChica
+        ? await this.generateCodigoRendicion(
+            createExpenseReportDto.clientId,
+            createExpenseReportDto.userId,
+            isDirecta ? 'RD' : 'CCH'
+          )
+        : undefined
 
     const assignedCoordinatorId = await this.resolveAssignedCoordinatorId(
       createExpenseReportDto.projectId,
@@ -5478,6 +5508,8 @@ export class ExpenseReportService implements OnModuleInit {
 
     const report = await this.expenseReportModel.create({
       type: 'viatico',
+      // VD-123: la caja chica lleva CCH en todo su recorrido, desde la solicitud.
+      codigo: await this.generateCodigoRendicion(clientId, userId, 'CCH'),
       isSolicitudCajaChica: true,
       cajaChicaNuevoPresupuesto: nuevoPresupuesto,
       cajaChicaPresupuestoAnterior: presupuestoVigente,
@@ -5574,6 +5606,10 @@ export class ExpenseReportService implements OnModuleInit {
 
     const report = await this.expenseReportModel.create({
       type: 'viatico',
+      // VD-123: `RE`, rendición con solicitud de fondos previa. Es el MISMO
+      // documento en sus dos fases (solicitud y luego rendición), así que el
+      // código se emite al crearlo y no cambia después.
+      codigo: await this.generateCodigoRendicion(clientId, userId, 'RE'),
       userId: new Types.ObjectId(userId),
       clientId: new Types.ObjectId(clientId),
       createdBy: new Types.ObjectId(userId),
