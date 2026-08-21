@@ -1,5 +1,8 @@
 <div class="px-4 sm:px-6 py-6 flex flex-col gap-5">
 
+  <!-- Aviso de suplencia por vacaciones (VD-124). -->
+  <app-suplencia-banner />
+
   <!-- Header -->
   <div>
     <h1 class="text-2xl font-bold text-secondary">Solicitud de Fondos</h1>
@@ -164,6 +167,13 @@
                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold" [class]="item.statusColor">
                   {{ item.statusLabel }}
                 </span>
+                <!-- Suplencia por vacaciones (VD-124). -->
+                @if (item.reemplazoDe) {
+                  <span class="block mt-1 text-[10px] font-semibold text-amber-800"
+                    [title]="'Firmas en lugar de ' + item.reemplazoDe + ', que esta de vacaciones'">
+                    En reemplazo de {{ item.reemplazoDe }}
+                  </span>
+                }
               </td>
               <td class="px-5 py-3.5">
                 <div class="flex items-center justify-end gap-1">

@@ -28,6 +28,12 @@ export const chainStepSchemaDefinition = {
   approved: { type: Boolean, default: false },
   approvedBy: { type: Types.ObjectId, ref: 'User', required: false },
   approvedAt: { type: Date, required: false },
+  /**
+   * Titular al que cubría quien firmó, cuando el paso lo resolvió un suplente
+   * de vacaciones (VD-124). `approvedBy` sigue siendo la persona real que hizo
+   * clic; este campo dice en nombre de quién. Ausente = firmó por sí mismo.
+   */
+  approvedOnBehalfOf: { type: Types.ObjectId, ref: 'User', required: false },
   _id: false,
 }
 

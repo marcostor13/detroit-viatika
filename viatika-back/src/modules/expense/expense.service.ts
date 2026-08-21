@@ -14,7 +14,7 @@ import {
 } from './dto/create-declaracion-jurada.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
 import { ConfigService } from '@nestjs/config'
-import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, ChainStep } from '../advance/approval-chain.util'
+import { findActionableChainStep, isChainFullyApproved, plainChainStep, describeChainStep, titularCubiertoEnPaso, ChainStep } from '../advance/approval-chain.util'
 import { Model, Types } from 'mongoose'
 import { Expense } from './entities/expense.entity'
 import { InjectModel } from '@nestjs/mongoose'
@@ -3692,7 +3692,8 @@ export class ExpenseService {
         'Este comprobante aún no tiene una cadena de aprobación asignada — la rendición debe estar enviada.'
       )
     }
-    const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName })
+    const cubreA = await this.userService.idsTitularesCubiertosPara(actor.userId, existing)
+    const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName, cubreA })
     if (stepIndex === -1) {
       throw new ForbiddenException('No te corresponde aprobar este comprobante en este momento')
     }
@@ -3706,6 +3707,7 @@ export class ExpenseService {
       approved: true,
       approvedBy: new Types.ObjectId(actor.userId),
       approvedAt: new Date(),
+      approvedOnBehalfOf: titularCubiertoEnPaso(step, actor.userId, cubreA),
     }
     const nextLevel = approvalLevel + 1
     const isComplete = isChainFullyApproved(chain)
@@ -3773,7 +3775,8 @@ export class ExpenseService {
     if (chain.length > 0) {
       // Aprobación en paralelo: cualquier aprobador de un paso aún pendiente
       // puede rechazar el comprobante completo — no solo "el turno actual".
-      const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName })
+      const cubreA = await this.userService.idsTitularesCubiertosPara(actor.userId, existing)
+      const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName, cubreA })
       if (stepIndex === -1) {
         throw new ForbiddenException('No te corresponde rechazar este comprobante en este momento')
       }
@@ -4008,12 +4011,16 @@ export class ExpenseService {
       .select('approverChain approvalLevel requiredLevels approvalHistory contabilidadStatus status createdBy expenseReportId total')
       .exec()
 
+    // Todos los comprobantes del lote son de la misma rendición, así que la
+    // suplencia se resuelve una vez y no una por comprobante.
+    const cubreA = await this.userService.idsTitularesCubiertosPara(actor.userId, report)
+
     let count = 0
     for (const expense of expenses) {
       const e = expense as any
       const chain: ChainStep[] = e.approverChain ?? []
       if (chain.length === 0 || e.status === 'rejected') continue
-      const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName })
+      const stepIndex = findActionableChainStep({ chain, actorId: actor.userId, actorRole: actor.roleName, cubreA })
       if (stepIndex === -1) continue
 
       const step = chain[stepIndex]
@@ -4025,6 +4032,7 @@ export class ExpenseService {
         approved: true,
         approvedBy: new Types.ObjectId(actor.userId),
         approvedAt: new Date(),
+        approvedOnBehalfOf: titularCubiertoEnPaso(step, actor.userId, cubreA),
       }
       const nextLevel = approvalLevel + 1
       const isComplete = isChainFullyApproved(chain)

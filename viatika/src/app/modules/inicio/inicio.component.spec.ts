@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 import { InicioComponent } from './inicio.component';
 import { UserStateService } from '../../services/user-state.service';
@@ -53,6 +55,9 @@ describe('InicioComponent — rendiciones por aprobar', () => {
     TestBed.configureTestingModule({
       imports: [InicioComponent],
       providers: [
+        // SuplenciaService (VD-124) inyecta HttpClient al crearse el componente.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: UserStateService, useValue: userState },
         { provide: ExpenseReportsService, useValue: jasmine.createSpyObj('ExpenseReportsService', ['findAllByClient', 'approveViatico', 'findPendingReimbursements']) },
         { provide: AdvanceService, useValue: jasmine.createSpyObj('AdvanceService', ['findOrphaned', 'approve']) },

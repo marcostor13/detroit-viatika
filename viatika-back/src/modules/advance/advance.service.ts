@@ -1392,6 +1392,7 @@ export class AdvanceService implements OnModuleInit {
         approvalLevel: advance.approvalLevel,
         actorId,
         actorRole,
+        cubreA: await this.userService.idsTitularesCubiertosPara(actorId, advance),
       })
     ) {
       throw new ForbiddenException(
@@ -1467,6 +1468,7 @@ export class AdvanceService implements OnModuleInit {
         approvalLevel: advance.approvalLevel,
         actorId,
         actorRole,
+        cubreA: await this.userService.idsTitularesCubiertosPara(actorId, advance),
       })
     ) {
       throw new ForbiddenException('No tienes permiso para rechazar esta solicitud')

@@ -11,6 +11,8 @@ import {
   buildSolicitudChain,
   buildRendicionChain,
   buildCajaChicaChain,
+  identidadesDelActor,
+  titularCubiertoEnPaso,
   ChainStep,
   ChainProject,
 } from './approval-chain.util'
@@ -598,6 +600,150 @@ describe('approval-chain.util', () => {
             ownerApproverLevels: [{ level: 2, userIds: [o2] }],
           })
         ).toThrow(BadRequestException)
+      })
+    })
+  })
+
+  // Suplencia por vacaciones (VD-124). El motor no se entera de vacaciones ni
+  // de fechas: solo recibe la lista de titulares que el actor cubre. Por eso
+  // alcanza a TODAS las etapas — todas preguntan lo mismo.
+  describe('suplencia por vacaciones', () => {
+    const titular = a1
+    const suplente = new Types.ObjectId()
+
+    const paso = (approverIds: Types.ObjectId[], approved = false): ChainStep => ({
+      level: 1,
+      projectId,
+      projectRole: 'principal',
+      approverIds,
+      approved,
+    })
+
+    describe('identidadesDelActor', () => {
+      it('sin suplencia devuelve solo al actor', () => {
+        expect(identidadesDelActor(suplente.toString())).toEqual([
+          suplente.toString(),
+        ])
+        expect(identidadesDelActor(suplente.toString(), [])).toEqual([
+          suplente.toString(),
+        ])
+      })
+
+      it('la identidad propia va primero y no se pierde', () => {
+        const ids = identidadesDelActor(suplente.toString(), [titular.toString()])
+        expect(ids[0]).toBe(suplente.toString())
+        expect(ids).toContain(titular.toString())
+      })
+
+      it('no repite si el actor también figura como titular cubierto', () => {
+        const ids = identidadesDelActor(suplente.toString(), [
+          suplente.toString(),
+          titular.toString(),
+        ])
+        expect(ids).toHaveLength(2)
+      })
+    })
+
+    describe('findActionableChainStep', () => {
+      it('el suplente puede actuar sobre el paso del titular', () => {
+        const chain = [paso([titular])]
+        expect(
+          findActionableChainStep({
+            chain,
+            actorId: suplente.toString(),
+            actorRole: ROLES.COLABORADOR,
+          })
+        ).toBe(-1)
+        expect(
+          findActionableChainStep({
+            chain,
+            actorId: suplente.toString(),
+            actorRole: ROLES.COLABORADOR,
+            cubreA: [titular.toString()],
+          })
+        ).toBe(0)
+      })
+
+      // Es lo que hace que la suplencia sirva para lo ya enviado: la cadena
+      // sellada sigue nombrando al titular y no se toca.
+      it('no necesita que la cadena mencione al suplente', () => {
+        const chain = [paso([a2]), paso([titular])]
+        expect(
+          findActionableChainStep({
+            chain,
+            actorId: suplente.toString(),
+            actorRole: ROLES.COLABORADOR,
+            cubreA: [titular.toString()],
+          })
+        ).toBe(1)
+        expect(chain[1].approverIds.map(String)).toEqual([titular.toString()])
+      })
+
+      it('el titular sigue pudiendo firmar durante su propia vacación', () => {
+        expect(
+          findActionableChainStep({
+            chain: [paso([titular])],
+            actorId: titular.toString(),
+            actorRole: ROLES.COLABORADOR,
+          })
+        ).toBe(0)
+      })
+
+      it('ignora los pasos ya aprobados', () => {
+        expect(
+          findActionableChainStep({
+            chain: [paso([titular], true)],
+            actorId: suplente.toString(),
+            actorRole: ROLES.COLABORADOR,
+            cubreA: [titular.toString()],
+          })
+        ).toBe(-1)
+      })
+    })
+
+    describe('canActOnChain', () => {
+      it('acepta al suplente en el nivel del titular', () => {
+        const chain = [paso([titular])]
+        expect(
+          canActOnChain({
+            chain,
+            approvalLevel: 0,
+            actorId: suplente.toString(),
+            actorRole: ROLES.COLABORADOR,
+          })
+        ).toBe(false)
+        expect(
+          canActOnChain({
+            chain,
+            approvalLevel: 0,
+            actorId: suplente.toString(),
+            actorRole: ROLES.COLABORADOR,
+            cubreA: [titular.toString()],
+          })
+        ).toBe(true)
+      })
+    })
+
+    describe('titularCubiertoEnPaso', () => {
+      it('registra en nombre de quién firmó el suplente', () => {
+        const t = titularCubiertoEnPaso(paso([titular]), suplente.toString(), [
+          titular.toString(),
+        ])
+        expect(t?.toString()).toBe(titular.toString())
+      })
+
+      // La suplencia es aditiva: si el actor ya era aprobador por derecho
+      // propio, firmó como él mismo y no "en nombre de" nadie.
+      it('no marca reemplazo cuando el actor es aprobador por derecho propio', () => {
+        expect(
+          titularCubiertoEnPaso(paso([suplente, titular]), suplente.toString(), [
+            titular.toString(),
+          ])
+        ).toBeUndefined()
+      })
+
+      it('es indefinido sin suplencia', () => {
+        expect(titularCubiertoEnPaso(paso([titular]), titular.toString())).toBeUndefined()
       })
     })
   })

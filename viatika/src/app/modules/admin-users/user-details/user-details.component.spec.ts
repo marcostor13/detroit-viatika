@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { UserDetailsComponent } from './user-details.component';
@@ -34,6 +36,9 @@ describe('UserDetailsComponent', () => {
     TestBed.configureTestingModule({
       imports: [UserDetailsComponent],
       providers: [
+        // SuplenciaService (VD-124) inyecta HttpClient al crearse el componente.
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: ActivatedRoute, useValue: { snapshot: { params: { id } } } },
         { provide: Router, useValue: router },
         { provide: AdminUsersService, useValue: adminUsersService },

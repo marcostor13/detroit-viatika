@@ -51,6 +51,9 @@ const mockUserService = {
   findContabilidadRecipients: jest.fn().mockResolvedValue([]),
   findTesoreriaNotifyRecipients: jest.fn().mockResolvedValue([]),
   isEmailEnabled: jest.fn().mockResolvedValue(true),
+  idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+  idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+  resolverSuplenteVigente: jest.fn().mockResolvedValue(null),
 }
 
 describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
@@ -563,6 +566,85 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
     expect(mockUserService.findOne).not.toHaveBeenCalled()
   })
 
+  // Suplencia por vacaciones (VD-124): los avisos son la mitad de la
+  // funcionalidad. La cadena se sella con el id del TITULAR y nunca se
+  // reescribe, así que sin expandir los destinatarios el suplente puede firmar
+  // pero jamás se entera de que tiene algo pendiente.
+  describe('destinatarios con suplencia por vacaciones', () => {
+    const titularId = new Types.ObjectId()
+    const suplenteId = new Types.ObjectId()
+
+    beforeEach(() => {
+      mockUserService.findEmailNameClient.mockImplementation(async (id: string) =>
+        id === String(suplenteId)
+          ? { name: 'Suplente', email: 'suplente@test.com', clientId }
+          : { name: 'Titular', email: 'titular@test.com', clientId }
+      )
+      mockUserService.isEmailEnabled.mockResolvedValue(true)
+    })
+
+    it('el correo a los aprobadores incluye al suplente, sin quitar al titular', async () => {
+      mockUserService.resolverSuplenteVigente.mockImplementation(async (id: string) =>
+        id === String(titularId)
+          ? { _id: String(suplenteId), name: 'Suplente', email: 'suplente@test.com' }
+          : null
+      )
+
+      const recipients = await (service as any).resolveViaticoApproverRecipients({
+        viaticoApproverChain: [{ approverIds: [titularId] }],
+      })
+
+      const correos = recipients.map((r: any) => r.email).sort()
+      expect(correos).toEqual(['suplente@test.com', 'titular@test.com'])
+    })
+
+    it('sin suplencia vigente los destinatarios no cambian', async () => {
+      mockUserService.resolverSuplenteVigente.mockResolvedValue(null)
+
+      const recipients = await (service as any).resolveViaticoApproverRecipients({
+        viaticoApproverChain: [{ approverIds: [titularId] }],
+      })
+
+      expect(recipients.map((r: any) => r.email)).toEqual(['titular@test.com'])
+    })
+
+    // `excludeUserIds` se vuelve a aplicar DESPUÉS de expandir: si no, un
+    // suplente que además es el colaborador que rinde recibiría el aviso de su
+    // propia rendición.
+    it('respeta las exclusiones también sobre el suplente agregado', async () => {
+      mockUserService.resolverSuplenteVigente.mockImplementation(async (id: string) =>
+        id === String(titularId)
+          ? { _id: String(suplenteId), name: 'Suplente', email: 'suplente@test.com' }
+          : null
+      )
+
+      const recipients = await (service as any).resolveViaticoApproverRecipients(
+        { viaticoApproverChain: [{ approverIds: [titularId] }] },
+        { excludeUserIds: [String(suplenteId)] }
+      )
+
+      expect(recipients.map((r: any) => r.email)).toEqual(['titular@test.com'])
+    })
+
+    it('la notificación del comprobante llega al suplente y al titular', async () => {
+      mockUserService.resolverSuplenteVigente.mockImplementation(async (id: string) =>
+        id === String(titularId)
+          ? { _id: String(suplenteId), name: 'Suplente', email: 'suplente@test.com' }
+          : null
+      )
+      mockNotificationsService.create.mockClear()
+
+      await service.notifyExpensePendingApprovers(
+        { _id: new Types.ObjectId(), total: 100, expenseReportId: new Types.ObjectId() },
+        { level: 1, projectId: new Types.ObjectId(), projectRole: 'principal', approverIds: [titularId] } as any
+      )
+
+      const avisados = mockNotificationsService.create.mock.calls.map((c: any[]) => c[0].userId)
+      expect(avisados).toContain(String(titularId))
+      expect(avisados).toContain(String(suplenteId))
+    })
+  })
+
   describe('registerAffidavit — Fase 5 declaración jurada', () => {
     afterEach(() => {
       jest.restoreAllMocks()
@@ -654,6 +736,9 @@ describe('ExpenseReportService — Fase 8 (cierre definitivo)', () => {
     findAccountingRecipientsWithIds: jest.fn().mockResolvedValue([]),
     findTesoreriaRecipientsWithIds: jest.fn().mockResolvedValue([]),
     isEmailEnabled: jest.fn().mockResolvedValue(true),
+    idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+    idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+    resolverSuplenteVigente: jest.fn().mockResolvedValue(null),
   }
 
   function makeReportDoc(overrides: Record<string, unknown> = {}) {
@@ -1228,6 +1313,9 @@ describe('ExpenseReportService — aprobación de SOLICITUD de viático (regla 1
     findEmailNameClient: jest.fn().mockResolvedValue(null),
     findViaticoAccountingNotifyRecipients: jest.fn().mockResolvedValue([]),
     isEmailEnabled: jest.fn().mockResolvedValue(false),
+    idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+    idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+    resolverSuplenteVigente: jest.fn().mockResolvedValue(null),
   }
   const mockNotificationsServiceLocal = { create: jest.fn().mockResolvedValue(undefined) }
   const mockAdvanceServiceLocal = {}
@@ -1405,7 +1493,12 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     findManyByIds: jest.Mock
     findCajaChicaResponsibleIds: jest.Mock
   }
-  let mockUserServiceLocal: { findTransactionalProfile: jest.Mock }
+  let mockUserServiceLocal: {
+    findTransactionalProfile: jest.Mock
+    idsTitularesCubiertosPor: jest.Mock
+    idsTitularesCubiertosPara: jest.Mock
+    resolverSuplenteVigente: jest.Mock
+  }
   let mockFondoService: {
     findVivoByResponsible: jest.Mock
     registrarCargo: jest.Mock
@@ -1456,7 +1549,13 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
       findManyByIds: jest.fn().mockResolvedValue([]),
       findCajaChicaResponsibleIds: jest.fn().mockResolvedValue([]),
     }
-    mockUserServiceLocal = { findTransactionalProfile: jest.fn().mockResolvedValue(null) }
+    mockUserServiceLocal = {
+      findTransactionalProfile: jest.fn().mockResolvedValue(null),
+      // Sin suplencias vigentes (VD-124): la bandeja se arma igual que antes.
+      idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+      idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+      resolverSuplenteVigente: jest.fn().mockResolvedValue(null),
+    }
     mockFondoService = {
       findVivoByResponsible: jest.fn().mockResolvedValue(null),
       registrarCargo: jest.fn().mockResolvedValue({}),
@@ -1990,7 +2089,15 @@ describe('ExpenseReportService — findExpensesPaginated (búsqueda por RUC, VD-
         { provide: getModelToken(CajaChicaReport.name), useValue: { countDocuments: jest.fn() } },
         { provide: EmailService, useValue: {} },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
-        { provide: UserService, useValue: {} },
+        // Sin suplencias vigentes: estas pruebas son del motor de cadena puro
+        // (VD-124 no cambia nada cuando nadie está de vacaciones).
+        {
+          provide: UserService,
+          useValue: {
+            idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+            idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+          },
+        },
         { provide: AdvanceService, useValue: {} },
         { provide: UploadService, useValue: {} },
         {
@@ -2099,7 +2206,10 @@ describe('ExpenseReportService — findExpensesPaginated (búsqueda por RUC, VD-
       const [chainClause, notRejected] = filtroDe().$and!
       const elem = (chainClause['approverChain'] as any).$elemMatch
       expect(elem.approved).toEqual({ $ne: true })
-      expect(String(elem.approverIds)).toBe(actorUserId)
+      // VD-124: la consulta pasó de `= actor` a `$in [identidades]` para incluir
+      // a los titulares que el actor cubre por vacaciones. Sin suplencias
+      // vigentes la lista es solo él, que es este caso.
+      expect((elem.approverIds.$in as any[]).map(String)).toEqual([actorUserId])
       expect(notRejected).toEqual({ status: { $ne: 'rejected' } })
     })
 
@@ -2143,7 +2253,15 @@ describe('ExpenseReportService — isReportSinOrdenTrabajo', () => {
         { provide: getModelToken(CajaChicaReport.name), useValue: { countDocuments: jest.fn() } },
         { provide: EmailService, useValue: {} },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
-        { provide: UserService, useValue: {} },
+        // Sin suplencias vigentes: estas pruebas son del motor de cadena puro
+        // (VD-124 no cambia nada cuando nadie está de vacaciones).
+        {
+          provide: UserService,
+          useValue: {
+            idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+            idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+          },
+        },
         { provide: AdvanceService, useValue: {} },
         { provide: UploadService, useValue: {} },
         {

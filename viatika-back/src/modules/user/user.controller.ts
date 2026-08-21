@@ -25,6 +25,7 @@ import { ROLES } from '../auth/enums/roles.enum'
 import { CreateUserDto } from './dto/create-user.dto'
 import { Types } from 'mongoose'
 import { UpdateUserDto, UpdatePermissionsDto } from './dto/update-user.dto'
+import { SetVacacionesDto } from './dto/set-vacaciones.dto'
 import { ParseObjectIdPipe } from './pipes/parse-objectid.pipe'
 import { AuditLogService } from '../audit-log/audit-log.service'
 import { ProjectService } from '../project/project.service'
@@ -157,6 +158,143 @@ export class UserController {
     if (body.name?.trim()) updateData.name = body.name.trim()
     if (body.profilePic !== undefined) updateData.profilePic = body.profilePic
     return await this.userService.update(userId, updateData)
+  }
+
+  // --- Suplencia por vacaciones (VD-124) -----------------------------------
+  //
+  // Las rutas `profile/...` van declaradas ANTES que `:id/...`: Express casa
+  // por orden de registro y `profile` entraría como `:id` si fuera al revés.
+
+  /**
+   * A quién cubre ahora mismo el usuario y qué suplencia tiene programada él.
+   * El front lo usa para el aviso "estás aprobando en reemplazo de X", que es
+   * lo que evita que alguien firme sin saber en nombre de quién.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('profile/suplencias')
+  async getMisSuplencias(@Request() req: any) {
+    const userId = (req.user._id || req.user.sub).toString()
+    const clientId = req.user?.clientId?.toString()
+    const [cubroA, yo] = await Promise.all([
+      this.userService.findTitularesCubiertosPor(userId, clientId),
+      this.userService.findOne(userId),
+    ])
+    const vacaciones = yo?.vacaciones ?? null
+    if (!vacaciones) return { cubroA, vacaciones: null }
+    // El nombre del suplente viaja resuelto: si no, la pantalla tendría que
+    // cargar la lista completa de colaboradores solo para traducir un id, y al
+    // refrescar —cuando esa lista todavía no está— mostraba "otro usuario".
+    const suplente = await this.userService.findEmailNameClient(
+      vacaciones.suplenteId.toString()
+    )
+    // Campo por campo, NUNCA `{ ...vacaciones }`: es un subdocumento de Mongoose
+    // y el spread copia sus internos (`$__parent`), que arrastran el documento
+    // completo del usuario —con el hash de la contraseña— a la respuesta.
+    // Misma trampa que documenta `plainChainStep` en approval-chain.util.ts.
+    return {
+      cubroA,
+      vacaciones: {
+        desde: vacaciones.desde,
+        hasta: vacaciones.hasta,
+        suplenteId: vacaciones.suplenteId.toString(),
+        suplenteName: suplente?.name ?? null,
+      },
+    }
+  }
+
+  /**
+   * Suplencias vigentes de la empresa. Cualquier usuario autenticado puede
+   * leerla: la necesitan el colaborador que rinde y Contabilidad para saber
+   * quién va a firmar de verdad, no solo el suplente. Devuelve nombres, no
+   * fechas ni motivos.
+   */
+  @UseGuards(AuthGuard('jwt'))
+  @Get('suplencias-vigentes')
+  async getSuplenciasVigentes(@Request() req: any) {
+    const clientId = req.user?.clientId?.toString()
+    if (!clientId) return []
+    return this.userService.findSuplenciasVigentes(clientId)
+  }
+
+  /** El propio aprobador programa sus vacaciones y deja quién lo reemplaza. */
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('profile/vacaciones')
+  async setMisVacaciones(@Body() dto: SetVacacionesDto, @Request() req: any) {
+    const userId = (req.user._id || req.user.sub).toString()
+    const result = await this.userService.setVacaciones(userId, dto)
+    this.auditLogService.log({
+      userId,
+      userName: req.user.name || req.user.email,
+      action: 'set_vacaciones',
+      module: 'usuarios',
+      entityId: userId,
+      details: `Vacaciones ${dto.desde} a ${dto.hasta}, suplente ${dto.suplenteId}`,
+      clientId: req.user.clientId,
+    })
+    return result
+  }
+
+  /** Vuelta anticipada: el titular retoma sus aprobaciones. */
+  @UseGuards(AuthGuard('jwt'))
+  @Delete('profile/vacaciones')
+  async borrarMisVacaciones(@Request() req: any) {
+    const userId = (req.user._id || req.user.sub).toString()
+    const result = await this.userService.setVacaciones(userId, null)
+    this.auditLogService.log({
+      userId,
+      userName: req.user.name || req.user.email,
+      action: 'clear_vacaciones',
+      module: 'usuarios',
+      entityId: userId,
+      details: 'El usuario terminó su período de vacaciones',
+      clientId: req.user.clientId,
+    })
+    return result
+  }
+
+  /**
+   * Un administrador programa las vacaciones de otro. Hace falta porque el
+   * caso típico es justamente que la persona se fue sin dejarlo configurado.
+   */
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD)
+  @Patch(':id/vacaciones')
+  async setVacaciones(
+    @Param('id', ParseObjectIdPipe) id: Types.ObjectId,
+    @Body() dto: SetVacacionesDto,
+    @Request() req: any
+  ) {
+    const result = await this.userService.setVacaciones(id.toString(), dto)
+    this.auditLogService.log({
+      userId: req.user._id || req.user.sub,
+      userName: req.user.name || req.user.email,
+      action: 'set_vacaciones',
+      module: 'usuarios',
+      entityId: id.toString(),
+      details: `Vacaciones ${dto.desde} a ${dto.hasta}, suplente ${dto.suplenteId}`,
+      clientId: req.user.clientId,
+    })
+    return result
+  }
+
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD)
+  @Delete(':id/vacaciones')
+  async borrarVacaciones(
+    @Param('id', ParseObjectIdPipe) id: Types.ObjectId,
+    @Request() req: any
+  ) {
+    const result = await this.userService.setVacaciones(id.toString(), null)
+    this.auditLogService.log({
+      userId: req.user._id || req.user.sub,
+      userName: req.user.name || req.user.email,
+      action: 'clear_vacaciones',
+      module: 'usuarios',
+      entityId: id.toString(),
+      details: 'Se dio por terminado el período de vacaciones',
+      clientId: req.user.clientId,
+    })
+    return result
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)

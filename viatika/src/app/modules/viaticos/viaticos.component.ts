@@ -13,6 +13,8 @@ import {
   VIATICO_REPORT_STATUS_COLORS,
 } from '../../interfaces/expense-report.interface';
 import { monedaSymbol } from '../../constants/moneda';
+import { SuplenciaBannerComponent } from '../../components/suplencia-banner/suplencia-banner.component';
+import { SuplenciaService } from '../../services/suplencia.service';
 
 type UnifiedSolicitudItem = {
   _id: string;
@@ -37,18 +39,21 @@ type UnifiedSolicitudItem = {
   pendingApproverName: string;
   approvalLevel: number;
   requiredLevels: number;
+  /** Titular al que el usuario cubre por vacaciones en esta solicitud (VD-124), o null. */
+  reemplazoDe: string | null;
   raw: IExpenseReport;
 };
 
 @Component({
   selector: 'app-viaticos',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, SuplenciaBannerComponent],
   templateUrl: './viaticos.component.html',
 })
 export class ViaticosComponent implements OnInit {
   private expenseReportsService = inject(ExpenseReportsService);
   private userState = inject(UserStateService);
+  private suplenciaService = inject(SuplenciaService);
   private notifications = inject(NotificationService);
   private router = inject(Router);
   private fb = inject(FormBuilder);
@@ -102,7 +107,9 @@ export class ViaticosComponent implements OnInit {
    */
   private hasActionableStep(chain: IChainStep[] | undefined): boolean {
     return (chain ?? []).some(
-      (step: any) => !step.approved && step.approverIds.some((a: any) => (typeof a === 'object' ? a._id : a) === this.currentUserId)
+      // Suplencia por vacaciones (VD-124): tambien cuentan los titulares que
+      // este usuario cubre mientras dure el periodo.
+      (step: any) => !step.approved && this.suplenciaService.esAprobadorDelPaso(step, this.currentUserId)
     );
   }
 
@@ -178,6 +185,12 @@ export class ViaticosComponent implements OnInit {
         pendingApproverName: v.status === 'pending_contabilidad' ? 'Contabilidad' : this.pendingStepApproverNames(v.viaticoApproverChain),
         approvalLevel,
         requiredLevels: v.viaticoRequiredLevels ?? 1,
+        // Suplencia por vacaciones (VD-124): la cadena nombra al titular, la
+        // lista tiene que decir de parte de quien actua el suplente.
+        reemplazoDe: this.suplenciaService.titularCubiertoEnCadena(
+          v.viaticoApproverChain,
+          this.currentUserId
+        ),
         raw: v,
       });
     }

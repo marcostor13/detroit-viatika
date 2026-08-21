@@ -13,6 +13,12 @@ import { RoleDocument } from '../role/entities/role.entity'
 import * as bcrypt from 'bcryptjs'
 import { CreateUserDto } from './dto/create-user.dto'
 import { ApproverLevel } from '../../common/types/approver-level'
+import {
+  Suplencia,
+  aFechaLocal,
+  normalizarSuplencia,
+  suplenciaVigente,
+} from '../../common/types/suplencia'
 
 export interface IUser {
   email: string
@@ -69,6 +75,8 @@ export interface IUserResponse {
   }
   profilePic?: string
   emailNotificationsEnabled?: boolean
+  /** Vacaciones programadas y su suplente (VD-124). */
+  vacaciones?: Suplencia
 }
 
 @Injectable()
@@ -297,6 +305,7 @@ export class UserService {
       mustChangePassword: !!(user as any).mustChangePassword,
       profilePic: (user as any).profilePic,
       emailNotificationsEnabled: !!(user as any).emailNotificationsEnabled,
+      vacaciones: (user as any).vacaciones,
     }
   }
 
@@ -483,31 +492,84 @@ export class UserService {
     return { data, total, page, pages, limit }
   }
 
+  /**
+   * `permissions` se escribe CLAVE POR CLAVE (`permissions.modules`, …), nunca
+   * como objeto completo: `findByIdAndUpdate(id, { permissions })` se traduce a
+   * `$set: { permissions: <objeto> }`, que REEMPLAZA el subdocumento entero y
+   * borra toda clave ausente del DTO. Todos los campos de
+   * `UpdatePermissionsDto` son opcionales — el contrato ya era parcial y solo
+   * la escritura era total.
+   *
+   * Eso hacía que cada corrida de `cargar-detroit-2026-08.mjs` (manda 6 de las
+   * 8 claves) borrara `otrosGastosOpcionales` y `permitirFechasAnteriores`, y
+   * que cualquier PATCH parcial contra `/user/:id/permissions` se llevara por
+   * delante centros de costo y aprobadores. `configurar-permisos-roles.mjs`
+   * documenta la trampa y la esquiva releyendo y reenviando el objeto entero;
+   * con la escritura parcial ese rodeo deja de ser obligatorio.
+   */
   async update(id: string, updateUserDto: UpdateUserDto) {
-    const updateData: any = { ...updateUserDto }
+    const { permissions, ...camposRaiz } = updateUserDto
+    const updateData: any = { ...camposRaiz }
+    const unset: Record<string, ''> = {}
 
-    if (updateUserDto.permissions?.primaryProjectId) {
-      const projectIds = updateUserDto.permissions.projectIds ?? []
-      if (!projectIds.includes(updateUserDto.permissions.primaryProjectId)) {
-        throw new BadRequestException(
-          'El centro de costo principal debe estar entre los centros de costo asignados.'
-        )
+    // Una sola lectura del documento actual, compartida por las validaciones
+    // que necesitan el estado previo (clientId, centros de costo ya asignados).
+    let existente: any | null | undefined
+    const cargarExistente = async () => {
+      if (existente === undefined) {
+        existente = await this.userModel
+          .findById(id)
+          .select('clientId permissions')
+          .exec()
       }
+      return existente
     }
 
-    if (updateUserDto.permissions?.approverLevels !== undefined) {
-      let clientIdForLevels: string | null = updateUserDto.clientId ?? null
-      if (!clientIdForLevels) {
-        const existing = await this.userModel.findById(id).select('clientId').exec()
-        clientIdForLevels = existing?.clientId?.toString() ?? null
+    if (permissions) {
+      // El principal se valida contra los centros de costo EFECTIVOS: los del
+      // payload si vienen y, si no, los ya guardados. Con escritura parcial un
+      // PATCH legítimo puede cambiar el principal sin repetir la lista entera.
+      if (permissions.primaryProjectId) {
+        const projectIds =
+          permissions.projectIds ??
+          ((await cargarExistente())?.permissions?.projectIds ?? []).map(String)
+        if (!projectIds.includes(permissions.primaryProjectId)) {
+          throw new BadRequestException(
+            'El centro de costo principal debe estar entre los centros de costo asignados.'
+          )
+        }
       }
-      updateData.permissions = {
-        ...updateUserDto.permissions,
-        approverLevels: await this.validateApproverLevels(
-          updateUserDto.permissions.approverLevels,
-          clientIdForLevels,
-          id
-        ),
+
+      // Los niveles propios (regla 1.10) son la única clave que no se copia
+      // tal cual: se validan contra la empresa antes de escribirse.
+      const nivelesValidados =
+        permissions.approverLevels !== undefined
+          ? await this.validateApproverLevels(
+              permissions.approverLevels,
+              updateUserDto.clientId ??
+                (await cargarExistente())?.clientId?.toString() ??
+                null,
+              id
+            )
+          : undefined
+
+      for (const [clave, valor] of Object.entries(permissions)) {
+        if (valor === undefined) continue
+        updateData[`permissions.${clave}`] =
+          clave === 'approverLevels' ? nivelesValidados : valor
+      }
+
+      // Sacar de la lista el centro de costo que era principal SIN mandar
+      // `primaryProjectId` es justo lo que hace el formulario (lo pone en
+      // `undefined` y JSON.stringify lo omite). Con escritura parcial la clave
+      // ausente ya no borra nada, así que el principal huérfano hay que
+      // quitarlo a mano: si no, el usuario quedaría apuntando a un centro de
+      // costo que ya no tiene asignado.
+      if (permissions.projectIds && permissions.primaryProjectId === undefined) {
+        const actual = (await cargarExistente())?.permissions?.primaryProjectId
+        if (actual && !permissions.projectIds.includes(String(actual))) {
+          unset['permissions.primaryProjectId'] = ''
+        }
       }
     }
 
@@ -531,11 +593,8 @@ export class UserService {
     if ('approverIds' in updateUserDto && updateUserDto.approverIds !== undefined) {
       let clientIdForValidation = updateUserDto.clientId ?? null
       if (!clientIdForValidation) {
-        const existing = await this.userModel
-          .findById(id)
-          .select('clientId')
-          .exec()
-        clientIdForValidation = existing?.clientId?.toString() ?? null
+        clientIdForValidation =
+          (await cargarExistente())?.clientId?.toString() ?? null
       }
       const chain = await this.validateApproverChain(
         updateUserDto.approverIds,
@@ -546,7 +605,13 @@ export class UserService {
     }
 
     return this.userModel
-      .findByIdAndUpdate(id, updateData, { new: true })
+      .findByIdAndUpdate(
+        id,
+        Object.keys(unset).length
+          ? { $set: updateData, $unset: unset }
+          : updateData,
+        { new: true }
+      )
       .populate('roleId')
       .populate('clientId')
       .exec()
@@ -554,6 +619,232 @@ export class UserService {
 
   delete(id: string) {
     return this.userModel.findByIdAndDelete(id).exec()
+  }
+
+  // --- Suplencia por vacaciones (VD-124) -----------------------------------
+
+  /**
+   * Programa (o borra, con `datos = null`) las vacaciones de un aprobador y a
+   * quién le deja firmando.
+   *
+   * El suplente tiene que ser alguien de la misma empresa: la cadena de
+   * aprobación vive dentro de un cliente y dejar entrar a un usuario de otro
+   * abriría documentos de una empresa a gente de otra.
+   */
+  async setVacaciones(
+    titularId: string,
+    datos: { desde: string | Date; hasta: string | Date; suplenteId: string } | null
+  ): Promise<UserDocument> {
+    const titular = await this.userModel
+      .findById(titularId)
+      .select('clientId name')
+      .exec()
+    if (!titular) throw new NotFoundException('Usuario no encontrado')
+
+    if (datos === null) {
+      const limpio = await this.userModel
+        .findByIdAndUpdate(titularId, { $unset: { vacaciones: '' } }, { new: true })
+        .exec()
+      return limpio as UserDocument
+    }
+
+    if (!Types.ObjectId.isValid(datos.suplenteId)) {
+      throw new BadRequestException('El suplente indicado no es válido.')
+    }
+    if (datos.suplenteId === titularId) {
+      throw new BadRequestException('Un usuario no puede ser su propio suplente.')
+    }
+
+    // `aFechaLocal` y no `new Date(...)`: un `YYYY-MM-DD` se parsea como
+    // medianoche UTC y en Lima retrocede un dia. Tiene que usarse tambien aqui,
+    // en la validacion, porque estos mismos Date son los que se le pasan a
+    // `normalizarSuplencia` — si llegan corridos, ella solo los clona.
+    const desde = aFechaLocal(datos.desde)
+    const hasta = aFechaLocal(datos.hasta)
+    if (Number.isNaN(desde.getTime()) || Number.isNaN(hasta.getTime())) {
+      throw new BadRequestException('Las fechas de vacaciones no son válidas.')
+    }
+    if (hasta < desde) {
+      throw new BadRequestException(
+        'La fecha de fin de vacaciones no puede ser anterior a la de inicio.'
+      )
+    }
+
+    const suplente = await this.userModel
+      .findById(datos.suplenteId)
+      .select('clientId isActive name')
+      .exec()
+    if (!suplente) throw new NotFoundException('El suplente indicado no existe.')
+    if (!suplente.isActive) {
+      throw new BadRequestException('El suplente indicado está inactivo.')
+    }
+    if (String(suplente.clientId) !== String(titular.clientId)) {
+      throw new BadRequestException(
+        'El suplente debe pertenecer a la misma empresa que el titular.'
+      )
+    }
+
+    const vacaciones = normalizarSuplencia({
+      desde,
+      hasta,
+      suplenteId: datos.suplenteId,
+    })
+    const actualizado = await this.userModel
+      .findByIdAndUpdate(titularId, { $set: { vacaciones } }, { new: true })
+      .exec()
+    return actualizado as UserDocument
+  }
+
+  /**
+   * Titulares que este usuario está cubriendo AHORA por suplencia de
+   * vacaciones. Es la consulta que alimenta a `identidadesDelActor` en el motor
+   * de cadena, así que corre en cada acción de aprobación y va indexada
+   * (`vacaciones.suplenteId + desde + hasta`).
+   *
+   * UN SOLO SALTO a propósito: si un titular cubierto está a su vez de
+   * vacaciones, no se sigue la cadena hacia su suplente. Encadenar suplencias
+   * abre ciclos y vuelve imposible explicarle a alguien por qué le apareció un
+   * documento que no reconoce.
+   */
+  async findTitularesCubiertosPor(
+    suplenteId: string,
+    clientId?: string,
+    ref: Date = new Date()
+  ): Promise<{ _id: string; name: string }[]> {
+    if (!Types.ObjectId.isValid(suplenteId)) return []
+    const filtro: Record<string, unknown> = {
+      'vacaciones.suplenteId': new Types.ObjectId(suplenteId),
+      'vacaciones.desde': { $lte: ref },
+      'vacaciones.hasta': { $gte: ref },
+      isActive: true,
+    }
+    if (clientId && Types.ObjectId.isValid(clientId)) {
+      filtro.clientId = new Types.ObjectId(clientId)
+    }
+    const titulares = await this.userModel
+      .find(filtro)
+      .select('_id name')
+      .lean<{ _id: Types.ObjectId; name: string }[]>()
+      .exec()
+    return titulares.map(t => ({ _id: String(t._id), name: t.name }))
+  }
+
+  /** Solo los ids, que es lo que necesita el motor de cadena. */
+  async idsTitularesCubiertosPor(
+    suplenteId: string,
+    clientId?: string,
+    ref: Date = new Date()
+  ): Promise<string[]> {
+    return (await this.findTitularesCubiertosPor(suplenteId, clientId, ref)).map(
+      t => t._id
+    )
+  }
+
+  /**
+   * Titulares que el actor cubre PARA FIRMAR ESTE DOCUMENTO. Igual que
+   * `idsTitularesCubiertosPor`, salvo que devuelve vacío cuando el actor es
+   * quien creó el documento: la suplencia no habilita a aprobarse a uno mismo,
+   * misma idea que el escalamiento de la regla 1.5 cuando el creador aparece
+   * entre los aprobadores de su propio nivel.
+   *
+   * Un documento así queda esperando al titular o a otro nivel de la cadena;
+   * es el precio de no dejar que nadie se apruebe solo.
+   */
+  async idsTitularesCubiertosPara(
+    actorId: string,
+    documento:
+      | { clientId?: unknown; userId?: unknown; createdBy?: unknown }
+      | null
+      | undefined,
+    ref: Date = new Date()
+  ): Promise<string[]> {
+    // El dueño se llama `userId` en las rendiciones y `createdBy` en los
+    // comprobantes; hay que mirar los dos o la regla se cae en la mitad de los
+    // documentos.
+    const dueno = documento?.userId ?? documento?.createdBy
+    if (dueno && String(dueno) === String(actorId)) {
+      return []
+    }
+    return this.idsTitularesCubiertosPor(
+      actorId,
+      documento?.clientId ? String(documento.clientId) : undefined,
+      ref
+    )
+  }
+
+  /**
+   * TODAS las suplencias vigentes de la empresa: quién está de vacaciones y
+   * quién lo cubre.
+   *
+   * No es lo mismo que `findTitularesCubiertosPor`, que responde "¿a quién
+   * cubro YO?". Esto lo necesita cualquiera que mire un documento: el
+   * colaborador que rinde y Contabilidad ven en la cadena el nombre del
+   * titular y se quedan esperando a alguien que está de vacaciones. Con esta
+   * lista, la pantalla puede decir quién va a firmar de verdad.
+   *
+   * Es una lista corta (los que estén de vacaciones hoy) y va indexada, así que
+   * el front la pide una vez y anota con ella cualquier cadena.
+   */
+  async findSuplenciasVigentes(
+    clientId: string,
+    ref: Date = new Date()
+  ): Promise<
+    { titularId: string; titularName: string; suplenteId: string; suplenteName: string }[]
+  > {
+    if (!Types.ObjectId.isValid(clientId)) return []
+    const titulares = await this.userModel
+      .find({
+        clientId: new Types.ObjectId(clientId),
+        'vacaciones.desde': { $lte: ref },
+        'vacaciones.hasta': { $gte: ref },
+        isActive: true,
+      })
+      .select('_id name vacaciones')
+      .lean<{ _id: Types.ObjectId; name: string; vacaciones: Suplencia }[]>()
+      .exec()
+    if (titulares.length === 0) return []
+
+    const suplentes = await this.userModel
+      .find({ _id: { $in: titulares.map(t => t.vacaciones.suplenteId) }, isActive: true })
+      .select('_id name')
+      .lean<{ _id: Types.ObjectId; name: string }[]>()
+      .exec()
+    const nombre = new Map(suplentes.map(u => [String(u._id), u.name]))
+
+    return titulares
+      .filter(t => nombre.has(String(t.vacaciones.suplenteId)))
+      .map(t => ({
+        titularId: String(t._id),
+        titularName: t.name,
+        suplenteId: String(t.vacaciones.suplenteId),
+        suplenteName: nombre.get(String(t.vacaciones.suplenteId))!,
+      }))
+  }
+
+  /**
+   * Suplente vigente de un titular, o `null` si no está de vacaciones. Se usa
+   * en el otro sentido que la consulta anterior: las cadenas nombran al
+   * titular, y los avisos tienen que llegarle a quien de verdad puede firmar.
+   */
+  async resolverSuplenteVigente(
+    titularId: string,
+    ref: Date = new Date()
+  ): Promise<{ _id: string; name: string; email: string } | null> {
+    if (!Types.ObjectId.isValid(titularId)) return null
+    const titular = await this.userModel
+      .findById(titularId)
+      .select('vacaciones')
+      .lean<{ vacaciones?: Suplencia }>()
+      .exec()
+    if (!suplenciaVigente(titular?.vacaciones, ref)) return null
+
+    const suplente = await this.userModel
+      .findById(titular!.vacaciones!.suplenteId)
+      .select('_id name email isActive')
+      .lean<{ _id: Types.ObjectId; name: string; email: string; isActive: boolean }>()
+      .exec()
+    if (!suplente || !suplente.isActive) return null
+    return { _id: String(suplente._id), name: suplente.name, email: suplente.email }
   }
 
   /** Firma y cadena de aprobadores para validar solicitudes transaccionales (viáticos). */

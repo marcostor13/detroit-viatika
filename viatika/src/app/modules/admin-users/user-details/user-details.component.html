@@ -156,5 +156,75 @@
     </div>
   </div>
 
+  <!-- Vacaciones y reemplazo (VD-124). Aqui y no en Permisos a proposito: una
+       suplencia describe la disponibilidad de la persona, no un permiso; y el
+       objeto `permissions` lo reescriben en bloque las cargas masivas. -->
+  <div class="bg-white rounded-2xl border border-tertiary/15 p-5 mt-5">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 class="text-base font-semibold text-secondary">Vacaciones y reemplazo</h3>
+        <p class="text-xs text-tertiary mt-1">
+          Durante el periodo, la persona designada podra aprobar todo lo que le corresponde a este colaborador.
+        </p>
+      </div>
+      @if (!showVacacionesForm) {
+        <app-button
+          [label]="user.vacaciones ? 'Editar' : 'Programar vacaciones'"
+          variant="primary" size="sm" [fullWidth]="false" (clicked)="editVacaciones()" />
+      }
+    </div>
+
+    @if (!showVacacionesForm) {
+      @if (user.vacaciones) {
+        <div class="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-tertiary/15 bg-background p-4">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm text-secondary">
+              Del <span class="font-semibold">{{ user.vacaciones.desde | date: 'dd/MM/yyyy' }}</span>
+              al <span class="font-semibold">{{ user.vacaciones.hasta | date: 'dd/MM/yyyy' }}</span>
+            </p>
+            <p class="text-sm text-tertiary mt-0.5">
+              Lo reemplaza: <span class="font-medium text-secondary">{{ nombreSuplenteActual }}</span>
+            </p>
+          </div>
+          <app-button label="Cancelar vacaciones" variant="secondary" size="sm" [fullWidth]="false"
+            [disabled]="isSavingVacaciones()" (clicked)="borrarVacaciones()" />
+        </div>
+      } @else {
+        <p class="text-sm text-tertiary mt-4">Sin vacaciones programadas.</p>
+      }
+    }
+
+    @if (showVacacionesForm) {
+      <div class="mt-4 space-y-4 max-w-md">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="admVacDesde" class="block text-sm font-medium text-secondary mb-1">Desde</label>
+            <input id="admVacDesde" type="date" [(ngModel)]="vacDesde"
+              class="w-full px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm" />
+          </div>
+          <div>
+            <label for="admVacHasta" class="block text-sm font-medium text-secondary mb-1">Hasta</label>
+            <input id="admVacHasta" type="date" [(ngModel)]="vacHasta"
+              class="w-full px-3 py-2 border border-tertiary/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-secondary mb-1">Quien lo reemplaza</label>
+          <app-search-select [options]="opcionesSuplente" [(ngModel)]="vacSuplenteId"
+            placeholder="Selecciona un colaborador..." searchPlaceholder="Buscar por nombre o correo..." />
+          <p class="text-xs text-tertiary mt-1.5">
+            Recibira sus avisos y podra aprobar en su lugar durante ese periodo. El titular sigue pudiendo aprobar.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-3">
+          <app-button [label]="isSavingVacaciones() ? 'Guardando...' : 'Guardar'" variant="primary" size="sm"
+            [fullWidth]="false" [disabled]="isSavingVacaciones()" (clicked)="saveVacaciones()" />
+          <app-button label="Cancelar" variant="secondary" size="sm" [fullWidth]="false"
+            [disabled]="isSavingVacaciones()" (clicked)="cancelVacacionesEdit()" />
+        </div>
+      </div>
+    }
+  </div>
+
   } <!-- end @if user -->
 </div>

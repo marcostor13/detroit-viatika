@@ -32,6 +32,9 @@ describe('ExpenseService — email gating (isEmailEnabled)', () => {
     findOne: jest.fn(),
     findAll: jest.fn(),
     isEmailEnabled: jest.fn(),
+    idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]),
+    idsTitularesCubiertosPor: jest.fn().mockResolvedValue([]),
+    resolverSuplenteVigente: jest.fn().mockResolvedValue(null),
   }
 
   const mockCategoryServiceGating = {
@@ -371,7 +374,12 @@ describe('ExpenseService — aprobación por comprobante (regla 1.4, en paralelo
         },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
-        { provide: UserService, useValue: {} },
+        // Sin suplencias vigentes: estas pruebas son del motor de cadena puro
+        // (VD-124 no cambia nada cuando nadie está de vacaciones).
+        {
+          provide: UserService,
+          useValue: { idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]) },
+        },
         { provide: SunatConfigService, useValue: {} },
         { provide: HttpService, useValue: {} },
         { provide: UploadService, useValue: {} },
@@ -592,7 +600,12 @@ describe('ExpenseService — assertCanMutateExpense (VD-69: N1/N2 no editan ni e
         },
         { provide: EmailService, useValue: {} },
         { provide: ProjectService, useValue: {} },
-        { provide: UserService, useValue: {} },
+        // Sin suplencias vigentes: estas pruebas son del motor de cadena puro
+        // (VD-124 no cambia nada cuando nadie está de vacaciones).
+        {
+          provide: UserService,
+          useValue: { idsTitularesCubiertosPara: jest.fn().mockResolvedValue([]) },
+        },
         { provide: SunatConfigService, useValue: {} },
         { provide: HttpService, useValue: {} },
         { provide: UploadService, useValue: {} },

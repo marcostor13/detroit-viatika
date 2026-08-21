@@ -38,6 +38,7 @@ import { ProjectService } from '../project/project.service'
 import { CategoryService } from '../category/category.service'
 import {
   findActionableChainStep,
+  titularCubiertoEnPaso,
   isChainFullyApproved,
   plainChainStep,
   buildSolicitudChain,
@@ -363,13 +364,20 @@ export class ExpenseReportService implements OnModuleInit {
       }
     }
 
+    // Suplencia por vacaciones (VD-124): el aviso va también a quien firma en
+    // lugar del titular. `exclude` se vuelve a aplicar porque un suplente puede
+    // ser justamente el colaborador que se estaba excluyendo.
+    const destinatarios = (await this.conSuplentes([...approverIds]))
+      .map(String)
+      .filter(id => !exclude.has(id))
+
     const recipients: Array<{
       userId: string
       email: string
       name: string
       emailEnabled: boolean
     }> = []
-    for (const userId of approverIds) {
+    for (const userId of destinatarios) {
       const u = await this.userService.findEmailNameClient(userId)
       if (!u) continue
       const emailEnabled = await this.userService.isEmailEnabled(userId)
@@ -404,13 +412,17 @@ export class ExpenseReportService implements OnModuleInit {
         if (!exclude.has(id)) approverIds.add(id)
       }
     }
+    // Suplencia por vacaciones (VD-124), igual que en las rendiciones.
+    const destinatarios = (await this.conSuplentes([...approverIds]))
+      .map(String)
+      .filter(id => !exclude.has(id))
     const recipients: Array<{
       userId: string
       email: string
       name: string
       emailEnabled: boolean
     }> = []
-    for (const userId of approverIds) {
+    for (const userId of destinatarios) {
       const u = await this.userService.findEmailNameClient(userId)
       if (!u) continue
       const emailEnabled = await this.userService.isEmailEnabled(userId)
@@ -877,10 +889,125 @@ export class ExpenseReportService implements OnModuleInit {
    * del centro de costo, así que si este cambia, las solicitudes ya creadas
    * conservan a su coordinador original.
    */
+  /**
+   * Rendiciones y solicitudes que este usuario firmó EN REEMPLAZO de otro
+   * (VD-124). Sobrevive al fin de la vacación a propósito.
+   *
+   * La bandeja muestra lo PENDIENTE y se apaga sola cuando termina el período
+   * — correcto, pero deja al suplente sin forma de responder "¿qué aprobé yo
+   * mientras cubrí a Fulano?". La respuesta no puede vivir en una vista que
+   * caduca: vive en el documento. Por eso se consulta por `approvedOnBehalfOf`,
+   * que queda grabado en el paso de la cadena para siempre (mismo criterio que
+   * el "On Behalf Of" del historial de Workday).
+   */
+  async findAprobadasEnReemplazo(userId: string, clientId: string) {
+    if (!Types.ObjectId.isValid(userId) || !Types.ObjectId.isValid(clientId)) {
+      return []
+    }
+    const uid = new Types.ObjectId(userId)
+    const cid = new Types.ObjectId(clientId)
+    const firmadoPorMiEnReemplazo = {
+      approved: true,
+      approvedBy: uid,
+      approvedOnBehalfOf: { $exists: true, $ne: null },
+    }
+
+    // Las rendiciones firman por comprobante y las solicitudes a nivel de
+    // reporte, así que hay que mirar las dos colecciones.
+    const [idsPorComprobante, porReporte] = await Promise.all([
+      this.expenseModel
+        .find({ clientId: cid, approverChain: { $elemMatch: firmadoPorMiEnReemplazo } })
+        .distinct('expenseReportId'),
+      this.expenseReportModel
+        .find({
+          clientId: cid,
+          $or: [
+            { viaticoApproverChain: { $elemMatch: firmadoPorMiEnReemplazo } },
+            { rendicionApproverChain: { $elemMatch: firmadoPorMiEnReemplazo } },
+          ],
+        })
+        .select('_id')
+        .lean<{ _id: Types.ObjectId }[]>()
+        .exec(),
+    ])
+
+    const ids = [
+      ...new Set([
+        ...idsPorComprobante.filter(Boolean).map(String),
+        ...porReporte.map(r => String(r._id)),
+      ]),
+    ].map(id => new Types.ObjectId(id))
+    if (ids.length === 0) return []
+
+    const reportes = await this.expenseReportModel
+      .find({ _id: { $in: ids } })
+      .populate('userId', 'name email')
+      .populate('projectId', 'code name')
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec()
+
+    // A quién cubría en cada uno, para que la lista lo diga sin que el usuario
+    // tenga que abrir el documento.
+    const titularIds = new Set<string>()
+    const porReporteTitulares = new Map<string, Set<string>>()
+    const anotar = (reportId: string, chain: ChainStep[] | undefined) => {
+      for (const paso of chain ?? []) {
+        if (
+          paso.approved &&
+          String(paso.approvedBy) === userId &&
+          paso.approvedOnBehalfOf
+        ) {
+          const t = String(paso.approvedOnBehalfOf)
+          titularIds.add(t)
+          if (!porReporteTitulares.has(reportId)) {
+            porReporteTitulares.set(reportId, new Set())
+          }
+          porReporteTitulares.get(reportId)!.add(t)
+        }
+      }
+    }
+    for (const r of reportes) {
+      anotar(String(r._id), (r as any).viaticoApproverChain)
+      anotar(String(r._id), (r as any).rendicionApproverChain)
+    }
+    const comprobantes = await this.expenseModel
+      .find({
+        expenseReportId: { $in: ids },
+        approverChain: { $elemMatch: firmadoPorMiEnReemplazo },
+      })
+      .select('expenseReportId approverChain')
+      .lean<{ expenseReportId: Types.ObjectId; approverChain: ChainStep[] }[]>()
+      .exec()
+    for (const e of comprobantes) anotar(String(e.expenseReportId), e.approverChain)
+
+    const nombres = new Map<string, string>()
+    for (const id of titularIds) {
+      const u = await this.userService.findEmailNameClient(id)
+      if (u) nombres.set(id, u.name)
+    }
+
+    return reportes.map(r => ({
+      ...r,
+      enReemplazoDe: [...(porReporteTitulares.get(String(r._id)) ?? [])].map(
+        id => nombres.get(id) ?? 'otro aprobador'
+      ),
+    }))
+  }
+
   async findAllByCoordinator(coordinatorId: string, clientId: string) {
     const coordinatorObjectId = new Types.ObjectId(coordinatorId)
+    // Suplencia por vacaciones (VD-124): el suplente ve la bandeja del titular
+    // como si fuera suya. Es aditivo — su propia identidad va primero y no se
+    // pierde, así que sigue viendo lo suyo.
+    const identidades = [
+      coordinatorObjectId,
+      ...(
+        await this.userService.idsTitularesCubiertosPor(coordinatorId, clientId)
+      ).map(id => new Types.ObjectId(id)),
+    ]
     const chainReportIds = await this.expenseModel
-      .find({ 'approverChain.approverIds': coordinatorObjectId })
+      .find({ 'approverChain.approverIds': { $in: identidades } })
       .distinct('expenseReportId')
       .exec()
     // Caja chica: la cadena recién se estampa en los comprobantes al ENVIAR la
@@ -889,9 +1016,17 @@ export class ExpenseReportService implements OnModuleInit {
     // también las rendiciones en curso de los responsables a los que aprueba
     // (los mismos que resuelve `buildCajaChicaChain`); llegan sin acciones,
     // solo para seguimiento.
-    const responsibleIds = (
-      await this.projectService.findCajaChicaResponsibleIds(coordinatorId, clientId)
-    ).map(id => new Types.ObjectId(id))
+    const responsibleIds = [
+      ...new Set(
+        (
+          await Promise.all(
+            identidades.map(id =>
+              this.projectService.findCajaChicaResponsibleIds(String(id), clientId)
+            )
+          )
+        ).flat()
+      ),
+    ].map(id => new Types.ObjectId(id))
     return await this.expenseReportModel
       .find({
         clientId: new Types.ObjectId(clientId),
@@ -901,8 +1036,11 @@ export class ExpenseReportService implements OnModuleInit {
         // tiene que verlas para poder aprobarlas. El `$or` sigue siendo el
         // filtro real: solo entran las que tienen a este usuario en su cadena.
         $or: [
-          { assignedCoordinatorId: coordinatorObjectId },
-          { type: 'viatico', 'viaticoApproverChain.approverIds': coordinatorObjectId },
+          { assignedCoordinatorId: { $in: identidades } },
+          {
+            type: 'viatico',
+            'viaticoApproverChain.approverIds': { $in: identidades },
+          },
           { _id: { $in: chainReportIds } },
           ...(responsibleIds.length > 0
             ? [{ isCajaChica: true, userId: { $in: responsibleIds } }]
@@ -1094,11 +1232,20 @@ export class ExpenseReportService implements OnModuleInit {
         if (!opts.actorUserId || !Types.ObjectId.isValid(opts.actorUserId)) {
           and.push({ _id: null })
         } else {
+          // Suplencia por vacaciones (VD-124): "me falta aprobar" incluye lo
+          // que le toca firmar en reemplazo del titular. Sin esto el suplente
+          // elegia el filtro y no le salia nada.
+          const identidades = [
+            new Types.ObjectId(opts.actorUserId),
+            ...(
+              await this.userService.idsTitularesCubiertosPor(opts.actorUserId)
+            ).map(id => new Types.ObjectId(id)),
+          ]
           and.push({
             approverChain: {
               $elemMatch: {
                 approved: { $ne: true },
-                approverIds: new Types.ObjectId(opts.actorUserId),
+                approverIds: { $in: identidades },
               },
             },
           })
@@ -2690,8 +2837,15 @@ export class ExpenseReportService implements OnModuleInit {
     userId: string
   ): Promise<Types.ObjectId[]> {
     if (!Types.ObjectId.isValid(userId)) return []
+    // Incluye los titulares que este usuario cubre por vacaciones (VD-124).
+    const identidades = [
+      new Types.ObjectId(userId),
+      ...(await this.userService.idsTitularesCubiertosPor(userId)).map(
+        id => new Types.ObjectId(id)
+      ),
+    ]
     return this.expenseModel
-      .find({ 'approverChain.approverIds': new Types.ObjectId(userId) })
+      .find({ 'approverChain.approverIds': { $in: identidades } })
       .distinct('expenseReportId')
       .exec()
   }
@@ -5047,6 +5201,40 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Destinatarios efectivos de un aviso dirigido a aprobadores: ellos mismos
+   * y, por cada uno que esté de vacaciones, su suplente (VD-124).
+   *
+   * Las cadenas se sellan con el id del TITULAR y nunca se reescriben, así que
+   * sin esta expansión el suplente puede firmar pero jamás se entera de que
+   * tiene algo pendiente — que es la mitad de la funcionalidad.
+   *
+   * El titular se conserva en la lista: la suplencia es aditiva y sigue
+   * pudiendo firmar si entra desde el celular.
+   */
+  private async conSuplentes(
+    approverIds: readonly (Types.ObjectId | string)[]
+  ): Promise<Types.ObjectId[]> {
+    const porId = new Map<string, Types.ObjectId>()
+    for (const id of approverIds) {
+      porId.set(id.toString(), new Types.ObjectId(id.toString()))
+    }
+    for (const id of approverIds) {
+      try {
+        const suplente = await this.userService.resolverSuplenteVigente(id.toString())
+        if (suplente && !porId.has(suplente._id)) {
+          porId.set(suplente._id, new Types.ObjectId(suplente._id))
+        }
+      } catch (err: unknown) {
+        // Un fallo resolviendo la suplencia no puede tumbar el aviso al titular.
+        this.logger.error(
+          `Suplencia de ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      }
+    }
+    return [...porId.values()]
+  }
+
+  /**
    * Notifica (in-app) a los approverIds de un paso de un comprobante que les
    * toca revisarlo. Se llama por cada paso pendiente al construir la cadena
    * (aprobación en paralelo: todos son accionables desde el envío).
@@ -5056,7 +5244,7 @@ export class ExpenseReportService implements OnModuleInit {
     step: ChainStep
   ): Promise<void> {
     const expenseId = String((expense as any)._id)
-    for (const approverId of step.approverIds) {
+    for (const approverId of await this.conSuplentes(step.approverIds)) {
       try {
         await this.notificationsService.create({
           userId: approverId.toString(),
@@ -5363,11 +5551,9 @@ export class ExpenseReportService implements OnModuleInit {
     const reportId = String((report as any)._id)
     const collaborator = await this.userService.findEmailNameClient(collaboratorUserId)
     const pendingSteps = (report.viaticoApproverChain ?? []).filter(s => !s.approved)
-    const approverIds = [
-      ...new Map(
-        pendingSteps.flatMap(s => s.approverIds).map(id => [id.toString(), id])
-      ).values(),
-    ]
+    const approverIds = await this.conSuplentes(
+      pendingSteps.flatMap(s => s.approverIds)
+    )
     if (approverIds.length === 0) {
       await this.expenseReportModel.updateOne({ _id: (report as any)._id }, { $set: { viaticoCoordinatorNotification: { status: 'skipped', sentAt: new Date(), errorMessage: 'Sin aprobador asignado en este paso' } } })
       return
@@ -5453,7 +5639,8 @@ export class ExpenseReportService implements OnModuleInit {
     if (report.status !== 'pending_l1') throw new BadRequestException(`La solicitud de fondos no está pendiente de aprobación (estado actual: ${report.status})`)
 
     const chain = report.viaticoApproverChain ?? []
-    const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+    const cubreA = await this.userService.idsTitularesCubiertosPara(actorId, report)
+    const stepIndex = findActionableChainStep({ chain, actorId, actorRole, cubreA })
     if (stepIndex === -1) {
       throw new ForbiddenException('No te corresponde aprobar esta solicitud en este momento')
     }
@@ -5466,6 +5653,7 @@ export class ExpenseReportService implements OnModuleInit {
       approved: true,
       approvedBy: new Types.ObjectId(actorId),
       approvedAt: new Date(),
+      approvedOnBehalfOf: titularCubiertoEnPaso(step, actorId, cubreA),
     }
     report.viaticoApproverChain = chain
     const nextLevel = approvalLevel + 1
@@ -5516,7 +5704,8 @@ export class ExpenseReportService implements OnModuleInit {
         'Esta rendición no tiene una cadena de aprobación a nivel de reporte.'
       )
     }
-    const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+    const cubreA = await this.userService.idsTitularesCubiertosPara(actorId, report)
+    const stepIndex = findActionableChainStep({ chain, actorId, actorRole, cubreA })
     if (stepIndex === -1) {
       throw new ForbiddenException(
         'No te corresponde aprobar esta rendición en este momento'
@@ -5537,6 +5726,7 @@ export class ExpenseReportService implements OnModuleInit {
       approved: true,
       approvedBy: new Types.ObjectId(actorId),
       approvedAt: new Date(),
+      approvedOnBehalfOf: titularCubiertoEnPaso(step, actorId, cubreA),
     }
     report.rendicionApproverChain = chain
     const nextLevel = approvalLevel + 1
@@ -5882,7 +6072,8 @@ export class ExpenseReportService implements OnModuleInit {
     ].includes(actorRole as any)
     let rejectedAtLevel = (report.rendicionApprovalLevel ?? 0) + 1
     if (chain.length > 0) {
-      const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+      const cubreA = await this.userService.idsTitularesCubiertosPara(actorId, report)
+      const stepIndex = findActionableChainStep({ chain, actorId, actorRole, cubreA })
       if (stepIndex === -1) {
         throw new ForbiddenException(
           'No te corresponde rechazar esta rendición en este momento'
@@ -6232,7 +6423,8 @@ export class ExpenseReportService implements OnModuleInit {
       // Aprobación en paralelo: cualquier aprobador de un paso aún pendiente
       // puede rechazar la solicitud completa — no solo "el turno actual".
       const chain = report.viaticoApproverChain ?? []
-      const stepIndex = findActionableChainStep({ chain, actorId, actorRole })
+      const cubreA = await this.userService.idsTitularesCubiertosPara(actorId, report)
+      const stepIndex = findActionableChainStep({ chain, actorId, actorRole, cubreA })
       if (stepIndex === -1) {
         throw new ForbiddenException('No tienes permiso para rechazar esta solicitud')
       }
@@ -6601,7 +6793,19 @@ export class ExpenseReportService implements OnModuleInit {
 
     // `viaticoApproverChain` es un array de pasos (`{ approverIds: ObjectId[] }`),
     // no un array de ObjectId — hay que filtrar por el subcampo.
-    if (isApprover) filter['viaticoApproverChain.approverIds'] = new Types.ObjectId(opts.requesterId)
+    if (isApprover) {
+      // Suplencia por vacaciones (VD-124): también las del titular que cubre.
+      const identidades = [
+        new Types.ObjectId(opts.requesterId),
+        ...(
+          await this.userService.idsTitularesCubiertosPor(
+            opts.requesterId,
+            opts.clientId
+          )
+        ).map(id => new Types.ObjectId(id)),
+      ]
+      filter['viaticoApproverChain.approverIds'] = { $in: identidades }
+    }
     else if (!isAdmin) filter['userId'] = new Types.ObjectId(opts.requesterId)
 
     if (opts.status && opts.status !== 'all') filter['status'] = opts.status
@@ -6651,6 +6855,15 @@ export class ExpenseReportService implements OnModuleInit {
     }
     const uid = new Types.ObjectId(userId)
     const cid = new Types.ObjectId(clientId)
+    // Suplencia por vacaciones (VD-124): el contador de la pestaña tiene que
+    // incluir lo que el usuario firma en nombre de otro, o vería el número en
+    // cero y no entraría a mirar.
+    const identidades = [
+      uid,
+      ...(await this.userService.idsTitularesCubiertosPor(userId, clientId)).map(
+        id => new Types.ObjectId(id)
+      ),
+    ]
     const ids = new Set<string>()
     const add = (docs: { _id: unknown }[]) => {
       for (const d of docs) ids.add(String(d._id))
@@ -6665,7 +6878,7 @@ export class ExpenseReportService implements OnModuleInit {
         isSolicitudCajaChica: true,
         status: 'pending_l1',
         viaticoApproverChain: {
-          $elemMatch: { approved: { $ne: true }, approverIds: uid },
+          $elemMatch: { approved: { $ne: true }, approverIds: { $in: identidades } },
         },
       })
       .select(soloIds)
@@ -6678,7 +6891,7 @@ export class ExpenseReportService implements OnModuleInit {
         clientId: cid,
         status: { $ne: 'rejected' },
         approverChain: {
-          $elemMatch: { approved: { $ne: true }, approverIds: uid },
+          $elemMatch: { approved: { $ne: true }, approverIds: { $in: identidades } },
         },
       })
       .select({ expenseReportId: 1 })
