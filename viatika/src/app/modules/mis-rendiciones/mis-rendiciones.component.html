@@ -70,7 +70,13 @@
 
   <!-- Action bar -->
   <div class="flex justify-end mb-4">
-    <app-button label="Solicitar fondos" (clicked)="openViaticosModal()">
+    <!-- VD-139: se deja visible y deshabilitado, con el motivo en el tooltip.
+         Esconderlo dejaba al colaborador buscando un botón que "desapareció". -->
+    <app-button label="Solicitar fondos" (clicked)="openViaticosModal()"
+      [disabled]="bloqueadoPorSolicitudesAbiertas"
+      [title]="bloqueadoPorSolicitudesAbiertas
+        ? 'Tienes ' + solicitudesSinCerrar.length + ' solicitudes pendientes de cierre (' + solicitudesSinCerrarLabel + '). Rinde y espera a que Tesorería las cierre.'
+        : ''">
       <app-icon name="plus" size="sm" />
     </app-button>
   </div>

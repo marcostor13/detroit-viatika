@@ -71,6 +71,24 @@ export interface SolicitudDeleteActor {
   role: string
 }
 
+/**
+ * Tope de solicitudes de fondos sin cerrar por colaborador (VD-139). Fijo a
+ * propósito: si algún día se pide por empresa, va a `AccountingConfig`.
+ */
+const MAX_SOLICITUDES_ABIERTAS = 2
+
+/**
+ * Estados en los que una solicitud de fondos YA NO ocupa cupo. Cerrar es una
+ * acción de Tesorería (`PATCH /:id/close`, VD-66/VD-49); rechazada y cancelada
+ * entran porque tampoco van a rendirse nunca.
+ *
+ * Van fuera de la clase y no como campos de instancia: media suite construye el
+ * servicio con `Object.create(prototype)`, que no ejecuta el constructor y
+ * dejaría estas constantes en `undefined` — con el tope comparándose contra
+ * `undefined`, el bloqueo no saltaría y la prueba pasaría en verde.
+ */
+const ESTADOS_SOLICITUD_CERRADA = ['closed', 'rejected', 'cancelled']
+
 @Injectable()
 export class ExpenseReportService implements OnModuleInit {
   private readonly logger = new Logger(ExpenseReportService.name)
@@ -5570,10 +5588,43 @@ export class ExpenseReportService implements OnModuleInit {
     return this.findOne(reportId) as Promise<ExpenseReportDocument>
   }
 
+  /**
+   * Solicitudes de fondos del colaborador que siguen pendientes de que Tesorería
+   * las cierre (VD-139). Se excluye la caja chica: es otro trámite y el pedido
+   * habla solo de solicitudes de fondos.
+   */
+  private async solicitudesSinCerrar(userId: string, clientId: string) {
+    return this.expenseReportModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        clientId: new Types.ObjectId(clientId),
+        type: 'viatico',
+        isSolicitudCajaChica: { $ne: true },
+        status: { $nin: ESTADOS_SOLICITUD_CERRADA },
+      })
+      .select('codigo viaticoPlace title status')
+      .lean<{ codigo?: string; viaticoPlace?: string; title?: string }[]>()
+      .exec()
+  }
+
   async createViatico(dto: CreateViaticoExpenseReportDto, userId: string, clientId: string): Promise<ExpenseReportDocument> {
     const profile = await this.userService.findTransactionalProfile(userId)
     if (!profile?.signature?.trim()) {
       throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de solicitar fondos.')
+    }
+
+    // VD-139: con dos solicitudes sin cerrar no se puede pedir una tercera. Se
+    // nombran las pendientes en el mensaje: sin eso el colaborador ve un "no
+    // puedes" y no sabe qué tiene que rendir para desbloquearse.
+    const abiertas = await this.solicitudesSinCerrar(userId, clientId)
+    if (abiertas.length >= MAX_SOLICITUDES_ABIERTAS) {
+      const cuales = abiertas
+        .map(r => r.codigo || r.viaticoPlace || r.title || 'sin código')
+        .join(', ')
+      throw new BadRequestException(
+        `Tienes ${abiertas.length} solicitudes de fondos pendientes de cierre (${cuales}). ` +
+          'Rinde y espera a que Tesorería las cierre antes de generar una nueva.'
+      )
     }
 
     const chain = await this.buildSolicitudCostCenterChain(profile, dto.projectId, userId, clientId)

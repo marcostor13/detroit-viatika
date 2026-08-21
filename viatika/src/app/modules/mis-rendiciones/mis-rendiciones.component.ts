@@ -877,7 +877,44 @@ export class MisRendicionesComponent implements OnInit {
     this.router.navigate(['/invoices/add'], { queryParams: { tipo, mode: 'directa' } });
   }
 
+  /**
+   * VD-139: tope de solicitudes de fondos sin cerrar. El cierre lo hace
+   * Tesorería, así que cuentan todas las que no estén cerradas, rechazadas o
+   * canceladas. Mismo criterio que `createViatico` en el backend, que es quien
+   * manda: esto solo evita que el colaborador llene el formulario para perderlo
+   * al enviar.
+   */
+  readonly MAX_SOLICITUDES_ABIERTAS = 2;
+  private readonly ESTADOS_SOLICITUD_CERRADA = ['closed', 'rejected', 'cancelled'];
+
+  get solicitudesSinCerrar(): IExpenseReport[] {
+    return this.myViaticoReports().filter(
+      r =>
+        !(r as any).isSolicitudCajaChica &&
+        !this.ESTADOS_SOLICITUD_CERRADA.includes(String(r.status))
+    );
+  }
+
+  get bloqueadoPorSolicitudesAbiertas(): boolean {
+    return this.solicitudesSinCerrar.length >= this.MAX_SOLICITUDES_ABIERTAS;
+  }
+
+  /** Cuáles tiene pendientes, para decírselo en vez de solo negarle el botón. */
+  get solicitudesSinCerrarLabel(): string {
+    return this.solicitudesSinCerrar
+      .map(r => r.codigo || (r as any).viaticoPlace || r.title || 'sin código')
+      .join(', ');
+  }
+
   openViaticosModal() {
+    if (this.bloqueadoPorSolicitudesAbiertas) {
+      this.notificationService.show(
+        `Tienes ${this.solicitudesSinCerrar.length} solicitudes pendientes de cierre (${this.solicitudesSinCerrarLabel}). ` +
+          'Rinde y espera a que Tesorería las cierre antes de generar una nueva.',
+        'warning'
+      );
+      return;
+    }
     this.router.navigate(['/mis-rendiciones/solicitud-viaticos/nueva']);
   }
 

@@ -270,6 +270,65 @@ describe('MisRendicionesComponent', () => {
     });
   });
 
+  /**
+   * VD-139: con 2 solicitudes de fondos pendientes de que Tesoreria las cierre,
+   * el colaborador no puede generar una tercera. El backend es quien manda; esto
+   * evita que llene el formulario para perderlo al enviar.
+   */
+  describe('tope de solicitudes sin cerrar (VD-139)', () => {
+    const solicitud = (status: string, extra: any = {}): any => ({
+      _id: 's' + status,
+      type: 'viatico',
+      status,
+      codigo: 'RE-AB-000' + status.length,
+      ...extra,
+    });
+
+    it('con 2 sin cerrar bloquea y no navega', () => {
+      component.myViaticoReports.set([solicitud('open'), solicitud('submitted')]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeTrue();
+      component.openViaticosModal();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(notification.show).toHaveBeenCalled();
+    });
+
+    it('con 1 sin cerrar deja continuar', () => {
+      component.myViaticoReports.set([solicitud('open')]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeFalse();
+      component.openViaticosModal();
+      expect(router.navigate).toHaveBeenCalledWith([
+        '/mis-rendiciones/solicitud-viaticos/nueva',
+      ]);
+    });
+
+    // Cerrar es accion de Tesoreria; rechazada y cancelada tampoco se van a
+    // rendir nunca, asi que no deben dejar topado al colaborador.
+    it('cerradas, rechazadas y canceladas no ocupan cupo', () => {
+      component.myViaticoReports.set([
+        solicitud('closed'),
+        solicitud('rejected'),
+        solicitud('cancelled'),
+      ]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeFalse();
+    });
+
+    it('la caja chica no ocupa cupo: es otro tramite', () => {
+      component.myViaticoReports.set([
+        solicitud('open', { isSolicitudCajaChica: true }),
+        solicitud('submitted', { isSolicitudCajaChica: true }),
+      ]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeFalse();
+    });
+
+    it('el aviso nombra las pendientes, no solo dice que no', () => {
+      component.myViaticoReports.set([
+        solicitud('open', { codigo: 'RE-AB-0001' }),
+        solicitud('submitted', { codigo: 'RE-AB-0002' }),
+      ]);
+      expect(component.solicitudesSinCerrarLabel).toBe('RE-AB-0001, RE-AB-0002');
+    });
+  });
+
   describe('setTab', () => {
     it('sets the active tab', () => {
       component.setTab('directas');
