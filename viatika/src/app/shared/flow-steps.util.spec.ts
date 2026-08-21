@@ -254,6 +254,167 @@ describe('buildReportFlowSteps', () => {
   });
 });
 
+/**
+ * Regla 1.6: la solicitud de fondos se queda sin cadena cuando el nivel que
+ * pide (N2) no existe ni en el colaborador ni en su centro de costo, y nace en
+ * `pending_contabilidad`. La línea de tiempo lo daba por "Aprobado por el
+ * aprobador" con el check verde — un visto bueno que nunca ocurrió.
+ */
+describe('solicitud de fondos sin cadena de aprobadores (regla 1.6)', () => {
+  const sinCadena = () => ({
+    _id: 'r-sin-cadena',
+    type: 'viatico',
+    status: 'pending_contabilidad',
+    createdAt: '2026-08-21T04:19:08.333Z',
+    viaticoRequiredLevels: 0,
+    viaticoApprovalLevel: 0,
+    viaticoApproverChain: [],
+  });
+
+  it('no inventa una aprobación que no ocurrió', () => {
+    const labels = buildReportFlowSteps(sinCadena()).map(s => s.label);
+    expect(labels.some(l => /aprobado por/i.test(l))).toBeFalse();
+  });
+
+  it('dice que el paso quedó omitido, y lo marca como tal', () => {
+    const paso = buildReportFlowSteps(sinCadena()).find(s => s.state === 'skipped')!;
+    expect(paso).toBeDefined();
+    expect(paso.label).toBe('Sin aprobador asignado');
+    expect(paso.description).toBe('Sin N2 configurado: pasó directo a Contabilidad');
+  });
+
+  it('Contabilidad sigue siendo el paso activo', () => {
+    const conta = buildReportFlowSteps(sinCadena()).find(s => /contabilidad/i.test(s.label))!;
+    expect(conta.state).toBe('active');
+  });
+
+  it('con cadena poblada NO se marca ningún paso como omitido', () => {
+    const conCadena = {
+      ...sinCadena(),
+      status: 'pending_l1',
+      viaticoRequiredLevels: 1,
+      viaticoApproverChain: [{ level: 2, approved: false, approverIds: [{ _id: 'u9', name: 'ANA' }] }],
+    };
+    expect(buildReportFlowSteps(conCadena).some(s => s.state === 'skipped')).toBeFalse();
+  });
+});
+
+/**
+ * VD-124. La cadena se sella al enviar y sigue nombrando al TITULAR; la
+ * suplencia se resolvía solo en la agregación por comprobante de la rendición,
+ * así que la SOLICITUD de fondos seguía diciendo "Aprobación de <titular>"
+ * aunque el titular estuviera de vacaciones.
+ */
+describe('solicitud de fondos con el aprobador de vacaciones (VD-124)', () => {
+  const TITULAR = 'u-titular';
+  const solicitud = () => ({
+    _id: 'r-supl',
+    type: 'viatico',
+    status: 'pending_l1',
+    createdAt: '2026-08-20T00:00:00.000Z',
+    viaticoRequiredLevels: 1,
+    viaticoApprovalLevel: 0,
+    viaticoApproverChain: [
+      { level: 2, approved: false, approverIds: [{ _id: TITULAR, name: 'Ivan Torres Aprobador N2' }] },
+    ],
+  });
+  const pasoN2 = (ctx: any) =>
+    buildReportFlowSteps(solicitud(), ctx).find(s => /^N2/.test(s.label))!;
+
+  it('sin contexto de suplencia nombra al titular, como siempre', () => {
+    expect(pasoN2({}).label).toBe('N2 · Aprobación de Ivan Torres Aprobador N2');
+  });
+
+  it('nombra al suplente sin perder al titular', () => {
+    const paso = pasoN2({
+      vigentes: [{ titularId: TITULAR, suplenteName: 'Ivan Torres Contabilidad' }],
+    });
+    expect(paso.label).toBe('N2 · Aprobación de Ivan Torres Contabilidad');
+    // El titular no se pierde: baja a la descripción, que es más corta que
+    // repetir los dos nombres en el label.
+    expect(paso.description).toBe('En reemplazo de Ivan Torres Aprobador N2');
+  });
+
+  it('al suplente le dice que la acción es suya', () => {
+    const paso = pasoN2({
+      cubroA: [{ _id: TITULAR, name: 'Ivan Torres Aprobador N2' }],
+      vigentes: [{ titularId: TITULAR, suplenteName: 'Ivan Torres Contabilidad' }],
+    });
+    expect(paso.description).toBe('Te toca a ti, en reemplazo de Ivan Torres Aprobador N2');
+  });
+
+  it('un paso YA aprobado sigue nombrando a quien firmó, no al suplente', () => {
+    const yaAprobado = {
+      ...solicitud(),
+      status: 'pending_contabilidad',
+      viaticoApprovalLevel: 1,
+      viaticoApproverChain: [
+        {
+          level: 2,
+          approved: true,
+          approvedAt: '2026-08-20T00:00:00.000Z',
+          approverIds: [{ _id: TITULAR, name: 'Ivan Torres Aprobador N2' }],
+        },
+      ],
+    };
+    const paso = buildReportFlowSteps(yaAprobado, {
+      vigentes: [{ titularId: TITULAR, suplenteName: 'Ivan Torres Contabilidad' }],
+    }).find(s => /^N2/.test(s.label))!;
+    expect(paso.label).toBe('N2 · Aprobado por Ivan Torres Aprobador N2');
+  });
+});
+
+/**
+ * El anticipo lo deposita Tesorería después de que Contabilidad aprueba. El
+ * paso solo aparecía al llegar a `viatico_approved`, así que la solicitud en
+ * trámite pasaba de Contabilidad a "Finalizada" sin decir que faltaba el pago.
+ */
+describe('pago de Tesorería en la solicitud de fondos', () => {
+  const solicitud = (extra: any = {}) => ({
+    _id: 'r-pago',
+    type: 'viatico',
+    status: 'pending_l1',
+    createdAt: '2026-08-20T00:00:00.000Z',
+    viaticoRequiredLevels: 1,
+    viaticoApprovalLevel: 0,
+    viaticoApproverChain: [
+      { level: 2, approved: false, approverIds: [{ _id: 'u1', name: 'ANA' }] },
+    ],
+    ...extra,
+  });
+  const labels = (r: any) => buildReportFlowSteps(r).map(s => s.label);
+
+  it('se anuncia desde que la solicitud está en trámite', () => {
+    const paso = buildReportFlowSteps(solicitud()).find(s => s.label === 'Pago de Tesorería')!;
+    expect(paso).toBeDefined();
+    expect(paso.state).toBe('upcoming');
+  });
+
+  it('va después de Contabilidad y antes del estado final', () => {
+    const l = labels(solicitud());
+    expect(l.indexOf('Pago de Tesorería')).toBeGreaterThan(
+      l.findIndex(x => /contabilidad/i.test(x))
+    );
+    expect(l.indexOf('Pago de Tesorería')).toBeLessThan(l.indexOf('Finalizada'));
+  });
+
+  it('se activa cuando la solicitud queda aprobada y aún no se deposita', () => {
+    const paso = buildReportFlowSteps(solicitud({ status: 'viatico_approved' }))
+      .find(s => s.label === 'Pago de Tesorería')!;
+    expect(paso.state).toBe('active');
+  });
+
+  it('no se promete un depósito en una solicitud rechazada ni cancelada', () => {
+    expect(labels(solicitud({ status: 'rejected' }))).not.toContain('Pago de Tesorería');
+    expect(labels(solicitud({ status: 'cancelled' }))).not.toContain('Pago de Tesorería');
+  });
+
+  it('no aparece dos veces', () => {
+    const l = labels(solicitud({ status: 'viatico_approved' }));
+    expect(l.filter(x => x === 'Pago de Tesorería').length).toBe(1);
+  });
+});
+
 describe('rendición de caja chica', () => {
   const labels = (r: any) => buildReportFlowSteps(r).map(s => s.label);
 

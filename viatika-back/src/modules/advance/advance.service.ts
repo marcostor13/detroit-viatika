@@ -1943,13 +1943,12 @@ export class AdvanceService implements OnModuleInit {
     amountReimburse: number
   ): Promise<void> {
     const clientId = String(report.clientId)
-    // Reembolso al colaborador: lo EJECUTA Tesorería (VD-37); Contabilidad
-    // recibe copia informativa.
-    const tesoreria =
+    // Reembolso al colaborador: lo EJECUTA Tesorería (VD-37) y solo a ella le
+    // llega el aviso. VD-127: Contabilidad ya no recibe la copia informativa
+    // —lo que ejecuta Tesorería es asunto de Tesorería—, igual que se hizo en
+    // el cierre de la rendición (VD-94, `expense-report.service.ts`).
+    const recipients =
       await this.userService.findTesoreriaNotifyRecipients(clientId)
-    const contabilidad =
-      await this.userService.findViaticoAccountingNotifyRecipients(clientId)
-    const recipients = [...tesoreria, ...contabilidad]
 
     const owner = report.userId as { name?: string; email?: string }
     const collaboratorName = owner?.name || 'Colaborador'

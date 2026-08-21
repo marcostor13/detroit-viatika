@@ -1710,6 +1710,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       // Estados de viáticos
       pending_l1: 'En solicitud',
       pending_l2: 'Aprobada por aprobadores',
+      // Gate de Contabilidad de la SOLICITUD del viático. Es un estado distinto
+      // de `pending_accounting` (el de la rendición) y faltaba en este mapa, así
+      // que la cabecera mostraba el crudo "pending_contabilidad".
+      pending_contabilidad: 'Pendiente de Contabilidad',
       viatico_approved: 'Aprobada',
       partially_paid: 'Pago parcial',
       paid: 'Pagada',
@@ -1828,6 +1832,36 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       return (p as { name?: string }).name || '—';
     }
     return '—';
+  }
+
+  /**
+   * Centro de costo del comprobante, con su código delante ("9101 —
+   * Administración y Finanzas"). El código es lo que Contabilidad usa para
+   * imputar, y sin él la columna obligaba a abrir el gasto para saber a qué
+   * centro va. Cae al nombre solo cuando el centro no tiene código.
+   *
+   * `proyectId` llega poblado con `name code` (ver `expense-report.service`),
+   * así que no hace falta ninguna llamada extra.
+   */
+  getExpenseCentroCosto(expense: Record<string, unknown>): string {
+    const nombre = this.getExpenseProjectName(expense);
+    if (!nombre) return '';
+    const codigo = this.getExpenseProjectCode(expense);
+    return codigo ? `${codigo} — ${nombre}` : nombre;
+  }
+
+  /** Código del centro de costo del comprobante; cae al del reporte. */
+  private getExpenseProjectCode(expense: Record<string, unknown>): string {
+    const p = expense['proyectId'];
+    if (p && typeof p === 'object' && 'code' in p) {
+      const code = (p as { code?: string }).code;
+      if (code) return String(code);
+    }
+    const rp = this.report?.projectId;
+    if (rp && typeof rp === 'object' && 'code' in rp) {
+      return String((rp as { code?: string }).code ?? '');
+    }
+    return '';
   }
 
   getExpenseProjectName(expense: Record<string, unknown>): string {

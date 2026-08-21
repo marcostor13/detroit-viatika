@@ -121,6 +121,14 @@ export class TesoreriaComponent implements OnInit {
   reimbursementOperationDate: string | null = null;
   reimbursementOperationTime: string | null = null;
   showPaymentModal = false;
+  /**
+   * VD-129: el modal de pago individual es de SOLO LECTURA. Los abonos se hacen
+   * por la planilla BBVA ("Generar archivo de pagos") y se dan por pagados al
+   * conciliar el PDF del banco ("Cargar pagos"); marcarlos a mano desde aquí
+   * dejaba pagos reales con datos que el banco nunca emitió. El flag queda para
+   * poder reabrir el registro manual si el cliente lo vuelve a pedir.
+   */
+  paymentModalReadOnly = false;
   showReturnModal = false;
   showHistoryModal = false;
   pendingReturns: IAdvance[] = [];
@@ -397,18 +405,24 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
-   * Contabilidad puede completar el pago de un viático con saldo del anticipo
-   * pendiente. Incluye los estados posteriores al envío del colaborador
-   * (submitted/pending_accounting), donde el pago restante sigue siendo válido.
+   * Quién ve la ficha del pago en la pestaña "Pagar" (VD-129). Antes esto era
+   * `canCompleteViaticoPayment`, que ademas exigia saldo pendiente: tenia
+   * sentido cuando el boton COMPLETABA un pago, pero la ficha es informativa y
+   * lo que se quiere consultar —el N° de operacion del banco— solo existe
+   * cuando el pago YA se hizo. Con aquel filtro, las filas pagadas se quedaban
+   * sin boton justo cuando habia algo que mirar.
    */
-  canCompleteViaticoPayment(report: IExpenseReport): boolean {
-    return (
-      this.canPayAndSettle &&
-      this.viaticoRemaining(report) > 0.009 &&
-      ['viatico_approved', 'partially_paid', 'submitted', 'pending_accounting'].includes(report.status)
-    );
+  canSeeViaticoPaymentInfo(): boolean {
+    return this.canPayAndSettle;
   }
 
+  /**
+   * VD-129: ficha informativa del pago de la solicitud de fondos. Ya no se
+   * registra el abono a mano — lo hace la planilla BBVA y se da por pagado al
+   * conciliar el PDF del banco, que es de donde sale el N° de operación. El
+   * formulario se sigue rellenando porque de él salen los datos bancarios que
+   * se muestran; queda deshabilitado para que nadie escriba sobre ellos.
+   */
   openViaticoPaymentModal(report: IExpenseReport): void {
     this.selectedViaticoReport = report;
     const remaining = this.viaticoRemaining(report);
@@ -449,6 +463,7 @@ export class TesoreriaComponent implements OnInit {
     this.viaticoOperationNumber = null;
     this.viaticoOperationDate = null;
     this.viaticoOperationTime = null;
+    this.paymentForm.disable({ emitEvent: false });
     this.showViaticoPaymentModal = true;
   }
 
@@ -515,6 +530,12 @@ export class TesoreriaComponent implements OnInit {
     });
   }
 
+  /**
+   * Registro manual del pago de una solicitud de fondos. VD-129 lo sacó de la
+   * interfaz —la ficha del modal es de solo lectura— pero el método se conserva,
+   * igual que `paymentModalReadOnly`: si el cliente vuelve a pedir el registro a
+   * mano, es volver a colgarlo de un botón. Sus pruebas siguen cubriéndolo.
+   */
   confirmViaticoPayment(): void {
     if (!this.selectedViaticoReport || this.paymentForm.invalid) return;
     const method = this.paymentForm.get('method')?.value;
@@ -559,8 +580,9 @@ export class TesoreriaComponent implements OnInit {
     }
   }
 
-  openPaymentModal(advance: IAdvance) {
+  openPaymentModal(advance: IAdvance, readOnly = false) {
     this.selectedAdvance = advance;
+    this.paymentModalReadOnly = readOnly;
     this.paymentForm.reset({
       amount: this.advanceRemaining(advance) > 0 ? this.advanceRemaining(advance) : null,
       method: 'transferencia_bancaria',
@@ -583,7 +605,90 @@ export class TesoreriaComponent implements OnInit {
         cci: user.bankAccount.cci,
       });
     }
+    // Un formulario deshabilitado no aporta su valor a `paymentForm.value`, así
+    // que hay que devolverlo a habilitado si algún día se reabre el registro.
+    if (readOnly) this.paymentForm.disable({ emitEvent: false });
+    else this.paymentForm.enable({ emitEvent: false });
     this.showPaymentModal = true;
+  }
+
+  /**
+   * N° de operación del reembolso, puesto por la conciliación del PDF de BBVA.
+   * `operationNumber` manda sobre `reference`: es el que escribe la
+   * conciliación; `reference` puede venir de una carga anterior a mano.
+   */
+  reimbursementOperationReference(report: IExpenseReport | null): string | null {
+    const info = (report as any)?.reimbursementPaymentInfo as
+      | { reference?: string; operationNumber?: string }
+      | undefined;
+    return info?.operationNumber || info?.reference || null;
+  }
+
+  /** Fecha del reembolso ya pagado, o `null` mientras Tesorería no lo abona. */
+  reimbursementPaymentDate(report: IExpenseReport | null): string | Date | null {
+    const info = (report as any)?.reimbursementPaymentInfo as { transferDate?: string } | undefined;
+    return info?.transferDate ?? (report as any)?.reimbursedAt ?? null;
+  }
+
+  /**
+   * Centro de costo de la solicitud, como "CC-001 — Proyecto Minera Antamina".
+   * `findAllByClient` lo popula con `code name`; si llegara sin poblar se
+   * devuelve vacío antes que un id crudo, que no le dice nada a Tesorería.
+   */
+  viaticoCentroCosto(report: IExpenseReport | null): string {
+    const p = (report as any)?.projectId;
+    if (!p || typeof p !== 'object' || !p.name) return '—';
+    return p.code ? `${p.code} — ${p.name}` : p.name;
+  }
+
+  /** Orden de trabajo imputada. Cadena vacía cuando la solicitud no lleva OT. */
+  viaticoOrdenTrabajo(report: IExpenseReport | null): string {
+    const ot = (report as any)?.viaticoOrdenTrabajoId;
+    if (!ot || typeof ot !== 'object') return '';
+    return ot.nombre ?? '';
+  }
+
+  /**
+   * Título de la solicitud. El lugar de destino manda: es lo que la lista de
+   * Fondos ya muestra (`viaticoPlace || title`) y abrir la ficha con otro
+   * nombre distinto del de la fila que se acaba de pulsar desorienta. El
+   * `title` queda de respaldo para la caja chica, que sí lo guarda y no tiene
+   * destino.
+   */
+  viaticoTitulo(report: IExpenseReport | null): string {
+    return (report as any)?.viaticoPlace || report?.title || '—';
+  }
+
+  /**
+   * N° de operación del abono, tal como lo dejó la conciliación del PDF de BBVA
+   * (`reference`/`operationNumber`). Se prefiere el último pago registrado: un
+   * viático admite pagos parciales y el vigente es el más reciente.
+   */
+  viaticoOperationReference(report: IExpenseReport | null): string | null {
+    if (!report) return null;
+    const pagos = ((report as any).viaticoPayments ?? []) as Array<{
+      reference?: string;
+      operationNumber?: string;
+    }>;
+    for (let i = pagos.length - 1; i >= 0; i--) {
+      const ref = pagos[i]?.operationNumber || pagos[i]?.reference;
+      if (ref) return ref;
+    }
+    const info = (report as any).viaticoPaymentInfo as { reference?: string } | undefined;
+    return info?.reference || null;
+  }
+
+  /** Fecha del abono, para la ficha informativa. */
+  viaticoPaymentDate(report: IExpenseReport | null): string | Date | null {
+    if (!report) return null;
+    const pagos = ((report as any).viaticoPayments ?? []) as Array<{ transferDate?: string }>;
+    const ultimo = pagos.length ? pagos[pagos.length - 1]?.transferDate : undefined;
+    return ultimo ?? (report as any).viaticoPaymentInfo?.transferDate ?? null;
+  }
+
+  /** VD-129: abre el modal de pago como ficha informativa, sin registrar nada. */
+  openPaymentInfo(advance: IAdvance) {
+    this.openPaymentModal(advance, true);
   }
 
   // ─── Pago de viático: acumulado y pagos parciales ────────────────────────────
@@ -600,18 +705,15 @@ export class TesoreriaComponent implements OnInit {
     return monedaSymbol(advance?.moneda);
   }
 
-  /** Contabilidad puede registrar/seguir registrando pagos mientras no se haya liquidado. */
-  canRegisterPayment(advance: IAdvance): boolean {
+  /**
+   * Quién ve la ficha de pago de una solicitud ya aprobada. Mismo permiso que
+   * antes habilitaba el registro manual (VD-129, ver `paymentModalReadOnly`).
+   */
+  canSeePaymentInfo(advance: IAdvance): boolean {
     return (
       this.canPayAndSettle &&
       ['approved', 'partially_paid', 'paid'].includes(advance.status)
     );
-  }
-
-  payButtonLabel(advance: IAdvance): string {
-    if (advance.status === 'partially_paid') return 'Registrar pago';
-    if (advance.status === 'paid') return 'Pago adicional';
-    return 'Registrar pago';
   }
 
   private resetPaymentScanState(): void {
@@ -734,6 +836,11 @@ export class TesoreriaComponent implements OnInit {
 
   openReimbursementModal(report: IExpenseReport): void {
     this.selectedReportReimbursement = report;
+    // `paymentForm` es COMPARTIDO entre los modales de Tesorería y aquí solo
+    // alimenta la ficha de lectura (VD-129): se deja deshabilitado a propósito.
+    // `reset()` no cambia el estado habilitado/deshabilitado, así que hay que
+    // decirlo explícitamente en cada apertura y no confiar en la anterior.
+    this.paymentForm.disable({ emitEvent: false });
     // El monto del reembolso es fijo (= |settlement.difference|). El modal no
     // tiene input de monto, así que lo seteamos aquí; de lo contrario el control
     // `amount` (requerido) quedaría en null y el formulario nunca sería válido,
@@ -1112,7 +1219,6 @@ export class TesoreriaComponent implements OnInit {
   batchMode = signal<'generate' | 'reconcile'>('generate');
   isGeneratingTxt = signal(false);
   isReconciling = signal(false);
-  isSimulatingPdf = signal(false);
   generateResult = signal<IGeneratePaymentsTxt | null>(null);
   reconcileResult = signal<IReconcileResult | null>(null);
 
@@ -1377,44 +1483,6 @@ export class TesoreriaComponent implements OnInit {
         this.isReconciling.set(false);
         this.notificationService.show(
           e.error?.message || 'No se pudo procesar el PDF de BBVA.',
-          'error'
-        );
-      },
-    });
-  }
-
-  /**
-   * PRUEBAS: simula el PDF de retorno de BBVA. Pide al backend que marque como
-   * abonados todos los pagos pendientes y los concilie por el mismo motor que el
-   * PDF real, para continuar el flujo sin depender del banco. Ocultar/quitar
-   * antes de producción (la vía real es "Cargar pagos" con el PDF de BBVA).
-   */
-  simulateBbvaPdf(): void {
-    if (this.isSimulatingPdf() || this.isReconciling()) return;
-    this.isSimulatingPdf.set(true);
-    this.generateResult.set(null);
-    // Misma regla que al conciliar el PDF real: se simula la moneda de la
-    // última planilla generada. Sin ese dato el backend asume la base y un
-    // pendiente en dólares no cruza con nada.
-    this.advanceService.simulateReconcile(this.monedaPlanilla() ?? undefined).subscribe({
-      next: (res) => {
-        this.isSimulatingPdf.set(false);
-        this.reconcileResult.set(res);
-        this.batchMode.set('reconcile');
-        this.showBatchModal.set(true);
-        const n = res.conciliados.length;
-        this.notificationService.show(
-          n > 0
-            ? `Simulación BBVA: ${n} pago(s) conciliado(s) y marcado(s) como pagados.`
-            : 'Simulación BBVA: no se concilió ningún pago. Revisa el resumen.',
-          n > 0 ? 'success' : 'warning'
-        );
-        this.loadData();
-      },
-      error: (e) => {
-        this.isSimulatingPdf.set(false);
-        this.notificationService.show(
-          e.error?.message || 'No se pudo simular el PDF de BBVA.',
           'error'
         );
       },
