@@ -73,7 +73,7 @@
                   class="text-xs px-3 py-1.5 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors font-medium">
                   Ver detalle
                 </a>
-                <app-button variant="success" size="sm" label="Registrar pago" [disabled]="isActing()" (clicked)="openReimbursementModal(rep)" />
+                <app-button variant="success" size="sm" label="Ver información" (clicked)="openReimbursementModal(rep)" />
               </div>
             </td>
           </tr>
@@ -97,7 +97,7 @@
             class="flex-1 h-10 flex items-center justify-center text-sm font-medium border border-primary/30 text-primary rounded-xl hover:bg-primary/5 transition-colors">
             Ver detalle
           </a>
-          <app-button variant="success" [fullWidth]="true" label="Registrar pago" [disabled]="isActing()" (clicked)="openReimbursementModal(rep)" />
+          <app-button variant="success" [fullWidth]="true" label="Ver información" (clicked)="openReimbursementModal(rep)" />
         </div>
       </div>
       }
@@ -761,7 +761,7 @@
 </div>
 }
 
-<!-- Modal: Registrar reembolso de rendición -->
+<!-- Modal: ficha del reembolso de una rendición (solo lectura, VD-129) -->
 @if(showReimbursementModal && selectedReportReimbursement) {
 <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" (click)="showReimbursementModal=false">
   <div class="absolute inset-0 bg-secondary/50 backdrop-blur-sm"></div>
@@ -769,131 +769,80 @@
        (click)="$event.stopPropagation()">
     <div class="p-6">
       <div class="flex items-start justify-between mb-0.5">
-        <h3 class="text-lg font-bold text-secondary">Registrar reembolso</h3>
+        <h3 class="text-lg font-bold text-secondary">Información del reembolso</h3>
         <a [routerLink]="['/mis-rendiciones', selectedReportReimbursement._id, 'detalle']" target="_blank"
           class="text-xs text-primary font-medium hover:underline underline-offset-2 shrink-0 ml-3 mt-1">
           Ver rendición
         </a>
       </div>
-      <p class="text-sm text-tertiary mb-5">
+      <p class="text-sm text-tertiary mb-4">
         <span class="font-semibold text-secondary">{{ collaboratorReportName(selectedReportReimbursement) }}</span>
         &nbsp;·&nbsp;{{ reimbursementSymbol(selectedReportReimbursement) }} {{ reimbursementAmount(selectedReportReimbursement) }}
-        <br><span class="text-xs">{{ selectedReportReimbursement.title }}</span>
       </p>
 
-      <form [formGroup]="paymentForm" class="space-y-4">
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">
-            Comprobante
-            @if (paymentForm.get('method')?.value !== 'efectivo') {
-              <span class="text-error">*</span>
+      <!--
+        VD-129: misma ficha de solo lectura que la solicitud de fondos. El
+        reembolso también sale en la planilla BBVA (CONCEPTO.reembolso) y se da
+        por pagado al conciliar el PDF del banco, que es de donde viene el N° de
+        operación; aquí no se adjunta comprobante ni se escribe nada.
+      -->
+      <dl class="divide-y divide-tertiary/15 rounded-xl border border-tertiary/20 overflow-hidden">
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Rendición</dt>
+          <dd class="font-medium text-secondary text-right break-words">{{ selectedReportReimbursement.title || '—' }}</dd>
+        </div>
+        @if (selectedReportReimbursement.description) {
+        <div class="px-3 py-2.5 text-sm">
+          <dt class="text-tertiary mb-0.5">Descripción</dt>
+          <dd class="text-secondary break-words">{{ selectedReportReimbursement.description }}</dd>
+        </div>
+        }
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Centro de costo</dt>
+          <dd class="font-medium text-secondary text-right break-words">{{ viaticoCentroCosto(selectedReportReimbursement) }}</dd>
+        </div>
+        @if (viaticoOrdenTrabajo(selectedReportReimbursement); as ot) {
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Orden de trabajo</dt>
+          <dd class="font-medium text-secondary text-right break-words">{{ ot }}</dd>
+        </div>
+        }
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">A reembolsar</dt>
+          <dd class="font-semibold text-secondary text-right">{{ reimbursementSymbol(selectedReportReimbursement) }} {{ reimbursementAmount(selectedReportReimbursement) }}</dd>
+        </div>
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Banco</dt>
+          <dd class="font-medium text-secondary text-right">{{ paymentForm.get('bankName')?.value || '—' }}</dd>
+        </div>
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">N° Cuenta</dt>
+          <dd class="font-mono text-secondary text-right break-all">{{ paymentForm.get('accountNumber')?.value || '—' }}</dd>
+        </div>
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">CCI</dt>
+          <dd class="font-mono text-secondary text-right break-all">{{ paymentForm.get('cci')?.value || '—' }}</dd>
+        </div>
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">Fecha de pago</dt>
+          <dd class="font-medium text-secondary text-right">
+            {{ reimbursementPaymentDate(selectedReportReimbursement) ? (reimbursementPaymentDate(selectedReportReimbursement) | date:'dd/MM/yyyy') : 'Pendiente' }}
+          </dd>
+        </div>
+        <div class="flex justify-between gap-4 px-3 py-2.5 text-sm">
+          <dt class="text-tertiary shrink-0">N° de operación</dt>
+          <dd class="text-right">
+            @if (reimbursementOperationReference(selectedReportReimbursement); as ref) {
+              <span class="font-mono font-semibold text-secondary break-all">{{ ref }}</span>
             } @else {
-              <span class="text-tertiary normal-case font-normal">(opcional)</span>
+              <span class="text-xs text-tertiary">Se completa al cargar el pago del banco</span>
             }
-          </label>
-          @if (!reimbursementReceiptName) {
-          <label class="flex flex-col items-center justify-center gap-2 h-24 rounded-xl border-2 border-dashed border-tertiary/30 hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors">
-            <app-icon name="upload" size="lg" class="text-tertiary" />
-            <span class="text-xs text-tertiary">PDF, JPG o PNG (máx. 10MB)</span>
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-              (change)="onReimbursementReceiptSelected($event)" class="hidden" />
-          </label>
-          } @else {
-          <div class="flex items-center gap-3 p-3 rounded-xl bg-success/10 border border-success/30">
-            <app-icon name="circle-check" size="sm" class="text-success shrink-0" />
-            <span class="text-xs text-success-ink font-medium truncate flex-1">{{ reimbursementReceiptName }}</span>
-            <button type="button" (click)="reimbursementReceiptUrl=null; reimbursementReceiptName=null"
-              class="text-xs text-tertiary hover:text-error transition-colors shrink-0">Quitar</button>
-          </div>
-          }
-          @if (isUploadingReceipt()) {
-          <p class="text-xs text-primary flex items-center gap-1.5">
-            <span class="inline-block w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
-            Subiendo comprobante...
-          </p>
-          }
-          @if (isScanningReimbursement()) {
-          <p class="text-xs text-primary flex items-center gap-1.5">
-            <span class="inline-block w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
-            Escaneando comprobante...
-          </p>
-          }
+          </dd>
         </div>
+      </dl>
 
-        @if (reimbursementOperationNumber || reimbursementOperationDate || reimbursementOperationTime || reimbursementTitular) {
-        <div class="rounded-xl border border-tertiary/20 bg-background/60 p-3 space-y-1.5">
-          <p class="text-[11px] font-semibold text-tertiary uppercase tracking-wider">Datos detectados del comprobante</p>
-          @if (reimbursementTitular) {
-          <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary">Titular</span><span class="font-medium text-secondary text-right">{{ reimbursementTitular }}</span></div>
-          }
-          @if (reimbursementOperationNumber) {
-          <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary">N° operación</span><span class="font-medium text-secondary text-right">{{ reimbursementOperationNumber }}</span></div>
-          }
-          @if (reimbursementOperationDate) {
-          <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary">Fecha</span><span class="font-medium text-secondary text-right">{{ reimbursementOperationDate }}</span></div>
-          }
-          @if (reimbursementOperationTime) {
-          <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary">Hora</span><span class="font-medium text-secondary text-right">{{ reimbursementOperationTime }}</span></div>
-          }
-          @if (reimbursementScannedAmount !== null) {
-          <div class="flex justify-between gap-3 text-xs"><span class="text-tertiary">Monto</span><span class="font-medium text-secondary text-right">S/ {{ reimbursementScannedAmount | number:'1.2-2' }}</span></div>
-          }
-        </div>
-        }
-
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Método de pago</label>
-          <select formControlName="method"
-            class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30">
-            <option value="transferencia_bancaria">Transferencia Bancaria</option>
-            <option value="efectivo">Efectivo</option>
-            <option value="cheque">Cheque</option>
-          </select>
-        </div>
-        @if(paymentForm.get('method')?.value === 'transferencia_bancaria') {
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Banco destino</label>
-            <input type="text" formControlName="bankName" placeholder="BCP, Interbank..."
-              class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">N° Cuenta</label>
-            <input type="text" formControlName="accountNumber"
-              class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-          <div class="flex flex-col gap-1.5 col-span-2">
-            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">CCI</label>
-            <input type="text" formControlName="cci"
-              class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary font-mono focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-        </div>
-        }
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Fecha <span class="text-error">*</span></label>
-            <input type="date" formControlName="transferDate"
-              class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">N° Operación <span class="text-error">*</span></label>
-            <input type="text" formControlName="reference"
-              class="w-full h-[42px] px-3 rounded-xl border border-tertiary/30 text-sm text-secondary bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30" />
-          </div>
-        </div>
-      </form>
-
-      <div class="flex gap-3 mt-6">
-        <app-button variant="secondary" [fullWidth]="true" label="Cancelar" (clicked)="showReimbursementModal=false" />
-        <app-button
-          variant="success"
-          [fullWidth]="true"
-          label="Confirmar reembolso"
-          loadingLabel="Registrando..."
-          [loading]="isActing()"
-          [disabled]="paymentForm.invalid || isActing() || isUploadingReceipt() || (paymentForm.get('method')?.value !== 'efectivo' && !reimbursementReceiptUrl)"
-          (clicked)="confirmReimbursementPayment()"
-        />
+      <div class="flex mt-6">
+        <app-button variant="primary" [fullWidth]="true" label="Cerrar" (clicked)="showReimbursementModal=false" />
       </div>
     </div>
   </div>

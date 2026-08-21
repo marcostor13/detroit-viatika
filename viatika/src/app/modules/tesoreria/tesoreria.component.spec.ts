@@ -342,16 +342,30 @@ describe('TesoreriaComponent', () => {
       expect(component.viaticoPaymentDate(rep)).toBe('2026-08-19');
     });
 
-    // `paymentForm` es compartido: las fichas de solo lectura lo deshabilitan y
-    // `reset()` no lo revive. Sin re-habilitarlo, abrir una ficha antes que el
-    // modal de reembolso dejaba a Tesorería sin poder registrar el reembolso.
-    it('no deja mudo el modal de reembolso, que comparte el formulario', () => {
-      component.openViaticoPaymentModal(makeReport({ _id: 'r1' }));
+    // `paymentForm` es compartido por los modales de Tesorería y `reset()` NO
+    // cambia habilitado/deshabilitado: cada apertura tiene que fijarlo, o hereda
+    // el estado del modal anterior. Con todas las fichas en solo lectura el
+    // sintoma seria al reves —un formulario que quedo escribible—, asi que se
+    // comprueba el ciclo completo en las dos direcciones.
+    it('cada modal fija el estado del formulario compartido', () => {
+      const rep = makeReport({ _id: 'r1' });
+      const reembolso = makeReport({
+        _id: 'r2',
+        settlement: { type: 'reembolso', difference: -50 },
+      } as any);
+
+      component.openViaticoPaymentModal(rep);
       expect(component.paymentForm.disabled).toBeTrue();
-      component.openReimbursementModal(
-        makeReport({ _id: 'r2', settlement: { type: 'reembolso', difference: -50 } } as any)
-      );
+
+      component.openReimbursementModal(reembolso);
+      expect(component.paymentForm.disabled).toBeTrue();
+
+      // El unico camino que aun escribe: si el cliente reabre el registro manual.
+      component.openPaymentModal(makeAdvance({ _id: 'a1' }), false);
       expect(component.paymentForm.enabled).toBeTrue();
+
+      component.openReimbursementModal(reembolso);
+      expect(component.paymentForm.disabled).toBeTrue();
     });
 
     it('cae a viaticoPaymentInfo cuando no hay pagos parciales', () => {

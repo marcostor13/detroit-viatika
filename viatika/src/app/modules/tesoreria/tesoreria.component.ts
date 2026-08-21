@@ -614,6 +614,24 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
+   * N° de operación del reembolso, puesto por la conciliación del PDF de BBVA.
+   * `operationNumber` manda sobre `reference`: es el que escribe la
+   * conciliación; `reference` puede venir de una carga anterior a mano.
+   */
+  reimbursementOperationReference(report: IExpenseReport | null): string | null {
+    const info = (report as any)?.reimbursementPaymentInfo as
+      | { reference?: string; operationNumber?: string }
+      | undefined;
+    return info?.operationNumber || info?.reference || null;
+  }
+
+  /** Fecha del reembolso ya pagado, o `null` mientras Tesorería no lo abona. */
+  reimbursementPaymentDate(report: IExpenseReport | null): string | Date | null {
+    const info = (report as any)?.reimbursementPaymentInfo as { transferDate?: string } | undefined;
+    return info?.transferDate ?? (report as any)?.reimbursedAt ?? null;
+  }
+
+  /**
    * Centro de costo de la solicitud, como "CC-001 — Proyecto Minera Antamina".
    * `findAllByClient` lo popula con `code name`; si llegara sin poblar se
    * devuelve vacío antes que un id crudo, que no le dice nada a Tesorería.
@@ -819,11 +837,11 @@ export class TesoreriaComponent implements OnInit {
 
   openReimbursementModal(report: IExpenseReport): void {
     this.selectedReportReimbursement = report;
-    // `paymentForm` es COMPARTIDO con las fichas de solo lectura de VD-129, que
-    // lo dejan deshabilitado — y `reset()` no lo vuelve a habilitar. Sin esto,
-    // abrir una ficha de pago antes que este modal dejaba el reembolso mudo:
-    // los campos en gris y "Confirmar reembolso" siempre inhabilitado.
-    this.paymentForm.enable({ emitEvent: false });
+    // `paymentForm` es COMPARTIDO entre los modales de Tesorería y aquí solo
+    // alimenta la ficha de lectura (VD-129): se deja deshabilitado a propósito.
+    // `reset()` no cambia el estado habilitado/deshabilitado, así que hay que
+    // decirlo explícitamente en cada apertura y no confiar en la anterior.
+    this.paymentForm.disable({ emitEvent: false });
     // El monto del reembolso es fijo (= |settlement.difference|). El modal no
     // tiene input de monto, así que lo seteamos aquí; de lo contrario el control
     // `amount` (requerido) quedaría en null y el formulario nunca sería válido,
