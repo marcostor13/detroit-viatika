@@ -215,12 +215,19 @@ export class ExpenseReportController {
     @Request() req: any,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
-    @Query('userId') userId?: string
+    @Query('userId') userId?: string,
+    // VD-135: filtros de estado, centro de costo y orden de trabajo.
+    @Query('status') status?: string,
+    @Query('projectId') projectId?: string,
+    @Query('ordenTrabajoId') ordenTrabajoId?: string
   ) {
     return this.expenseReportService.findDirectRendicionReports(clientId, {
       dateFrom,
       dateTo,
       userId,
+      status,
+      projectId,
+      ordenTrabajoId,
       approverUserId: this.directasApproverScope(req),
     })
   }

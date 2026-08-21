@@ -356,11 +356,16 @@ export class ExpenseReportsService {
   /** Rendiciones directas a nivel de reporte (una fila por rendición) para la pestaña "Rendiciones directas". */
   findDirectRendicionReports(clientId: string, filters: {
     dateFrom?: string; dateTo?: string; userId?: string;
+    /** VD-135: estado, centro de costo y orden de trabajo. */
+    status?: string; projectId?: string; ordenTrabajoId?: string;
   } = {}): Observable<any[]> {
     let params = new HttpParams();
     if (filters.dateFrom) params = params.set('dateFrom', filters.dateFrom);
     if (filters.dateTo) params = params.set('dateTo', filters.dateTo);
     if (filters.userId) params = params.set('userId', filters.userId);
+    if (filters.status) params = params.set('status', filters.status);
+    if (filters.projectId) params = params.set('projectId', filters.projectId);
+    if (filters.ordenTrabajoId) params = params.set('ordenTrabajoId', filters.ordenTrabajoId);
     return this.http.get<any[]>(
       `${this.apiUrl}/expense-report/directas/reports/${clientId}`,
       { params }

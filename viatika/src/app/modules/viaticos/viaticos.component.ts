@@ -79,6 +79,9 @@ export class ViaticosComponent implements OnInit {
 
   // Filters
   filterStatus = signal('all');
+  /** VD-135: centro de costo y orden de trabajo de la solicitud. */
+  filterProjectId = signal('');
+  filterOrdenTrabajoId = signal('');
   filterSearch = signal('');
   filterDateFrom = signal('');
   filterDateTo = signal('');
@@ -144,6 +147,44 @@ export class ViaticosComponent implements OnInit {
     };
   });
 
+  /** Id de una referencia venga poblada o como id suelto. */
+  private idRefDe(ref: unknown): string {
+    if (!ref) return '';
+    return String((ref as any)?._id ?? ref);
+  }
+
+  /**
+   * Catálogos de los filtros de centro de costo y OT (VD-135).
+   *
+   * Se derivan de las solicitudes ya cargadas en vez de pedir los catálogos
+   * completos: esta pantalla filtra en cliente sobre una lista que ya tiene los
+   * dos campos poblados, así que una llamada extra solo añadiría opciones que no
+   * devuelven ninguna fila. El día que el listado se pagine habrá que cambiarlo
+   * por el catálogo real.
+   */
+  private opcionesDe(
+    campo: 'projectId' | 'viaticoOrdenTrabajoId',
+    etiqueta: (x: any) => string
+  ): Array<{ _id: string; label: string }> {
+    const porId = new Map<string, string>();
+    for (const v of this.allViaticoReports()) {
+      const ref = (v as any)[campo];
+      if (ref && typeof ref === 'object' && ref._id) {
+        porId.set(String(ref._id), etiqueta(ref));
+      }
+    }
+    return [...porId.entries()]
+      .map(([_id, label]) => ({ _id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  projectOptions = computed(() =>
+    this.opcionesDe('projectId', p => (p.code ? `${p.code} — ${p.name}` : p.name))
+  );
+  ordenTrabajoOptions = computed(() =>
+    this.opcionesDe('viaticoOrdenTrabajoId', ot => ot.nombre ?? '—')
+  );
+
   // ─── Unified list (solicitudes de viático) ────────────────────────────────────
 
   unifiedFiltered = computed((): UnifiedSolicitudItem[] => {
@@ -151,6 +192,8 @@ export class ViaticosComponent implements OnInit {
     const status = this.filterStatus();
     const dateFrom = this.filterDateFrom();
     const dateTo = this.filterDateTo();
+    const projectId = this.filterProjectId();
+    const ordenTrabajoId = this.filterOrdenTrabajoId();
 
     const items: UnifiedSolicitudItem[] = [];
 
@@ -206,6 +249,14 @@ export class ViaticosComponent implements OnInit {
       i.place.toLowerCase().includes(search)
     );
     if (status && status !== 'all') filtered = filtered.filter(i => i.status === status);
+    // VD-135. Se comparan los ids, no las etiquetas: dos centros de costo pueden
+    // llamarse igual y el código es lo que los distingue.
+    if (projectId) filtered = filtered.filter(i => this.idRefDe((i.raw as any).projectId) === projectId);
+    if (ordenTrabajoId) {
+      filtered = filtered.filter(
+        i => this.idRefDe((i.raw as any).viaticoOrdenTrabajoId) === ordenTrabajoId
+      );
+    }
     if (dateFrom) filtered = filtered.filter(i => new Date(i.createdAt) >= new Date(dateFrom));
     if (dateTo) filtered = filtered.filter(i => new Date(i.createdAt) <= new Date(dateTo + 'T23:59:59'));
 
@@ -241,7 +292,12 @@ export class ViaticosComponent implements OnInit {
     this.filterSearch.set('');
     this.filterDateFrom.set('');
     this.filterDateTo.set('');
+    this.filterProjectId.set('');
+    this.filterOrdenTrabajoId.set('');
   }
+
+  onProjectChange(e: Event) { this.filterProjectId.set((e.target as HTMLSelectElement).value); }
+  onOrdenTrabajoChange(e: Event) { this.filterOrdenTrabajoId.set((e.target as HTMLSelectElement).value); }
 
   onStatusChange(e: Event) { this.filterStatus.set((e.target as HTMLSelectElement).value); }
   onSearchChange(e: Event) { this.filterSearch.set((e.target as HTMLInputElement).value); }

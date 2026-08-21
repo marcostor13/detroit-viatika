@@ -53,7 +53,7 @@
 
   <!-- Filtros -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-5">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Fecha desde</label>
         <input type="date" [(ngModel)]="filterDateFrom" class="w-full border border-gray-300 rounded-lg px-3 py-2 h-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
@@ -73,6 +73,28 @@
           triggerClass="!rounded-lg !px-3 !py-2 !h-10"
         />
       </div>
+      <!-- VD-135: estado, centro de costo y OT valen para las dos pestañas. -->
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Estado</label>
+        <select [(ngModel)]="filterStatus" [class.text-gray-400]="!filterStatus" [class.text-secondary]="filterStatus" class="w-full border border-gray-300 rounded-lg px-3 py-2 h-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
+          <option value="" class="text-secondary">Todos</option>
+          @for (e of estadosDirecta; track e.value) { <option [value]="e.value" class="text-secondary">{{ e.label }}</option> }
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Centro de costo</label>
+        <select [(ngModel)]="filterProjectId" [class.text-gray-400]="!filterProjectId" [class.text-secondary]="filterProjectId" class="w-full border border-gray-300 rounded-lg px-3 py-2 h-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
+          <option value="" class="text-secondary">Todos</option>
+          @for (p of projects(); track p._id) { <option [value]="p._id" class="text-secondary">{{ p.code ? p.code + ' — ' : '' }}{{ p.name }}</option> }
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1">Orden de trabajo</label>
+        <select [(ngModel)]="filterOrdenTrabajoId" [class.text-gray-400]="!filterOrdenTrabajoId" [class.text-secondary]="filterOrdenTrabajoId" class="w-full border border-gray-300 rounded-lg px-3 py-2 h-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
+          <option value="" class="text-secondary">Todas</option>
+          @for (ot of ordenesTrabajo(); track ot._id) { <option [value]="ot._id" class="text-secondary">{{ ot.nombre }}</option> }
+        </select>
+      </div>
       @if (activeTab() === 'gastos') {
       <div>
         <label class="block text-xs font-medium text-gray-500 mb-1">Tipo</label>
@@ -82,13 +104,6 @@
           <option value="planilla_movilidad" class="text-secondary">Planilla Movilidad</option>
           <option value="otros_gastos" class="text-secondary">Otros Gastos</option>
           <option value="recibo_caja" class="text-secondary">Recibo de Caja</option>
-        </select>
-      </div>
-      <div>
-        <label class="block text-xs font-medium text-gray-500 mb-1">Centro de costo</label>
-        <select [(ngModel)]="filterProjectId" [class.text-gray-400]="!filterProjectId" [class.text-secondary]="filterProjectId" class="w-full border border-gray-300 rounded-lg px-3 py-2 h-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white">
-          <option value="" class="text-secondary">Todos</option>
-          @for (p of projects(); track p._id) { <option [value]="p._id" class="text-secondary">{{ p.code ? p.code + ' — ' : '' }}{{ p.name }}</option> }
         </select>
       </div>
       <div>

@@ -3139,6 +3139,12 @@ export class ExpenseReportService implements OnModuleInit {
       dateTo?: string
       userId?: string
       approverUserId?: string
+      /** VD-135: estado de la rendición. */
+      status?: string
+      /** VD-135: centro de costo del reporte. */
+      projectId?: string
+      /** VD-135: orden de trabajo imputada (`directaOrdenTrabajoId`). */
+      ordenTrabajoId?: string
     } = {}
   ) {
     const query: any = {
@@ -3147,6 +3153,19 @@ export class ExpenseReportService implements OnModuleInit {
     }
     if (filters.userId && /^[0-9a-fA-F]{24}$/.test(filters.userId)) {
       query.userId = new Types.ObjectId(filters.userId)
+    }
+    // VD-135. Los tres se validan como ObjectId (o como estado conocido) antes
+    // de entrar a la consulta: un valor basura en la query no debe reventar el
+    // listado, simplemente no filtra.
+    if (filters.status) query.status = filters.status
+    if (filters.projectId && /^[0-9a-fA-F]{24}$/.test(filters.projectId)) {
+      query.projectId = new Types.ObjectId(filters.projectId)
+    }
+    if (
+      filters.ordenTrabajoId &&
+      /^[0-9a-fA-F]{24}$/.test(filters.ordenTrabajoId)
+    ) {
+      query.directaOrdenTrabajoId = new Types.ObjectId(filters.ordenTrabajoId)
     }
     if (filters.approverUserId) {
       query._id = {
@@ -3166,9 +3185,13 @@ export class ExpenseReportService implements OnModuleInit {
     const reports = await this.expenseReportModel
       .find(query)
       .select(
-        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher viaticoMoneda'
+        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher viaticoMoneda projectId directaOrdenTrabajoId'
       )
       .populate('userId', 'name email')
+      // VD-135: el centro de costo y la OT viajan poblados para que la lista
+      // pueda mostrarlos junto al filtro que los acota.
+      .populate('projectId', 'code name')
+      .populate('directaOrdenTrabajoId', 'nombre')
       .populate({
         path: 'createdBy',
         select: 'name email roleId',
