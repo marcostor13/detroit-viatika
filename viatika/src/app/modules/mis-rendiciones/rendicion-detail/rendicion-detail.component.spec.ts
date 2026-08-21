@@ -307,6 +307,30 @@ describe('RendicionDetailComponent', () => {
     });
   });
 
+  describe('centro de costo por comprobante', () => {
+    it('antepone el código al nombre', () => {
+      const exp = { proyectId: { _id: 'p1', code: '9101', name: 'Administracion y Finanzas' } };
+      expect(component.getExpenseCentroCosto(exp as any)).toBe('9101 — Administracion y Finanzas');
+    });
+
+    it('sin código muestra solo el nombre, no un guion suelto', () => {
+      const exp = { proyectId: { _id: 'p1', name: 'Administracion y Finanzas' } };
+      expect(component.getExpenseCentroCosto(exp as any)).toBe('Administracion y Finanzas');
+    });
+
+    it('un comprobante sin centro propio hereda el del reporte, con su código', () => {
+      component.report = {
+        projectId: { _id: 'p9', code: '9201', name: 'Comercial' },
+      } as any;
+      expect(component.getExpenseCentroCosto({} as any)).toBe('9201 — Comercial');
+    });
+
+    it('sin centro de costo devuelve vacío, para que la celda muestre —', () => {
+      component.report = {} as any;
+      expect(component.getExpenseCentroCosto({} as any)).toBe('');
+    });
+  });
+
   describe('getExpenseConceptoColumn (VD-64)', () => {
     it('muestra el comentario del gasto cuando existe', () => {
       const expense = {

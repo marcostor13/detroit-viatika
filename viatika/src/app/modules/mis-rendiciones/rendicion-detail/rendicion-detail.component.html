@@ -1364,7 +1364,7 @@
                   <th class="px-3 py-3 whitespace-nowrap">N° Documento</th>
                   <th class="px-3 py-3 whitespace-nowrap">Proveedor</th>
                   <th class="px-3 py-3">Concepto</th>
-                  <th class="px-3 py-3 whitespace-nowrap">Proyecto</th>
+                  <th class="px-3 py-3 whitespace-nowrap">Centro de Costo</th>
                   <th class="px-3 py-3 whitespace-nowrap">Categoria</th>
                   <th class="px-3 py-3 text-right whitespace-nowrap">Monto</th>
                   <th class="px-3 py-3 text-center whitespace-nowrap">Estado</th>
@@ -1406,9 +1406,9 @@
                   <td class="px-3 py-3 text-secondary max-w-[200px]">
                     <span class="block truncate" [title]="getExpenseConceptoColumn(expense)">{{ getExpenseConceptoColumn(expense) }}</span>
                   </td>
-                  <!-- Proyecto -->
-                  <td class="px-3 py-3 text-secondary max-w-[140px]">
-                    <span class="block truncate text-xs" [title]="getExpenseProjectName(expense)">{{ getExpenseProjectName(expense) || '—' }}</span>
+                  <!-- Centro de costo (código — nombre) -->
+                  <td class="px-3 py-3 text-secondary max-w-[160px]">
+                    <span class="block truncate text-xs" [title]="getExpenseCentroCosto(expense)">{{ getExpenseCentroCosto(expense) || '—' }}</span>
                   </td>
                   <!-- Categoria -->
                   <td class="px-3 py-3 text-secondary max-w-[120px]">
@@ -1864,8 +1864,8 @@
           <p class="font-medium text-secondary">{{ getPopulatedName(exp['categoryId']) }}</p>
         </div>
         <div>
-          <p class="text-xs text-tertiary/70">Proyecto</p>
-          <p class="font-medium text-secondary">{{ getExpenseProjectName(exp) }}</p>
+          <p class="text-xs text-tertiary/70">Centro de Costo</p>
+          <p class="font-medium text-secondary">{{ getExpenseCentroCosto(exp) }}</p>
         </div>
         <div class="sm:col-span-2">
           <p class="text-xs text-tertiary/70">Fecha (resumen en listado)</p>
