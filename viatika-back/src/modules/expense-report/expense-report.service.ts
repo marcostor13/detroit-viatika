@@ -53,7 +53,7 @@ import { CreateSolicitudCajaChicaDto } from './dto/create-solicitud-caja-chica.d
 import { ApproverLevel } from '../../common/types/approver-level'
 import { resolveUserBankAccount } from '../../common/bank-account.util'
 import {
-  generarCodigoCorrelativo,
+  generarCodigoRendicion,
   maxSecuencia,
 } from '../../common/codigo-correlativo.util'
 import { CreateViaticoExpenseReportDto } from './dto/create-viatico-expense-report.dto'
@@ -70,6 +70,24 @@ export interface SolicitudDeleteActor {
   userId: string
   role: string
 }
+
+/**
+ * Tope de solicitudes de fondos sin cerrar por colaborador (VD-139). Fijo a
+ * propósito: si algún día se pide por empresa, va a `AccountingConfig`.
+ */
+const MAX_SOLICITUDES_ABIERTAS = 2
+
+/**
+ * Estados en los que una solicitud de fondos YA NO ocupa cupo. Cerrar es una
+ * acción de Tesorería (`PATCH /:id/close`, VD-66/VD-49); rechazada y cancelada
+ * entran porque tampoco van a rendirse nunca.
+ *
+ * Van fuera de la clase y no como campos de instancia: media suite construye el
+ * servicio con `Object.create(prototype)`, que no ejecuta el constructor y
+ * dejaría estas constantes en `undefined` — con el tope comparándose contra
+ * `undefined`, el bloqueo no saltaría y la prueba pasaría en verde.
+ */
+const ESTADOS_SOLICITUD_CERRADA = ['closed', 'rejected', 'cancelled']
 
 @Injectable()
 export class ExpenseReportService implements OnModuleInit {
@@ -595,28 +613,51 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * Código autoincremental único por empresa (RD-0001), atómico vía la
-   * colección `counters` y a prueba de que el contador quede por detrás de los
-   * códigos ya emitidos. Ver `generarCodigoCorrelativo`.
+   * Código de rendición con la nomenclatura de VD-123:
+   * `[Prefijo]-[Iniciales]-[Correlativo]`, ej. `RE-NMCB-0001`.
+   *
+   * - `RE`  rendición con solicitud de fondos previa (viático).
+   * - `RD`  rendición directa, sin solicitud previa.
+   * - `CCH` rendición de caja chica.
+   *
+   * El correlativo es por colaborador y por prefijo. Los códigos ANTERIORES
+   * (`RD-0001`, sin iniciales) NO se tocan: son los que la gente ya tiene
+   * anotados y los que viajaron en los archivos del banco. Conviven, y el
+   * contador nuevo arranca limpio porque su clave lleva el `userId`.
    */
-  private async generateDirectaCodigo(clientId: string): Promise<string> {
+  private async generateCodigoRendicion(
+    clientId: string,
+    userId: string,
+    prefijo: 'RE' | 'RD' | 'CCH'
+  ): Promise<string | undefined> {
     const cid = new Types.ObjectId(clientId)
-    return generarCodigoCorrelativo({
+    const usuario = await this.userService
+      .findEmailNameClient(userId)
+      .catch(() => null)
+    // Sin nombre no hay iniciales y el código sale con el prefijo solo: quedarse
+    // sin código sería peor que uno menos descriptivo.
+    return generarCodigoRendicion({
       counters: this.expenseReportModel.db.collection('counters') as any,
-      key: `rendicion-directa:${clientId}`,
-      prefijo: 'RD',
+      clientId,
+      userId,
+      nombreColaborador: usuario?.name ?? '',
+      prefijo,
       estaTomado: async codigo =>
         !!(await this.expenseReportModel.exists({ clientId: cid, codigo })),
-      ultimoEmitido: async () => {
+      ultimoEmitido: async prefijoConIniciales => {
         const docs = await this.expenseReportModel
-          .find({ clientId: cid, codigo: { $regex: '^RD-\\d+$' } })
+          .find({
+            clientId: cid,
+            codigo: { $regex: `^${prefijoConIniciales}-\d+$` },
+          })
           .select('codigo')
           .lean<{ codigo: string }[]>()
           .exec()
-        return maxSecuencia(docs.map(d => d.codigo), 'RD')
+        return maxSecuencia(docs.map(d => d.codigo), prefijoConIniciales)
       },
     })
   }
+
 
   async create(
     createExpenseReportDto: CreateExpenseReportDto,
@@ -631,9 +672,16 @@ export class ExpenseReportService implements OnModuleInit {
       createExpenseReportDto.gestion?.trim() ||
       'Rendición'
 
-    const codigo = isDirecta
-      ? await this.generateDirectaCodigo(createExpenseReportDto.clientId)
-      : undefined
+    // VD-123: la directa lleva RD y la caja chica CCH. La rendición que viene de
+    // una solicitud de fondos no pasa por aquí: se crea en `createViatico`.
+    const codigo =
+      isDirecta || isCajaChica
+        ? await this.generateCodigoRendicion(
+            createExpenseReportDto.clientId,
+            createExpenseReportDto.userId,
+            isDirecta ? 'RD' : 'CCH'
+          )
+        : undefined
 
     const assignedCoordinatorId = await this.resolveAssignedCoordinatorId(
       createExpenseReportDto.projectId,
@@ -3139,6 +3187,12 @@ export class ExpenseReportService implements OnModuleInit {
       dateTo?: string
       userId?: string
       approverUserId?: string
+      /** VD-135: estado de la rendición. */
+      status?: string
+      /** VD-135: centro de costo del reporte. */
+      projectId?: string
+      /** VD-135: orden de trabajo imputada (`directaOrdenTrabajoId`). */
+      ordenTrabajoId?: string
     } = {}
   ) {
     const query: any = {
@@ -3147,6 +3201,19 @@ export class ExpenseReportService implements OnModuleInit {
     }
     if (filters.userId && /^[0-9a-fA-F]{24}$/.test(filters.userId)) {
       query.userId = new Types.ObjectId(filters.userId)
+    }
+    // VD-135. Los tres se validan como ObjectId (o como estado conocido) antes
+    // de entrar a la consulta: un valor basura en la query no debe reventar el
+    // listado, simplemente no filtra.
+    if (filters.status) query.status = filters.status
+    if (filters.projectId && /^[0-9a-fA-F]{24}$/.test(filters.projectId)) {
+      query.projectId = new Types.ObjectId(filters.projectId)
+    }
+    if (
+      filters.ordenTrabajoId &&
+      /^[0-9a-fA-F]{24}$/.test(filters.ordenTrabajoId)
+    ) {
+      query.directaOrdenTrabajoId = new Types.ObjectId(filters.ordenTrabajoId)
     }
     if (filters.approverUserId) {
       query._id = {
@@ -3166,9 +3233,13 @@ export class ExpenseReportService implements OnModuleInit {
     const reports = await this.expenseReportModel
       .find(query)
       .select(
-        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher viaticoMoneda'
+        '_id codigo userId title motivo gestion budget status createdAt createdBy directaDeposit expenseIds returnVoucher viaticoMoneda projectId directaOrdenTrabajoId'
       )
       .populate('userId', 'name email')
+      // VD-135: el centro de costo y la OT viajan poblados para que la lista
+      // pueda mostrarlos junto al filtro que los acota.
+      .populate('projectId', 'code name')
+      .populate('directaOrdenTrabajoId', 'nombre')
       .populate({
         path: 'createdBy',
         select: 'name email roleId',
@@ -3229,6 +3300,12 @@ export class ExpenseReportService implements OnModuleInit {
         generatedByName: creator?.name || creator?.email || null,
         generatedByRole: creator?.roleId?.name || null,
         origin,
+        // VD-122. Este endpoint no devuelve el documento: arma un objeto campo a
+        // campo, así que poblarlos en la consulta no basta — si no se listan
+        // aquí, no llegan al front. El centro de costo es obligatorio en una
+        // directa; la OT es opcional y puede venir nula.
+        projectId: r.projectId ?? null,
+        directaOrdenTrabajoId: r.directaOrdenTrabajoId ?? null,
       }
     })
   }
@@ -5449,6 +5526,8 @@ export class ExpenseReportService implements OnModuleInit {
 
     const report = await this.expenseReportModel.create({
       type: 'viatico',
+      // VD-123: la caja chica lleva CCH en todo su recorrido, desde la solicitud.
+      codigo: await this.generateCodigoRendicion(clientId, userId, 'CCH'),
       isSolicitudCajaChica: true,
       cajaChicaNuevoPresupuesto: nuevoPresupuesto,
       cajaChicaPresupuestoAnterior: presupuestoVigente,
@@ -5509,10 +5588,43 @@ export class ExpenseReportService implements OnModuleInit {
     return this.findOne(reportId) as Promise<ExpenseReportDocument>
   }
 
+  /**
+   * Solicitudes de fondos del colaborador que siguen pendientes de que Tesorería
+   * las cierre (VD-139). Se excluye la caja chica: es otro trámite y el pedido
+   * habla solo de solicitudes de fondos.
+   */
+  private async solicitudesSinCerrar(userId: string, clientId: string) {
+    return this.expenseReportModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        clientId: new Types.ObjectId(clientId),
+        type: 'viatico',
+        isSolicitudCajaChica: { $ne: true },
+        status: { $nin: ESTADOS_SOLICITUD_CERRADA },
+      })
+      .select('codigo viaticoPlace title status')
+      .lean<{ codigo?: string; viaticoPlace?: string; title?: string }[]>()
+      .exec()
+  }
+
   async createViatico(dto: CreateViaticoExpenseReportDto, userId: string, clientId: string): Promise<ExpenseReportDocument> {
     const profile = await this.userService.findTransactionalProfile(userId)
     if (!profile?.signature?.trim()) {
       throw new ForbiddenException('Debe registrar su firma digital en el perfil antes de solicitar fondos.')
+    }
+
+    // VD-139: con dos solicitudes sin cerrar no se puede pedir una tercera. Se
+    // nombran las pendientes en el mensaje: sin eso el colaborador ve un "no
+    // puedes" y no sabe qué tiene que rendir para desbloquearse.
+    const abiertas = await this.solicitudesSinCerrar(userId, clientId)
+    if (abiertas.length >= MAX_SOLICITUDES_ABIERTAS) {
+      const cuales = abiertas
+        .map(r => r.codigo || r.viaticoPlace || r.title || 'sin código')
+        .join(', ')
+      throw new BadRequestException(
+        `Tienes ${abiertas.length} solicitudes de fondos pendientes de cierre (${cuales}). ` +
+          'Rinde y espera a que Tesorería las cierre antes de generar una nueva.'
+      )
     }
 
     const chain = await this.buildSolicitudCostCenterChain(profile, dto.projectId, userId, clientId)
@@ -5545,6 +5657,10 @@ export class ExpenseReportService implements OnModuleInit {
 
     const report = await this.expenseReportModel.create({
       type: 'viatico',
+      // VD-123: `RE`, rendición con solicitud de fondos previa. Es el MISMO
+      // documento en sus dos fases (solicitud y luego rendición), así que el
+      // código se emite al crearlo y no cambia después.
+      codigo: await this.generateCodigoRendicion(clientId, userId, 'RE'),
       userId: new Types.ObjectId(userId),
       clientId: new Types.ObjectId(clientId),
       createdBy: new Types.ObjectId(userId),

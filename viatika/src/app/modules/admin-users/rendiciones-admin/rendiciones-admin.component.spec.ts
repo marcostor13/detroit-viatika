@@ -422,6 +422,46 @@ describe('RendicionesAdminComponent', () => {
     });
   });
 
+  /**
+   * VD-122: en la tabla se muestra SOLO el codigo del centro de costo. El nombre
+   * completo no cabe junto al resto de columnas y se repite en casi todas las
+   * filas; el codigo es lo que sirve para imputar.
+   */
+  describe('centro de costo y OT en la lista (VD-122)', () => {
+    const item = (raw: any, projectName = ''): any => ({
+      _id: 'i1',
+      source: 'report',
+      projectId: raw?.projectId?._id ?? raw?.projectId ?? '',
+      projectName,
+      raw,
+    });
+
+    it('muestra solo el codigo, no "codigo — nombre"', () => {
+      const i = item({ projectId: { _id: 'p1', code: '9101', name: 'Administracion' } });
+      expect(component.itemCentroCostoCodigo(i)).toBe('9101');
+      expect(component.itemCentroCostoNombre(i)).toBe('Administracion');
+    });
+
+    it('sin codigo cae al nombre en vez de dejar la celda vacia', () => {
+      const i = item({ projectId: { _id: 'p1', name: 'Administracion' } });
+      expect(component.itemCentroCostoCodigo(i)).toBe('Administracion');
+    });
+
+    // El centro de costo es obligatorio y el listado lo trae poblado, asi que
+    // esta rama solo la usan las filas de anticipo, que arman su etiqueta.
+    it('en un anticipo recorta el codigo de la etiqueta ya calculada', () => {
+      const i = item({ projectId: 'p9' }, '9201 — Comercial');
+      expect(component.itemCentroCostoCodigo(i)).toBe('9201');
+    });
+
+    it('la OT sale del reporte y es — cuando no lleva', () => {
+      expect(
+        component.itemOrdenTrabajo(item({ directaOrdenTrabajoId: { _id: 'ot1', nombre: 'SMI-001' } }))
+      ).toBe('SMI-001');
+      expect(component.itemOrdenTrabajo(item({}))).toBe('—');
+    });
+  });
+
   describe('goToDetail', () => {
     beforeEach(() => component.ngOnInit());
 

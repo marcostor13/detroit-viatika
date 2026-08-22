@@ -47,3 +47,15 @@ select {
     -webkit-appearance: none;
   }
 }
+/**
+ * VD-134: resaltado mientras se arrastra un archivo encima. La clase la pone
+ * `FileDropDirective`; el estilo vive aqui para que cada zona lo pueda ajustar
+ * sin que la directiva imponga colores.
+ *
+ * `!important` porque la zona de la factura arma sus clases con `[class]`, que
+ * las reescribe enteras en cada cambio y pisaria estas.
+ */
+.is-dragging {
+  border-color: theme('colors.primary') !important;
+  background-color: rgb(from theme('colors.primary') r g b / 8%) !important;
+}

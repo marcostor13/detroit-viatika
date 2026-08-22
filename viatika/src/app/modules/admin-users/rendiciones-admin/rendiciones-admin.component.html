@@ -156,6 +156,9 @@
           <th class="text-left px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Colaborador</th>
           <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Tipo</th>
           <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Título</th>
+          <!-- VD-122: centro de costo (solo el codigo) y orden de trabajo. -->
+          <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider whitespace-nowrap">C. Costo</th>
+          <th class="text-left px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">OT</th>
           <th class="text-right px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Presupuesto</th>
           <th class="text-center px-4 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Estado</th>
           <th class="text-right px-5 py-3.5 text-xs font-semibold text-tertiary uppercase tracking-wider">Acciones</th>
@@ -204,6 +207,16 @@
           <!-- Título -->
           <td class="px-4 py-3.5">
             <span class="block break-words font-medium text-secondary" [title]="item.title">{{ item.title }}</span>
+          </td>
+
+          <!-- Centro de costo (VD-122): solo el codigo; el nombre en el title -->
+          <td class="px-4 py-3.5">
+            <span class="font-mono text-xs text-secondary whitespace-nowrap" [title]="itemCentroCostoNombre(item)">{{ itemCentroCostoCodigo(item) }}</span>
+          </td>
+
+          <!-- Orden de trabajo (VD-122) -->
+          <td class="px-4 py-3.5 max-w-[140px]">
+            <span class="block truncate text-xs text-secondary" [title]="itemOrdenTrabajo(item)">{{ itemOrdenTrabajo(item) }}</span>
           </td>
 
           <!-- Presupuesto -->
@@ -286,7 +299,7 @@
         </tr>
         @if (isExpanded(item._id)) {
         <tr class="bg-background/60">
-          <td class="px-4 pb-3.5 pt-0" colspan="7">
+          <td class="px-4 pb-3.5 pt-0" colspan="9">
             <!-- VD-113: el centro de costo va con su código y la OT al costado. -->
             <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 pl-8">
               <div>

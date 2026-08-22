@@ -51,6 +51,13 @@ type UnifiedViaticoItem = {
   statusLabel: string;
   statusColor: string;
   projectLabel: string;
+  /** VD-122: solo el codigo del centro de costo, para la columna de la tabla. */
+  projectCode: string;
+  /** VD-122: orden de trabajo imputada, o '—'. */
+  ordenTrabajo: string;
+  /** VD-135: ids para filtrar sin depender de las etiquetas. */
+  projectId: string;
+  ordenTrabajoId: string;
   place: string;
   dateRange: string;
   amount: number;
@@ -133,6 +140,16 @@ export class MisRendicionesComponent implements OnInit {
   directasStatusFilter = signal('');
   directasDateFrom = signal('');
   directasDateTo = signal('');
+
+  /**
+   * VD-135: centro de costo y orden de trabajo, por pestaña. Las opciones se
+   * derivan de las filas ya cargadas —esta pantalla filtra en cliente sobre todo
+   * lo del colaborador— así que solo se ofrecen valores que devuelven filas.
+   */
+  viaticosProjectFilter = signal('');
+  viaticosOtFilter = signal('');
+  directasProjectFilter = signal('');
+  directasOtFilter = signal('');
 
   cajaDateFrom = signal('');
   cajaDateTo = signal('');
@@ -741,6 +758,31 @@ export class MisRendicionesComponent implements OnInit {
     return '—';
   }
 
+  /**
+   * VD-122: centro de costo SOLO CON EL CÓDIGO para la columna. El nombre
+   * completo se repite en casi todas las filas y desplaza al resto; queda en el
+   * `title` de la celda.
+   */
+  viaticoProjectCode(report: IExpenseReport): string {
+    const p = (report as any).projectId;
+    if (!p || typeof p !== 'object') return '—';
+    return String(p.code ?? '').trim() || String(p.name ?? '').trim() || '—';
+  }
+
+  /** VD-122: orden de trabajo del viático o de la directa. Opcional. */
+  reportOrdenTrabajo(report: IExpenseReport): string {
+    const ot =
+      (report as any).viaticoOrdenTrabajoId ?? (report as any).directaOrdenTrabajoId;
+    if (!ot || typeof ot !== 'object') return '—';
+    return String(ot.nombre ?? '').trim() || '—';
+  }
+
+  /** Id de una referencia, venga poblada o suelta. Para filtrar por id. */
+  refId(ref: unknown): string {
+    if (!ref) return '';
+    return String((ref as any)?._id ?? ref);
+  }
+
   viaticoDates(report: IExpenseReport): string {
     const fmt = (d: string) =>
       new Date(d).toLocaleDateString('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -835,7 +877,44 @@ export class MisRendicionesComponent implements OnInit {
     this.router.navigate(['/invoices/add'], { queryParams: { tipo, mode: 'directa' } });
   }
 
+  /**
+   * VD-139: tope de solicitudes de fondos sin cerrar. El cierre lo hace
+   * Tesorería, así que cuentan todas las que no estén cerradas, rechazadas o
+   * canceladas. Mismo criterio que `createViatico` en el backend, que es quien
+   * manda: esto solo evita que el colaborador llene el formulario para perderlo
+   * al enviar.
+   */
+  readonly MAX_SOLICITUDES_ABIERTAS = 2;
+  private readonly ESTADOS_SOLICITUD_CERRADA = ['closed', 'rejected', 'cancelled'];
+
+  get solicitudesSinCerrar(): IExpenseReport[] {
+    return this.myViaticoReports().filter(
+      r =>
+        !(r as any).isSolicitudCajaChica &&
+        !this.ESTADOS_SOLICITUD_CERRADA.includes(String(r.status))
+    );
+  }
+
+  get bloqueadoPorSolicitudesAbiertas(): boolean {
+    return this.solicitudesSinCerrar.length >= this.MAX_SOLICITUDES_ABIERTAS;
+  }
+
+  /** Cuáles tiene pendientes, para decírselo en vez de solo negarle el botón. */
+  get solicitudesSinCerrarLabel(): string {
+    return this.solicitudesSinCerrar
+      .map(r => r.codigo || (r as any).viaticoPlace || r.title || 'sin código')
+      .join(', ');
+  }
+
   openViaticosModal() {
+    if (this.bloqueadoPorSolicitudesAbiertas) {
+      this.notificationService.show(
+        `Tienes ${this.solicitudesSinCerrar.length} solicitudes pendientes de cierre (${this.solicitudesSinCerrarLabel}). ` +
+          'Rinde y espera a que Tesorería las cierre antes de generar una nueva.',
+        'warning'
+      );
+      return;
+    }
     this.router.navigate(['/mis-rendiciones/solicitud-viaticos/nueva']);
   }
 
@@ -1237,6 +1316,10 @@ export class MisRendicionesComponent implements OnInit {
         statusLabel: this.viaticoPhaseLabel(r),
         statusColor: this.viaticoPhaseColor(r),
         projectLabel: this.viaticoProjectLabel(r),
+        projectCode: this.viaticoProjectCode(r),
+        ordenTrabajo: this.reportOrdenTrabajo(r),
+        projectId: this.refId((r as any).projectId),
+        ordenTrabajoId: this.refId((r as any).viaticoOrdenTrabajoId),
         place: r.viaticoPlace ?? '—',
         dateRange: this.viaticoDates(r),
         amount: r.viaticoAmount ?? 0,
@@ -1259,6 +1342,10 @@ export class MisRendicionesComponent implements OnInit {
         statusLabel: this.ADVANCE_STATUS_LABELS[adv.status] ?? adv.status,
         statusColor: this.ADVANCE_STATUS_COLORS[adv.status] ?? 'bg-gray-100 text-gray-600',
         projectLabel: this.advanceProjectLabel(adv),
+        projectCode: (this.advanceProjectLabel(adv).split(' — ')[0] || '—'),
+        ordenTrabajo: '—',
+        projectId: this.refId(adv.projectId),
+        ordenTrabajoId: '',
         place: adv.place ?? '—',
         dateRange: this.advanceDateRange(adv),
         amount: adv.amount,
@@ -1283,6 +1370,10 @@ export class MisRendicionesComponent implements OnInit {
         // Las rendiciones legacy también tienen projectId; se resuelve igual que
         // en los viáticos (requiere que el backend lo popule en findAllByUser).
         projectLabel: this.viaticoProjectLabel(r),
+        projectCode: this.viaticoProjectCode(r),
+        ordenTrabajo: this.reportOrdenTrabajo(r),
+        projectId: this.refId((r as any).projectId),
+        ordenTrabajoId: this.refId((r as any).viaticoOrdenTrabajoId),
         place: r.location ?? '—',
         dateRange: this.reportDateRange(r),
         amount: r.budget,
@@ -1317,8 +1408,13 @@ export class MisRendicionesComponent implements OnInit {
     const status = this.viaticosStatusFilter();
     const from = this.viaticosDateFrom();
     const to = this.viaticosDateTo();
+    const projectId = this.viaticosProjectFilter();
+    const otId = this.viaticosOtFilter();
     let filtered = this.allViaticoItems;
     if (status) filtered = filtered.filter(i => i.statusLabel === status);
+    // VD-135: por id y no por etiqueta — dos centros de costo pueden llamarse igual.
+    if (projectId) filtered = filtered.filter(i => i.projectId === projectId);
+    if (otId) filtered = filtered.filter(i => i.ordenTrabajoId === otId);
     if (from) filtered = filtered.filter(i => new Date(i.createdAt) >= new Date(from));
     if (to) filtered = filtered.filter(i => new Date(i.createdAt) <= new Date(to + 'T23:59:59'));
 
@@ -1367,6 +1463,48 @@ export class MisRendicionesComponent implements OnInit {
    * Opciones del filtro por estado de rendiciones directas, homologadas con la
    * columna Estado de la tabla (panelStatusText). VD-30.
    */
+  /**
+   * Opciones de centro de costo y OT (VD-135), derivadas de lo ya cargado.
+   * `campo` es dónde vive la referencia en cada tipo de reporte.
+   */
+  private opcionesRef(
+    reports: IExpenseReport[],
+    campo: 'projectId' | 'viaticoOrdenTrabajoId' | 'directaOrdenTrabajoId',
+    etiqueta: (x: any) => string
+  ): Array<{ _id: string; label: string }> {
+    const porId = new Map<string, string>();
+    for (const r of reports) {
+      const ref = (r as any)[campo];
+      if (ref && typeof ref === 'object' && ref._id) {
+        porId.set(String(ref._id), etiqueta(ref));
+      }
+    }
+    return [...porId.entries()]
+      .map(([_id, label]) => ({ _id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  private get reportesDirectos(): IExpenseReport[] {
+    return this.expenseReports.filter(r => r.isDirecta);
+  }
+
+  get viaticosProjectOptions() {
+    return this.opcionesRef(this.myViaticoReports(), 'projectId', p =>
+      p.code ? `${p.code} — ${p.name}` : p.name
+    );
+  }
+  get viaticosOtOptions() {
+    return this.opcionesRef(this.myViaticoReports(), 'viaticoOrdenTrabajoId', ot => ot.nombre ?? '—');
+  }
+  get directasProjectOptions() {
+    return this.opcionesRef(this.reportesDirectos, 'projectId', p =>
+      p.code ? `${p.code} — ${p.name}` : p.name
+    );
+  }
+  get directasOtOptions() {
+    return this.opcionesRef(this.reportesDirectos, 'directaOrdenTrabajoId', ot => ot.nombre ?? '—');
+  }
+
   get directaStatusOptions(): string[] {
     const labels = new Set<string>();
     for (const r of this.expenseReports.filter(r => r.isDirecta)) {
@@ -1382,6 +1520,13 @@ export class MisRendicionesComponent implements OnInit {
     const to = this.directasDateTo();
     // Filtrado por la etiqueta visible, homologado con la tabla. VD-30.
     if (status) reports = reports.filter(r => this.panelStatusText(r) === status);
+    // VD-135
+    const projectId = this.directasProjectFilter();
+    const otId = this.directasOtFilter();
+    if (projectId) reports = reports.filter(r => this.refId((r as any).projectId) === projectId);
+    if (otId) {
+      reports = reports.filter(r => this.refId((r as any).directaOrdenTrabajoId) === otId);
+    }
     if (from) reports = reports.filter(r => new Date(r.createdAt) >= new Date(from));
     if (to) reports = reports.filter(r => new Date(r.createdAt) <= new Date(to + 'T23:59:59'));
     return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -1400,12 +1545,16 @@ export class MisRendicionesComponent implements OnInit {
     this.viaticosStatusFilter.set('');
     this.viaticosDateFrom.set('');
     this.viaticosDateTo.set('');
+    this.viaticosProjectFilter.set('');
+    this.viaticosOtFilter.set('');
   }
 
   clearDirectasFilters(): void {
     this.directasStatusFilter.set('');
     this.directasDateFrom.set('');
     this.directasDateTo.set('');
+    this.directasProjectFilter.set('');
+    this.directasOtFilter.set('');
   }
 
   clearCajaFilters(): void {
