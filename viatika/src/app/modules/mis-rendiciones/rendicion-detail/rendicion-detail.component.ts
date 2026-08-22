@@ -2038,10 +2038,13 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * N° de rendición para viáticos: iniciales del colaborador + correlativo por
-   * posición del viático entre los del mismo usuario (ej. "IVT-001"). Los viáticos
-   * no tienen `codigo` como las directas; el backend entrega la posición estable
-   * (`viaticoPosition`) y aquí se arman las iniciales del nombre mostrado. VD-63.
+   * N° de rendición para viáticos ANTERIORES a VD-123: iniciales del colaborador
+   * + posición del viático entre los del mismo usuario (ej. "IVT-001").
+   *
+   * Desde VD-123 la solicitud de fondos nace con `codigo` propio (`RE-IVT-0001`)
+   * y quien la muestra lo prefiere. Esto se conserva para los viáticos ya
+   * creados, que no lo tienen: sin el respaldo, sus reportes saldrían sin número
+   * después del cambio. VD-63.
    */
   private buildViaticoCorrelativo(): string | undefined {
     const pos = (this.report as { viaticoPosition?: number })?.viaticoPosition;
@@ -2306,6 +2309,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
       createdByName: this.getCreatedByName(),
       projectName: this.getProjectName(),
       // --- Cabecera contable del formato ADF-FOR-004 ---
+      // VD-123: manda el `codigo` del documento; el calculado queda de respaldo
+      // para los viáticos anteriores al cambio, que no lo tienen.
       nRendicion: this.report.codigo || this.buildViaticoCorrelativo() || undefined,
       fechaDocumento: this.report.createdAt
         ? this.formatEmissionDate(this.report.createdAt)

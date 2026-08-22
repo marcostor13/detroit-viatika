@@ -82,6 +82,28 @@
           }
         </select>
       </div>
+      <!-- VD-135: centro de costo y orden de trabajo. Las opciones salen de las
+           solicitudes cargadas, asi que solo se listan las que devuelven filas. -->
+      <div class="flex flex-col gap-1.5 w-56">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Centro de costo</label>
+        <select [value]="filterProjectId()" (change)="onProjectChange($event)"
+          class="h-9 px-3 w-full rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30">
+          <option value="">Todos</option>
+          @for (p of projectOptions(); track p._id) {
+            <option [value]="p._id">{{ p.label }}</option>
+          }
+        </select>
+      </div>
+      <div class="flex flex-col gap-1.5 w-48">
+        <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Orden de trabajo</label>
+        <select [value]="filterOrdenTrabajoId()" (change)="onOrdenTrabajoChange($event)"
+          class="h-9 px-3 w-full rounded-lg border border-tertiary/30 bg-background text-sm text-secondary focus:outline-none focus:ring-2 focus:ring-primary/30">
+          <option value="">Todas</option>
+          @for (ot of ordenTrabajoOptions(); track ot._id) {
+            <option [value]="ot._id">{{ ot.label }}</option>
+          }
+        </select>
+      </div>
       <div class="flex flex-col gap-1.5">
         <label class="text-xs font-semibold text-tertiary uppercase tracking-wider">Período</label>
         <div class="flex items-center gap-2">

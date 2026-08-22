@@ -185,6 +185,61 @@ describe('ViaticosComponent', () => {
       expect(result[1]._id).toBe('old');
     });
 
+    // VD-135: centro de costo y orden de trabajo.
+    describe('filtros de centro de costo y OT (VD-135)', () => {
+      const conCcYOt = (id: string, cc: any, ot: any): any => ({
+        ...baseViaticoReport,
+        _id: id,
+        projectId: cc,
+        viaticoOrdenTrabajoId: ot,
+      });
+      const CC_A = { _id: 'cc-a', code: '9101', name: 'Administracion' };
+      const CC_B = { _id: 'cc-b', code: '9201', name: 'Comercial' };
+      const OT_1 = { _id: 'ot-1', nombre: 'SMI-001' };
+
+      const cargar = () => {
+        expenseReportsService.getViaticosList.and.returnValue(
+          of([conCcYOt('a', CC_A, OT_1), conCcYOt('b', CC_B, null)])
+        );
+        component.loadViaticoReports();
+      };
+
+      it('filtra por centro de costo', () => {
+        cargar();
+        component.filterProjectId.set('cc-a');
+        expect(component.unifiedFiltered().map(i => i._id)).toEqual(['a']);
+      });
+
+      it('filtra por orden de trabajo', () => {
+        cargar();
+        component.filterOrdenTrabajoId.set('ot-1');
+        expect(component.unifiedFiltered().map(i => i._id)).toEqual(['a']);
+      });
+
+      // Las opciones salen de lo cargado: un catalogo completo mostraria
+      // centros de costo que no devuelven ninguna fila.
+      it('las opciones salen de las solicitudes cargadas, sin repetir', () => {
+        cargar();
+        expect(component.projectOptions()).toEqual([
+          { _id: 'cc-a', label: '9101 — Administracion' },
+          { _id: 'cc-b', label: '9201 — Comercial' },
+        ]);
+        expect(component.ordenTrabajoOptions()).toEqual([
+          { _id: 'ot-1', label: 'SMI-001' },
+        ]);
+      });
+
+      it('limpiar filtros los reinicia', () => {
+        cargar();
+        component.filterProjectId.set('cc-a');
+        component.filterOrdenTrabajoId.set('ot-1');
+        component.clearFilters();
+        expect(component.filterProjectId()).toBe('');
+        expect(component.filterOrdenTrabajoId()).toBe('');
+        expect(component.unifiedFiltered().length).toBe(2);
+      });
+    });
+
     it('filters by search term across name, email and place', () => {
       expenseReportsService.getViaticosList.and.returnValue(of([baseViaticoReport]));
       component.loadViaticoReports();

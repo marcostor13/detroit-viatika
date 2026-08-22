@@ -9,6 +9,7 @@ import {
   FormsModule,
 } from '@angular/forms';
 import { NotificationService } from '../../../services/notification.service';
+import { FileDropDirective } from '../../../design-system/file-drop/file-drop.directive';
 import { InvoicesService } from '../services/invoices.service';
 import { ExpenseReportsService } from '../../../services/expense-reports.service';
 import { AdvanceService } from '../../../services/advance.service';
@@ -59,7 +60,7 @@ declare const google: any;
 @Component({
   selector: 'app-add-invoice',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, SearchSelectComponent, PlacesAutocompleteDirective],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, SearchSelectComponent, PlacesAutocompleteDirective, FileDropDirective],
   templateUrl: './add-invoice.component.html',
   styleUrl: './add-invoice.component.scss',
 })
@@ -2717,17 +2718,48 @@ export default class AddInvoiceComponent implements OnInit {
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files[0]) {
-      this.selectedFile = input.files[0];
-      const isImage = this.selectedFile.type.startsWith('image/');
-      if (isImage) {
-        this.previewObjectUrl = URL.createObjectURL(this.selectedFile);
-        this.previewImage = this.sanitizer.bypassSecurityTrustUrl(this.previewObjectUrl);
-      } else {
-        this.previewObjectUrl = null;
-        this.previewImage = null;
-      }
-      this.form.patchValue({ file: this.selectedFile });
+      this.takeSelectedFile(input.files[0]);
     }
+  }
+
+  /**
+   * VD-134: mismo camino para el archivo venga del selector o de un arrastre.
+   * Se extrajo de `onFileSelected` en vez de duplicarlo, para que la vista
+   * previa y el `patchValue` no se puedan quedar solo en una de las dos vías.
+   */
+  onFilesDropped(files: File[]): void {
+    // Las zonas de esta pantalla son de UN archivo. Si se sueltan varios se toma
+    // el primero y se avisa: ignorarlos en silencio deja al usuario creyendo que
+    // subió los tres.
+    if (files.length === 0) return;
+    if (files.length > 1) {
+      this.notificationService.show(
+        `Solo se puede adjuntar un archivo. Se tomó "${files[0].name}".`,
+        'warning'
+      );
+    }
+    this.takeSelectedFile(files[0]);
+  }
+
+  /** El archivo arrastrado no cumple los formatos aceptados. */
+  onFilesRejected(files: File[]): void {
+    this.notificationService.show(
+      `"${files[0].name}" no es un formato admitido. Usa PDF, JPG o PNG.`,
+      'error'
+    );
+  }
+
+  private takeSelectedFile(file: File): void {
+    this.selectedFile = file;
+    const isImage = this.selectedFile.type.startsWith('image/');
+    if (isImage) {
+      this.previewObjectUrl = URL.createObjectURL(this.selectedFile);
+      this.previewImage = this.sanitizer.bypassSecurityTrustUrl(this.previewObjectUrl);
+    } else {
+      this.previewObjectUrl = null;
+      this.previewImage = null;
+    }
+    this.form.patchValue({ file: this.selectedFile });
   }
 
   /**

@@ -70,7 +70,13 @@
 
   <!-- Action bar -->
   <div class="flex justify-end mb-4">
-    <app-button label="Solicitar fondos" (clicked)="openViaticosModal()">
+    <!-- VD-139: se deja visible y deshabilitado, con el motivo en el tooltip.
+         Esconderlo dejaba al colaborador buscando un botón que "desapareció". -->
+    <app-button label="Solicitar fondos" (clicked)="openViaticosModal()"
+      [disabled]="bloqueadoPorSolicitudesAbiertas"
+      [title]="bloqueadoPorSolicitudesAbiertas
+        ? 'Tienes ' + solicitudesSinCerrar.length + ' solicitudes pendientes de cierre (' + solicitudesSinCerrarLabel + '). Rinde y espera a que Tesorería las cierre.'
+        : ''">
       <app-icon name="plus" size="sm" />
     </app-button>
   </div>
@@ -89,6 +95,35 @@
           <option value="">Todos</option>
           @for (label of viaticoStatusOptions; track label) {
           <option [value]="label">{{ label }}</option>
+          }
+        </select>
+      </div>
+
+      <!-- VD-135: centro de costo y orden de trabajo. -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Centro de costo</label>
+        <select
+          [value]="viaticosProjectFilter()"
+          (change)="viaticosProjectFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <option value="">Todos</option>
+          @for (o of viaticosProjectOptions; track o._id) {
+          <option [value]="o._id">{{ o.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Orden de trabajo</label>
+        <select
+          [value]="viaticosOtFilter()"
+          (change)="viaticosOtFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <option value="">Todas</option>
+          @for (o of viaticosOtOptions; track o._id) {
+          <option [value]="o._id">{{ o.label }}</option>
           }
         </select>
       </div>
@@ -156,9 +191,14 @@
           </span>
         </ng-container>
 
-        <!-- Centro de costo -->
-        <ng-container *appColumn="'cc'; header: 'Centro de costo'; cellClass: 'max-w-[220px]'; let item">
-          <p class="font-medium text-gray-900 break-words">{{ item.projectLabel }}</p>
+        <!-- Centro de costo (VD-122): solo el codigo; el nombre en el title -->
+        <ng-container *appColumn="'cc'; header: 'C. Costo'; let item">
+          <p class="font-mono text-xs font-medium text-gray-900 whitespace-nowrap" [title]="item.projectLabel">{{ item.projectCode }}</p>
+        </ng-container>
+
+        <!-- Orden de trabajo (VD-122) -->
+        <ng-container *appColumn="'ot'; header: 'OT'; cellClass: 'max-w-[140px]'; let item">
+          <p class="text-xs text-gray-700 truncate" [title]="item.ordenTrabajo">{{ item.ordenTrabajo }}</p>
         </ng-container>
 
         <!-- Destino -->
@@ -279,6 +319,35 @@
         </select>
       </div>
 
+      <!-- VD-135: centro de costo y orden de trabajo. -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Centro de costo</label>
+        <select
+          [value]="directasProjectFilter()"
+          (change)="directasProjectFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <option value="">Todos</option>
+          @for (o of directasProjectOptions; track o._id) {
+          <option [value]="o._id">{{ o.label }}</option>
+          }
+        </select>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Orden de trabajo</label>
+        <select
+          [value]="directasOtFilter()"
+          (change)="directasOtFilter.set($any($event.target).value)"
+          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          <option value="">Todas</option>
+          @for (o of directasOtOptions; track o._id) {
+          <option [value]="o._id">{{ o.label }}</option>
+          }
+        </select>
+      </div>
+
       <div class="flex flex-col gap-1">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
         <input
@@ -353,6 +422,15 @@
       </ng-container>
 
       <!-- Descripción -->
+      <!-- VD-122: centro de costo (solo el codigo) y orden de trabajo. -->
+      <ng-container *appColumn="'cc'; header: 'C. Costo'; let r">
+        <p class="font-mono text-xs font-medium text-gray-900 whitespace-nowrap" [title]="viaticoProjectLabel(r)">{{ viaticoProjectCode(r) }}</p>
+      </ng-container>
+
+      <ng-container *appColumn="'ot'; header: 'OT'; cellClass: 'max-w-[140px]'; let r">
+        <p class="text-xs text-gray-700 truncate" [title]="reportOrdenTrabajo(r)">{{ reportOrdenTrabajo(r) }}</p>
+      </ng-container>
+
       <ng-container *appColumn="'descripcion'; header: 'Descripción'; cellClass: 'max-w-[260px]'; let r">
         <p class="font-medium text-gray-900 break-words">{{ reportDisplayTitle(r) }}</p>
         @if (reportDateRange(r)) {

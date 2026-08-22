@@ -934,6 +934,33 @@ export class RendicionesAdminComponent implements OnInit {
    * Orden de Trabajo imputada a la rendición (VD-113), para mostrarla junto al
    * centro de costo. Cubre viático y directa, que la guardan en campos propios.
    */
+  /**
+   * VD-122: centro de costo de la fila, SOLO EL CÓDIGO. El nombre completo no
+   * cabe en la tabla junto al resto de columnas y se repite en casi todas las
+   * filas; el código es lo que sirve para imputar. El nombre queda en el
+   * `title` de la celda.
+   *
+   * El centro de costo es obligatorio en rendiciones y solicitudes, y el
+   * endpoint del listado lo trae poblado con `code name`, así que en la práctica
+   * siempre sale. La caída a `projectName` cubre las filas de anticipo, que
+   * arman su propia etiqueta "código — nombre" y de ahí se recorta el código.
+   */
+  itemCentroCostoCodigo(item: UnifiedRendicionItem): string {
+    const p = (item.raw as any)?.projectId;
+    if (p && typeof p === 'object' && (p.code || p.name)) {
+      return String(p.code ?? '').trim() || String(p.name ?? '').trim();
+    }
+    const etiqueta = item.projectName || '';
+    return etiqueta.split(' — ')[0] || '—';
+  }
+
+  /** Nombre del centro de costo, para el tooltip de la columna. */
+  itemCentroCostoNombre(item: UnifiedRendicionItem): string {
+    const p = (item.raw as any)?.projectId;
+    if (p && typeof p === 'object' && p.name) return String(p.name);
+    return item.projectName ?? '';
+  }
+
   itemOrdenTrabajo(item: UnifiedRendicionItem): string {
     if (item.source !== 'report') return '—';
     const report = item.raw as IExpenseReport;

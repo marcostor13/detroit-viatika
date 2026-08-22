@@ -11,6 +11,8 @@ import { AdminUsersService } from '../admin-users/services/admin-users.service';
 import { IUserResponse } from '../../interfaces/user.interface';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ICategory } from '../invoices/interfaces/category.interface';
+import { OrdenTrabajoService } from '../../services/orden-trabajo.service';
+import { IOrdenTrabajo } from '../../interfaces/orden-trabajo.interface';
 import { WorkerSelectComponent, WorkerOption } from '../../design-system/worker-select/worker-select.component';
 import {
   RendicionExportService,
@@ -37,6 +39,7 @@ export class RendicionesDirectasComponent implements OnInit {
   private exportService = inject(RendicionExportService);
   private router = inject(Router);
   private adminUsersService = inject(AdminUsersService);
+  private ordenTrabajoService = inject(OrdenTrabajoService);
 
   // Pestañas: "rendiciones" (una fila por rendición) y "gastos" (por comprobante).
   activeTab = signal<'rendiciones' | 'gastos'>('rendiciones');
@@ -60,12 +63,32 @@ export class RendicionesDirectasComponent implements OnInit {
   filterDocNumber = '';
   filterTipo = '';
   filterUserId = '';
+  // VD-135: estado y orden de trabajo. El centro de costo ya existía pero solo
+  // se mostraba en la pestaña Gastos; ahora los tres aplican a las dos.
+  filterStatus = '';
+  filterOrdenTrabajoId = '';
   page = 1;
   readonly limit = 50;
 
   // Catálogos
   projects = signal<IProject[]>([]);
   categories = signal<ICategory[]>([]);
+  ordenesTrabajo = signal<IOrdenTrabajo[]>([]);
+  /**
+   * Estados que de verdad aparecen en una rendición directa, en el orden del
+   * flujo. No se listan todos los del enum: la mitad no ocurre en una directa y
+   * un filtro con opciones que nunca devuelven nada se lee como que está roto.
+   */
+  readonly estadosDirecta: Array<{ value: string; label: string }> = [
+    { value: 'open', label: 'Abierta' },
+    { value: 'submitted', label: 'Enviada' },
+    { value: 'pending_accounting', label: 'En contabilidad' },
+    { value: 'approved', label: 'Aprobada' },
+    { value: 'rejected', label: 'Rechazada' },
+    { value: 'reimbursed', label: 'Reembolsada' },
+    { value: 'closed', label: 'Cerrada' },
+    { value: 'cancelled', label: 'Cancelada' },
+  ];
   users = signal<IUserResponse[]>([]);
   /** VD-84: usuarios mapeados a WorkerOption para el selector buscable de colaborador. */
   workerOptions = computed<WorkerOption[]>(() =>
@@ -154,6 +177,13 @@ export class RendicionesDirectasComponent implements OnInit {
     // para Contabilidad (filtro de categorías siempre vacío, error silencioso) y
     // 403 "Forbidden resource" para Tesorería, que no está en los roles de esa ruta.
     this.invoicesService.getCategories(cid).subscribe({ next: list => this.categories.set(list ?? []) });
+    // VD-135: catálogo de OT para el filtro. Sin `error` explícito el listado
+    // seguiría funcionando con el selector vacío, que es preferible a romper la
+    // pantalla entera por un catálogo secundario.
+    this.ordenTrabajoService.getAll().subscribe({
+      next: list => this.ordenesTrabajo.set(list ?? []),
+      error: () => this.ordenesTrabajo.set([]),
+    });
     this.adminUsersService.getUsers().subscribe({ next: list => this.users.set(list ?? []) });
   }
 
@@ -184,6 +214,10 @@ export class RendicionesDirectasComponent implements OnInit {
       dateFrom: this.filterDateFrom || undefined,
       dateTo: this.filterDateTo || undefined,
       userId: this.filterUserId || undefined,
+      // VD-135
+      status: this.filterStatus || undefined,
+      projectId: this.filterProjectId || undefined,
+      ordenTrabajoId: this.filterOrdenTrabajoId || undefined,
     }).subscribe({
       next: rows => { this.reports.set(rows ?? []); this.loadingReports.set(false); },
       error: () => { this.loadingReports.set(false); this.notifications.show('Error al cargar las rendiciones', 'error'); },
@@ -195,7 +229,7 @@ export class RendicionesDirectasComponent implements OnInit {
   clearFilters(): void {
     this.filterDateFrom = ''; this.filterDateTo = ''; this.filterProjectId = '';
     this.filterCategoryId = ''; this.filterDocNumber = ''; this.filterTipo = '';
-    this.filterUserId = '';
+    this.filterUserId = ''; this.filterStatus = ''; this.filterOrdenTrabajoId = '';
     this.page = 1; this.loadReports(); this.loadData();
   }
 
@@ -253,6 +287,32 @@ export class RendicionesDirectasComponent implements OnInit {
       cancelled: 'bg-gray-100 text-gray-500',
     };
     return map[String(r?.status || '')] ?? 'bg-gray-100 text-gray-700';
+  }
+
+  /**
+   * VD-122: centro de costo en la lista, SOLO EL NÚMERO. El nombre completo no
+   * cabe en una columna de tabla junto al resto y ademas se repite en casi todas
+   * las filas; el codigo es lo que Contabilidad usa para imputar. El nombre va
+   * en el `title`, para quien no se sepa el codigo de memoria.
+   */
+  reportCentroCostoCodigo(r: any): string {
+    const p = r?.projectId;
+    if (!p || typeof p !== 'object') return '—';
+    return String(p.code ?? '').trim() || String(p.name ?? '').trim() || '—';
+  }
+
+  /** Nombre del centro de costo, para el tooltip de la columna. */
+  reportCentroCostoNombre(r: any): string {
+    const p = r?.projectId;
+    if (!p || typeof p !== 'object') return '';
+    return String(p.name ?? '');
+  }
+
+  /** VD-122: orden de trabajo imputada, o '—' si la rendición no lleva. */
+  reportOrdenTrabajo(r: any): string {
+    const ot = r?.directaOrdenTrabajoId;
+    if (!ot || typeof ot !== 'object') return '—';
+    return String(ot.nombre ?? '').trim() || '—';
   }
 
   reportFecha(r: any): string { return formatFechaEmisionDdMmYyyy(r?.createdAt) || '—'; }

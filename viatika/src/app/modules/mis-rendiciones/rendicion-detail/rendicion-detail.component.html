@@ -1304,12 +1304,12 @@
                       <span class="w-4 h-4 border border-success/30 border-t-success-ink rounded-full animate-spin"></span>
                     } @else { <app-icon name="circle-check" size="sm" /> {{ report.isDirecta ? 'Marcar revisado' : 'Aprobar (Contabilidad)' }} }
                   </button>
-                  @if (!report.isDirecta) {
+                  <!-- La directa también se puede observar: Contabilidad tenía
+                       "Marcar revisado" pero no con qué devolver el comprobante. -->
                   <button type="button" (click)="openRejectRoleModal(expense._id, 'cont')"
                     class="inline-flex items-center gap-1.5 min-h-[36px] px-3 rounded-lg text-xs font-semibold border border-red-200 bg-error/10 text-error hover:bg-error/10 touch-manipulation">
                     <app-icon name="circle-x" size="sm" /> Rechazar (Contabilidad)
                   </button>
-                  }
                 }
               </div>
               <!-- Planilla movilidad: filas accordion (mobile) -->
@@ -1542,7 +1542,9 @@
                         </button>
                         <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/contok:opacity-100 pointer-events-none transition-opacity z-10">{{ report.isDirecta ? 'Marcar revisado' : 'Aprobar (Contabilidad)' }}</div>
                       </div>
-                      @if (!report.isDirecta) {
+                      <!-- La directa también se puede observar: Contabilidad
+                           tenía "Marcar revisado" pero no con qué devolver el
+                           comprobante. -->
                       <div class="relative group/contno">
                         <button type="button"
                           (click)="openRejectRoleModal(expense._id, 'cont')"
@@ -1551,7 +1553,6 @@
                         </button>
                         <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/contno:opacity-100 pointer-events-none transition-opacity z-10">Rechazar (Contabilidad)</div>
                       </div>
-                      }
                       }
                       <!-- Detalle -->
                       <div class="relative group/det">

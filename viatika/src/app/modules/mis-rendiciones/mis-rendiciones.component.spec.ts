@@ -225,6 +225,110 @@ describe('MisRendicionesComponent', () => {
     });
   });
 
+  /**
+   * VD-122 y VD-135 en /mis-rendiciones: columna de centro de costo con SOLO el
+   * codigo, columna de OT, y filtros por ambos.
+   */
+  describe('centro de costo y OT (VD-122 / VD-135)', () => {
+    const CC = { _id: 'cc-1', code: '9101', name: 'Administracion' };
+    const OT = { _id: 'ot-1', nombre: 'SMI-001' };
+
+    it('la columna muestra el codigo, y el nombre queda para el title', () => {
+      const r: any = { projectId: CC };
+      expect(component.viaticoProjectCode(r)).toBe('9101');
+      expect(component.viaticoProjectLabel(r)).toBe('9101 — Administracion');
+    });
+
+    it('sin centro de costo poblado muestra el guion', () => {
+      expect(component.viaticoProjectCode({ projectId: 'solo-un-id' } as any)).toBe('—');
+    });
+
+    it('la OT vale para viatico y para directa, y es — si no lleva', () => {
+      expect(component.reportOrdenTrabajo({ viaticoOrdenTrabajoId: OT } as any)).toBe('SMI-001');
+      expect(component.reportOrdenTrabajo({ directaOrdenTrabajoId: OT } as any)).toBe('SMI-001');
+      expect(component.reportOrdenTrabajo({} as any)).toBe('—');
+    });
+
+    // Por id y no por etiqueta: dos centros de costo pueden llamarse igual.
+    it('refId resuelve la referencia poblada y la suelta', () => {
+      expect(component.refId(CC)).toBe('cc-1');
+      expect(component.refId('cc-9')).toBe('cc-9');
+      expect(component.refId(null)).toBe('');
+    });
+
+    it('limpiar filtros reinicia tambien centro de costo y OT', () => {
+      component.viaticosProjectFilter.set('cc-1');
+      component.viaticosOtFilter.set('ot-1');
+      component.directasProjectFilter.set('cc-1');
+      component.directasOtFilter.set('ot-1');
+      component.clearViaticosFilters();
+      component.clearDirectasFilters();
+      expect(component.viaticosProjectFilter()).toBe('');
+      expect(component.viaticosOtFilter()).toBe('');
+      expect(component.directasProjectFilter()).toBe('');
+      expect(component.directasOtFilter()).toBe('');
+    });
+  });
+
+  /**
+   * VD-139: con 2 solicitudes de fondos pendientes de que Tesoreria las cierre,
+   * el colaborador no puede generar una tercera. El backend es quien manda; esto
+   * evita que llene el formulario para perderlo al enviar.
+   */
+  describe('tope de solicitudes sin cerrar (VD-139)', () => {
+    const solicitud = (status: string, extra: any = {}): any => ({
+      _id: 's' + status,
+      type: 'viatico',
+      status,
+      codigo: 'RE-AB-000' + status.length,
+      ...extra,
+    });
+
+    it('con 2 sin cerrar bloquea y no navega', () => {
+      component.myViaticoReports.set([solicitud('open'), solicitud('submitted')]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeTrue();
+      component.openViaticosModal();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(notification.show).toHaveBeenCalled();
+    });
+
+    it('con 1 sin cerrar deja continuar', () => {
+      component.myViaticoReports.set([solicitud('open')]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeFalse();
+      component.openViaticosModal();
+      expect(router.navigate).toHaveBeenCalledWith([
+        '/mis-rendiciones/solicitud-viaticos/nueva',
+      ]);
+    });
+
+    // Cerrar es accion de Tesoreria; rechazada y cancelada tampoco se van a
+    // rendir nunca, asi que no deben dejar topado al colaborador.
+    it('cerradas, rechazadas y canceladas no ocupan cupo', () => {
+      component.myViaticoReports.set([
+        solicitud('closed'),
+        solicitud('rejected'),
+        solicitud('cancelled'),
+      ]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeFalse();
+    });
+
+    it('la caja chica no ocupa cupo: es otro tramite', () => {
+      component.myViaticoReports.set([
+        solicitud('open', { isSolicitudCajaChica: true }),
+        solicitud('submitted', { isSolicitudCajaChica: true }),
+      ]);
+      expect(component.bloqueadoPorSolicitudesAbiertas).toBeFalse();
+    });
+
+    it('el aviso nombra las pendientes, no solo dice que no', () => {
+      component.myViaticoReports.set([
+        solicitud('open', { codigo: 'RE-AB-0001' }),
+        solicitud('submitted', { codigo: 'RE-AB-0002' }),
+      ]);
+      expect(component.solicitudesSinCerrarLabel).toBe('RE-AB-0001, RE-AB-0002');
+    });
+  });
+
   describe('setTab', () => {
     it('sets the active tab', () => {
       component.setTab('directas');

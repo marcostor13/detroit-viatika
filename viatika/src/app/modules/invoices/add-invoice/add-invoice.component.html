@@ -185,7 +185,11 @@
         Adjuntar factura <span class="text-error">*</span>
       </label>
 
+      <!-- VD-134: tambien se puede soltar el archivo encima. `is-dragging` la
+           pone la directiva; el resaltado lo define cada zona. -->
       <div
+        appFileDrop accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+        (filesDropped)="onFilesDropped($event)" (filesRejected)="onFilesRejected($event)"
         [class]="selectedFile
           ? 'bg-green-50 border-2 border-green-400 rounded-xl p-8 text-center w-full cursor-pointer transition-all duration-200'
           : 'bg-background border-2 border-dashed border-tertiary rounded-xl p-8 text-center w-full cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group'"
@@ -781,6 +785,8 @@
     </div>
 
     <div
+      appFileDrop accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+        (filesDropped)="onFilesDropped($event)" (filesRejected)="onFilesRejected($event)"
       class="bg-background border-2 border-dashed border-tertiary/40 rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
       (click)="fileInputMobility.click()"
     >
@@ -978,7 +984,9 @@
         <span class="text-error">*</span>
         }
       </label>
-      <div class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
+      <div appFileDrop accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+        (filesDropped)="onFilesDropped($event)" (filesRejected)="onFilesRejected($event)"
+        class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
         (click)="fileInputOtros.click()">
         <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">

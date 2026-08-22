@@ -24,7 +24,9 @@ describe('ExpenseReportService.create — moneda de la rendición directa', () =
         tcFecha: '2026-08-19',
       })),
     }
-    svc.generateDirectaCodigo = jest.fn().mockResolvedValue('RD-0001')
+    // VD-123: `create` emite el codigo con iniciales del colaborador, asi que
+    // ahora necesita el nombre.
+    svc.generateCodigoRendicion = jest.fn().mockResolvedValue('RD-IT-0001')
     svc.resolveAssignedCoordinatorId = jest.fn().mockResolvedValue(undefined)
 
     return { svc, guardado }
