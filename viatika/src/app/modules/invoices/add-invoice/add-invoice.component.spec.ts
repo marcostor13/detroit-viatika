@@ -1814,6 +1814,22 @@ describe('AddInvoiceComponent', () => {
       expect(payload.tipoComprobante).toBe('Boleta');
     });
 
+    it('revalidateSunat envía el monto corregido por el usuario, no el del OCR', () => {
+      const component = createComponent();
+      (component as any).postOcrBaseInvoice = { data: '{}', total: 346 };
+      component.ocrTotalAmount.set(346);
+      component.editedOcrTotal.set(336);
+      component.form.patchValue({
+        rucEmisor: '20612862401', serie: 'F001', correlativo: '00002412', fechaEmision: '2026-08-14',
+      });
+      invoicesService.validateSunatStateless.and.returnValue(of({ status: 'VALIDO_ACEPTADO' } as any));
+
+      component.revalidateSunat();
+
+      const payload = invoicesService.validateSunatStateless.calls.mostRecent().args[0] as any;
+      expect(payload.montoTotal).toBe(336);
+    });
+
     it('onSerieChange deriva el tipo del prefijo de la serie (F/B) (VD-70)', () => {
       const component = createComponent();
 
