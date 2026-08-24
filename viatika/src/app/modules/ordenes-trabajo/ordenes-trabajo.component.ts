@@ -104,9 +104,15 @@ export class OrdenesTrabajoComponent implements OnInit {
     if (!plan) return [];
     const accion = this.filtroAccion();
     const texto = this.busquedaPreview().trim().toLowerCase();
+    // Un número busca la fila del Excel (exacta) o el nombre de la OT, pero no
+    // el detalle: teclear "3" casaría con cualquier "CC-003" o "123".
+    const soloNumero = /^[0-9]+$/.test(texto);
     return plan.rows.filter((fila) => {
       if (accion && fila.accion !== accion) return false;
       if (!texto) return true;
+      if (soloNumero) {
+        return String(fila.row) === texto || fila.nombre.includes(texto);
+      }
       return (
         fila.nombre.toLowerCase().includes(texto) ||
         (fila.detalle || '').toLowerCase().includes(texto) ||

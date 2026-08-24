@@ -166,6 +166,25 @@ describe('OrdenesTrabajoComponent', () => {
       expect(component.conteoAccion('error')).toBe(1);
     });
 
+    it('un número busca la fila del Excel, y también el nombre que lo contenga', () => {
+      const component = createComponent();
+      ordenTrabajoService.importFromExcel.and.returnValue(of(plan as any));
+      component.onFileSelected(archivo());
+
+      component.busquedaPreview.set('4');
+
+      // Solo la fila 4: los números del detalle ("123") no cuentan.
+      expect(component.filasVisibles().map((f) => f.row)).toEqual([4]);
+
+      component.busquedaPreview.set('1');
+
+      // La fila 3 (LIM-SMI-1) entra por el nombre, no por el número de fila.
+      expect(component.filasVisibles().map((f) => f.nombre)).toEqual([
+        'NUEVA-1',
+        'LIM-SMI-1',
+      ]);
+    });
+
     it('el buscador encuentra por nombre y por motivo del error', () => {
       const component = createComponent();
       ordenTrabajoService.importFromExcel.and.returnValue(of(plan as any));
