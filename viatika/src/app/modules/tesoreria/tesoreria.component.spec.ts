@@ -339,9 +339,9 @@ describe('TesoreriaComponent', () => {
 
     // `paymentForm` es compartido por los modales de Tesorería y `reset()` NO
     // cambia habilitado/deshabilitado: cada apertura tiene que fijarlo, o hereda
-    // el estado del modal anterior. Con todas las fichas en solo lectura el
-    // sintoma seria al reves —un formulario que quedo escribible—, asi que se
-    // comprueba el ciclo completo en las dos direcciones.
+    // el estado del modal anterior. Conviven fichas de solo lectura y el registro
+    // manual del pago urgente, así que el fallo puede caer de los dos lados —una
+    // ficha escribible o un formulario en gris—: se comprueba el ciclo completo.
     it('cada modal fija el estado del formulario compartido', () => {
       const rep = makeReport({ _id: 'r1' });
       const reembolso = makeReport({
@@ -355,7 +355,14 @@ describe('TesoreriaComponent', () => {
       component.openReimbursementModal(reembolso);
       expect(component.paymentForm.disabled).toBeTrue();
 
-      // El unico camino que aun escribe: si el cliente reabre el registro manual.
+      // El registro manual del pago urgente sí escribe...
+      component.openManualViaticoPaymentModal(rep);
+      expect(component.paymentForm.enabled).toBeTrue();
+
+      // ...y volver a la ficha del mismo pago tiene que dejarlo en gris otra vez.
+      component.openViaticoPaymentModal(rep);
+      expect(component.paymentForm.disabled).toBeTrue();
+
       component.openPaymentModal(makeAdvance({ _id: 'a1' }), false);
       expect(component.paymentForm.enabled).toBeTrue();
 
@@ -435,6 +442,101 @@ describe('TesoreriaComponent', () => {
       expenseReportsService.registerViaticoPayment.and.returnValue(throwError(() => ({})));
       component.confirmViaticoPayment();
       expect(notifications.show).toHaveBeenCalledWith('Error al registrar el pago', 'error');
+    });
+  });
+
+  // El registro manual vuelve para el viaje urgente que Tesorería paga desde el
+  // BCP, fuera de la planilla BBVA. Se comprueba lo que lo separa del pago por
+  // planilla: formulario escribible, comprobante que NO se escanea y un N° de
+  // operación que viaja en `reference`, nunca en `operationNumber` (ese lo
+  // escribe la conciliación del PDF del banco).
+  describe('pago manual del viaje urgente', () => {
+    beforeEach(() => component.initForms());
+
+    function fileEvent(file: File): Event {
+      const input = document.createElement('input');
+      input.type = 'file';
+      Object.defineProperty(input, 'files', { value: [file] });
+      return { target: input } as unknown as Event;
+    }
+
+    it('abre el formulario escribible con el saldo pendiente', () => {
+      const rep = makeReport({ _id: 'r1', viaticoAmount: 500, viaticoPaidAmount: 200 } as any);
+      component.openManualViaticoPaymentModal(rep);
+      expect(component.viaticoPaymentManual).toBeTrue();
+      expect(component.paymentForm.enabled).toBeTrue();
+      expect(component.paymentForm.value.amount).toBe(300);
+      expect(component.showViaticoPaymentModal).toBeTrue();
+    });
+
+    it('la ficha de consulta no entra en modo registro', () => {
+      component.openViaticoPaymentModal(makeReport({ _id: 'r1' }));
+      expect(component.viaticoPaymentManual).toBeFalse();
+    });
+
+    it('propone los datos bancarios de la solicitud', () => {
+      const rep = makeReport({
+        _id: 'r1',
+        viaticoAmount: 500,
+        viaticoBankName: 'BCP',
+        viaticoAccountNumber: '191-1234567-0-99',
+        viaticoCci: '00219100123456789099',
+      } as any);
+      component.openManualViaticoPaymentModal(rep);
+      expect(component.paymentForm.value.bankName).toBe('BCP');
+      expect(component.paymentForm.value.accountNumber).toBe('191-1234567-0-99');
+      expect(component.paymentForm.value.cci).toBe('00219100123456789099');
+    });
+
+    // El comprobante es una foto de otro banco y el lector está calibrado para
+    // el formato de BBVA: leerlo solo servía para rellenar mal el monto.
+    it('adjunta el comprobante sin escanearlo ni tocar el monto', () => {
+      uploadService.upload.and.returnValue(of({ url: 'http://s3/bcp.jpg' }));
+      component.openManualViaticoPaymentModal(makeReport({ _id: 'r1', viaticoAmount: 500 } as any));
+      component.onViaticoPaymentReceiptSelected(fileEvent(new File(['x'], 'bcp.jpg', { type: 'image/jpeg' })));
+      expect(component.viaticoPaymentReceiptUrl).toBe('http://s3/bcp.jpg');
+      expect(expenseReportsService.scanDepositAmount).not.toHaveBeenCalled();
+      expect(component.paymentForm.value.amount).toBe(500);
+    });
+
+    it('el N° de operación digitado viaja en reference, no en operationNumber', () => {
+      expenseReportsService.registerViaticoPayment.and.returnValue(of(makeReport()));
+      component.openManualViaticoPaymentModal(makeReport({ _id: 'r1', viaticoAmount: 500 } as any));
+      component.viaticoPaymentReceiptUrl = 'http://s3/bcp.jpg';
+      component.paymentForm.patchValue({ amount: 500, reference: '000030112' });
+      component.confirmViaticoPayment();
+      const payload = expenseReportsService.registerViaticoPayment.calls.mostRecent().args[1] as any;
+      expect(payload.reference).toBe('000030112');
+      expect(payload.operationNumber).toBeUndefined();
+      expect(payload.scannedAmount).toBeUndefined();
+      expect(payload.paymentReceiptUrl).toBe('http://s3/bcp.jpg');
+    });
+
+    describe('canRegisterViaticoPayment', () => {
+      it('deja registrar mientras quede saldo por depositar', () => {
+        expect(component.canRegisterViaticoPayment(
+          makeReport({ _id: 'r1', status: 'viatico_approved', viaticoAmount: 500 } as any)
+        )).toBeTrue();
+        expect(component.canRegisterViaticoPayment(
+          makeReport({ _id: 'r1', status: 'partially_paid', viaticoAmount: 500, viaticoPaidAmount: 200 } as any)
+        )).toBeTrue();
+      });
+
+      it('lo cierra con la solicitud ya cubierta o fuera de la fase de pago', () => {
+        expect(component.canRegisterViaticoPayment(
+          makeReport({ _id: 'r1', status: 'viatico_approved', viaticoAmount: 500, viaticoPaidAmount: 500 } as any)
+        )).toBeFalse();
+        expect(component.canRegisterViaticoPayment(
+          makeReport({ _id: 'r1', status: 'open', viaticoAmount: 500 } as any)
+        )).toBeFalse();
+      });
+
+      it('lo cierra para quien no paga ni liquida', () => {
+        userState.canApproveL2.and.returnValue(false);
+        expect(component.canRegisterViaticoPayment(
+          makeReport({ _id: 'r1', status: 'viatico_approved', viaticoAmount: 500 } as any)
+        )).toBeFalse();
+      });
     });
   });
 
