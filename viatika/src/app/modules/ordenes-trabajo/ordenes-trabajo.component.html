@@ -11,7 +11,8 @@
       <app-button variant="secondary" size="sm" label="Descargar Excel" loadingLabel="Preparando..." [loading]="downloadingTemplate()" (clicked)="downloadTemplate()">
         <app-icon name="download" size="sm" />
       </app-button>
-      <app-button variant="secondary" size="sm" label="Importar Excel" loadingLabel="Importando..." [loading]="importing()" (clicked)="triggerFileInput()">
+      <!-- Al elegir el archivo se muestra primero el plan; la carga se acepta en el modal. -->
+      <app-button variant="secondary" size="sm" label="Importar Excel" loadingLabel="Revisando..." [loading]="previewing() || importing()" (clicked)="triggerFileInput()">
         <app-icon name="upload" size="sm" />
       </app-button>
       <input #fileInput type="file" accept=".xlsx,.xls" class="hidden" (change)="onFileSelected($event)" />
@@ -28,6 +29,9 @@
         <app-icon name="circle-check" size="sm" class="text-success" />
         <span class="text-sm font-medium text-secondary">
           {{ importResult()!.created }} creada(s) · {{ importResult()!.updated }} actualizada(s)
+          @if (importResult()!.unchanged) {
+            · {{ importResult()!.unchanged }} sin cambios
+          }
         </span>
         <app-button variant="ghost" size="sm" label="" ariaLabel="Cerrar" class="ml-auto" (clicked)="importResult.set(null)">
           <app-icon name="close" size="sm" />
@@ -45,6 +49,123 @@
       }
     </div>
   }
+
+  <!-- Revisión de la carga masiva: nada se ha guardado hasta aceptar. -->
+  <app-modal
+    [open]="importPreview() !== null"
+    title="Revisar la carga masiva"
+    size="xl"
+    (closed)="cancelImport()"
+  >
+    @if (importPreview(); as plan) {
+      <p class="text-sm text-tertiary mb-4">
+        Todavía no se ha guardado nada. Esto es lo que hará el archivo:
+      </p>
+
+      <!-- Los contadores son del archivo completo y además filtran la tabla. -->
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        @for (chip of chipsAccion; track chip.accion) {
+          <button
+            type="button"
+            class="rounded-full transition focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+            [class.ring-2]="filtroAccion() === chip.accion"
+            [class.ring-primary]="filtroAccion() === chip.accion"
+            [class.opacity-60]="filtroAccion() !== null && filtroAccion() !== chip.accion"
+            [disabled]="!conteoAccion(chip.accion)"
+            [attr.aria-pressed]="filtroAccion() === chip.accion"
+            (click)="toggleFiltroAccion(chip.accion)"
+          >
+            <app-badge [variant]="accionVariant(chip.accion)" [dot]="true">
+              {{ conteoAccion(chip.accion) }} {{ chip.label }}
+            </app-badge>
+          </button>
+        }
+        @if (hayFiltroActivo()) {
+          <button
+            type="button"
+            class="text-xs text-tertiary hover:text-primary underline ml-1"
+            (click)="limpiarFiltrosPreview()"
+          >
+            Limpiar filtros
+          </button>
+        }
+      </div>
+
+      <div class="relative mb-3">
+        <app-icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
+        <input
+          type="text"
+          [ngModel]="busquedaPreview()"
+          (ngModelChange)="busquedaPreview.set($event)"
+          placeholder="Buscar por nombre de OT, detalle o motivo del error..."
+          class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+        />
+      </div>
+
+      @if (plan.errors.length) {
+        <div class="bg-error/10 border border-error/20 rounded-lg p-3 mb-4">
+          <p class="text-xs text-error-ink">
+            Las filas con error no se cargan; el resto del archivo sí. Corrígelas en el Excel
+            y vuelve a subirlo si las necesitas.
+          </p>
+        </div>
+      }
+
+      @if (filasVisibles().length) {
+        <div class="max-h-[45vh] overflow-y-auto border border-tertiary/20 rounded-lg">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 bg-quaternary border-b border-tertiary/20">
+              <tr class="text-left text-xs text-tertiary">
+                <th class="px-3 py-2 font-medium w-16">Fila</th>
+                <th class="px-3 py-2 font-medium w-32">Acción</th>
+                <th class="px-3 py-2 font-medium">Orden de trabajo</th>
+                <th class="px-3 py-2 font-medium">Detalle</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (fila of filasVisibles(); track fila.row) {
+                <tr class="border-b border-tertiary/10 last:border-0">
+                  <td class="px-3 py-2 text-tertiary">{{ fila.row }}</td>
+                  <td class="px-3 py-2">
+                    <app-badge [variant]="accionVariant(fila.accion)" size="sm">
+                      {{ accionLabel(fila.accion) }}
+                    </app-badge>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-secondary">{{ fila.nombre || '—' }}</td>
+                  <td class="px-3 py-2" [class.text-error]="fila.accion === 'error'">
+                    {{ fila.reason || fila.detalle || '—' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-tertiary mt-2">
+          Mostrando {{ filasVisibles().length }} de {{ plan.rows.length }} fila(s).
+          @if (filasOcultas()) {
+            Hay {{ filasOcultas() }} más que coinciden: filtra o busca para acotarlas.
+          }
+        </p>
+      } @else if (hayFiltroActivo()) {
+        <p class="text-sm text-tertiary">Ninguna fila coincide con el filtro.</p>
+      } @else {
+        <p class="text-sm text-tertiary">El archivo no tiene filas para procesar.</p>
+      }
+
+      <div class="flex justify-end gap-2 mt-6">
+        <app-button variant="secondary" label="Cancelar" size="md" (clicked)="cancelImport()" />
+        <app-button
+          variant="primary"
+          size="md"
+          label="Confirmar carga"
+          loadingLabel="Cargando..."
+          [loading]="importing()"
+          [disabled]="!puedeConfirmarImport"
+          (clicked)="confirmImport()"
+        />
+      </div>
+    }
+  </app-modal>
 
   <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-4 mb-6">
     <div class="flex flex-wrap gap-3">

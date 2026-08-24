@@ -1,10 +1,14 @@
-import { Component, ElementRef, inject, OnInit, signal, ViewChild } from '@angular/core';
+import { Component, computed, ElementRef, inject, OnInit, signal, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import * as ExcelJS from 'exceljs';
-import { OrdenTrabajoService, IBulkImportResult } from '../../services/orden-trabajo.service';
+import {
+  OrdenTrabajoService,
+  IBulkImportResult,
+  IBulkImportRow,
+} from '../../services/orden-trabajo.service';
 import { NotificationService } from '../../services/notification.service';
 import { ConfirmationService } from '../../services/confirmation.service';
 import { UserStateService } from '../../services/user-state.service';
@@ -17,6 +21,9 @@ import {
 import { IProject } from '../invoices/interfaces/project.interface';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { IPaginatedResult } from '../../interfaces/paginated-result.interface';
+
+/** Lo que le pasa a una fila del Excel en la carga masiva. */
+type AccionImport = IBulkImportRow['accion'];
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { BadgeComponent } from '../../design-system/badge/badge.component';
@@ -24,6 +31,7 @@ import { EmptyStateComponent } from '../../design-system/empty-state/empty-state
 import { DataTableComponent } from '../../design-system/data-table/data-table.component';
 import { ColumnDirective } from '../../design-system/data-table/column.directive';
 import { PaginatorComponent } from '../../design-system/paginator/paginator.component';
+import { ModalComponent } from '../../design-system/modal/modal.component';
 
 @Component({
   selector: 'app-ordenes-trabajo',
@@ -38,6 +46,7 @@ import { PaginatorComponent } from '../../design-system/paginator/paginator.comp
     DataTableComponent,
     ColumnDirective,
     PaginatorComponent,
+    ModalComponent,
   ],
   templateUrl: './ordenes-trabajo.component.html',
 })
@@ -65,6 +74,81 @@ export class OrdenesTrabajoComponent implements OnInit {
   filterCostCenter = signal('');
   importResult = signal<IBulkImportResult | null>(null);
   importing = signal(false);
+  /**
+   * Plan de la carga (lo que el archivo HARÍA), pendiente de aceptar. Mientras
+   * haya uno, el modal de revisión está abierto y no se escribió nada todavía.
+   */
+  importPreview = signal<IBulkImportResult | null>(null);
+  previewing = signal(false);
+  /** El archivo elegido, a la espera de que el usuario acepte la carga. */
+  private pendingFile: File | null = null;
+  /** Chips del filtro, en el orden en que se leen los contadores. */
+  readonly chipsAccion: { accion: AccionImport; label: string }[] = [
+    { accion: 'crear', label: 'a crear' },
+    { accion: 'actualizar', label: 'a modificar' },
+    { accion: 'sin-cambios', label: 'sin cambios' },
+    { accion: 'error', label: 'con error' },
+  ];
+  /** Acción por la que se está filtrando la revisión (null = todas). */
+  filtroAccion = signal<AccionImport | null>(null);
+  busquedaPreview = signal('');
+  /**
+   * En un archivo de miles de filas no tiene sentido pintarlas todas: los
+   * contadores de arriba siguen siendo del total y para llegar a una fila
+   * concreta están el filtro y el buscador.
+   */
+  readonly MAX_FILAS_VISIBLES = 300;
+
+  filasFiltradas = computed<IBulkImportRow[]>(() => {
+    const plan = this.importPreview();
+    if (!plan) return [];
+    const accion = this.filtroAccion();
+    const texto = this.busquedaPreview().trim().toLowerCase();
+    return plan.rows.filter((fila) => {
+      if (accion && fila.accion !== accion) return false;
+      if (!texto) return true;
+      return (
+        fila.nombre.toLowerCase().includes(texto) ||
+        (fila.detalle || '').toLowerCase().includes(texto) ||
+        (fila.reason || '').toLowerCase().includes(texto)
+      );
+    });
+  });
+
+  filasVisibles = computed(() =>
+    this.filasFiltradas().slice(0, this.MAX_FILAS_VISIBLES)
+  );
+
+  /** Filas que la tabla no pinta por el tope (0 = se ven todas las filtradas). */
+  filasOcultas = computed(() =>
+    Math.max(0, this.filasFiltradas().length - this.MAX_FILAS_VISIBLES)
+  );
+
+  hayFiltroActivo = computed(
+    () => this.filtroAccion() !== null || this.busquedaPreview().trim() !== ''
+  );
+
+  /** Cuántas filas del plan cayeron en cada acción, para los chips del filtro. */
+  conteoAccion(accion: AccionImport): number {
+    const plan = this.importPreview();
+    if (!plan) return 0;
+    return {
+      crear: plan.created,
+      actualizar: plan.updated,
+      'sin-cambios': plan.unchanged,
+      error: plan.errors.length,
+    }[accion];
+  }
+
+  /** Volver a pulsar el chip activo quita el filtro. */
+  toggleFiltroAccion(accion: AccionImport) {
+    this.filtroAccion.set(this.filtroAccion() === accion ? null : accion);
+  }
+
+  limpiarFiltrosPreview() {
+    this.filtroAccion.set(null);
+    this.busquedaPreview.set('');
+  }
   /** La plantilla trae todas las OT, así que hay que ir a buscarlas al servidor. */
   downloadingTemplate = signal(false);
 
@@ -157,15 +241,67 @@ export class OrdenesTrabajoComponent implements OnInit {
     this.fileInput.nativeElement.click();
   }
 
+  /**
+   * Elegir el archivo NO carga nada: primero se pide el plan al backend
+   * (dryRun) y se muestra para que el usuario lo acepte. La carga real ocurre
+   * en `confirmImport()`.
+   */
   onFileSelected(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
-    this.importing.set(true);
+    this.pendingFile = file;
+    this.previewing.set(true);
     this.importResult.set(null);
+    this.ordenTrabajoService.importFromExcel(file, { dryRun: true }).subscribe({
+      next: (res) => {
+        this.previewing.set(false);
+        this.limpiarFiltrosPreview();
+        this.importPreview.set(this.normalizeResult(res));
+      },
+      error: (err: HttpErrorResponse) => {
+        this.previewing.set(false);
+        this.pendingFile = null;
+        this.notificationService.show(
+          'Error al revisar el archivo: ' + (err.error?.message || err.message),
+          'error'
+        );
+      },
+    });
+  }
+
+  /** Un backend anterior puede no mandar el plan; el modal no debe romperse. */
+  private normalizeResult(res: IBulkImportResult): IBulkImportResult {
+    return {
+      ...res,
+      unchanged: res.unchanged ?? 0,
+      errors: res.errors ?? [],
+      rows: res.rows ?? [],
+    };
+  }
+
+  /** Sin nada que crear ni modificar, no hay carga que aceptar. */
+  get puedeConfirmarImport(): boolean {
+    const plan = this.importPreview();
+    return !!plan && plan.created + plan.updated > 0;
+  }
+
+  cancelImport() {
+    this.importPreview.set(null);
+    this.pendingFile = null;
+    this.limpiarFiltrosPreview();
+  }
+
+  /** Recién aquí se escribe: el usuario ya vio qué se crea y qué se modifica. */
+  confirmImport() {
+    const file = this.pendingFile;
+    if (!file || !this.puedeConfirmarImport) return;
+    this.importing.set(true);
     this.ordenTrabajoService.importFromExcel(file).subscribe({
       next: (res) => {
         this.importing.set(false);
-        this.importResult.set(res);
+        this.importPreview.set(null);
+        this.pendingFile = null;
+        this.importResult.set(this.normalizeResult(res));
         if (res.created > 0 || res.updated > 0) {
           const partes = [
             res.created > 0 ? `${res.created} creada(s)` : '',
@@ -174,7 +310,7 @@ export class OrdenesTrabajoComponent implements OnInit {
           this.notificationService.show(`Órdenes de trabajo: ${partes.join(' y ')}`, 'success');
           this.load();
         }
-        if (res.errors.length > 0) {
+        if (res.errors?.length) {
           this.notificationService.show(`${res.errors.length} fila(s) con error`, 'warning');
         }
       },
@@ -183,6 +319,23 @@ export class OrdenesTrabajoComponent implements OnInit {
         this.notificationService.show('Error al importar: ' + (err.error?.message || err.message), 'error');
       },
     });
+  }
+
+  /** Color de la fila en la revisión, según lo que le va a pasar. */
+  accionVariant(accion: AccionImport): 'success' | 'info' | 'neutral' | 'error' {
+    if (accion === 'crear') return 'success';
+    if (accion === 'actualizar') return 'info';
+    if (accion === 'error') return 'error';
+    return 'neutral';
+  }
+
+  accionLabel(accion: AccionImport): string {
+    return {
+      crear: 'Se crea',
+      actualizar: 'Se modifica',
+      'sin-cambios': 'Sin cambios',
+      error: 'Error',
+    }[accion];
   }
 
   /**
