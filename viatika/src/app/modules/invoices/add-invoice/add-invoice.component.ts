@@ -353,7 +353,7 @@ export default class AddInvoiceComponent implements OnInit {
       serie: formValue.serie,
       correlativo: formValue.correlativo,
       fechaEmision: this.formatDateForBackend(formValue.fechaEmision),
-      montoTotal: this.postOcrBaseInvoice?.total || this.ocrTotalAmount() || 0,
+      montoTotal: this.currentOcrTotal,
       tipoComprobante: this.getSelectedTipoComprobante(),
     };
     this.invoiceService.validateSunatStateless(validationData).subscribe({
@@ -372,6 +372,16 @@ export default class AddInvoiceComponent implements OnInit {
         );
       },
     });
+  }
+
+  /**
+   * Monto vigente del panel post-OCR: el corregido por el usuario si lo editó,
+   * si no el que extrajo el OCR. Es el que se manda a SUNAT y el que se guarda.
+   */
+  get currentOcrTotal(): number {
+    return this.ocrAmountWasEdited
+      ? this.editedOcrTotal()!
+      : parseFloat(String(this.postOcrBaseInvoice?.total ?? this.ocrTotalAmount())) || 0;
   }
 
   get ocrAmountWasEdited(): boolean {
@@ -393,6 +403,13 @@ export default class AddInvoiceComponent implements OnInit {
   // --- Edición de monto en modo edición de factura existente ---
   editingInvoiceAmount = signal(false);
   editedInvoiceTotal = signal<number | null>(null);
+
+  /** Monto vigente de la factura en edición: el corregido, si el usuario lo editó. */
+  get currentInvoiceTotal(): number {
+    return this.invoiceAmountWasEdited
+      ? this.editedInvoiceTotal()!
+      : parseFloat(String(this.originalInvoice?.total ?? this.originalInvoice?.montoTotal ?? 0)) || 0;
+  }
 
   get invoiceAmountWasEdited(): boolean {
     const edited = this.editedInvoiceTotal();
@@ -2599,7 +2616,7 @@ export default class AddInvoiceComponent implements OnInit {
       const fetched = this.fetchedRazonSocial();
       const razonSocial = fetched !== null ? fetched : (this.rucNotFound() ? 'No Reconocida' : undefined);
       const currentTotal = parseFloat(String(this.originalInvoice.total)) || 0;
-      const finalTotal = this.invoiceAmountWasEdited ? this.editedInvoiceTotal()! : currentTotal;
+      const finalTotal = this.currentInvoiceTotal;
       const dataObj = {
         ...previousData,
         rucEmisor: formValue.rucEmisor,
@@ -2869,9 +2886,7 @@ export default class AddInvoiceComponent implements OnInit {
     }
     const fetched = this.fetchedRazonSocial();
     const razonSocialOcr = fetched !== null ? fetched : (this.rucNotFound() ? 'No Reconocida' : undefined);
-    const finalTotal = this.ocrAmountWasEdited
-      ? this.editedOcrTotal()!
-      : (parseFloat(String(this.postOcrBaseInvoice.total)) || 0);
+    const finalTotal = this.currentOcrTotal;
     const dataObj = {
       ...baseData,
       rucEmisor: formValue.rucEmisor || '',
@@ -3120,8 +3135,7 @@ export default class AddInvoiceComponent implements OnInit {
       serie: formValue.serie,
       correlativo: formValue.correlativo,
       fechaEmision: this.formatDateForBackend(formValue.fechaEmision),
-      montoTotal:
-        this.originalInvoice?.total || this.originalInvoice?.montoTotal || 0,
+      montoTotal: this.currentInvoiceTotal,
       clientId:
         this.originalInvoice?.clientId || this.originalInvoice?.companyId,
       tipoComprobante: this.getTipoComprobanteFromData(),
