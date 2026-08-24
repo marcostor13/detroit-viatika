@@ -117,9 +117,15 @@ export class OrdenTrabajoController {
       },
     })
   )
+  /**
+   * Sube el Excel de OT. Con `dryRun` (lo que manda el front al elegir el
+   * archivo) no escribe nada: devuelve el plan — qué se crea, qué se modifica y
+   * qué filas fallan — para que el usuario lo acepte antes de la carga real.
+   */
   async importFromExcel(
     @UploadedFile() file: Express.Multer.File,
     @Body('clientId') clientIdBody: string,
+    @Body('dryRun') dryRunBody: string | boolean,
     @Request() req: any
   ) {
     if (!file) throw new BadRequestException('No se recibió ningún archivo')
@@ -155,16 +161,23 @@ export class OrdenTrabajoController {
         : undefined,
     }))
 
-    const result = await this.ordenTrabajoService.bulkCreate(mapped, clientId)
-
-    this.auditLogService.log({
-      userId: req.user._id || req.user.sub,
-      userName: req.user.name || req.user.email,
-      action: 'import_ordenes_trabajo',
-      module: 'configuracion',
-      details: `Creadas: ${result.created}, Actualizadas: ${result.updated}, Errores: ${result.errors.length}`,
-      clientId,
+    // El multipart llega como texto, así que 'true' vale tanto como true.
+    const dryRun = dryRunBody === true || dryRunBody === 'true'
+    const result = await this.ordenTrabajoService.bulkCreate(mapped, clientId, {
+      dryRun,
     })
+
+    // Una previsualización no cambió nada: no hay nada que auditar.
+    if (!dryRun) {
+      this.auditLogService.log({
+        userId: req.user._id || req.user.sub,
+        userName: req.user.name || req.user.email,
+        action: 'import_ordenes_trabajo',
+        module: 'configuracion',
+        details: `Creadas: ${result.created}, Actualizadas: ${result.updated}, Sin cambios: ${result.unchanged}, Errores: ${result.errors.length}`,
+        clientId,
+      })
+    }
 
     return result
   }

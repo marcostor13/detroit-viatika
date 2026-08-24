@@ -18,11 +18,27 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/** Qué le pasa a una fila del Excel: es lo que se previsualiza y lo que se aplica. */
+export interface IBulkRowPlan {
+  row: number
+  nombre: string
+  accion: 'crear' | 'actualizar' | 'sin-cambios' | 'error'
+  /** Con qué queda la OT (al crear) o qué le cambia (al actualizar). */
+  detalle?: string
+  reason?: string
+}
+
 export interface IBulkCreateResult {
   created: number
   /** OT que ya existían (mismo nombre) y se actualizaron con lo del archivo. */
   updated: number
+  /** OT que ya existían y a las que el archivo no les cambia nada. */
+  unchanged: number
   errors: { row: number; reason: string }[]
+  /** Fila por fila: con `dryRun` es lo que PASARÍA; sin él, lo que pasó. */
+  rows: IBulkRowPlan[]
+  /** true = solo previsualización, no se escribió nada en la base. */
+  dryRun: boolean
 }
 
 @Injectable()
@@ -148,20 +164,56 @@ export class OrdenTrabajoService {
   private async resolveCostCenterByKey(
     key: string,
     clientId: Types.ObjectId
-  ): Promise<Types.ObjectId | null> {
+  ): Promise<{ _id: Types.ObjectId; code?: string; name?: string } | null> {
     const trimmed = key.trim()
     if (!trimmed) return null
     const rx = { $regex: `^${escapeRegExp(trimmed)}$`, $options: 'i' }
     const byCode = await this.projectModel
       .findOne({ clientId, code: rx })
-      .select('_id')
+      .select('_id code name')
       .exec()
-    if (byCode) return byCode._id
+    if (byCode) return byCode
     const byName = await this.projectModel
       .findOne({ clientId, name: rx })
-      .select('_id')
+      .select('_id code name')
       .exec()
-    return byName ? byName._id : null
+    return byName ?? null
+  }
+
+  /**
+   * Dos listas de centros de costo son iguales si traen los mismos ids EN EL
+   * MISMO ORDEN: el primero es el principal, así que reordenar sí es un cambio.
+   */
+  private mismosCentrosCosto(a: Types.ObjectId[], b: Types.ObjectId[]): boolean {
+    return (
+      a.length === b.length && a.every((id, i) => String(id) === String(b[i]))
+    )
+  }
+
+  /**
+   * Código (o nombre) de cada centro de costo, para mostrarlo en el detalle de
+   * la fila. `cache` se comparte en toda la carga: los que ya se resolvieron
+   * desde el archivo no se vuelven a consultar.
+   */
+  private async etiquetasCentrosCosto(
+    ids: Types.ObjectId[],
+    clientId: Types.ObjectId,
+    cache: Map<string, string>
+  ): Promise<string[]> {
+    const faltantes = ids.map(String).filter((id) => !cache.has(id))
+    if (faltantes.length) {
+      const docs = await this.projectModel
+        .find({
+          clientId,
+          _id: { $in: faltantes.map((id) => new Types.ObjectId(id)) },
+        })
+        .select('_id code name')
+        .exec()
+      for (const doc of docs ?? []) {
+        cache.set(String(doc._id), doc.code || doc.name || String(doc._id))
+      }
+    }
+    return ids.map((id) => cache.get(String(id)) || String(id))
   }
 
   /**
@@ -179,14 +231,35 @@ export class OrdenTrabajoService {
    * La celda de centro de costo admite varios separados por coma, punto y coma
    * o barra ("123, 223, 423"); el primero queda como principal. Si la fila viene
    * sin centro de costo y la OT ya existe, conserva los que tenía.
+   *
+   * Con `opts.dryRun` no escribe nada: devuelve el mismo resultado (contadores
+   * y el plan fila por fila) para que el usuario vea qué se va a crear, qué se
+   * va a modificar y qué filas fallan ANTES de aceptar la carga.
    */
   async bulkCreate(
     rows: Array<{ nombre: string; costCenterKey: string; isActive?: boolean }>,
-    clientId: string
+    clientId: string,
+    opts: { dryRun?: boolean } = {}
   ): Promise<IBulkCreateResult> {
-    const result: IBulkCreateResult = { created: 0, updated: 0, errors: [] }
+    const dryRun = opts.dryRun === true
+    const result: IBulkCreateResult = {
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      errors: [],
+      rows: [],
+      dryRun,
+    }
     const clientIdObject = new Types.ObjectId(clientId)
     const seenNombres = new Set<string>()
+    // Códigos de centro de costo ya resueltos, para no repetir consultas al
+    // armar el detalle legible de cada fila.
+    const etiquetas = new Map<string, string>()
+
+    const fallo = (row: number, nombre: string, reason: string) => {
+      result.errors.push({ row, reason })
+      result.rows.push({ row, nombre, accion: 'error', reason })
+    }
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]
@@ -194,15 +267,16 @@ export class OrdenTrabajoService {
       const nombre = row.nombre?.trim()
 
       if (!nombre) {
-        result.errors.push({ row: rowNumber, reason: 'El campo Nombre es obligatorio' })
+        fallo(rowNumber, '', 'El campo Nombre es obligatorio')
         continue
       }
       const nombreKey = nombre.toLowerCase()
       if (seenNombres.has(nombreKey)) {
-        result.errors.push({
-          row: rowNumber,
-          reason: `Nombre "${nombre}" repetido en este mismo archivo`,
-        })
+        fallo(
+          rowNumber,
+          nombre,
+          `Nombre "${nombre}" repetido en este mismo archivo`
+        )
         continue
       }
 
@@ -215,10 +289,7 @@ export class OrdenTrabajoService {
           .exec()
 
         if (!row.costCenterKey?.trim() && !existente) {
-          result.errors.push({
-            row: rowNumber,
-            reason: 'Indica el código del centro de costo',
-          })
+          fallo(rowNumber, nombre, 'Indica el código del centro de costo')
           continue
         }
 
@@ -238,51 +309,120 @@ export class OrdenTrabajoService {
               claveNoEncontrada = clave
               break
             }
-            if (!costCenterIds.some((id) => id.equals(encontrado))) {
-              costCenterIds.push(encontrado)
+            etiquetas.set(
+              String(encontrado._id),
+              encontrado.code || encontrado.name || clave
+            )
+            if (!costCenterIds.some((id) => id.equals(encontrado._id))) {
+              costCenterIds.push(encontrado._id)
             }
           }
           if (claveNoEncontrada || !costCenterIds.length) {
-            result.errors.push({
-              row: rowNumber,
-              reason: `Centro de costo "${claveNoEncontrada || row.costCenterKey}" no encontrado en esta empresa`,
-            })
+            fallo(
+              rowNumber,
+              nombre,
+              `Centro de costo "${claveNoEncontrada || row.costCenterKey}" no encontrado en esta empresa`
+            )
             continue
           }
         }
 
         if (existente) {
+          // Solo se toca lo que de verdad cambia: así la previsualización puede
+          // distinguir "se actualiza" de "ya estaba igual".
           const cambios: Record<string, unknown> = {}
-          if (costCenterIds.length) {
+          const detalles: string[] = []
+          const actuales: Types.ObjectId[] = existente.costCenterIds?.length
+            ? existente.costCenterIds
+            : existente.costCenterId
+              ? [existente.costCenterId]
+              : []
+
+          if (
+            costCenterIds.length &&
+            !this.mismosCentrosCosto(actuales, costCenterIds)
+          ) {
             cambios.costCenterIds = costCenterIds
             cambios.costCenterId = costCenterIds[0]
+            const antes = await this.etiquetasCentrosCosto(
+              actuales,
+              clientIdObject,
+              etiquetas
+            )
+            const despues = await this.etiquetasCentrosCosto(
+              costCenterIds,
+              clientIdObject,
+              etiquetas
+            )
+            detalles.push(
+              `Centros de costo: ${antes.join(', ') || '—'} → ${despues.join(', ')}`
+            )
           }
-          if (row.isActive !== undefined) cambios.isActive = row.isActive
-          if (Object.keys(cambios).length) {
+
+          const activaAhora = existente.isActive !== false
+          if (row.isActive !== undefined && row.isActive !== activaAhora) {
+            cambios.isActive = row.isActive
+            detalles.push(
+              `Estado: ${activaAhora ? 'Activa' : 'Inactiva'} → ${row.isActive ? 'Activa' : 'Inactiva'}`
+            )
+          }
+
+          seenNombres.add(nombreKey)
+
+          if (!detalles.length) {
+            result.unchanged++
+            result.rows.push({
+              row: rowNumber,
+              nombre,
+              accion: 'sin-cambios',
+              detalle: 'Ya existe con estos mismos datos',
+            })
+            continue
+          }
+
+          if (!dryRun) {
             await this.ordenTrabajoModel
               .updateOne({ _id: existente._id }, { $set: cambios })
               .exec()
           }
-          seenNombres.add(nombreKey)
           result.updated++
+          result.rows.push({
+            row: rowNumber,
+            nombre,
+            accion: 'actualizar',
+            detalle: detalles.join(' · '),
+          })
           continue
         }
 
-        await this.ordenTrabajoModel.create({
-          nombre,
-          costCenterId: costCenterIds[0],
-          costCenterIds,
-          isActive: row.isActive ?? true,
-          clientId: clientIdObject,
-        })
+        if (!dryRun) {
+          await this.ordenTrabajoModel.create({
+            nombre,
+            costCenterId: costCenterIds[0],
+            costCenterIds,
+            isActive: row.isActive ?? true,
+            clientId: clientIdObject,
+          })
+        }
         seenNombres.add(nombreKey)
         result.created++
+        const codigos = await this.etiquetasCentrosCosto(
+          costCenterIds,
+          clientIdObject,
+          etiquetas
+        )
+        result.rows.push({
+          row: rowNumber,
+          nombre,
+          accion: 'crear',
+          detalle: `Centros de costo: ${codigos.join(', ')} · ${row.isActive === false ? 'Inactiva' : 'Activa'}`,
+        })
       } catch (error: any) {
         const reason =
           error?.code === 11000
             ? `Ya existe una orden de trabajo con el nombre "${nombre}" en esta empresa`
             : error?.message || 'Error desconocido'
-        result.errors.push({ row: rowNumber, reason })
+        fallo(rowNumber, nombre, reason)
       }
     }
 
