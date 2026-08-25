@@ -103,11 +103,17 @@ export class TesoreriaComponent implements OnInit {
   viaticoPaymentReceiptMimeType: string | null = null;
   viaticoPaymentReceiptSizeBytes: number | null = null;
   isUploadingViaticoReceipt = signal(false);
-  isScanningViaticoPayment = signal(false);
-  viaticoScannedAmount: number | null = null;
-  viaticoOperationNumber: string | null = null;
-  viaticoOperationDate: string | null = null;
-  viaticoOperationTime: string | null = null;
+  /**
+   * Modo del modal del pago de fondos: `true` = registro manual (formulario),
+   * `false` = ficha de consulta (VD-129).
+   *
+   * El registro manual vuelve por los viajes urgentes: se pagan por fuera de la
+   * planilla BBVA —Tesorería transfiere en el acto desde el BCP— y ese abono no
+   * lo trae ninguna conciliación. Se adjunta la constancia y se digitan los
+   * datos; el archivo NO se escanea, porque el lector está hecho para el
+   * formato de BBVA y aquí el comprobante es de otro banco.
+   */
+  viaticoPaymentManual = false;
   showReimbursementModal = false;
   reimbursementReceiptUrl: string | null = null;
   reimbursementReceiptName: string | null = null;
@@ -417,13 +423,53 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
-   * VD-129: ficha informativa del pago de la solicitud de fondos. Ya no se
-   * registra el abono a mano — lo hace la planilla BBVA y se da por pagado al
-   * conciliar el PDF del banco, que es de donde sale el N° de operación. El
-   * formulario se sigue rellenando porque de él salen los datos bancarios que
-   * se muestran; queda deshabilitado para que nadie escriba sobre ellos.
+   * Quién puede registrar el abono a mano. Solo mientras quede saldo por
+   * depositar: una solicitud ya cubierta no admite otro pago —el backend lo
+   * rechaza igual (`registerViaticoPayment`)— y el botón solo confundiría.
+   */
+  canRegisterViaticoPayment(report: IExpenseReport): boolean {
+    return (
+      this.canPayAndSettle &&
+      ['viatico_approved', 'partially_paid'].includes(report.status) &&
+      this.viaticoRemaining(report) > 0.009
+    );
+  }
+
+  /**
+   * VD-129: ficha informativa del pago de la solicitud de fondos. El abono
+   * ordinario lo emite la planilla BBVA y se da por pagado al conciliar el PDF
+   * del banco, que es de donde sale el N° de operación. El formulario se sigue
+   * rellenando porque de él salen los datos bancarios que se muestran; queda
+   * deshabilitado para que nadie escriba sobre ellos.
    */
   openViaticoPaymentModal(report: IExpenseReport): void {
+    this.prepareViaticoPaymentModal(report);
+    this.viaticoPaymentManual = false;
+    this.paymentForm.disable({ emitEvent: false });
+    this.showViaticoPaymentModal = true;
+  }
+
+  /**
+   * Registro manual del abono, para el viaje urgente que Tesorería paga desde
+   * el BCP sin pasar por la planilla. Se adjunta la constancia y se digitan
+   * monto, fecha y N° de operación.
+   */
+  openManualViaticoPaymentModal(report: IExpenseReport): void {
+    this.prepareViaticoPaymentModal(report);
+    this.viaticoPaymentManual = true;
+    // `reset()` no rehabilita un formulario deshabilitado: sin esto, haber
+    // abierto antes la ficha de consulta dejaba los campos en gris (el mismo
+    // tropiezo que VD-129 destapó en el modal de reembolsos).
+    this.paymentForm.enable({ emitEvent: false });
+    this.showViaticoPaymentModal = true;
+  }
+
+  /**
+   * Deja el modal listo para las dos formas de abrirlo: monto pendiente, fecha
+   * de hoy y los datos bancarios de la solicitud (o los del perfil, si la
+   * solicitud no los lleva).
+   */
+  private prepareViaticoPaymentModal(report: IExpenseReport): void {
     this.selectedViaticoReport = report;
     const remaining = this.viaticoRemaining(report);
     this.paymentForm.reset({
@@ -459,12 +505,6 @@ export class TesoreriaComponent implements OnInit {
     this.viaticoPaymentReceiptName = null;
     this.viaticoPaymentReceiptMimeType = null;
     this.viaticoPaymentReceiptSizeBytes = null;
-    this.viaticoScannedAmount = null;
-    this.viaticoOperationNumber = null;
-    this.viaticoOperationDate = null;
-    this.viaticoOperationTime = null;
-    this.paymentForm.disable({ emitEvent: false });
-    this.showViaticoPaymentModal = true;
   }
 
   removeViaticoPaymentReceipt(): void {
@@ -472,14 +512,17 @@ export class TesoreriaComponent implements OnInit {
     this.viaticoPaymentReceiptName = null;
     this.viaticoPaymentReceiptMimeType = null;
     this.viaticoPaymentReceiptSizeBytes = null;
-    this.viaticoScannedAmount = null;
-    this.viaticoOperationNumber = null;
-    this.viaticoOperationDate = null;
-    this.viaticoOperationTime = null;
     const remaining = this.selectedViaticoReport ? this.viaticoRemaining(this.selectedViaticoReport) : null;
     this.paymentForm.patchValue({ amount: remaining && remaining > 0 ? remaining : null });
   }
 
+  /**
+   * Adjunta la constancia del abono. A diferencia del reembolso, aquí NO se
+   * llama a `scanDepositAmount`: el comprobante es la foto de una transferencia
+   * de otro banco y el lector está calibrado para el formato de BBVA, así que
+   * leerlo solo servía para rellenar mal el monto. Los valores los digita
+   * Tesorería.
+   */
   onViaticoPaymentReceiptSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -503,25 +546,6 @@ export class TesoreriaComponent implements OnInit {
         this.viaticoPaymentReceiptMimeType = file.type;
         this.viaticoPaymentReceiptSizeBytes = file.size;
         this.isUploadingViaticoReceipt.set(false);
-        this.isScanningViaticoPayment.set(true);
-        this.expenseReportsService.scanDepositAmount(res.url, file.type).subscribe({
-          next: scan => {
-            this.isScanningViaticoPayment.set(false);
-            const amount = Number(scan?.amount) || 0;
-            this.viaticoScannedAmount = amount > 0 ? amount : null;
-            this.viaticoOperationNumber = scan?.operationNumber || null;
-            this.viaticoOperationDate = scan?.fecha || null;
-            this.viaticoOperationTime = scan?.hora || null;
-            const patch: Record<string, unknown> = {};
-            if (amount > 0) patch['amount'] = amount;
-            if (scan?.operationNumber && !this.paymentForm.value.reference) patch['reference'] = scan.operationNumber;
-            if (Object.keys(patch).length) this.paymentForm.patchValue(patch);
-          },
-          error: () => {
-            this.isScanningViaticoPayment.set(false);
-            this.notificationService.show('No se pudo escanear el comprobante. Ingresa el monto manualmente.', 'warning');
-          },
-        });
       },
       error: () => {
         this.notificationService.show('No se pudo subir el comprobante', 'error');
@@ -531,10 +555,13 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
-   * Registro manual del pago de una solicitud de fondos. VD-129 lo sacó de la
-   * interfaz —la ficha del modal es de solo lectura— pero el método se conserva,
-   * igual que `paymentModalReadOnly`: si el cliente vuelve a pedir el registro a
-   * mano, es volver a colgarlo de un botón. Sus pruebas siguen cubriéndolo.
+   * Registro manual del pago de una solicitud de fondos. VD-129 lo había sacado
+   * de la interfaz; vuelve para el viaje urgente que se paga desde el BCP, fuera
+   * de la planilla, donde no hay conciliación que traiga el abono.
+   *
+   * El N° de operación digitado viaja en `reference`, no en `operationNumber`:
+   * ese último lo escribe la conciliación del PDF del banco, y dejarlo vacío es
+   * lo que distingue un abono confirmado por BBVA de uno cargado a mano.
    */
   confirmViaticoPayment(): void {
     if (!this.selectedViaticoReport || this.paymentForm.invalid) return;
@@ -551,10 +578,6 @@ export class TesoreriaComponent implements OnInit {
       paymentReceiptFileName: this.viaticoPaymentReceiptName || undefined,
       paymentReceiptMimeType: this.viaticoPaymentReceiptMimeType || undefined,
       paymentReceiptSizeBytes: this.viaticoPaymentReceiptSizeBytes || undefined,
-      scannedAmount: this.viaticoScannedAmount ?? undefined,
-      operationNumber: this.viaticoOperationNumber || undefined,
-      operationDate: this.viaticoOperationDate || undefined,
-      operationTime: this.viaticoOperationTime || undefined,
     }).subscribe({
       next: () => {
         this.notificationService.show('Pago de fondos registrado correctamente', 'success');

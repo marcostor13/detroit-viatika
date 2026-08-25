@@ -41,6 +41,7 @@ const mockOrdenTrabajoModel = {
 const mockProjectModel = {
   exists: jest.fn(),
   findOne: jest.fn(),
+  find: jest.fn(),
 }
 
 describe('OrdenTrabajoService', () => {
@@ -55,6 +56,8 @@ describe('OrdenTrabajoService', () => {
     mockOrdenTrabajoModel.updateOne.mockReturnValue(makeQuery({ acknowledged: true }))
     mockProjectModel.exists.mockReturnValue(makeQuery({ _id: costCenterId }))
     mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+    // Los códigos que se muestran en el detalle de cada fila.
+    mockProjectModel.find.mockReturnValue(makeQuery([]))
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -165,6 +168,8 @@ describe('OrdenTrabajoService', () => {
 
     it('errors the row (does not abort the batch) when the cost center is not found', async () => {
       mockProjectModel.findOne.mockReturnValue(makeQuery(null))
+    // Los códigos que se muestran en el detalle de cada fila.
+    mockProjectModel.find.mockReturnValue(makeQuery([]))
       mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
 
       const result = await service.bulkCreate(
@@ -211,7 +216,9 @@ describe('OrdenTrabajoService', () => {
         clientId
       )
 
-      expect(result).toEqual({ created: 0, updated: 1, errors: [] })
+      expect(result).toEqual(
+        expect.objectContaining({ created: 0, updated: 1, unchanged: 0, errors: [] })
+      )
       expect(mockOrdenTrabajoModel.create).not.toHaveBeenCalled()
       expect(mockOrdenTrabajoModel.updateOne).toHaveBeenCalledWith(
         { _id: mockOrden._id },
@@ -301,6 +308,74 @@ describe('OrdenTrabajoService', () => {
       expect(result.created).toBe(0)
       expect(result.errors[0].reason).toContain('NO-EXISTE')
       expect(mockOrdenTrabajoModel.create).not.toHaveBeenCalled()
+    })
+
+    // El usuario acepta la carga viendo qué pasa fila por fila (VD: carga masiva
+    // con confirmación), así que el resultado tiene que decirlo.
+    it('devuelve el plan fila por fila: crear, actualizar y error', async () => {
+      const ccId = new Types.ObjectId()
+      mockProjectModel.findOne.mockReturnValue(makeQuery({ _id: ccId, code: '123' }))
+      mockOrdenTrabajoModel.findOne
+        .mockReturnValueOnce(makeQuery(null)) // la primera no existe: se crea
+        .mockReturnValueOnce(makeQuery(mockOrden)) // la segunda ya existe
+      mockOrdenTrabajoModel.create.mockResolvedValue(mockOrden)
+
+      const result = await service.bulkCreate(
+        [
+          { nombre: 'NUEVA-1', costCenterKey: '123' },
+          { nombre: 'Lim-Com-1', costCenterKey: '123', isActive: false },
+          { nombre: '', costCenterKey: '123' },
+        ],
+        clientId
+      )
+
+      expect(result.rows.map((r) => r.accion)).toEqual([
+        'crear',
+        'actualizar',
+        'error',
+      ])
+      expect(result.rows[0]).toEqual(
+        expect.objectContaining({ row: 2, nombre: 'NUEVA-1' })
+      )
+      expect(result.rows[1].detalle).toContain('Activa → Inactiva')
+      expect(result.rows[2].reason).toBe('El campo Nombre es obligatorio')
+    })
+
+    it('una fila que no cambia nada cuenta como sin-cambios y no toca la base', async () => {
+      mockOrdenTrabajoModel.findOne.mockReturnValue(makeQuery(mockOrden))
+
+      const result = await service.bulkCreate(
+        [{ nombre: 'Lim-Com-1', costCenterKey: '', isActive: true }],
+        clientId
+      )
+
+      expect(result.unchanged).toBe(1)
+      expect(result.updated).toBe(0)
+      expect(result.rows[0].accion).toBe('sin-cambios')
+      expect(mockOrdenTrabajoModel.updateOne).not.toHaveBeenCalled()
+    })
+
+    it('con dryRun cuenta lo que pasaría pero no escribe nada', async () => {
+      const ccId = new Types.ObjectId()
+      mockProjectModel.findOne.mockReturnValue(makeQuery({ _id: ccId, code: '123' }))
+      mockOrdenTrabajoModel.findOne
+        .mockReturnValueOnce(makeQuery(null))
+        .mockReturnValueOnce(makeQuery(mockOrden))
+
+      const result = await service.bulkCreate(
+        [
+          { nombre: 'NUEVA-1', costCenterKey: '123' },
+          { nombre: 'Lim-Com-1', costCenterKey: '123', isActive: false },
+        ],
+        clientId,
+        { dryRun: true }
+      )
+
+      expect(result).toEqual(
+        expect.objectContaining({ created: 1, updated: 1, dryRun: true })
+      )
+      expect(mockOrdenTrabajoModel.create).not.toHaveBeenCalled()
+      expect(mockOrdenTrabajoModel.updateOne).not.toHaveBeenCalled()
     })
   })
 

@@ -19,15 +19,26 @@ function excelDe(rows: Record<string, any>[]): Express.Multer.File {
 describe('OrdenTrabajoController › carga masiva', () => {
   let controller: OrdenTrabajoController
   let service: { bulkCreate: jest.Mock }
+  let auditLog: { log: jest.Mock }
 
   beforeEach(async () => {
-    service = { bulkCreate: jest.fn().mockResolvedValue({ created: 0, updated: 0, errors: [] }) }
+    service = {
+      bulkCreate: jest.fn().mockResolvedValue({
+        created: 0,
+        updated: 0,
+        unchanged: 0,
+        errors: [],
+        rows: [],
+        dryRun: false,
+      }),
+    }
+    auditLog = { log: jest.fn() }
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [OrdenTrabajoController],
       providers: [
         { provide: OrdenTrabajoService, useValue: service },
-        { provide: AuditLogService, useValue: { log: jest.fn() } },
+        { provide: AuditLogService, useValue: auditLog },
       ],
     }).compile()
 
@@ -42,6 +53,7 @@ describe('OrdenTrabajoController › carga masiva', () => {
     await controller.importFromExcel(
       excelDe([{ Suc: 'LIM', Dep: 'SMI', 'Nº O/T': '00001463-G', 'Centros de Costo*': '123' }]),
       clientId,
+      false,
       req
     )
 
@@ -62,6 +74,7 @@ describe('OrdenTrabajoController › carga masiva', () => {
         },
       ]),
       clientId,
+      false,
       req
     )
 
@@ -72,6 +85,7 @@ describe('OrdenTrabajoController › carga masiva', () => {
     await controller.importFromExcel(
       excelDe([{ 'Nombre*': 'Lim-Com-1', 'Código Centro de Costo*': 'CC-001', Activo: 'No' }]),
       clientId,
+      false,
       req
     )
 
@@ -84,6 +98,7 @@ describe('OrdenTrabajoController › carga masiva', () => {
     await controller.importFromExcel(
       excelDe([{ Nombre: 'LIM-SMI-1', 'Centros de Costo': '123, 223, 423' }]),
       clientId,
+      false,
       req
     )
 
@@ -95,6 +110,7 @@ describe('OrdenTrabajoController › carga masiva', () => {
     await controller.importFromExcel(
       excelDe([{ Nombre: 'LIM-SMI-1', 'Centros de Costo': '123', Activo: '' }]),
       clientId,
+      false,
       req
     )
 
@@ -105,9 +121,43 @@ describe('OrdenTrabajoController › carga masiva', () => {
     await controller.importFromExcel(
       excelDe([{ Suc: 'LIM', 'Centros de Costo': '123' }]),
       clientId,
+      false,
       req
     )
 
     expect(filasMapeadas()[0].nombre).toBe('')
+  })
+
+  // La carga se acepta antes de escribir: el front pide primero el plan.
+  it('previsualiza sin escribir ni auditar cuando llega dryRun', async () => {
+    await controller.importFromExcel(
+      excelDe([{ Nombre: 'LIM-SMI-1', 'Centros de Costo*': '123' }]),
+      clientId,
+      'true',
+      req
+    )
+
+    expect(service.bulkCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      clientId,
+      { dryRun: true }
+    )
+    expect(auditLog.log).not.toHaveBeenCalled()
+  })
+
+  it('la carga real escribe y audita el resultado', async () => {
+    await controller.importFromExcel(
+      excelDe([{ Nombre: 'LIM-SMI-1', 'Centros de Costo*': '123' }]),
+      clientId,
+      false,
+      req
+    )
+
+    expect(service.bulkCreate).toHaveBeenCalledWith(
+      expect.anything(),
+      clientId,
+      { dryRun: false }
+    )
+    expect(auditLog.log).toHaveBeenCalled()
   })
 })

@@ -11,7 +11,12 @@ export const PROMPT1 = `
       - tipoComprobante: normalmente es una palabra, por ejemplo Factura
       - serie: normalmente es una letra con numeros, por ejemplo E001, si hay 2, analiza cual es la serie del emisor, normalmente la serie del emisor está en la cabecera de la factura.
       - correlativo: normalmente es un numero, y va seguido de la serie, por ejemplo E001-123
-      - montoTotal: normalmente es un numero, por ejemplo 1000
+      - montoTotal: el IMPORTE TOTAL DEL COMPROBANTE ELECTRÓNICO, exactamente el que SUNAT registra en su consulta de validez. Identifícalo por su SIGNIFICADO, nunca por su etiqueta ni por su posición: cada emisor rotula distinto ("IMPORTE TOTAL", "TOTAL VENTA", "TOTAL S/", "TOTAL FACTURA", "TOTAL A PAGAR", "TOTAL"). Para elegirlo, en ESTE ORDEN:
+        1) Si el comprobante trae el importe EN LETRAS ("SON: TRESCIENTOS TREINTA Y SEIS CON 00/100 SOLES"), ese es el total: manda sobre cualquier otra cifra impresa, porque es el importe que el emisor declaró a SUNAT.
+        2) Si no hay leyenda en letras o no se puede leer, toma el total impreso del comprobante y compruébalo contra operación gravada + exonerada + inafecta + IGV + ISC + ICBPER + otros tributos y cargos, menos descuentos globales.
+        3) NUNCA recalcules el total a partir del desglose que tú mismo leíste, ni ajustes el total para que cuadre con él. Si el desglose no suma, el total impreso (o el de la leyenda) manda igual y el desglose se queda tal como lo leíste: prefiero un desglose observable a un total inventado.
+        Si el documento muestra VARIOS totales, NO elijas el mayor ni el último: elige el del comprobante. Todo lo que aparezca DESPUÉS del total del comprobante NO forma parte de él y NO se suma: propina o servicio voluntario, vuelto, efectivo recibido, saldo, cargos de la forma de pago. La PROPINA nunca entra en montoTotal —no es deducible— aunque la tarjeta haya cobrado más que la factura.
+        Ejemplo real (ticket de restaurante): "Sub-Total 278.84 / IGV 29.28 / RC 27.88 / Total Venta 336.00 / Propina 10.00 / Total a Pagar 346.00 / SON: TRESCIENTOS TREINTA Y SEIS CON 00/100 SOLES" -> montoTotal = 336.00. Devolver 346.00 es INCORRECTO: SUNAT rechaza el comprobante porque el importe no es el declarado.
       - moneda: normalmente es un simbolo de moneda, por ejemplo PEN, S/ O $, el resultado siempre debe ser en este formato: S/ ó $
       - razonSocial: normalmente es un nombre, por ejemplo Empresa de Transporte S.A., si hay 2, analiza cual es la razon social del emisor, normalmente la razon social del emisor está en la cabecera de la factura y puede venir sin el titulo de "Razón Social".
       - direccionEmisor: normalmente es una direccion, por ejemplo Av. Lima 123, si hay 2, analiza cual es la direccion del emisor, normalmente la direccion del emisor está en la cabecera de la factura y puede venir sin el titulo de "Dirección".
@@ -22,7 +27,7 @@ export const PROMPT1 = `
       - baseAfecta: base imponible gravada con IGV (valor venta afecto). Es el subtotal sobre el que se calcula el IGV. Número, sin símbolo de moneda. Si no aparece, déjalo en null.
       - igv: monto del IGV declarado en el comprobante (no la tasa, el monto en dinero). Número. Si el comprobante no tiene IGV (boleta sin IGV, inafecto), pon 0. Si no se puede determinar, null.
       - tasaIgv: tasa porcentual del IGV leída del comprobante. Normalmente 18, pero puede ser 10 o 10.5 (restaurantes). NUNCA asumas 18 si el documento indica otra tasa. Si no hay IGV, pon 0. Número.
-      - inafecto: suma de conceptos inafectos al IGV (recargo al consumo, servicio, propina, D.L. 25988). Número. Si no hay, pon 0.
+      - inafecto: suma de los conceptos inafectos al IGV que SÍ forman parte del comprobante: recargo al consumo (RC), servicio incluido en la cuenta, D.L. 25988. Número. Si no hay, pon 0. NO incluyas la propina voluntaria ni ningún concepto posterior al total del comprobante: la prueba es simple, si no suma al importe total del CPE, no va aquí. Un mismo concepto ("servicio", "propina") va aquí solo cuando está DENTRO de la cuenta y suma al total declarado.
       - REGLA DE COHERENCIA: LEE PRIMERO, NUNCA CALCULES si el valor ya está en el documento. Si el documento muestra explícitamente el monto de IGV (incluso si es 0.00), usa ese valor directamente; NUNCA lo derives del total y la tasa. Si el comprobante indica EXONERADO o INAFECTO y el IGV es 0, pon igv = 0, baseAfecta = 0, y registra el total en el campo que corresponde (operacionExonerada o operacionInafecta en comprobanteDetallado). Solo puedes disgregar (baseAfecta = total / (1 + tasaIgv/100), igv = total - baseAfecta) cuando el documento NO muestre ningún monto de IGV ni indique que la operación es exonerada o inafecta. Si dudas, deja los campos en null para revisión manual.
       # Campo "comprobanteDetallado" (información completa del comprobante peruano):
       - Además de los campos anteriores, agrega un objeto anidado "comprobanteDetallado" con TODA la información que puedas leer del comprobante. Las facturas peruanas varían su diseño según el emisor, así que ubica cada dato por su significado, no por su posición.
@@ -43,7 +48,7 @@ export const PROMPT1 = `
           "hash": null,
           "codigoQr": null
         }
-      - REGLAS del comprobanteDetallado: los números van sin símbolo de moneda; "items" puede tener uno o varios elementos (omite el arreglo o déjalo vacío si no hay detalle legible); ICBPER es el impuesto a las bolsas plásticas; el recargo al consumo es inafecto al IGV. Coherencia: la suma de operaciones gravada/exonerada/inafecta/gratuita + IGV + ICBPER + ISC + otros debe aproximar el importeTotal.
+      - REGLAS del comprobanteDetallado: los números van sin símbolo de moneda; "items" puede tener uno o varios elementos (omite el arreglo o déjalo vacío si no hay detalle legible); ICBPER es el impuesto a las bolsas plásticas; el recargo al consumo es inafecto al IGV. Coherencia: la suma de operaciones gravada/exonerada/inafecta/gratuita + IGV + ICBPER + ISC + otros debe aproximar el importeTotal. "importeTotal" es el mismo número que montoTotal (el del comprobante, sin propina) y "leyendas" debe traer la frase "SON: ... CON NN/100 ..." tal como está impresa: es la verificación independiente de ese total.
       # Ejemplo de salida:
     {
       "rucEmisor": "20503000001",

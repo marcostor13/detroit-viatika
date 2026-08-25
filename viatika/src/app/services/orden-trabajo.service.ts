@@ -6,11 +6,26 @@ import { IOrdenTrabajo } from '../interfaces/orden-trabajo.interface';
 import { IPaginatedResult } from '../interfaces/paginated-result.interface';
 import { UserStateService } from './user-state.service';
 
+/** Qué le pasa a una fila del Excel. Es lo que se revisa antes de aceptar la carga. */
+export interface IBulkImportRow {
+  row: number;
+  nombre: string;
+  accion: 'crear' | 'actualizar' | 'sin-cambios' | 'error';
+  /** Con qué queda la OT (al crear) o qué le cambia (al actualizar). */
+  detalle?: string;
+  reason?: string;
+}
+
 export interface IBulkImportResult {
   created: number;
   /** OT que ya existían (mismo nombre) y se actualizaron con lo del archivo. */
   updated: number;
+  /** OT que ya existían y a las que el archivo no les cambia nada. */
+  unchanged: number;
   errors: { row: number; reason: string }[];
+  rows: IBulkImportRow[];
+  /** true = fue una previsualización: no se escribió nada. */
+  dryRun: boolean;
 }
 
 /**
@@ -61,10 +76,19 @@ export class OrdenTrabajoService {
     return this.http.delete(`${this.apiUrl}/${id}`);
   }
 
-  importFromExcel(file: File): Observable<IBulkImportResult> {
+  /**
+   * Sube el Excel de OT. Con `dryRun` el backend no escribe nada y devuelve el
+   * plan (qué se crea, qué se modifica, qué falla) para revisarlo antes de
+   * aceptar la carga.
+   */
+  importFromExcel(
+    file: File,
+    opts: { dryRun?: boolean } = {}
+  ): Observable<IBulkImportResult> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('clientId', this.userState.getUser()?.companyId || '');
+    if (opts.dryRun) formData.append('dryRun', 'true');
     return this.http.post<IBulkImportResult>(`${this.apiUrl}/import`, formData);
   }
 }
