@@ -285,7 +285,13 @@ emissionDateText(exp: Record<string, unknown>): string {
       const dates = rows.map((r: any) => r.fecha).filter(Boolean);
       return dates.length ? formatFechaEmisionDdMmYyyy([...dates].sort()[0]) : '-';
     }
-    if (type === 'otros_gastos') return formatFechaEmisionDdMmYyyy(exp['createdAt'] as any);
+    if (type === 'otros_gastos') {
+      // Alimentación sin documentación declara la fecha del gasto: manda esa, no
+      // el día en que se registró. Los gastos viejos, sin fecha declarada,
+      // siguen cayendo a `createdAt`.
+      const declarada = resolveExpenseFechaEmision(exp as any);
+      return formatFechaEmisionDdMmYyyy(declarada ?? (exp['createdAt'] as any));
+    }
     return this.emissionDateText(exp);
   }
 

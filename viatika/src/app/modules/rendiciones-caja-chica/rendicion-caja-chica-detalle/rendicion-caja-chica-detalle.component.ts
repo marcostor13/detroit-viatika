@@ -290,7 +290,10 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
       return dates.length ? formatFechaEmisionDdMmYyyy([...dates].sort()[0]) : '-';
     }
     if (type === 'otros_gastos') {
-      return formatFechaEmisionDdMmYyyy(inv?.createdAt);
+      // Igual que en la ficha de la rendición: la fecha declarada en
+      // Alimentación sin documentación manda sobre la de registro.
+      const declarada = resolveExpenseFechaEmision(inv);
+      return formatFechaEmisionDdMmYyyy(declarada ?? inv?.createdAt);
     }
     return formatFechaEmisionDdMmYyyy(resolveExpenseFechaEmision(inv));
   }

@@ -1328,12 +1328,18 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
     if (type === 'otros_gastos') {
       // La DJ al extranjero declara días concretos: vale el primero declarado,
-      // no la fecha de registro (el resto de otros gastos mantiene createdAt).
+      // no la fecha de registro.
       const djRows = this.declaracionJuradaRows(expense);
       if (djRows.length > 0) {
         const fechas = djRows.map(r => String(r['fecha'] ?? '')).filter(Boolean);
         if (fechas.length > 0) return this.formatEmissionDate([...fechas].sort()[0]);
       }
+      // Alimentación sin documentación declara la fecha del gasto (no hay
+      // comprobante del que leerla): manda esa, no el día en que se registró.
+      // Los gastos viejos, cargados antes de que se pidiera, siguen cayendo a
+      // `createdAt` para no quedarse sin fecha.
+      const declarada = resolveExpenseFechaEmision(expense);
+      if (declarada) return this.formatEmissionDate(declarada);
       return this.formatEmissionDate(expense?.createdAt);
     }
     return this.emissionDateText(expense);
