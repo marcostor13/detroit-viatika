@@ -1238,11 +1238,31 @@ export default class AddInvoiceComponent implements OnInit {
 
   /**
    * AL en curso, al crear Y al editar — a diferencia de `isAlimentacionSinDoc`,
-   * que solo mira el alta (ahí decide la categoría automática). Lo usan la
-   * fecha del gasto y su validación, que valen igual corrigiendo el comprobante.
+   * que solo mira el alta (ahí decide la categoría automática).
    */
   get esAlimentacionSinDocEnCurso(): boolean {
     return this.expenseType() === 'otros_gastos' && this.otrosSubTipo() === 'AL';
+  }
+
+  /**
+   * Todo Otros Gasto declara su fecha. Ninguno la traía: el formulario no la
+   * pedía y el gasto se guardaba sin `fechaEmision`, así que la rendición lo
+   * listaba con el día en que se registró y quedaba fuera de los filtros por
+   * fecha. Los que llevan documento (TK/BV/RC/EXD) declaran la del comprobante;
+   * los que no (AL, OT), la del gasto.
+   *
+   * La única excepción es la DJ al extranjero mientras se crea: ahí la fecha va
+   * por fila en el detalle diario de cada rubro, no una sola para el gasto.
+   */
+  get pideFechaDelGasto(): boolean {
+    return this.expenseType() === 'otros_gastos' && !this.isDj();
+  }
+
+  /** Con documento la fecha es la del comprobante; sin él, la del gasto. */
+  get etiquetaFechaGasto(): string {
+    return this.otrosSubTipoMuestraDocumento() || this.otrosSubTipo() === 'EXD'
+      ? 'Fecha de emisión'
+      : 'Fecha del gasto';
   }
 
   /**
@@ -1651,17 +1671,15 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
-   * Alimentación sin documentación: al no haber comprobante, la fecha del gasto
-   * la declara el colaborador. No es un adorno — de ella salen el plazo de
-   * presentación (`observado`/`diasRetraso`) y el tipo de cambio que se congela.
-   * El resto de sub-tipos la traen en su documento, así que ahí no se pide.
+   * La fecha de un Otros Gasto la declara el colaborador y es obligatoria: de
+   * ella salen el plazo de presentación (`observado`/`diasRetraso`), el tipo de
+   * cambio que se congela y la fecha con la que el gasto figura en la rendición
+   * y en los reportes. Ver `pideFechaDelGasto`.
    */
   private syncFechaGastoValidator(): void {
     const fechaCtrl = this.form.get('fechaEmision');
     if (!fechaCtrl) return;
-    fechaCtrl.setValidators(
-      this.esAlimentacionSinDocEnCurso ? [Validators.required] : []
-    );
+    fechaCtrl.setValidators(this.pideFechaDelGasto ? [Validators.required] : []);
     fechaCtrl.updateValueAndValidity({ emitEvent: false });
   }
 
@@ -2105,10 +2123,11 @@ export default class AddInvoiceComponent implements OnInit {
         const comidaOk =
           sub !== 'AL' ||
           (!!this.form.get('tipoComida')?.value && !this.montoSuperaTopeComida);
-        // Sin comprobante del que leerla, la fecha del gasto se declara.
-        const fechaOk =
-          sub !== 'AL' ||
-          !!(this.form.get('fechaEmision')?.value || '').toString().trim();
+        // Todo Otros Gasto declara su fecha (la DJ al extranjero salió antes:
+        // la suya va por fila en el detalle diario).
+        const fechaOk = !!(this.form.get('fechaEmision')?.value || '')
+          .toString()
+          .trim();
         return (
           proyectOk &&
           fechaOk &&
@@ -2505,13 +2524,18 @@ export default class AddInvoiceComponent implements OnInit {
     }
 
     const fechaGasto = (this.form.get('fechaEmision')?.value || '').toString().trim();
+    if (!fechaGasto) {
+      this.notificationService.show(
+        this.otrosSubTipoMuestraDocumento()
+          ? 'Indica la fecha de emisión del comprobante'
+          : 'Indica la fecha del gasto',
+        'error'
+      );
+      return;
+    }
     if (subTipo === 'AL') {
       if (!tipoComida) {
         this.notificationService.show('Indica si el gasto es desayuno, almuerzo o cena', 'error');
-        return;
-      }
-      if (!fechaGasto) {
-        this.notificationService.show('Indica la fecha del gasto', 'error');
         return;
       }
       const tope = this.topeComidaSeleccionada;
@@ -2539,6 +2563,7 @@ export default class AddInvoiceComponent implements OnInit {
 
     this.isLoading.set(true);
 
+    const comentario = (this.form.get('comentario')?.value || '').toString().trim();
     const serie = muestraDoc ? (this.form.get('serie')?.value || '').toString().trim() : '';
     const correlativo = muestraDoc ? (this.form.get('correlativo')?.value || '').toString().trim() : '';
     const rucEmisor = muestraDoc ? (this.form.get('rucEmisor')?.value || '').toString().trim() : '';
@@ -2564,6 +2589,9 @@ export default class AddInvoiceComponent implements OnInit {
         ...(fechaGasto
           ? { fechaEmision: this.formatDateForBackend(fechaGasto) }
           : {}),
+        // Nota libre del colaborador (en AL, su único texto propio: la
+        // descripción la ocupa la comida declarada).
+        ...(comentario ? { comentario } : {}),
       };
       this.invoiceService.createOtherExpense(payload).subscribe({
         next: (res) => {

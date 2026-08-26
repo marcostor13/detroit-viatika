@@ -896,7 +896,7 @@ describe('AddInvoiceComponent', () => {
   describe('isFormValid - otros_gastos', () => {
     it('DJ sub-type requires the declaracionJurada checkbox', () => {
       const component = createComponent();
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50 });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, fechaEmision: '2026-08-12' });
       component.setExpenseType('otros_gastos');
       component.otrosSubTipo.set('DJ');
       component.selectedFile = new File([''], 'a.png');
@@ -907,7 +907,7 @@ describe('AddInvoiceComponent', () => {
 
     it('BV sub-type requires ruc/serie/correlativo instead of the DJ checkbox', () => {
       const component = createComponent();
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50 });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, fechaEmision: '2026-08-12' });
       component.setExpenseType('otros_gastos');
       component.otrosSubTipo.set('BV');
       component.selectedFile = new File([''], 'a.png');
@@ -918,7 +918,7 @@ describe('AddInvoiceComponent', () => {
 
     it('requires an attached file when creating', () => {
       const component = createComponent();
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true, fechaEmision: '2026-08-12' });
       component.setExpenseType('otros_gastos');
       component.otrosSubTipo.set('DJ');
       expect(component.isFormValid()).toBeFalse();
@@ -1059,7 +1059,7 @@ describe('AddInvoiceComponent', () => {
 
     it('requires an attached file', () => {
       const component = createComponent();
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true, totalOtros: 50 });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true, totalOtros: 50, fechaEmision: '2026-08-12' });
       component.otrosSubTipo.set('DJ');
       component.saveOtherExpense();
       expect(notificationService.show).toHaveBeenCalledWith('Debes adjuntar el comprobante', 'error');
@@ -1067,7 +1067,7 @@ describe('AddInvoiceComponent', () => {
 
     it('BV sub-type requires rucEmisor', () => {
       const component = createComponent();
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50 });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, fechaEmision: '2026-08-12' });
       component.otrosSubTipo.set('BV');
       component.selectedFile = new File([''], 'a.png');
       component.saveOtherExpense();
@@ -1083,6 +1083,7 @@ describe('AddInvoiceComponent', () => {
         declaracionJurada: true,
         totalOtros: 50,
         description: 'Peaje',
+        fechaEmision: '2026-08-12',
       });
       component.otrosSubTipo.set('DJ');
       component.selectedFile = new File([''], 'a.png');
@@ -1103,6 +1104,7 @@ describe('AddInvoiceComponent', () => {
         categoryId: 'cat1',
         totalOtros: 30,
         rucEmisor: '20123456789',
+        fechaEmision: '2026-08-12',
       });
       component.otrosSubTipo.set('TK');
       component.selectedFile = new File([''], 'a.png');
@@ -1140,7 +1142,76 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
-  describe('AL — fecha del gasto', () => {
+  describe('Otros Gastos — fecha del gasto', () => {
+    it('ningún sub-tipo se guarda sin fecha', () => {
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', totalOtros: 30,
+        rucEmisor: '20123456789', fechaEmision: '',
+      });
+      component.otrosSubTipo.set('BV');
+      component.form.patchValue({ serie: 'B001', correlativo: '1' });
+      component.selectedFile = new File([''], 'a.png');
+      component.saveOtherExpense();
+
+      expect(notificationService.show).toHaveBeenCalledWith('Indica la fecha de emisión del comprobante', 'error');
+      expect(invoicesService.createOtherExpense).not.toHaveBeenCalled();
+    });
+
+    it('la fecha viaja en el alta de un sub-tipo con documento', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', totalOtros: 30,
+        rucEmisor: '20123456789', serie: 'B001', correlativo: '1',
+        fechaEmision: '2026-08-12',
+      });
+      component.otrosSubTipo.set('BV');
+      component.selectedFile = new File([''], 'a.png');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.fechaEmision).toBe('12/08/2026');
+    });
+
+    it('el comentario del colaborador viaja en el alta', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '2026-08-12',
+        comentario: '  Almuerzo en supervisión de obra  ',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.comentario).toBe('Almuerzo en supervisión de obra');
+    });
+
+    it('sin comentario no manda el campo', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '2026-08-12',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.comentario).toBeUndefined();
+    });
+
+    // La DJ al extranjero declara una fecha por fila en su detalle diario, así
+    // que no se le pide una sola para el gasto.
+    it('la DJ al extranjero no pide la fecha del gasto', () => {
+      const component = createComponent();
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('DJE');
+      expect(component.pideFechaDelGasto).toBeFalse();
+    });
+
     it('no guarda el AL sin la fecha del gasto', () => {
       const component = createComponent();
       component.form.patchValue({
@@ -1677,7 +1748,7 @@ describe('AddInvoiceComponent', () => {
         total: 30,
         data: JSON.stringify({ description: 'old', foo: 'bar', subTipo: 'OT' }),
       });
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 60, description: 'Peaje nuevo' });
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 60, description: 'Peaje nuevo', fechaEmision: '2026-08-12' });
       component.update();
 
       const payload = invoicesService.updateInvoice.calls.mostRecent().args[1] as any;
