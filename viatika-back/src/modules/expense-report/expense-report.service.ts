@@ -1345,6 +1345,11 @@ export class ExpenseReportService implements OnModuleInit {
       .find(filter)
       .populate('categoryId', 'name')
       .populate('proyectId', 'name code')
+      // OT del comprobante: la ficha la muestra junto al centro de costo. Sin
+      // popularla llegaba el ObjectId crudo y la ficha la daba por vacía ("—")
+      // aunque el gasto sí la tuviera. `findOne` ya la popula para el formato
+      // ADF-FOR-004; esta consulta es la que alimenta la tabla y la ficha.
+      .populate('ordenTrabajoId', 'nombre costCenterId')
       // Nombres de los aprobadores de cada paso de la cadena (regla 1.4) para
       // mostrarlos en la columna Estado en vez del ObjectId crudo, que no es
       // legible para el usuario.

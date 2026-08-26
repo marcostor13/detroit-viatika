@@ -106,10 +106,12 @@
       de fallback de más abajo. En viático se hereda de la solicitud, que no la exige:
       si la solicitud no llevó OT no hay campo que mostrar (viaticoSinOrdenTrabajo).
     -->
-    @if (expenseType() === 'planilla_movilidad' && !isDirectaPlanilla() && !viaticoSinOrdenTrabajo()) {
+    @if (mostrarOrdenTrabajo()) {
     <div class="flex flex-col gap-2">
       <label for="ordenTrabajoId" class="text-sm font-medium text-secondary">
-        Orden de Trabajo <span class="text-error">*</span>
+        Orden de Trabajo
+        @if (ordenTrabajoObligatoria()) { <span class="text-error">*</span> }
+        @else { <span class="text-tertiary font-normal">(opcional)</span> }
       </label>
       <app-search-select
         formControlName="ordenTrabajoId"
@@ -121,8 +123,10 @@
       <p class="text-xs text-tertiary">Heredada de la solicitud de fondos. No se puede cambiar aquí.</p>
       } @else if (proyectId?.value && filteredOrdenesTrabajo.length === 0) {
       <p class="text-xs text-amber-600">El centro de costo elegido no tiene órdenes de trabajo activas.</p>
-      } @else {
+      } @else if (ordenTrabajoObligatoria()) {
       <p class="text-xs text-tertiary">Requerida por el formato oficial de planilla de movilidad (ADF-FOR-005). Solo se listan las OT del centro de costo elegido.</p>
+      } @else {
+      <p class="text-xs text-tertiary">Si el gasto corresponde a una orden de trabajo, indícala. Solo se listan las OT del centro de costo elegido.</p>
       }
     </div>
     }

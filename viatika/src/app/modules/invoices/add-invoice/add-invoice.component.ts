@@ -1623,6 +1623,37 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
+   * ¿Se muestra el selector de Orden de Trabajo en este comprobante?
+   *
+   * - **Planilla de movilidad**: como siempre — obligatoria por el formato
+   *   oficial (ADF-FOR-005), salvo que no haya ninguna que heredar (planilla en
+   *   directa, o viático cuya solicitud no llevó OT).
+   * - **Factura y Otros Gastos**: se pide también, para poder imputar el gasto a
+   *   una OT; antes solo la planilla la mostraba y el resto de comprobantes
+   *   quedaba sin OT. Acá es OPCIONAL: no bloquea el guardado.
+   *
+   * La DJ al extranjero queda fuera: no usa el bloque superior (cada rubro lleva
+   * lo suyo). Cuando la rendición ya trae una OT (directa o viático), el campo
+   * llega precargado y bloqueado — se hereda, no se elige.
+   */
+  mostrarOrdenTrabajo(): boolean {
+    switch (this.expenseType()) {
+      case 'planilla_movilidad':
+        return !this.isDirectaPlanilla() && !this.viaticoSinOrdenTrabajo();
+      case 'factura':
+      case 'otros_gastos':
+        return !this.isDj();
+      default:
+        return false;
+    }
+  }
+
+  /** Solo la planilla de movilidad la exige (ADF-FOR-005). */
+  ordenTrabajoObligatoria(): boolean {
+    return this.expenseType() === 'planilla_movilidad';
+  }
+
+  /**
    * Viático cuya solicitud no llevó OT. La OT es opcional al solicitar el viático
    * y la planilla de movilidad la hereda de ahí (VD-28): si la solicitud no la
    * tiene, no hay nada que heredar ni que el colaborador pueda elegir, así que el
@@ -2602,6 +2633,10 @@ export default class AddInvoiceComponent implements OnInit {
         // Nota libre del colaborador (en AL, su único texto propio: la
         // descripción la ocupa la comida declarada).
         ...(comentario ? { comentario } : {}),
+        // OT opcional del comprobante: la factura y la planilla ya la mandaban.
+        ...(this.form.get('ordenTrabajoId')?.value
+          ? { ordenTrabajoId: this.form.get('ordenTrabajoId')?.value }
+          : {}),
       };
       this.invoiceService.createOtherExpense(payload).subscribe({
         next: (res) => {

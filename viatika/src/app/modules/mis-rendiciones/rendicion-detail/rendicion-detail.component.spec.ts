@@ -350,6 +350,28 @@ describe('RendicionDetailComponent', () => {
     });
   });
 
+  // La OT ahora se elige por comprobante también en factura y otros gastos: la
+  // ficha tiene que mostrarla, y caer a la de la rendición cuando se hereda.
+  describe('getExpenseOrdenTrabajo', () => {
+    it('usa la OT del comprobante cuando la tiene', () => {
+      component.report = makeReport({ type: 'viatico' } as any);
+      (component.report as any).viaticoOrdenTrabajoId = { nombre: 'OT-DEL-REPORTE' };
+      const exp = { ordenTrabajoId: { nombre: 'OT-PROPIA' } };
+      expect(component.getExpenseOrdenTrabajo(exp)).toBe('OT-PROPIA');
+    });
+
+    it('cae a la OT de la rendición cuando el comprobante no tiene', () => {
+      component.report = makeReport();
+      (component.report as any).directaOrdenTrabajoId = { nombre: 'OT-HEREDADA' };
+      expect(component.getExpenseOrdenTrabajo({})).toBe('OT-HEREDADA');
+    });
+
+    it('sin ninguna OT muestra un guion', () => {
+      component.report = makeReport();
+      expect(component.getExpenseOrdenTrabajo({})).toBe('—');
+    });
+  });
+
   describe('getExpenseDate — otros gastos', () => {
     it('usa la fecha declarada en Alimentación sin documentación, no la de registro', () => {
       const expense = {
