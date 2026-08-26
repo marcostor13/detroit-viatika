@@ -10,6 +10,7 @@ import {
   resolveExpenseFechaEmision,
 } from '../../../utils/fecha-emision.util';
 import { DEFAULT_MONEDA, monedaSymbol } from '../../../constants/moneda';
+import { chainLevelLabels } from '../../../shared/approval-level-label.util';
 
 // ─── Tipos auxiliares ─────────────────────────────────────────────────────────
 type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos';
@@ -471,6 +472,8 @@ emissionDateText(exp: Record<string, unknown>): string {
   /** Cadena de niveles del comprobante, con estado y aprobador(es) de cada paso. Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
   chainSteps(exp: Record<string, unknown>): Array<{
     level: number;
+    /** Etiqueta del paso: "N1", o "N2-1"/"N2-2" si el nivel se repite en la cadena. */
+    nivelLabel: string;
     state: 'completado' | 'pendiente';
     approverNames: string;
     origin: string;
@@ -480,11 +483,16 @@ emissionDateText(exp: Record<string, unknown>): string {
   }> {
     const chain = (exp['approverChain'] as any[]) ?? [];
     const history = (exp['approvalHistory'] as any[]) ?? [];
-    return chain.map((step: any) => {
+    // Un comprobante imputado a un centro de costo ajeno tiene DOS pasos de
+    // nivel 2 (el del centro principal y el del seleccionado): sin sub-numerar
+    // salían los dos como "N2" y no se distinguía cuál era cuál.
+    const nivelLabels = chainLevelLabels(chain.map((step: any, i: number) => Number(step?.level ?? i + 1)));
+    return chain.map((step: any, i: number) => {
       const state: 'completado' | 'pendiente' = step.approved ? 'completado' : 'pendiente';
       const entry = history.find((h: any) => h.level === step.level && h.action === 'approved');
       return {
         level: step.level,
+        nivelLabel: nivelLabels[i],
         state,
         approverNames: this.chainStepApproverNames(step),
         origin: this.chainStepOrigin(step),

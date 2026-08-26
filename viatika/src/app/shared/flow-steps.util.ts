@@ -1,3 +1,5 @@
+import { chainLevelLabels, chainStepStage } from './approval-level-label.util';
+
 /**
  * Trazabilidad del flujo de aprobación paso a paso (VD-31).
  *
@@ -105,6 +107,13 @@ export interface SuplenciaContexto {
 interface RendicionLevelApprovals {
   /** Nivel de la cadena (N1, N2, …). */
   level: number;
+  /**
+   * Etiqueta visible del paso ("N1", "N2-1", "N2-2"). Un nivel que aparece dos
+   * veces en la cadena —el N2 del centro principal y el del centro seleccionado,
+   * cuando el colaborador rinde a un centro de costo que no es suyo— se
+   * sub-numera para que las dos etapas se distingan. Ver `chainLevelLabels`.
+   */
+  nivelLabel: string;
   /** Quiénes ya aprobaron en ese nivel. */
   approvedNames: string[];
   /** Quiénes faltan: los aprobadores de los pasos de ese nivel aún sin resolver. */
@@ -134,14 +143,22 @@ function stepApprovedByName(step: any): string | undefined {
  * Paso de la línea de tiempo para un nivel de la cadena (VD-112). Nombra a
  * quien falta mientras está pendiente y a quien aprobó una vez resuelto; si el
  * nivel está a medias, la descripción dice quién ya firmó.
+ *
+ * `esElTurno` distingue la etapa que está trabada AHORA (azul) de la que
+ * todavía no llega (gris). La cadena es consecutiva (VD-133): con tres etapas
+ * —N1, N2-1 y N2-2 cuando se rinde a un centro de costo ajeno— pintar de azul
+ * todas las pendientes a la vez anunciaba acción a quien todavía no puede hacer
+ * nada. Los nombres se siguen mostrando en las tres, que es justamente lo que
+ * hay que poder mapear.
  */
 function levelApprovalStep(
   nivel: RendicionLevelApprovals,
   forcedDone: boolean,
   fmt: (d?: string | Date) => string | undefined,
   fallbackDate?: string | Date,
+  esElTurno = true,
 ): FlowStep {
-  const { level, approvedNames, pendingNames, lastApprovedAt } = nivel;
+  const { nivelLabel, approvedNames, pendingNames, lastApprovedAt } = nivel;
   const done = forcedDone || pendingNames.length === 0;
   const quienes = done
     ? (approvedNames.length > 0 ? approvedNames : pendingNames)
@@ -155,9 +172,9 @@ function levelApprovalStep(
     !done && nivel.reemplazadoPor ? nivel.reemplazadoPor : nombres;
   return {
     label: done
-      ? `N${level} · Aprobado por ${nombres}`
-      : `N${level} · Falta aprobación de ${pendienteConSuplente}`,
-    state: done ? 'completed' : 'active',
+      ? `${nivelLabel} · Aprobado por ${nombres}`
+      : `${nivelLabel} · Falta aprobación de ${pendienteConSuplente}`,
+    state: done ? 'completed' : esElTurno ? 'active' : 'upcoming',
     date: done ? fmt(lastApprovedAt ?? fallbackDate) : undefined,
     description: done
       ? undefined
@@ -165,32 +182,63 @@ function levelApprovalStep(
       // — es quien figura en la cadena y lo que Contabilidad tiene que poder
       // auditar — pero al suplente hay que decirle que la acción le toca a él,
       // o lee "falta aprobación de Fulano" y no entiende por qué ve el botón.
-      : nivel.cubiertoPorMi
+      // "Te toca a ti" solo cuando de verdad le toca: en una etapa que todavía
+      // no llegó, el suplente no tiene botón que apretar y saldría a buscarlo.
+      : nivel.cubiertoPorMi && esElTurno
         ? `Te toca a ti, en reemplazo de ${nivel.titularCubierto ?? 'este aprobador'}`
         : nivel.reemplazadoPor
           ? `En reemplazo de ${nivel.titularDeVacaciones}`
-          : approvedNames.length > 0
-            ? `Ya aprobó: ${approvedNames.join(' / ')}`
-            : `Pendiente de aprobación (nivel ${level})`,
+          : !esElTurno
+            ? 'Espera la aprobación de la etapa anterior'
+            : approvedNames.length > 0
+              ? `Ya aprobó: ${approvedNames.join(' / ')}`
+              : `Pendiente de aprobación (nivel ${nivelLabel.replace(/^N/, '')})`,
     group: 'rendicion',
   };
 }
 
 /**
- * Agrega las cadenas de aprobación por comprobante (regla 1.4) POR NIVEL, para
- * separar N1 de N2 en la línea de tiempo de la RENDICIÓN en lugar de nombrar a
- * todos juntos (VD-112), distinguiendo además quién ya aprobó y quién falta.
+ * Empuja los pasos de una cadena por niveles a la línea de tiempo, marcando
+ * como activo solo el PRIMERO que sigue pendiente (VD-133, cadena consecutiva).
+ */
+function pushLevelApprovalSteps(
+  steps: FlowStep[],
+  niveles: RendicionLevelApprovals[],
+  forcedDone: boolean,
+  fmt: (d?: string | Date) => string | undefined,
+  fallbackDate?: string | Date,
+): void {
+  const turnoIdx = niveles.findIndex(n => n.pendingNames.length > 0);
+  niveles.forEach((nivel, i) => {
+    steps.push(levelApprovalStep(nivel, forcedDone, fmt, fallbackDate, i === turnoIdx));
+  });
+}
+
+/**
+ * Agrega las cadenas de aprobación por comprobante (regla 1.4) POR ETAPA de la
+ * cadena, para separar N1 de N2 en la línea de tiempo de la RENDICIÓN en lugar
+ * de nombrar a todos juntos (VD-112), distinguiendo además quién ya aprobó y
+ * quién falta.
+ *
+ * La etapa NO es solo el nivel: cuando el comprobante se imputa a un centro de
+ * costo que no es del colaborador, la cadena tiene DOS pasos de nivel 2 —el del
+ * centro principal y el del centro seleccionado (`buildRendicionChain`)—. Al
+ * agrupar solo por `level` los dos se fundían en una única línea "N2" con los
+ * aprobadores de ambos mezclados, y no se podía saber cuál de las dos etapas
+ * estaba trabada. Se agrupa por nivel + `projectRole`, y `chainLevelLabels`
+ * los rotula "N2-1" y "N2-2".
  *
  * - Ya aprobó: quien resolvió el paso (`approvedBy`); si el populate no lo
  *   trajo, se nombran los aprobadores del paso resuelto.
- * - Falta: los aprobadores de los pasos de ese nivel todavía sin resolver.
+ * - Falta: los aprobadores de los pasos de esa etapa todavía sin resolver.
  *   Manda sobre "ya aprobó": quien aprobó un comprobante pero le queda otro
  *   pendiente cuenta como pendiente.
  *
- * Aprobación en paralelo entre niveles (igual que `pendingRendicionCoordNames`):
- * un paso no aprobado se considera pendiente sin importar su posición. Devuelve
- * [] si los comprobantes no traen la cadena poblada (p. ej. vistas con populate
- * ligero), para caer al paso agregado.
+ * Un paso no aprobado se considera pendiente sin importar su posición (igual
+ * que `pendingRendicionCoordNames`); cuál de los pendientes es el turno actual
+ * lo decide `pushLevelApprovalSteps`. Devuelve [] si los comprobantes no traen
+ * la cadena poblada (p. ej. vistas con populate ligero), para caer al paso
+ * agregado.
  */
 function aggregateRendicionApprovalsByLevel(
   expenses: any[],
@@ -198,9 +246,13 @@ function aggregateRendicionApprovalsByLevel(
 ): RendicionLevelApprovals[] {
   const cubroA = suplencia.cubroA ?? [];
   const vigentes = suplencia.vigentes ?? [];
-  const byLevel = new Map<
-    number,
+  const byStage = new Map<
+    string,
     {
+      level: number;
+      etapa: 'principal' | 'seleccionado';
+      /** Posición más temprana del paso dentro de una cadena, para ordenar. */
+      orden: number;
       approved: Set<string>;
       pending: Set<string>;
       lastApprovedAt?: string;
@@ -213,9 +265,18 @@ function aggregateRendicionApprovalsByLevel(
     if (e?.status === 'rejected') continue;
     const chain = e?.approverChain;
     if (!Array.isArray(chain)) continue; // aún no se construyó
-    for (const step of chain) {
+    chain.forEach((step: any, posicion: number) => {
       const level = Number(step?.level ?? 99);
-      const cur = byLevel.get(level) ?? { approved: new Set<string>(), pending: new Set<string>() };
+      const etapa = chainStepStage(step);
+      const key = `${level}|${etapa}`;
+      const cur = byStage.get(key) ?? {
+        level,
+        etapa,
+        orden: posicion,
+        approved: new Set<string>(),
+        pending: new Set<string>(),
+      };
+      cur.orden = Math.min(cur.orden, posicion);
       const candidatos: string[] = (step?.approverIds ?? [])
         .map((a: any) => (a && typeof a === 'object' && a.name ? (a.name as string) : null))
         .filter((n: string | null): n is string => !!n);
@@ -245,16 +306,28 @@ function aggregateRendicionApprovalsByLevel(
           cur.reemplazadoPor = deVacaciones.suplenteName;
         }
       }
-      byLevel.set(level, cur);
-    }
+      byStage.set(key, cur);
+    });
   }
 
-  return [...byLevel.entries()]
-    .sort((x, y) => x[0] - y[0])
-    .map(([level, { approved, pending, lastApprovedAt, titularCubierto, titularDeVacaciones, reemplazadoPor }]) => ({
+  // Orden de la cadena: primero por nivel, y dentro del mismo nivel por la
+  // posición real que ocupa el paso (el N2 del centro principal va antes que el
+  // del seleccionado). El `projectRole` decide los empates que quedan, para que
+  // el rótulo N2-1/N2-2 sea estable entre comprobantes.
+  const etapas = [...byStage.values()].sort(
+    (a, b) =>
+      a.level - b.level ||
+      a.orden - b.orden ||
+      (a.etapa === b.etapa ? 0 : a.etapa === 'principal' ? -1 : 1)
+  );
+  const nivelLabels = chainLevelLabels(etapas.map(e => e.level));
+
+  return etapas.map(
+    ({ level, approved, pending, lastApprovedAt, titularCubierto, titularDeVacaciones, reemplazadoPor }, i) => ({
       level,
+      nivelLabel: nivelLabels[i],
       // Quien tiene un paso pendiente figura como pendiente, aunque haya
-      // aprobado otro comprobante del mismo nivel.
+      // aprobado otro comprobante de la misma etapa.
       approvedNames: [...approved].filter(n => !pending.has(n)).sort((a, b) => a.localeCompare(b)),
       pendingNames: [...pending].sort((a, b) => a.localeCompare(b)),
       lastApprovedAt,
@@ -262,7 +335,8 @@ function aggregateRendicionApprovalsByLevel(
       titularCubierto,
       titularDeVacaciones,
       reemplazadoPor,
-    }));
+    })
+  );
 }
 
 /**
@@ -390,6 +464,17 @@ export function buildReportFlowSteps(
     !!r.returnVoucher || r.returnRecord?.status === 'validated' || status === 'returned' || status === 'closed';
   const expectsDevolucion =
     !expectsReembolso && (r.settlement?.type === 'devolucion' || !!r.returnVoucher || status === 'returned');
+
+  /**
+   * La directa ya salio de las manos del colaborador: dejo el estado `open` al
+   * hacer clic en "Enviar rendición". `cancelled` no cuenta por si sola —
+   * puede ser una directa que se abrio y se descarto sin enviar nunca—, asi
+   * que ahi se exige ademas algun hito posterior al envio.
+   */
+  const directaEnviada =
+    isDirecta &&
+    status !== 'open' &&
+    (status !== 'cancelled' || !!r.coordinatorApprovedAt || !!r.contabilidadApprovedAt);
 
   // Cierre formal por Contabilidad: último paso del flujo (status 'closed').
   const closed = status === 'closed';
@@ -523,23 +608,47 @@ export function buildReportFlowSteps(
 
   const steps: FlowStep[] = [];
 
-  // 0 — Solicitud enviada
-  steps.push({
-    label: 'Solicitud enviada',
-    state: rejected && rejIdx === 0 ? 'rejected' : 'completed',
-    date: fmt(r.createdAt),
-  });
+  // 0 — Apertura del documento.
+  //
+  // Una rendición DIRECTA no nace de una solicitud: el colaborador la abre y
+  // empieza a cargar de su bolsillo, y solo despues hace clic en "Enviar
+  // rendición". Rotular ese primer hito como "Solicitud enviada" le decia que
+  // ya la habia enviado mientras todavia estaba registrando gastos. El viatico
+  // y la rendicion normal si arrancan con una solicitud real, y la conservan.
+  if (isDirecta) {
+    steps.push({
+      label: 'Registrando gastos',
+      state: 'completed',
+      date: fmt(r.createdAt),
+    });
+    // El envio es un hito aparte y solo aparece una vez que ocurrio, que es lo
+    // que separa "la estoy armando" de "ya la mandé".
+    if (directaEnviada) {
+      steps.push({ label: 'Rendición enviada', state: 'completed' });
+    }
+  } else {
+    steps.push({
+      label: 'Solicitud enviada',
+      state: rejected && rejIdx === 0 ? 'rejected' : 'completed',
+      date: fmt(r.createdAt),
+    });
+  }
 
   // 1..chainCount — Cadena de aprobadores (viático/directa) o coordinador (rendición normal).
   // Aprobación en paralelo entre niveles: la fecha/estado de cada paso viene
   // de su propio `approved`/`approvedAt`, no de un historial posicional.
   if (chain.length > 0) {
+    const nivelLabels = chainLevelLabels(
+      chain.map((s: any, i: number) => Number(s?.level ?? i + 1))
+    );
     for (let level = 1; level <= chainCount; level++) {
       const step = chain[level - 1] as any;
       const state = stepStateFor(level);
       const name = approverName(level - 1);
-      // VD-112: el nivel va en la etiqueta para distinguir N1 de N2.
-      const nivel = `N${Number(step?.level ?? level)}`;
+      // VD-112: el nivel va en la etiqueta para distinguir N1 de N2. Un nivel
+      // repetido en la cadena (los dos N2 de una solicitud hacia otro centro de
+      // costo) se sub-numera N2-1/N2-2, o los dos pasos salían como "N2".
+      const nivel = nivelLabels[level - 1] ?? `N${Number(step?.level ?? level)}`;
 
       // Suplencia por vacaciones (VD-124). Esta rama —la cadena sellada de la
       // SOLICITUD de fondos— se había quedado fuera: la suplencia solo se
@@ -610,9 +719,7 @@ export function buildReportFlowSteps(
     // quién aprueba en N1 y quién en N2. Antes salían todos en una sola línea.
     const nivelesAprobacion = aggregateRendicionApprovalsByLevel(r.expenseIds, suplencia);
     if (state !== 'rejected' && nivelesAprobacion.length > 0) {
-      for (const nivel of nivelesAprobacion) {
-        steps.push(levelApprovalStep(nivel, state === 'completed', fmt, r.coordinatorApprovedAt));
-      }
+      pushLevelApprovalSteps(steps, nivelesAprobacion, state === 'completed', fmt, r.coordinatorApprovedAt);
     } else {
       // Sin cadena poblada (populate ligero) o rechazada: paso único agregado.
       const coordName =
@@ -773,14 +880,19 @@ function buildViaticoTwoPhaseSteps(
 
   // ── Fase 1: SOLICITUD — congelada, siempre completada.
   const chain: any[] = r.viaticoApproverChain ?? [];
+  // VD-112: el nivel al que corresponde cada aprobador, igual que en la fase de
+  // rendición. `level` viene del paso; si faltara se usa la posición. Una
+  // solicitud hacia otro centro de costo tiene DOS pasos de nivel 2 (el del
+  // centro principal y el del seleccionado): se rotulan N2-1 y N2-2 en vez de
+  // repetir "N2" dos veces.
+  const nivelLabels = chainLevelLabels(
+    chain.map((c: any, i: number) => Number(c?.level ?? i + 1))
+  );
   steps.push({ label: 'Solicitud enviada', state: 'completed', date: fmt(r.createdAt), group: 'solicitud' });
   chain.forEach((c: any, i: number) => {
     const name = chainStepApproverNames(c);
-    // VD-112: el nivel al que corresponde cada aprobador, igual que en la fase
-    // de rendición. `level` viene del paso; si faltara se usa la posición.
-    const level = Number(c?.level ?? i + 1);
     steps.push({
-      label: `N${level} · Aprobado por ${name}`,
+      label: `${nivelLabels[i]} · Aprobado por ${name}`,
       state: 'completed',
       date: fmt(c.approvedAt),
       group: 'solicitud',
@@ -911,9 +1023,7 @@ function buildViaticoTwoPhaseSteps(
     // cuando no le queda ningún paso pendiente, aunque el reporte siga en
     // `submitted` hasta la confirmación de la rendición (o ya haya avanzado a
     // Contabilidad).
-    for (const nivel of nivelesAprobacion) {
-      steps.push(levelApprovalStep(nivel, coordState === 'completed', fmt, r.coordinatorApprovedAt));
-    }
+    pushLevelApprovalSteps(steps, nivelesAprobacion, coordState === 'completed', fmt, r.coordinatorApprovedAt);
   } else {
     // Fallback: comprobantes sin cadena poblada (populate ligero) o rechazada —
     // se mantiene el paso agregado con nombres reales cuando los hay.
