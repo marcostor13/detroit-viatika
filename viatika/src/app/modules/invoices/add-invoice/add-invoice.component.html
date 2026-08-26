@@ -934,20 +934,21 @@
     <!-- En la DJ al extranjero el monto sale del detalle diario por rubro y el
          adjunto es opcional: ambos viven en el bloque de más abajo. -->
     @if (!isDj()) {
+    <!-- Fecha del gasto: la del comprobante donde lo hay (TK/BV/RC/EXD) y la
+         del gasto donde no (AL, OT). Ninguna se pedía, así que estos gastos se
+         guardaban sin fecha y la rendición los listaba con el día de registro.
+         La DJ al extranjero no pasa por aquí: declara una fecha por fila. -->
+    <div class="flex flex-col gap-2">
+      <label for="fechaGastoOtros" class="text-sm font-medium text-secondary">{{ etiquetaFechaGasto }} <span class="text-error">*</span></label>
+      <input id="fechaGastoOtros" type="date" formControlName="fechaEmision" [max]="todayIso"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
+      @if (form.get('fechaEmision')?.invalid && form.get('fechaEmision')?.touched) {
+      <span class="text-sm text-error">{{ etiquetaFechaGasto }} es requerida</span>
+      }
+    </div>
     <!-- VD-109: en "Alimentación sin documentación" la descripción libre se
          reemplaza por la comida declarada, que además define el tope del monto. -->
     @if (otrosSubTipo() === 'AL') {
-    <!-- Sin comprobante no hay fecha que leer: la declara el colaborador. De
-         ella salen el plazo de presentación del gasto y el tipo de cambio que
-         se congela, así que es obligatoria. -->
-    <div class="flex flex-col gap-2">
-      <label for="fechaGastoAl" class="text-sm font-medium text-secondary">Fecha del gasto <span class="text-error">*</span></label>
-      <input id="fechaGastoAl" type="date" formControlName="fechaEmision" [max]="todayIso"
-        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" />
-      @if (form.get('fechaEmision')?.invalid && form.get('fechaEmision')?.touched) {
-      <span class="text-sm text-error">La fecha del gasto es requerida</span>
-      }
-    </div>
     <div class="flex flex-col gap-2">
       <label for="tipoComida" class="text-sm font-medium text-secondary">Comida <span class="text-error">*</span></label>
       <select id="tipoComida" formControlName="tipoComida"
