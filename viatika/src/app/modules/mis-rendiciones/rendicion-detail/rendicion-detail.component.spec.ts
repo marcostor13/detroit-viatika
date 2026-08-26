@@ -350,6 +350,44 @@ describe('RendicionDetailComponent', () => {
     });
   });
 
+  describe('getExpenseDate — otros gastos', () => {
+    it('usa la fecha declarada en Alimentación sin documentación, no la de registro', () => {
+      const expense = {
+        expenseType: 'otros_gastos',
+        subTipo: 'AL',
+        fechaEmision: '18/08/2026',
+        createdAt: '2026-08-26T03:28:02.951Z',
+        data: JSON.stringify({ subTipo: 'AL', tipoComida: 'desayuno' }),
+      };
+      expect(component.getExpenseDate(expense)).toBe('18/08/2026');
+    });
+
+    it('cae a la fecha de registro en los gastos viejos, sin fecha declarada', () => {
+      const expense = {
+        expenseType: 'otros_gastos',
+        subTipo: 'AL',
+        createdAt: '2026-08-26T03:28:02.951Z',
+        data: JSON.stringify({ subTipo: 'AL' }),
+      };
+      expect(component.getExpenseDate(expense)).toBe('26/08/2026');
+    });
+
+    it('la DJ al extranjero sigue mandando con el primer día declarado', () => {
+      const expense = {
+        expenseType: 'otros_gastos',
+        subTipo: 'DJE',
+        fechaEmision: '20/08/2026',
+        createdAt: '2026-08-26T03:28:02.951Z',
+        declaracionJuradaRows: [
+          { fecha: '2026-08-15', monto: 10 },
+          { fecha: '2026-08-12', monto: 20 },
+        ],
+        data: JSON.stringify({ subTipo: 'DJE' }),
+      };
+      expect(component.getExpenseDate(expense)).toBe('12/08/2026');
+    });
+  });
+
   describe('sortMobilityExportRows (VD-71)', () => {
     it('ordena las filas por fecha ascendente para la exportación', () => {
       const rows = [

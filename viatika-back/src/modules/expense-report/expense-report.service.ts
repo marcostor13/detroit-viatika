@@ -577,7 +577,7 @@ export class ExpenseReportService implements OnModuleInit {
     )
     if (hasRejected) {
       throw new BadRequestException(
-        'Existen comprobantes observados. La rendición fue devuelta al colaborador para corrección; no puede aprobarse.'
+        'Existen comprobantes observados. Corrígelos o rechaza la rendición para devolverla al colaborador; no puede aprobarse así.'
       )
     }
   }
@@ -1919,12 +1919,12 @@ export class ExpenseReportService implements OnModuleInit {
         'Solo se puede aprobar una rendicion pendiente de contabilidad.'
       )
     }
-    // No aprobar la rendición completa si quedó algún comprobante observado.
-    // En el flujo normal, rechazar un comprobante por Contabilidad ya devuelve la
-    // rendición a 'rejected' (returnToCollaboratorOnAccountingRejection). Este
-    // guard cubre además el caso en que un aprobador rechazó un comprobante con
-    // `rejectByCoord`: el auto-avance a `pending_accounting` ignora los rechazados,
-    // así que la rendición podría llegar aquí con uno observado sin corregir.
+    // No aprobar la rendición completa si quedó algún comprobante observado —
+    // por Contabilidad (`rejectByContabilidad`, que deja la rendición en
+    // `pending_accounting` para poder observar varios) o por un aprobador
+    // (`rejectByCoord`: el auto-avance a `pending_accounting` ignora los
+    // rechazados, así que la rendición puede llegar aquí con uno sin corregir).
+    // La salida es corregirlos o rechazar la rendición y devolverla.
     if (dto.status === 'approved') {
       await this.assertNoRejectedExpenses(id)
       await this.assertAllExpensesApprovedByAccounting(id)
@@ -1958,7 +1958,15 @@ export class ExpenseReportService implements OnModuleInit {
             ((existing as any).expenseIds ?? []) as Types.ObjectId[],
             ownerId,
             reportClientId,
-            { esCajaChica: (existing as any).isCajaChica === true }
+            {
+              esCajaChica: (existing as any).isCajaChica === true,
+              // Reenvío tras un rechazo de la RENDICIÓN completa: el revisor
+              // vuelve a validar todo desde cero, así que se rehace la cadena
+              // de cada comprobante aunque ya tuviera una (puede haber cambiado
+              // el centro de costo al corregir). En un envío normal se respetan
+              // las cadenas ya construidas al subir cada comprobante.
+              force: existing.status === 'rejected',
+            }
           )
           // Cadena de aprobación de la RENDICIÓN a nivel de reporte (viático):
           // los aprobadores del centro de costo (N1/N2…) deben completarla antes
@@ -2048,6 +2056,18 @@ export class ExpenseReportService implements OnModuleInit {
       if (!updated) {
         throw new NotFoundException(`Expense report with ID ${id} not found`)
       }
+    }
+
+    // Contabilidad devuelve la rendición completa: se reabren los comprobantes
+    // que no observó para que el colaborador pueda corregirla y reenviarla (uno
+    // aprobado quedaría bloqueado para él). Los observados conservan su rechazo
+    // y su motivo. Es el reset que antes hacía el rechazo por comprobante.
+    if (dto.status === 'rejected' && existing.status === 'pending_accounting') {
+      await this.reopenExpensesForCollaboratorCorrection(id).catch(err => {
+        this.logger.error(
+          `No se pudieron reabrir los comprobantes de la rendición ${id}: ${err instanceof Error ? err.message : String(err)}`
+        )
+      })
     }
 
     // findByIdAndUpdate no hace populate: la UI necesita expenseIds como documentos
@@ -3332,6 +3352,10 @@ export class ExpenseReportService implements OnModuleInit {
     const updateOp: Record<string, unknown> = {
       $push: { expenseIds: new Types.ObjectId(expenseId) },
     }
+    // Rendición devuelta al colaborador: agregar un comprobante NO la reenvía.
+    // El colaborador sube las facturas que le falten, corrige las observadas y
+    // recién entonces pulsa "Reenviar" (PATCH status 'submitted'); el motivo del
+    // rechazo se conserva mientras tanto para que sepa qué corregir.
     const wasRejected = (existing as any)?.status === 'rejected'
     // Un comprobante agregado a una rendición que YA estaba con Contabilidad la
     // devuelve al tramo de aprobadores: ese gasto no lo revisó nadie todavía y
@@ -3341,10 +3365,7 @@ export class ExpenseReportService implements OnModuleInit {
     // rendición tampoco se puede cerrar.
     const wasPendingAccounting =
       (existing as any)?.status === 'pending_accounting'
-    if (wasRejected) {
-      updateOp.$set = { status: 'submitted' }
-      updateOp.$unset = { rejectionReason: '', rejectedByRole: '' }
-    } else if (wasPendingAccounting) {
+    if (wasPendingAccounting) {
       updateOp.$set = { status: 'submitted' }
     }
 
@@ -3466,38 +3487,6 @@ export class ExpenseReportService implements OnModuleInit {
     } catch (err: unknown) {
       this.logger.error(
         `No se pudo reversar el cargo del gasto ${expenseId}: ${err instanceof Error ? err.message : String(err)}`
-      )
-    }
-  }
-
-  /** Cambia silenciosamente el estado de una rendición rechazada a enviada, sin notificaciones. */
-  async resubmitSilent(reportId: string): Promise<void> {
-    const existing = await this.expenseReportModel
-      .findById(reportId)
-      // `isCajaChica`: ver el select de `update()`. Aca se reconstruyen TODAS
-      // las cadenas con `force`, asi que sin el campo un reenvio le cambiaba
-      // los aprobadores a la caja chica.
-      .select('status isCajaChica userId clientId expenseIds')
-      .lean()
-      .exec()
-    if (!existing || (existing as any).status !== 'rejected') return
-    await this.expenseReportModel
-      .findByIdAndUpdate(reportId, {
-        $set: { status: 'submitted' },
-        $unset: { rejectionReason: '', rejectedByRole: '' },
-      })
-      .exec()
-    // Igual que en `update()`: al reenviar se (re)construye la cadena de cada
-    // comprobante — sin esto, comprobantes de la rendición reabierta quedaban
-    // con `approverChain` sin (re)construir, o con el de un envío anterior.
-    const ownerId = (existing as any).userId?.toString()
-    const reportClientId = (existing as any).clientId?.toString()
-    if (ownerId && reportClientId) {
-      await this.buildExpenseChains(
-        ((existing as any).expenseIds ?? []) as Types.ObjectId[],
-        ownerId,
-        reportClientId,
-        { force: true, esCajaChica: (existing as any).isCajaChica === true }
       )
     }
   }
@@ -5164,11 +5153,11 @@ export class ExpenseReportService implements OnModuleInit {
    * comprobantes ya rechazados — su reapertura resetea la cadena aparte (ver
    * `ExpenseService.updateExpense`, rama de corrección de rechazo).
    *
-   * `opts.force` reconstruye la cadena aunque ya exista una — solo lo usan
-   * `addExpenseToReport` (rama `wasRejected`) y `resubmitSilent`: cuando se
-   * rechaza la RENDICIÓN completa (no un comprobante individual) y el
-   * colaborador corrige y reenvía, el revisor debe volver a validar todo
-   * desde cero, así que cualquier aprobación N1/N2 previa se descarta.
+   * `opts.force` reconstruye la cadena aunque ya exista una — lo usa el REENVÍO
+   * (`update()` con la rendición en `rejected`): cuando se rechaza la RENDICIÓN
+   * completa (no un comprobante individual) y el colaborador corrige y reenvía,
+   * el revisor debe volver a validar todo desde cero, así que cualquier
+   * aprobación N1/N2 previa se descarta.
    */
   private async buildExpenseChains(
     expenseIds: Types.ObjectId[],
@@ -6106,44 +6095,46 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
-   * Contabilidad observó un comprobante en su aprobación final: se devuelve TODA
-   * la rendición al colaborador (`rejected`) y se resetean los comprobantes a
-   * estado normal para que pueda corregirlos y se re-aprueben desde cero.
+   * Contabilidad devolvió la rendición COMPLETA al colaborador: se reabren los
+   * comprobantes NO observados (estado normal, cadena de aprobadores limpia)
+   * para que pueda corregirlos y se re-aprueben desde cero. Los observados
+   * conservan su `rejected` + motivo — es lo que le dice cuáles corregir.
    *
-   * Por qué el reset total: un comprobante `approved` queda bloqueado de por vida
-   * para el colaborador (ver `ExpenseService.assertCanEdit`), y uno con aprobación
-   * parcial tampoco es editable mientras la rendición esté en revisión. Sin
-   * resetear, el colaborador no podría corregir la rendición devuelta. El
-   * comprobante observado conserva su estado `rejected` + motivo para que sepa
-   * cuál corregir. Lo llama `ExpenseService.rejectByContabilidad`.
+   * Por qué el reset: un comprobante `approved` queda bloqueado de por vida para
+   * el colaborador (ver `ExpenseService.assertCanMutateExpense`), y uno con
+   * aprobación parcial tampoco es editable mientras la rendición esté en
+   * revisión. Sin reabrirlos, la rendición devuelta no se podría corregir.
+   *
+   * Ya NO lo llama `ExpenseService.rejectByContabilidad`: observar un
+   * comprobante deja la rendición en Contabilidad (para poder observar varios).
+   * Lo llama `update()` cuando Contabilidad rechaza la rendición desde
+   * `pending_accounting`, que es el único acto que la devuelve.
    */
-  async returnToCollaboratorOnAccountingRejection(
-    reportId: string,
-    rejectedExpenseId: string,
-    reason: string
+  async reopenExpensesForCollaboratorCorrection(
+    reportId: string
   ): Promise<void> {
-    const report = await this.expenseReportModel.findById(reportId)
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('expenseIds')
+      .lean()
+      .exec()
     if (!report) return
-    // Solo aplica mientras la rendición está en revisión (contabilidad, o por si
-    // acaso aprobadores). En otros estados no se toca.
-    if (
-      report.status !== 'pending_accounting' &&
-      report.status !== 'submitted'
-    ) {
-      return
-    }
 
-    const expenseIds = (report.expenseIds ?? []).map((x: any) =>
+    const expenseIds = ((report as any).expenseIds ?? []).map((x: any) =>
       x && typeof x === 'object' && '_id' in x ? String(x._id) : String(x)
     )
+    if (expenseIds.length === 0) return
+
     const expenses = await this.expenseModel
       .find({ _id: { $in: expenseIds } })
-      .select('approverChain')
-      .lean<{ _id: Types.ObjectId; approverChain?: ChainStep[] }[]>()
+      .select('approverChain status')
+      .lean<
+        { _id: Types.ObjectId; status?: string; approverChain?: ChainStep[] }[]
+      >()
       .exec()
 
     for (const e of expenses) {
-      const isRejected = String(e._id) === String(rejectedExpenseId)
+      const isRejected = String(e.status ?? '').toLowerCase() === 'rejected'
       // Reset de la cadena de aprobadores en TODOS: cualquier edición posterior
       // debe re-aprobarse sobre el dato corregido (sin dejar aprobaciones stale).
       const clearedChain = (e.approverChain ?? []).map(step => ({
@@ -6157,7 +6148,7 @@ export class ExpenseReportService implements OnModuleInit {
         approvalLevel: 0,
       }
       if (!isRejected) {
-        // Los demás vuelven a 'pending' (editables y re-aprobables desde cero).
+        // Los no observados vuelven a 'pending' (editables y re-aprobables desde cero).
         set.contabilidadStatus = 'pending'
         set.contabilidadApprovedBy = undefined
         set.contabilidadApprovedAt = undefined
@@ -6166,47 +6157,8 @@ export class ExpenseReportService implements OnModuleInit {
         set.rejectionReason = ''
         set.rejectedBy = ''
       }
-      // El observado conserva contabilidadStatus='rejected'/status='rejected' + motivo.
+      // Los observados conservan contabilidadStatus='rejected'/status='rejected' + motivo.
       await this.expenseModel.updateOne({ _id: e._id }, { $set: set })
-    }
-
-    report.status = 'rejected'
-    report.rejectionReason = reason.trim()
-    ;(report as any).rejectedByRole = 'contabilidad'
-    await report.save()
-
-    // Rechazo de la rendición COMPLETA: Contabilidad observó un comprobante y
-    // devolvió toda la rendición → avisar al colaborador (in-app + correo).
-    try {
-      const ownerId = report.userId.toString()
-      this.notificationsService
-        .create({
-          userId: ownerId,
-          title: 'Rendición rechazada',
-          message: `Tu rendición fue rechazada por Contabilidad: ${reason.trim().slice(0, 80)}`,
-          type: 'error',
-          actionUrl: `/mis-rendiciones/${reportId}/detalle`,
-        })
-        .catch(() => { })
-      const owner = await this.userService.findEmailNameClient(ownerId)
-      const ownerEmailEnabled = await this.userService.isEmailEnabled(ownerId)
-      if (owner?.email && ownerEmailEnabled) {
-        await this.emailService.sendRendicionRechazadaColaborador(owner.email, {
-          clientId: report.clientId.toString(),
-          collaboratorName: owner.name,
-          reportTitle: this.resolveReportTitle(report),
-          rejectionReason: reason.trim(),
-          rejectedBy: 'Contabilidad',
-          platformUrl: this.emailService.buildAppUrl(
-            `/mis-rendiciones/${reportId}/detalle`
-          ),
-        })
-      }
-    } catch (err) {
-      console.error(
-        `[returnToCollaboratorOnAccountingRejection] Error correo rechazo ${reportId}:`,
-        err
-      )
     }
   }
 
