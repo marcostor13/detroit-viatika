@@ -3786,10 +3786,15 @@ export class ExpenseService {
     // cualquier momento. Sin esto, el N2 no se enteraría nunca de su turno.
     const reportIdStr = this.expenseReportIdString(expense)
     if (!isComplete && reportIdStr) {
-      void this.expenseReportService.notifySiguientePasoDeCadena(reportIdStr, chain, {
-        collaboratorName: (expense as any)?.userId?.name,
-        reportTitle: (expense as any)?.expenseReportId?.title,
-      })
+      // Sin contexto a propósito: el comprobante no tiene dueño con nombre
+      // (`Expense` guarda `createdBy`, no un `userId` populado) ni el reporte
+      // populado, así que lo que se pasaba desde aquí llegaba siempre vacío y
+      // el correo salía con la fila en blanco. Los resuelve el propio aviso.
+      void this.expenseReportService.notifySiguientePasoDeCadena(
+        reportIdStr,
+        chain,
+        {}
+      )
     }
 
     // VD-87: si con este comprobante quedaron aprobados TODOS los gastos de la
