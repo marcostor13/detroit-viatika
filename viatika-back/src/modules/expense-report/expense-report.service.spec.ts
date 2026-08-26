@@ -309,22 +309,20 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
     expect(mockExpenseReportModel.findByIdAndUpdate).not.toHaveBeenCalled()
   })
 
-  it('returnToCollaboratorOnAccountingRejection: devuelve la rendición y resetea los demás comprobantes', async () => {
-    const reportDoc: {
-      status: string
-      expenseIds: { _id: string }[]
-      userId: string
-      rejectionReason: string
-      rejectedByRole?: string
-      save: jest.Mock
-    } = {
-      status: 'pending_accounting',
-      expenseIds: [{ _id: expenseId1 }, { _id: expenseId2 }],
-      userId,
-      rejectionReason: '',
-      save: jest.fn().mockResolvedValue(undefined),
-    }
-    mockExpenseReportModel.findById.mockReturnValue(reportDoc)
+  // Contabilidad observa varios comprobantes y recién después devuelve la
+  // rendición: el reset de los no observados se hace al rechazar la RENDICIÓN,
+  // no al rechazar cada comprobante (que antes la devolvía de una y dejaba a
+  // Contabilidad sin poder observar un segundo).
+  it('reopenExpensesForCollaboratorCorrection: reabre los no observados y conserva los rechazados', async () => {
+    mockExpenseReportModel.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            expenseIds: [{ _id: expenseId1 }, { _id: expenseId2 }],
+          }),
+        }),
+      }),
+    })
 
     const updateOne = jest.fn().mockResolvedValue({})
     // Inyecta el mock de expenseModel sobre la instancia (el provider lo da como {}).
@@ -333,8 +331,16 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
         select: jest.fn().mockReturnValue({
           lean: jest.fn().mockReturnValue({
             exec: jest.fn().mockResolvedValue([
-              { _id: expenseId1, approverChain: [{ level: 1, approved: true }] },
-              { _id: expenseId2, approverChain: [{ level: 1, approved: true }] },
+              {
+                _id: expenseId1,
+                status: 'rejected',
+                approverChain: [{ level: 1, approved: true }],
+              },
+              {
+                _id: expenseId2,
+                status: 'approved',
+                approverChain: [{ level: 1, approved: true }],
+              },
             ]),
           }),
         }),
@@ -342,32 +348,55 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
       updateOne,
     }
 
-    // expenseId1 es el comprobante observado por Contabilidad.
-    await service.returnToCollaboratorOnAccountingRejection(
-      reportId,
-      expenseId1,
-      'monto incorrecto'
-    )
-
-    // La rendición vuelve al colaborador.
-    expect(reportDoc.status).toBe('rejected')
-    expect(reportDoc.rejectedByRole).toBe('contabilidad')
-    expect(reportDoc.save).toHaveBeenCalled()
+    await service.reopenExpensesForCollaboratorCorrection(reportId)
 
     const calls = updateOne.mock.calls
-    const otherSet = calls.find(
-      c => String(c[0]._id) === String(expenseId2)
-    )![1].$set
     const rejectedSet = calls.find(
       c => String(c[0]._id) === String(expenseId1)
+    )![1].$set
+    const otherSet = calls.find(
+      c => String(c[0]._id) === String(expenseId2)
     )![1].$set
     // El comprobante NO observado vuelve a 'pending' (editable y re-aprobable).
     expect(otherSet.status).toBe('pending')
     expect(otherSet.contabilidadStatus).toBe('pending')
     expect(otherSet.approvalLevel).toBe(0)
-    // El observado conserva su estado 'rejected' (solo se resetea su cadena).
+    expect(otherSet.approverChain[0].approved).toBe(false)
+    // El observado conserva su estado 'rejected' + motivo (solo se resetea su cadena).
     expect(rejectedSet.status).toBeUndefined()
+    expect(rejectedSet.contabilidadStatus).toBeUndefined()
     expect(rejectedSet.approvalLevel).toBe(0)
+  })
+
+  it('update: rechazar la rendición desde contabilidad reabre sus comprobantes', async () => {
+    mockFindByIdSequence({ existingStatus: 'pending_accounting' })
+    const reabrir = jest
+      .spyOn(service, 'reopenExpensesForCollaboratorCorrection')
+      .mockResolvedValue(undefined)
+
+    await service.update(reportId, {
+      status: 'rejected',
+      rejectionReason: 'faltan dos comprobantes',
+    })
+
+    expect(reabrir).toHaveBeenCalledWith(reportId)
+    const $set = mockExpenseReportModel.findByIdAndUpdate.mock.calls[0][1].$set
+    expect($set.status).toBe('rejected')
+    expect($set.rejectedByRole).toBe('contabilidad')
+  })
+
+  it('update: rechazar una rendición enviada (aprobadores) NO reabre comprobantes', async () => {
+    mockFindByIdSequence({ existingStatus: 'submitted' })
+    const reabrir = jest
+      .spyOn(service, 'reopenExpensesForCollaboratorCorrection')
+      .mockResolvedValue(undefined)
+
+    await service.update(reportId, {
+      status: 'rejected',
+      rejectionReason: 'motivo',
+    })
+
+    expect(reabrir).not.toHaveBeenCalled()
   })
 
   it('advanceToAccountingIfAllExpensesApproved: NO avanza si hay un comprobante observado', async () => {
@@ -1882,7 +1911,8 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
       expect.anything(),
       addUserId,
       addClientId,
-      { esCajaChica: true }
+      // `force` solo en el reenvío de una rendición rechazada; este envío es normal.
+      { esCajaChica: true, force: false }
     )
   })
 
@@ -1909,19 +1939,18 @@ describe('ExpenseReportService — addExpenseToReport (reconstrucción de cadena
     expect(findArg._id.$in.map((id: Types.ObjectId) => id.toString())).toEqual([newExpenseId])
   })
 
-  it('agregar un comprobante a una rendición RECHAZADA reconstruye la cadena de TODOS y la reenvía', async () => {
+  // Subir una factura a una rendición devuelta NO la reenvía: el colaborador
+  // termina de corregir y pulsa "Reenviar" él mismo. Antes se reenviaba sola y
+  // se quedaba sin poder subir el resto de comprobantes.
+  it('agregar un comprobante a una rendición RECHAZADA reconstruye la cadena de TODOS y NO la reenvía', async () => {
     mockFindByIdSelect(reportSelectResult({ status: 'rejected' }))
 
     const result = await service.addExpenseToReport(addReportId, newExpenseId)
 
-    expect(mockExpenseReportModel.findByIdAndUpdate).toHaveBeenCalledWith(
-      addReportId,
-      expect.objectContaining({
-        $set: { status: 'submitted' },
-        $unset: { rejectionReason: '', rejectedByRole: '' },
-      }),
-      { new: true }
-    )
+    const [, updateOp] = mockExpenseReportModel.findByIdAndUpdate.mock.calls[0]
+    expect(updateOp.$set).toBeUndefined()
+    expect(updateOp.$unset).toBeUndefined()
+    expect(updateOp.$push.expenseIds.toString()).toBe(newExpenseId)
     expect(mockExpenseModel.find).toHaveBeenCalledTimes(1)
     const findArg = mockExpenseModel.find.mock.calls[0][0]
     expect(findArg._id.$in.map((id: Types.ObjectId) => id.toString()).sort()).toEqual(
