@@ -1142,6 +1142,64 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  // La OT solo se pedia en la planilla de movilidad; el resto de comprobantes
+  // quedaba sin OT. Ahora se muestra tambien en factura y Otros Gastos, opcional.
+  describe('Orden de trabajo por comprobante', () => {
+    it('se muestra en factura y en otros gastos, opcional', () => {
+      const component = createComponent();
+      component.setExpenseType('factura');
+      expect(component.mostrarOrdenTrabajo()).toBeTrue();
+      expect(component.ordenTrabajoObligatoria()).toBeFalse();
+
+      component.setExpenseType('otros_gastos');
+      expect(component.mostrarOrdenTrabajo()).toBeTrue();
+      expect(component.ordenTrabajoObligatoria()).toBeFalse();
+    });
+
+    it('en planilla de movilidad sigue siendo obligatoria', () => {
+      const component = createComponent();
+      component.setExpenseType('planilla_movilidad');
+      expect(component.mostrarOrdenTrabajo()).toBeTrue();
+      expect(component.ordenTrabajoObligatoria()).toBeTrue();
+    });
+
+    it('la DJ al extranjero no la pide', () => {
+      const component = createComponent();
+      component.setExpenseType('otros_gastos');
+      component.selectOtrosSubTipo('DJE');
+      expect(component.mostrarOrdenTrabajo()).toBeFalse();
+    });
+
+    it('la OT elegida viaja en el alta de otros gastos', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '2026-08-12',
+        ordenTrabajoId: 'ot1',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.ordenTrabajoId).toBe('ot1');
+    });
+
+    it('sin OT no manda el campo', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '2026-08-12',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.ordenTrabajoId).toBeUndefined();
+    });
+  });
+
   describe('Otros Gastos — fecha del gasto', () => {
     it('ningún sub-tipo se guarda sin fecha', () => {
       const component = createComponent();

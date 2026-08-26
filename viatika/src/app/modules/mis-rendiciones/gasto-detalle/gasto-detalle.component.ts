@@ -366,6 +366,19 @@ emissionDateText(exp: Record<string, unknown>): string {
     return '—';
   }
 
+  /**
+   * Orden de trabajo del comprobante. Desde que se puede elegir en factura y
+   * otros gastos, la ficha tenía que mostrarla: el dato se guardaba pero no se
+   * veía. Sin OT propia queda en blanco (la heredada la muestra la rendición).
+   */
+  getOrdenTrabajo(exp: Record<string, unknown>): string {
+    const ot = exp['ordenTrabajoId'];
+    if (ot && typeof ot === 'object' && 'nombre' in ot) {
+      return String((ot as any).nombre) || '—';
+    }
+    return '—';
+  }
+
   getStatusForUi(exp: Record<string, unknown>): string {
     if (exp['observado'] === true) return 'Observado';
     const st = String(exp['status'] || 'pending').toLowerCase();

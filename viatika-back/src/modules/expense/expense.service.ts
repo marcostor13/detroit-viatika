@@ -1910,6 +1910,12 @@ export class ExpenseService {
     const expense = await this.expenseRepository.create({
       categoryId: new Types.ObjectId(body.categoryId),
       proyectId: await this.resolveComprobanteCajaChica(body),
+      // OT opcional del comprobante. La factura y la planilla ya la guardaban;
+      // Otros Gastos la descartaba aunque el formulario la mandara. Sin OT no se
+      // castea: `new Types.ObjectId(undefined)` generaría un id nuevo.
+      ordenTrabajoId: body.ordenTrabajoId
+        ? this.toObjectIdOrRaw(body.ordenTrabajoId)
+        : undefined,
       firmaUrl: body.firmaUrl?.trim() || undefined,
       clientId: body.clientId,
       expenseReportId: body.expenseReportId
