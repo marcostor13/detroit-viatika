@@ -640,6 +640,60 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
       expect(destinos).toEqual(['beto@x.pe'])
     })
 
+    // El correo lista quién rinde y qué rendición es. Al aprobar un COMPROBANTE
+    // el caller no tiene ninguno de los dos (el gasto no trae el reporte
+    // populado ni el nombre del dueño), y salían vacíos: el aprobador recibía
+    // una tabla en blanco, sin saber qué tenía pendiente.
+    it('completa colaborador y título desde la rendición cuando el caller no los trae', async () => {
+      const ownerId = new Types.ObjectId()
+      mockExpenseReportModel.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({
+              title: 'Viaje a Arequipa',
+              userId: ownerId,
+              clientId: new Types.ObjectId(),
+              viaticoEndDate: new Date('2026-08-20T00:00:00.000Z'),
+            }),
+          }),
+        }),
+      })
+      mockUserService.findEmailNameClient.mockImplementation(async (id: string) => {
+        if (id === ownerId.toString()) return { _id: id, name: 'CARLA COLAB', email: 'carla@x.pe' }
+        return { _id: id, name: 'BETO', email: 'beto@x.pe' }
+      })
+      const chain = [
+        { level: 1, approved: true, approverIds: [n1] },
+        { level: 2, approved: false, approverIds: [n2] },
+      ]
+
+      await (service as any).notifySiguientePasoDeCadena('r1', chain, {})
+
+      const [, data] = mockEmailService.sendRendicionRecordatorioCoordinador.mock.calls[0]
+      expect(data.reports[0].collaboratorName).toBe('CARLA COLAB')
+      expect(data.reports[0].title).toBe('Viaje a Arequipa')
+      expect(data.reports[0].endDateFormatted).toBeTruthy()
+      // El botón lleva a ESA rendición, no al listado.
+      expect(mockEmailService.buildAppUrl).toHaveBeenCalledWith('/mis-rendiciones/r1/detalle')
+      expect(data.platformUrl).toBe('http://localhost:4200/app')
+    })
+
+    it('si la rendición no se puede leer, la tabla no sale vacía', async () => {
+      mockExpenseReportModel.findById.mockImplementation(() => {
+        throw new Error('sin base')
+      })
+      const chain = [
+        { level: 1, approved: true, approverIds: [n1] },
+        { level: 2, approved: false, approverIds: [n2] },
+      ]
+
+      await (service as any).notifySiguientePasoDeCadena('r1', chain, {})
+
+      const [, data] = mockEmailService.sendRendicionRecordatorioCoordinador.mock.calls[0]
+      expect(data.reports[0].collaboratorName).toBe('Colaborador')
+      expect(data.reports[0].title).toBe('Rendición')
+    })
+
     it('con la cadena completa no escribe a nadie', async () => {
       const chain = [
         { level: 1, approved: true, approverIds: [n1] },

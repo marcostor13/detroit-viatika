@@ -5371,6 +5371,15 @@ export class ExpenseReportService implements OnModuleInit {
   ): Promise<void> {
     const enCurso = currentChainStep(chain)
     if (!enCurso) return
+    // Quién rinde y qué rendición es: el correo los lista en su tabla, y los
+    // callers no siempre los tienen. Al aprobar un COMPROBANTE, el gasto no
+    // trae ni el reporte populado ni el nombre de su dueño, así que llegaban
+    // vacíos y al aprobador le caía un correo con la fila en blanco: sabía que
+    // tenía algo pendiente pero no qué. Se resuelven aquí cuando faltan.
+    const datos = await this.datosDeLaRendicionParaAviso(reportId, contexto)
+    const platformUrl = this.emailService.buildAppUrl(
+      `/mis-rendiciones/${reportId}/detalle`
+    )
     const destinatarios = await this.conSuplentes(enCurso.approverIds)
     for (const approverId of destinatarios) {
       const id = approverId.toString()
@@ -5378,7 +5387,7 @@ export class ExpenseReportService implements OnModuleInit {
         await this.notificationsService.create({
           userId: id,
           title: 'Rendición pendiente de tu aprobación',
-          message: `Te toca revisar la rendición "${contexto.reportTitle ?? ''}" (nivel ${enCurso.level}). El nivel anterior ya la aprobó.`,
+          message: `Te toca revisar la rendición "${datos.reportTitle}" (nivel ${enCurso.level}). El nivel anterior ya la aprobó.`,
           type: 'info',
           actionUrl: `/mis-rendiciones/${reportId}/detalle`,
         })
@@ -5386,20 +5395,83 @@ export class ExpenseReportService implements OnModuleInit {
         if (!u?.email) continue
         if (!(await this.userService.isEmailEnabled(id))) continue
         await this.emailService.sendRendicionRecordatorioCoordinador(u.email, {
+          clientId: datos.clientId,
           coordinatorName: u.name,
           pendingCount: 1,
           reports: [
             {
-              collaboratorName: contexto.collaboratorName ?? '',
-              title: contexto.reportTitle ?? '',
+              collaboratorName: datos.collaboratorName,
+              title: datos.reportTitle,
+              endDateFormatted: datos.endDateFormatted,
             },
           ],
+          // Al detalle de ESA rendición, no al listado: el aviso es de una sola.
+          platformUrl,
         })
       } catch (err: unknown) {
         this.logger.error(
           `Aviso de turno ${reportId} a ${id}: ${err instanceof Error ? err.message : String(err)}`
         )
       }
+    }
+  }
+
+  /**
+   * Completa los datos de la rendición que el aviso de turno muestra en su
+   * tabla (colaborador, título y vencimiento). Solo consulta lo que el caller
+   * no trajo; si la rendición ya no existe, devuelve textos legibles en vez de
+   * dejar la fila vacía.
+   */
+  private async datosDeLaRendicionParaAviso(
+    reportId: string,
+    contexto: { collaboratorName?: string; reportTitle?: string }
+  ): Promise<{
+    collaboratorName: string
+    reportTitle: string
+    endDateFormatted?: string
+    clientId?: string
+  }> {
+    let collaboratorName = contexto.collaboratorName?.trim() ?? ''
+    let reportTitle = contexto.reportTitle?.trim() ?? ''
+    let endDateFormatted: string | undefined
+    let clientId: string | undefined
+
+    try {
+      const report = await this.expenseReportModel
+        .findById(reportId)
+        .select('title description userId clientId endDate viaticoEndDate')
+        .lean()
+        .exec()
+      if (report) {
+        clientId = String((report as any).clientId ?? '') || undefined
+        if (!reportTitle) reportTitle = this.resolveReportTitle(report)
+        if (!collaboratorName) {
+          const owner = await this.userService.findEmailNameClient(
+            String((report as any).userId)
+          )
+          collaboratorName = owner?.name?.trim() ?? ''
+        }
+        const vence =
+          (report as any).viaticoEndDate ?? (report as any).endDate ?? null
+        if (vence) {
+          endDateFormatted = new Date(vence).toLocaleDateString('es-PE', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          })
+        }
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `Datos del aviso de turno ${reportId}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+
+    return {
+      collaboratorName: collaboratorName || 'Colaborador',
+      reportTitle: reportTitle || 'Rendición',
+      endDateFormatted,
+      clientId,
     }
   }
 
