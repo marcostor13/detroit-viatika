@@ -1285,6 +1285,21 @@ describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
     expect(doc.description).toBe('Almuerzo')
   })
 
+  // La OT del comprobante se descartaba en Otros Gastos: el formulario ni la
+  // mostraba, y aunque la mandara el alta la ignoraba.
+  it('guarda la orden de trabajo del comprobante', async () => {
+    const otId = new Types.ObjectId().toHexString()
+    await service.createOtherExpense(alBody({ total: 30, ordenTrabajoId: otId }))
+
+    expect(String(expenseModel.create.mock.calls[0][0].ordenTrabajoId)).toBe(otId)
+  })
+
+  it('la orden de trabajo es opcional', async () => {
+    await service.createOtherExpense(alBody({ total: 30 }))
+
+    expect(expenseModel.create.mock.calls[0][0].ordenTrabajoId).toBeUndefined()
+  })
+
   it('el comentario es opcional', async () => {
     await service.createOtherExpense(alBody({ total: 30 }))
 

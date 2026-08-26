@@ -2064,6 +2064,18 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return { ot, centroCosto, centroCostoCodigo };
   }
 
+  /**
+   * Orden de trabajo del comprobante para la ficha: la suya si la tiene, y si no
+   * la de la rendición (viático/directa la heredan todos sus comprobantes).
+   * Desde que la OT se puede elegir en factura y otros gastos, la ficha tenía que
+   * mostrarla: el dato estaba guardado pero no se veía por ningún lado.
+   */
+  getExpenseOrdenTrabajo(exp: Record<string, unknown>): string {
+    const propia = this.extractOtAndCc(exp['ordenTrabajoId']).ot;
+    if (propia) return propia;
+    return this.extractOtAndCc(this.getReportOrdenTrabajo()).ot || '—';
+  }
+
   /** Centro de costo de cabecera: nombre del CC de la OT del reporte (viático/directa). */
   getHeaderCentroCosto(): string | undefined {
     const desdeOt = this.extractOtAndCc(this.getReportOrdenTrabajo()).centroCosto;
