@@ -248,7 +248,10 @@
             </svg>
           </app-button>
           }
-          @if (canReopen && report && !['open', 'solicited', 'cancelled'].includes(report.status)) {
+          <!-- 'open' sigue siendo reabrible: es el estado en el que quedaron las
+               rendiciones reabiertas antes de que reopen() liberara también sus
+               comprobantes, y volver a reabrirlas es cómo se desatascan. -->
+          @if (canReopen && report && !['solicited', 'cancelled'].includes(report.status)) {
           <app-button
             label="Reabrir"
             variant="secondary"
