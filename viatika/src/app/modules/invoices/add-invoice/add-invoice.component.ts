@@ -676,7 +676,14 @@ export default class AddInvoiceComponent implements OnInit {
           this.expenseType.set(type);
           this.form.get('file')?.clearValidators();
           this.form.get('file')?.updateValueAndValidity();
-          this.form.get('proyectId')?.disable();
+          // El centro de costo lo fija la rendición, salvo en caja chica: ahí se
+          // elige POR COMPROBANTE (cada gasto del fondo puede ir a un centro
+          // distinto) y hay que poder corregirlo también al editar el gasto.
+          // `loadRendicionProject` vuelve a habilitarlo si llega después: las dos
+          // peticiones corren en paralelo y cualquiera puede resolver primero.
+          if (!this.isCajaChicaReport()) {
+            this.form.get('proyectId')?.disable();
+          }
 
           let dataObj: any = {};
           if (res.data) {
@@ -878,6 +885,9 @@ export default class AddInvoiceComponent implements OnInit {
         if (esCajaChica) {
           this.form.get('firmaUrl')?.setValidators([Validators.required]);
           this.form.get('firmaUrl')?.updateValueAndValidity();
+          // Se elige por comprobante, también al editar: si la carga del gasto
+          // ya lo deshabilitó (llega primero), se rehabilita acá.
+          this.form.get('proyectId')?.enable();
           this.prefillCentroCostoCajaChica();
         }
 

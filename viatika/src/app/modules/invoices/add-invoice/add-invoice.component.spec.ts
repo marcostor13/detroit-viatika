@@ -2139,6 +2139,34 @@ describe('AddInvoiceComponent', () => {
       });
     });
 
+    // En caja chica el centro de costo se elige POR COMPROBANTE: cada gasto del
+    // fondo puede ir a uno distinto, así que también hay que poder corregirlo al
+    // editar el gasto. En el resto de rendiciones lo fija la rendición.
+    it('al editar un gasto de caja chica el centro de costo queda editable', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({ _id: 'r1', isCajaChica: true } as any)
+      );
+      expenseReportsService.findCajaChicaCentroCosto.and.returnValue(of({ projectId: 'p9' } as any));
+      invoicesService.getInvoiceById.and.returnValue(
+        of({ _id: 'inv1', expenseType: 'factura', data: '{}' } as any)
+      );
+      const component = createComponent({ id: 'inv1' }, { rendicionId: 'r1' });
+      component.ngOnInit();
+      expect(component.form.get('proyectId')?.disabled).toBeFalse();
+    });
+
+    it('al editar un gasto de una rendición normal el centro de costo sigue bloqueado', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({ _id: 'r1', projectId: 'p1' } as any)
+      );
+      invoicesService.getInvoiceById.and.returnValue(
+        of({ _id: 'inv1', expenseType: 'factura', data: '{}' } as any)
+      );
+      const component = createComponent({ id: 'inv1' }, { rendicionId: 'r1' });
+      component.ngOnInit();
+      expect(component.form.get('proyectId')?.disabled).toBeTrue();
+    });
+
     it('marca la pestaña de directas al volver al detalle de una directa', () => {
       expenseReportsService.findOne.and.returnValue(
         of({ _id: 'r1', projectId: 'p1', isDirecta: true } as any)
