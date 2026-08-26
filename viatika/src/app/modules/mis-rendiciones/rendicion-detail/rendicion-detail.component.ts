@@ -781,8 +781,35 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.canAddExpenses || this.canResubmitReport;
   }
 
+  /**
+   * Comprobantes que un revisor observó y el colaborador todavía no corrigió.
+   * El backend no deja enviar la rendición con ninguno pendiente
+   * (`validateBeforeSubmit`), así que la UI tiene que decir cuáles son en vez
+   * de dejar confirmar el reenvío y devolver un error rojo genérico.
+   */
+  get observedExpenses(): any[] {
+    return ((this.report?.expenseIds ?? []) as any[]).filter(
+      (e: any) => String(e?.status ?? '').toLowerCase() === 'rejected'
+    );
+  }
+
+  get hasObservedExpenses(): boolean {
+    return this.observedExpenses.length > 0;
+  }
+
+  /** Motivo con el que se observó el comprobante (Contabilidad o aprobador). */
+  observedExpenseReason(expense: any): string {
+    return (
+      expense?.contabilidadRejectionReason ||
+      expense?.rejectionReason ||
+      'Sin motivo registrado'
+    );
+  }
+
   get canSubmitReport(): boolean {
     if (!this.report || this.isAdminView) return false;
+    // Comprobante observado sin corregir: el envío lo rechaza el backend.
+    if (this.hasObservedExpenses) return false;
     // La caja chica ya no es solo un depósito de comprobantes para Contabilidad:
     // se envía y se aprueba como cualquier rendición. Solo la bloquea que
     // Contabilidad ya la haya incluido en un reporte finalizado.
@@ -1038,6 +1065,20 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.expensesPendingAccountingCount === 0;
   }
 
+  /**
+   * Devolver la rendición al colaborador NO exige tenerla toda revisada: es
+   * justo lo que se hace cuando hay comprobantes observados. El botón compartía
+   * el gate de "Aprobar Rendición" (todo aprobado por Contabilidad), así que la
+   * única vía real de devolverla era rechazar un comprobante — y ese rechazo la
+   * devolvía solo, de modo que ya no se podía observar un segundo comprobante.
+   */
+  get canContabilidadReject(): boolean {
+    const hasRole = this.userStateService.isContabilidad()
+      || this.userStateService.isSuperAdmin()
+      || this.userStateService.isAdmin();
+    return hasRole && this.report?.status === 'pending_accounting';
+  }
+
   /** Contabilidad ve la rendicion en submitted pero no puede actuar aun. */
   get isPendingCoordinador(): boolean {
     return this.userStateService.isContabilidad() && this.report?.status === 'submitted';
@@ -1146,9 +1187,15 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
           'success'
         );
       },
-      error: () => {
+      error: (err) => {
         this.isSubmitting.set(false);
-        this.notificationService.show('Error al enviar la rendición', 'error');
+        // El backend explica por qué no se puede enviar (comprobantes
+        // observados sin corregir, rendición sin gastos…). Tragarlo y mostrar
+        // "Error al enviar la rendición" dejaba al colaborador sin saber qué
+        // arreglar.
+        const raw = err?.error?.message;
+        const msg = Array.isArray(raw) ? raw.join(', ') : raw;
+        this.notificationService.show(msg || 'Error al enviar la rendición', 'error');
       }
     });
   }
@@ -1281,12 +1328,18 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
     if (type === 'otros_gastos') {
       // La DJ al extranjero declara días concretos: vale el primero declarado,
-      // no la fecha de registro (el resto de otros gastos mantiene createdAt).
+      // no la fecha de registro.
       const djRows = this.declaracionJuradaRows(expense);
       if (djRows.length > 0) {
         const fechas = djRows.map(r => String(r['fecha'] ?? '')).filter(Boolean);
         if (fechas.length > 0) return this.formatEmissionDate([...fechas].sort()[0]);
       }
+      // Alimentación sin documentación declara la fecha del gasto (no hay
+      // comprobante del que leerla): manda esa, no el día en que se registró.
+      // Los gastos viejos, cargados antes de que se pidiera, siguen cayendo a
+      // `createdAt` para no quedarse sin fecha.
+      const declarada = resolveExpenseFechaEmision(expense);
+      if (declarada) return this.formatEmissionDate(declarada);
       return this.formatEmissionDate(expense?.createdAt);
     }
     return this.emissionDateText(expense);

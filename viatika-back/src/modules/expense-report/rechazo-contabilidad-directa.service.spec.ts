@@ -8,8 +8,12 @@ import { ExpenseReportService } from './expense-report.service'
  *
  * El backend siempre lo soporto. Estas pruebas lo fijan, para que el arreglo del
  * front no se pueda revertir sin que salte algo.
+ *
+ * Observar un comprobante ya NO devuelve la rendicion (asi Contabilidad puede
+ * observar varios); el reset de los no observados corre al rechazar la
+ * RENDICION completa, que es lo que cubre esta prueba.
  */
-describe('returnToCollaboratorOnAccountingRejection — rendicion directa', () => {
+describe('reopenExpensesForCollaboratorCorrection — rendicion directa', () => {
   const reportId = new Types.ObjectId()
   const observado = new Types.ObjectId()
   const otro = new Types.ObjectId()
@@ -18,15 +22,17 @@ describe('returnToCollaboratorOnAccountingRejection — rendicion directa', () =
     const svc = Object.create(ExpenseReportService.prototype) as any
     const actualizados: any[] = []
     svc.expenseReportModel = {
-      findById: async () => report,
+      findById: () => ({
+        select: () => ({ lean: () => ({ exec: async () => report }) }),
+      }),
     }
     svc.expenseModel = {
       find: () => ({
         select: () => ({
           lean: () => ({
             exec: async () => [
-              { _id: observado, approverChain: [{ level: 1, approved: true, approverIds: [] }] },
-              { _id: otro, approverChain: [{ level: 1, approved: true, approverIds: [] }] },
+              { _id: observado, status: 'rejected', approverChain: [{ level: 1, approved: true, approverIds: [] }] },
+              { _id: otro, status: 'approved', approverChain: [{ level: 1, approved: true, approverIds: [] }] },
             ],
           }),
         }),
@@ -40,51 +46,30 @@ describe('returnToCollaboratorOnAccountingRejection — rendicion directa', () =
     return { svc, actualizados }
   }
 
-  const reportDirecta = (status: string) => ({
+  const reportDirecta = () => ({
     _id: reportId,
     isDirecta: true,
-    status,
     expenseIds: [observado, otro],
-    save: async function () { return this },
-  })
-
-  it('una directa en contabilidad vuelve al colaborador', async () => {
-    const report = reportDirecta('pending_accounting')
-    const { svc } = montar(report)
-    await svc.returnToCollaboratorOnAccountingRejection(
-      String(reportId),
-      String(observado),
-      'Falta el detalle del gasto'
-    )
-    expect(report.status).toBe('rejected')
   })
 
   // Los demas comprobantes se reabren: si quedaran aprobados, el colaborador no
   // podria corregir la rendicion.
   it('reabre los otros comprobantes y deja el observado como rechazado', async () => {
-    const { svc, actualizados } = montar(reportDirecta('pending_accounting'))
-    await svc.returnToCollaboratorOnAccountingRejection(
-      String(reportId),
-      String(observado),
-      'Falta el detalle'
-    )
+    const { svc, actualizados } = montar(reportDirecta())
+    await svc.reopenExpensesForCollaboratorCorrection(String(reportId))
+
     const delOtro = actualizados.find(a => a.id === String(otro))
     expect(delOtro.set.status).toBe('pending')
     expect(delOtro.set.approverChain[0].approved).toBe(false)
 
     const delObservado = actualizados.find(a => a.id === String(observado))
     expect(delObservado.set.status).toBeUndefined()
+    expect(delObservado.set.approvalLevel).toBe(0)
   })
 
-  it('en un estado donde no aplica no toca nada', async () => {
-    const report = reportDirecta('closed')
-    const { svc, actualizados } = montar(report)
-    await svc.returnToCollaboratorOnAccountingRejection(
-      String(reportId),
-      String(observado),
-      'motivo'
-    )
-    expect(report.status).toBe('closed')
+  it('sin rendicion no toca nada', async () => {
+    const { svc, actualizados } = montar(null)
+    await svc.reopenExpensesForCollaboratorCorrection(String(reportId))
     expect(actualizados).toHaveLength(0)
   })
 })

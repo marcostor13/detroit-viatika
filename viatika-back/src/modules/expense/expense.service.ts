@@ -3158,18 +3158,12 @@ export class ExpenseService {
       .populate('categoryId')
       .exec()
 
-    const reportId = this.expenseReportIdString(existing)
-    if (reportId) {
-      try {
-        await this.expenseReportService.resubmitSilent(reportId)
-      } catch (err) {
-        this.logger.warn(
-          `[update] Error al reactivar rendición ${reportId}:`,
-          err
-        )
-      }
-    }
-
+    // Corregir un comprobante NO reenvía la rendición. Antes, editar cualquier
+    // gasto de una rendición rechazada la devolvía sola a `submitted`
+    // (`resubmitSilent`), así que el colaborador perdía el control: no alcanzaba
+    // a subir las facturas que le faltaban ni a pulsar "Reenviar" — la rendición
+    // ya estaba otra vez con los aprobadores. El reenvío es suyo y explícito
+    // (PATCH status 'submitted'), que además reconstruye las cadenas.
     return updated ? applyFechaEmisionDisplayToExpense(updated) : null
   }
 
@@ -3952,30 +3946,21 @@ export class ExpenseService {
       .exec()
     if (!updated) throw new NotFoundException(`Expense ${id} no encontrado`)
 
-    // Contabilidad observó un comprobante en su aprobación final: se devuelve TODA
-    // la rendición al colaborador y se resetean los demás comprobantes a estado
-    // normal (editables y re-aprobables). Sin esto, los comprobantes ya aprobados
-    // quedarían bloqueados y la rendición no se podría corregir.
-    const reportId = this.expenseReportIdString(expense)
-    if (reportId) {
-      try {
-        await this.expenseReportService.returnToCollaboratorOnAccountingRejection(
-          reportId,
-          id,
-          reason
-        )
-      } catch (err) {
-        this.logger.warn(
-          `[rejectByContabilidad] No se pudo devolver la rendición ${reportId}: ${err instanceof Error ? err.message : String(err)}`
-        )
-      }
-    }
-
+    // El rechazo es POR COMPROBANTE y la rendición SE QUEDA en
+    // `pending_accounting`: Contabilidad tiene que poder observar varios
+    // comprobantes en la misma revisión. Devolverla al colaborador es un acto
+    // aparte y explícito — el botón "Rechazar rendición" (update → 'rejected'),
+    // que ahí sí reabre los comprobantes no observados
+    // (`reopenExpensesForCollaboratorCorrection`).
+    //
+    // Antes se devolvía la rendición desde aquí: el primer rechazo la sacaba de
+    // `pending_accounting` y Contabilidad se quedaba sin botones para observar
+    // los demás comprobantes (solo podía rechazar uno).
     this.notificationsService
       .create({
         userId: String(expense.createdBy),
-        title: 'Rendición devuelta por Contabilidad',
-        message: `Contabilidad observó un comprobante y devolvió tu rendición para corrección: ${reason.slice(0, 80)}`,
+        title: 'Comprobante observado por Contabilidad',
+        message: `Contabilidad observó un comprobante de tu rendición: ${reason.slice(0, 80)}`,
         type: 'error',
         actionUrl: `/mis-rendiciones/${this.expenseReportIdString(expense)}/detalle`,
       })

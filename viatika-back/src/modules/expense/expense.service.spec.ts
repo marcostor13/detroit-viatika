@@ -1557,6 +1557,22 @@ describe('ExpenseService — update: las equivalencias siguen al nuevo importe',
     expect(doc.montoReporte).toBe(200)
   })
 
+  // Corregir un comprobante de una rendición devuelta NO la reenvía: antes
+  // `update` llamaba a `resubmitSilent` y la rendición volvía sola con los
+  // aprobadores, sin dejar al colaborador subir el resto de sus facturas ni
+  // pulsar "Reenviar". El stub sigue en el mock a propósito: si alguien vuelve
+  // a cablear el reenvío automático, esta prueba lo caza.
+  it('corregir un gasto no reenvía la rendición por su cuenta', async () => {
+    expenseReportService.findOne.mockResolvedValue({ status: 'rejected' })
+
+    await editar(
+      guardado({ total: 55, moneda: 'PEN', mobilityRows: [tramo('2026-08-10', 55)] }),
+      { mobilityRows: [tramo('2026-08-10', 60)] }
+    )
+
+    expect(expenseReportService.resubmitSilent).not.toHaveBeenCalled()
+  })
+
   it('un gasto en la moneda de la rendición no se convierte al reexpresarlo', async () => {
     // Dólares dentro de una rendición en dólares: `montoReporte` son los mismos
     // dólares. Dividir por `tcReporte` metería soles en la ficha del viático.

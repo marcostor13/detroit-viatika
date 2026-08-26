@@ -930,10 +930,28 @@ describe('AddInvoiceComponent', () => {
         proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true,
         // VD-109: AL declara la comida.
         tipoComida: 'almuerzo',
+        // Sin comprobante, la fecha del gasto se declara y es obligatoria.
+        fechaEmision: '2026-08-12',
       });
       component.setExpenseType('otros_gastos');
       component.otrosSubTipo.set('AL');
       // AL no requiere comprobante adjunto, pero sí el checkbox de declaración jurada.
+      expect(component.isFormValid()).toBeTrue();
+    });
+
+    // Sin comprobante del que leerla, la fecha la pone el colaborador: de ella
+    // salen el plazo de presentación y el tipo de cambio congelado del gasto.
+    it('AL sin la fecha del gasto no es válido', () => {
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', totalOtros: 50, declaracionJurada: true,
+        tipoComida: 'almuerzo', fechaEmision: '',
+      });
+      component.setExpenseType('otros_gastos');
+      component.otrosSubTipo.set('AL');
+      expect(component.isFormValid()).toBeFalse();
+
+      component.form.patchValue({ fechaEmision: '2026-08-12' });
       expect(component.isFormValid()).toBeTrue();
     });
   });
@@ -1104,6 +1122,7 @@ describe('AddInvoiceComponent', () => {
         declaracionJurada: true,
         totalOtros: 40,
         tipoComida: 'almuerzo',
+        fechaEmision: '2026-08-12',
       });
       component.otrosSubTipo.set('AL');
       // Sin selectedFile: AL va sin adjunto.
@@ -1112,10 +1131,27 @@ describe('AddInvoiceComponent', () => {
       const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
       expect(payload.subTipo).toBe('AL');
       expect(payload.tipoComida).toBe('almuerzo');
+      // La fecha declarada viaja en el formato del resto de comprobantes.
+      expect(payload.fechaEmision).toBe('12/08/2026');
       expect(payload.declaracionJurada).toBeTrue();
       expect(payload.declaracionJuradaFirmante).toBe('John Doe');
       expect(payload.imageUrl).toBeUndefined();
       expect(notificationService.show).toHaveBeenCalledWith('Gasto guardado correctamente', 'success');
+    });
+  });
+
+  describe('AL — fecha del gasto', () => {
+    it('no guarda el AL sin la fecha del gasto', () => {
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      expect(notificationService.show).toHaveBeenCalledWith('Indica la fecha del gasto', 'error');
+      expect(invoicesService.createOtherExpense).not.toHaveBeenCalled();
     });
   });
 
@@ -1661,12 +1697,37 @@ describe('AddInvoiceComponent', () => {
         tipoComida: 'desayuno',
         data: JSON.stringify({ description: 'Desayuno', subTipo: 'AL' }),
       });
-      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', totalOtros: 12, tipoComida: 'desayuno' });
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', totalOtros: 12, tipoComida: 'desayuno',
+        fechaEmision: '2026-08-12',
+      });
       component.update();
 
       const payload = invoicesService.updateInvoice.calls.mostRecent().args[1] as any;
       expect(payload.tipoComida).toBe('desayuno');
       expect(payload.description).toBe('Desayuno');
+    });
+
+    it('al editar un AL manda la fecha del gasto corregida', () => {
+      invoicesService.updateInvoice.and.returnValue(of({}));
+      const component = setupEdit({
+        _id: 'inv1',
+        expenseType: 'otros_gastos',
+        subTipo: 'AL',
+        total: 20,
+        tipoComida: 'desayuno',
+        fechaEmision: '12/08/2026',
+        data: JSON.stringify({ description: 'Desayuno', subTipo: 'AL', fechaEmision: '12/08/2026' }),
+      });
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', totalOtros: 12, tipoComida: 'desayuno',
+        fechaEmision: '2026-08-05',
+      });
+      component.update();
+
+      const payload = invoicesService.updateInvoice.calls.mostRecent().args[1] as any;
+      expect(payload.fechaEmision).toBe('05/08/2026');
+      expect(JSON.parse(payload.data).fechaEmision).toBe('05/08/2026');
     });
 
     it('blocks the update when a mobility row is flagged as tercero without a selected worker', () => {
