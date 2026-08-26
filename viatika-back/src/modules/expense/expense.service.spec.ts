@@ -1270,6 +1270,28 @@ describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
     expect(JSON.parse(doc.data).tipoComida).toBe('almuerzo')
   })
 
+  // En AL la descripción la ocupa la comida declarada, así que el comentario es
+  // el único texto propio del colaborador: sin guardarlo, el gasto le llega al
+  // revisor sin ninguna explicación.
+  it('guarda el comentario del colaborador junto al gasto', async () => {
+    await service.createOtherExpense(
+      alBody({ total: 30, comentario: '  Almuerzo en supervisión de obra  ' })
+    )
+
+    const doc = expenseModel.create.mock.calls[0][0]
+    expect(doc.comentario).toBe('Almuerzo en supervisión de obra')
+    expect(JSON.parse(doc.data).comentario).toBe('Almuerzo en supervisión de obra')
+    // La comida sigue mandando en la descripción (VD-109).
+    expect(doc.description).toBe('Almuerzo')
+  })
+
+  it('el comentario es opcional', async () => {
+    await service.createOtherExpense(alBody({ total: 30 }))
+
+    const doc = expenseModel.create.mock.calls[0][0]
+    expect(doc.comentario).toBeUndefined()
+  })
+
   it('sin tope configurado para esa comida no valida el monto', async () => {
     await service.createOtherExpense(alBody({ tipoComida: 'cena', total: 500 }))
 

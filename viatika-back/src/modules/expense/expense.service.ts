@@ -1927,6 +1927,10 @@ export class ExpenseService {
         ? body.declaracionJuradaFirmante
         : undefined,
       file: body.imageUrl || undefined,
+      // Nota libre del colaborador. En AL la descripción la ocupa la comida
+      // declarada (VD-109), así que el comentario es su único texto propio: sin
+      // guardarlo, el gasto llegaba al revisor sin explicación.
+      comentario: body.comentario?.trim() || undefined,
       status: 'pending',
       createdBy: body.userId || 'system',
       fechaEmision: normalizedFecha ?? body.fechaEmision,
@@ -1943,6 +1947,7 @@ export class ExpenseService {
         declaracionJurada: requiereDeclaracion,
         firmante: requiereDeclaracion ? body.declaracionJuradaFirmante : undefined,
         description: tipoComida ? this.ETIQUETA_COMIDA[tipoComida] : body.data,
+        comentario: body.comentario?.trim() || undefined,
         serie: body.serie || undefined,
         correlativo: body.correlativo || undefined,
         rucEmisor: body.rucEmisor || undefined,

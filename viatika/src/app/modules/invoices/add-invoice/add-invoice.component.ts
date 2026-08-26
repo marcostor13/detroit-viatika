@@ -2563,6 +2563,7 @@ export default class AddInvoiceComponent implements OnInit {
 
     this.isLoading.set(true);
 
+    const comentario = (this.form.get('comentario')?.value || '').toString().trim();
     const serie = muestraDoc ? (this.form.get('serie')?.value || '').toString().trim() : '';
     const correlativo = muestraDoc ? (this.form.get('correlativo')?.value || '').toString().trim() : '';
     const rucEmisor = muestraDoc ? (this.form.get('rucEmisor')?.value || '').toString().trim() : '';
@@ -2588,6 +2589,9 @@ export default class AddInvoiceComponent implements OnInit {
         ...(fechaGasto
           ? { fechaEmision: this.formatDateForBackend(fechaGasto) }
           : {}),
+        // Nota libre del colaborador (en AL, su único texto propio: la
+        // descripción la ocupa la comida declarada).
+        ...(comentario ? { comentario } : {}),
       };
       this.invoiceService.createOtherExpense(payload).subscribe({
         next: (res) => {

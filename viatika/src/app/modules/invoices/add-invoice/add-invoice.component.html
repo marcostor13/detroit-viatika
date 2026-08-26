@@ -962,6 +962,18 @@
       <p class="text-xs text-tertiary">Tope configurado: S/ {{ topeComidaSeleccionada | number:'1.2-2' }} por gasto.</p>
       }
     </div>
+    <!-- En AL la comida declarada ocupa el lugar de la descripción (VD-109), así
+         que el comentario es el único texto propio del colaborador: sin él, el
+         gasto llega al revisor sin explicar de qué fue. Al editar no se repite
+         acá: el formulario ya trae su bloque de comentario al final. -->
+    @if (!id) {
+    <div class="flex flex-col gap-2">
+      <label for="comentarioAl" class="text-sm font-medium text-secondary">Comentario</label>
+      <textarea id="comentarioAl" formControlName="comentario" rows="3"
+        placeholder="Ej: Almuerzo durante la supervisión en obra..."
+        class="w-full px-3 py-2 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none text-sm"></textarea>
+    </div>
+    }
     } @else {
     <div class="flex flex-col gap-2">
       <label class="text-sm font-medium text-secondary">Descripción del gasto</label>

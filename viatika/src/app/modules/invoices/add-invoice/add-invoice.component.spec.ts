@@ -1174,6 +1174,35 @@ describe('AddInvoiceComponent', () => {
       expect(payload.fechaEmision).toBe('12/08/2026');
     });
 
+    it('el comentario del colaborador viaja en el alta', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '2026-08-12',
+        comentario: '  Almuerzo en supervisión de obra  ',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.comentario).toBe('Almuerzo en supervisión de obra');
+    });
+
+    it('sin comentario no manda el campo', () => {
+      invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.form.patchValue({
+        proyectId: 'p1', categoryId: 'cat1', declaracionJurada: true,
+        totalOtros: 40, tipoComida: 'almuerzo', fechaEmision: '2026-08-12',
+      });
+      component.otrosSubTipo.set('AL');
+      component.saveOtherExpense();
+
+      const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+      expect(payload.comentario).toBeUndefined();
+    });
+
     // La DJ al extranjero declara una fecha por fila en su detalle diario, así
     // que no se le pide una sola para el gasto.
     it('la DJ al extranjero no pide la fecha del gasto', () => {
