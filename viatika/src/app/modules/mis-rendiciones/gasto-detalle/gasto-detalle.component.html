@@ -247,6 +247,13 @@
             <p class="text-xs text-gray-400">Firmante</p>
             <p class="font-medium text-gray-900">{{ exp['declaracionJuradaFirmante'] || '—' }}</p>
           </div>
+          <!-- En Alimentacion sin documentacion la descripcion es la comida
+               declarada, asi que el comentario es la unica explicacion que
+               escribe el colaborador. -->
+          <div class="sm:col-span-2">
+            <p class="text-xs text-gray-400">Comentario</p>
+            <p class="font-medium text-gray-900 whitespace-pre-wrap break-words">{{ getComentario(exp) || '—' }}</p>
+          </div>
           @if (isMonedaExtranjera(exp)) {
           <div class="sm:col-span-2">
             <p class="text-xs text-gray-400">

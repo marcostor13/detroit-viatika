@@ -2002,6 +2002,13 @@
               <p class="text-xs text-tertiary/70">Firmante</p>
               <p class="font-medium text-secondary">{{ exp['declaracionJuradaFirmante'] || '—' }}</p>
             </div>
+            <!-- En Alimentación sin documentación la descripción es la comida
+                 declarada, así que el comentario es la única explicación que
+                 escribe el colaborador: sin mostrarlo, el revisor no la ve. -->
+            <div class="sm:col-span-2">
+              <p class="text-xs text-tertiary/70">Comentario</p>
+              <p class="font-medium text-secondary whitespace-pre-wrap break-words">{{ getExpenseComentario(exp) || '—' }}</p>
+            </div>
           </div>
           <!-- DJ al extranjero: detalle diario declarado + PDF oficial -->
           @if (isDeclaracionJuradaExteriorExpense(exp)) {
