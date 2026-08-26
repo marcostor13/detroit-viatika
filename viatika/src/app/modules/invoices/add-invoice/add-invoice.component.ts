@@ -755,12 +755,17 @@ export default class AddInvoiceComponent implements OnInit {
               description,
               totalOtros: res.total ?? 0,
               declaracionJurada: true,
+              // Fecha del gasto (AL): se declara al crearlo y se puede corregir.
+              fechaEmision: fecha,
               rucEmisor: dataObj.rucEmisor || '',
               serie: dataObj.serie || '',
               correlativo: dataObj.correlativo || '',
               // VD-109: comida declarada en AL.
               tipoComida: (res as any).tipoComida || dataObj.tipoComida || '',
             });
+            // `loadInvoice` no pasa por `syncTopValidators`: el sub-tipo recién
+            // se conoce aquí, así que la fecha se marca obligatoria ahora.
+            this.syncFechaGastoValidator();
           } else if (type === 'recibo_caja') {
             this.form.patchValue({
               ...baseValues,
@@ -1232,6 +1237,15 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
+   * AL en curso, al crear Y al editar — a diferencia de `isAlimentacionSinDoc`,
+   * que solo mira el alta (ahí decide la categoría automática). Lo usan la
+   * fecha del gasto y su validación, que valen igual corrigiendo el comprobante.
+   */
+  get esAlimentacionSinDocEnCurso(): boolean {
+    return this.expenseType() === 'otros_gastos' && this.otrosSubTipo() === 'AL';
+  }
+
+  /**
    * Comidas de "Alimentación sin documentación" (VD-109) con el tope que la
    * empresa configuró para cada una. Sin tope configurado, `tope` es null.
    */
@@ -1630,9 +1644,25 @@ export default class AddInvoiceComponent implements OnInit {
         catCtrl.updateValueAndValidity({ emitEvent: false });
       }
     }
+    this.syncFechaGastoValidator();
     // Otros Gastos: AL trae su categoría puesta y el resto de sub-tipos la
     // sueltan al salir de AL (VD-100).
     this.applyAlimentacionCategoryDefault();
+  }
+
+  /**
+   * Alimentación sin documentación: al no haber comprobante, la fecha del gasto
+   * la declara el colaborador. No es un adorno — de ella salen el plazo de
+   * presentación (`observado`/`diasRetraso`) y el tipo de cambio que se congela.
+   * El resto de sub-tipos la traen en su documento, así que ahí no se pide.
+   */
+  private syncFechaGastoValidator(): void {
+    const fechaCtrl = this.form.get('fechaEmision');
+    if (!fechaCtrl) return;
+    fechaCtrl.setValidators(
+      this.esAlimentacionSinDocEnCurso ? [Validators.required] : []
+    );
+    fechaCtrl.updateValueAndValidity({ emitEvent: false });
   }
 
   /**
@@ -2075,8 +2105,13 @@ export default class AddInvoiceComponent implements OnInit {
         const comidaOk =
           sub !== 'AL' ||
           (!!this.form.get('tipoComida')?.value && !this.montoSuperaTopeComida);
+        // Sin comprobante del que leerla, la fecha del gasto se declara.
+        const fechaOk =
+          sub !== 'AL' ||
+          !!(this.form.get('fechaEmision')?.value || '').toString().trim();
         return (
           proyectOk &&
+          fechaOk &&
           this.form.get('categoryId')?.valid === true &&
           // DJ/AL requieren checkbox de declaración jurada; otros sub-tipos no
           (!!this.id || !requiereDeclaracion || !!this.form.get('declaracionJurada')?.value) &&
@@ -2469,9 +2504,14 @@ export default class AddInvoiceComponent implements OnInit {
       return;
     }
 
+    const fechaGasto = (this.form.get('fechaEmision')?.value || '').toString().trim();
     if (subTipo === 'AL') {
       if (!tipoComida) {
         this.notificationService.show('Indica si el gasto es desayuno, almuerzo o cena', 'error');
+        return;
+      }
+      if (!fechaGasto) {
+        this.notificationService.show('Indica la fecha del gasto', 'error');
         return;
       }
       const tope = this.topeComidaSeleccionada;
@@ -2519,6 +2559,11 @@ export default class AddInvoiceComponent implements OnInit {
         ...(serie ? { serie } : {}),
         ...(correlativo ? { correlativo } : {}),
         ...(rucEmisor ? { rucEmisor } : {}),
+        // La declara AL; el backend la normaliza, congela con ella el tipo de
+        // cambio y calcula el plazo de presentación.
+        ...(fechaGasto
+          ? { fechaEmision: this.formatDateForBackend(fechaGasto) }
+          : {}),
       };
       this.invoiceService.createOtherExpense(payload).subscribe({
         next: (res) => {
@@ -2642,10 +2687,14 @@ export default class AddInvoiceComponent implements OnInit {
       if (tipoComida) payload.tipoComida = tipoComida;
       const muestraDoc = this.otrosSubTipoMuestraDocumento();
       const { serie: _s, correlativo: _c, rucEmisor: _r, ...prevWithoutDoc } = previousData || {};
+      // Fecha del gasto declarada en AL: se corrige como cualquier otro dato.
+      const fechaGasto = (formValue.fechaEmision || '').toString().trim();
+      const fechaBackend = fechaGasto ? this.formatDateForBackend(fechaGasto) : '';
       const dataObj = {
         ...prevWithoutDoc,
         description,
         ...(tipoComida ? { tipoComida } : {}),
+        ...(fechaBackend ? { fechaEmision: fechaBackend } : {}),
         ...(muestraDoc ? {
           serie: (formValue.serie || '').trim() || undefined,
           correlativo: (formValue.correlativo || '').trim() || undefined,
@@ -2653,6 +2702,7 @@ export default class AddInvoiceComponent implements OnInit {
         } : {}),
       };
       payload.data = JSON.stringify(dataObj);
+      if (fechaBackend) payload.fechaEmision = fechaBackend;
     } else if (type === 'recibo_caja') {
       const dataObj = {
         ...previousData,
