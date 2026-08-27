@@ -279,6 +279,90 @@ describe('BulkUploadComponent', () => {
     });
   });
 
+  describe('repetidos dentro del lote', () => {
+    it('marca la segunda copia y deja limpia la primera', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+
+      cargar(component, [archivo('foto1.jpg'), archivo('foto2.jpg')]);
+
+      expect(component.items[0].duplicadoDe).toBe('');
+      expect(component.items[1].duplicadoDe).toBe('foto1.jpg');
+      expect(component.repetidos).toBe(1);
+    });
+
+    it('el repetido no se puede guardar ni entra en el lote a guardar', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+      cargar(component, [archivo('foto1.jpg'), archivo('foto2.jpg')]);
+      component.items.forEach((i) => (i.categoryId = 'cat1'));
+
+      expect(component.faltaEn(component.items[1])).toBe('Repetido en el lote');
+      expect(component.listos.length).toBe(1);
+
+      component.guardarListos();
+      expect(invoicesService.createInvoice).toHaveBeenCalledTimes(1);
+    });
+
+    it('avisa al terminar de leer, no al guardar', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+
+      cargar(component, [archivo('foto1.jpg'), archivo('foto2.jpg')]);
+
+      expect(notificationService.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/ya está en el lote/),
+        'warning'
+      );
+    });
+
+    it('corregir el correlativo mal leído deshace la marca', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+      cargar(component, [archivo('foto1.jpg'), archivo('foto2.jpg')]);
+      const copia = component.items[1];
+
+      copia.correlativo = '0004513';
+      component.onIdentidadChange();
+
+      expect(copia.duplicadoDe).toBe('');
+      expect(component.repetidos).toBe(0);
+    });
+
+    it('quitar el original libera a la copia', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+      cargar(component, [archivo('foto1.jpg'), archivo('foto2.jpg')]);
+
+      component.quitar(component.items[0]);
+
+      expect(component.items.length).toBe(1);
+      expect(component.items[0].duplicadoDe).toBe('');
+    });
+
+    it('sin RUC, serie o correlativo no se declara repetido: no hay con qué compararlos', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+      invoicesService.analyzeInvoice.and.returnValue(
+        of({
+          data: JSON.stringify({ comentario: 'ilegible' }),
+          total: 0,
+          status: 'pending',
+        } as any)
+      );
+
+      cargar(component, [archivo('a.jpg'), archivo('b.jpg')]);
+
+      expect(component.repetidos).toBe(0);
+    });
+
+    it('un comprobante ya guardado sigue bloqueando a su copia', () => {
+      const component = createComponent({ rendicionId: 'r1' });
+      cargar(component, [archivo('foto1.jpg')]);
+      component.items[0].categoryId = 'cat1';
+      component.guardarListos();
+      expect(component.guardados.length).toBe(1);
+
+      cargar(component, [archivo('foto1-otra-vez.jpg')]);
+
+      expect(component.items[1].duplicadoDe).toBe('foto1.jpg');
+    });
+  });
+
   it('asigna la categoría a todos los seleccionados de una vez', () => {
     const component = createComponent({ rendicionId: 'r1' });
     cargar(component, [archivo('a.jpg'), archivo('b.jpg'), archivo('c.jpg')]);
@@ -328,7 +412,18 @@ describe('BulkUploadComponent', () => {
   });
 
   describe('guardado', () => {
+    /**
+     * Lote de comprobantes DISTINTOS y listos. Cada lectura devuelve su propio
+     * correlativo: con el mismo en todos, el control de repetidos dejaría fuera
+     * a todos menos al primero.
+     */
     function loteListo(component: BulkUploadComponent, cuantos: number): BulkInvoiceItem[] {
+      let n = 0;
+      invoicesService.analyzeInvoice.and.callFake(() => {
+        const datos = JSON.parse(scanAceptado.data);
+        datos.correlativo = `000451${n++}`;
+        return of({ ...scanAceptado, data: JSON.stringify(datos) } as any);
+      });
       cargar(
         component,
         Array.from({ length: cuantos }, (_, i) => archivo(`f${i}.jpg`))
