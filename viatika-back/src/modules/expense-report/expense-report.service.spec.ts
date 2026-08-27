@@ -399,6 +399,72 @@ describe('ExpenseReportService — Fase 5 (envío y aprobación final)', () => {
     expect(reabrir).not.toHaveBeenCalled()
   })
 
+  // Reabrir sin tocar los comprobantes dejaba la rendición "Abierta" pero con
+  // todos los gastos en `approved`, es decir bloqueados de por vida para el
+  // colaborador (`assertCanMutateExpense`) y mostrados como "Pendiente
+  // Contabilidad" en el detalle. Contabilidad reabría "para que edite" y el
+  // colaborador no podía editar nada.
+  describe('reopen: Contabilidad reabre y desbloquea los comprobantes', () => {
+    const reopenDoc = (status: string) => ({
+      _id: new Types.ObjectId(reportId),
+      title: 'Rendición test',
+      status,
+      userId: new Types.ObjectId(userId),
+      clientId: new Types.ObjectId(clientId),
+    })
+
+    const armar = (status: string) => {
+      mockExpenseReportModel.findById.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reopenDoc(status)),
+      })
+      mockExpenseReportModel.findByIdAndUpdate.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(reopenDoc('open')),
+      })
+      jest
+        .spyOn(service as any, 'resolveReportApproverRecipients')
+        .mockResolvedValue([])
+      return jest
+        .spyOn(service, 'reopenExpensesForCollaboratorCorrection')
+        .mockResolvedValue(undefined)
+    }
+
+    it('deja la rendición en open y reabre sus comprobantes', async () => {
+      const reabrir = armar('pending_accounting')
+
+      await service.reopen(reportId, userId, 'faltan los detalles del hotel')
+
+      const $set =
+        mockExpenseReportModel.findByIdAndUpdate.mock.calls[0][1].$set
+      expect($set.status).toBe('open')
+      expect(reabrir).toHaveBeenCalledWith(reportId)
+    })
+
+    it("permite reabrir una ya en 'open': es como se desatascan las que quedaron con los comprobantes congelados", async () => {
+      const reabrir = armar('open')
+
+      await service.reopen(reportId, userId, 'desbloquear comprobantes')
+
+      expect(reabrir).toHaveBeenCalledWith(reportId)
+    })
+
+    it('sigue vetando solicited y cancelled', async () => {
+      armar('cancelled')
+
+      await expect(
+        service.reopen(reportId, userId, 'motivo')
+      ).rejects.toThrow(/No se puede reabrir/)
+      expect(mockExpenseReportModel.findByIdAndUpdate).not.toHaveBeenCalled()
+    })
+
+    it('exige motivo', async () => {
+      armar('closed')
+
+      await expect(service.reopen(reportId, userId, '   ')).rejects.toThrow(
+        /motivo/i
+      )
+    })
+  })
+
   it('advanceToAccountingIfAllExpensesApproved: NO avanza si hay un comprobante observado', async () => {
     const reportObj: { status: string; expenseIds: string[]; userId: string; save: jest.Mock } = {
       status: 'submitted',
