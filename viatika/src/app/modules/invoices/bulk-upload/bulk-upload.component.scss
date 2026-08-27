@@ -1,0 +1,9 @@
+/**
+ * Estado de arrastre de la zona de captura. La clase la pone `FileDropDirective`
+ * (VD-134) y el color lo define cada zona, para que la directiva no imponga
+ * colores desde el design system.
+ */
+.is-dragging {
+  border-color: theme('colors.primary');
+  background-color: rgb(from theme('colors.primary') r g b / 8%);
+}

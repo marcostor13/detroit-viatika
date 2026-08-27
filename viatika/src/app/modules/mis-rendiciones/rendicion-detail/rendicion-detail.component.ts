@@ -1214,6 +1214,14 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     this.router.navigate(['/invoices/add'], { queryParams: { rendicionId: this.id, tipo } });
   }
 
+  /** Carga masiva: varias facturas del mismo viaje en una sola pasada. */
+  selectBulkUpload() {
+    this.showTypeModal = false;
+    this.router.navigate(['/invoices/carga-masiva'], {
+      queryParams: { rendicionId: this.id },
+    });
+  }
+
   getExpenseTypeLabel(expense: any): string {
     const type = expense?.expenseType;
     if (type === 'planilla_movilidad') return 'Planilla Movilidad';
