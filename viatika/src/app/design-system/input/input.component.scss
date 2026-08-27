@@ -1,4 +1,22 @@
 :host {
   display: block;
-}
 
+  /**
+   * `@tailwindcss/forms` estiliza los controles con selectores de atributo sin
+   * nombre de etiqueta (`[type=date]`, `[type=number]`, `[type=email]`…), y el
+   * atributo `type` del componente queda escrito en el host. Resultado:
+   * `<app-input type="date">` matcheaba esas reglas y se pintaba un borde gris
+   * alrededor de la etiqueta y del campo, además del borde del input real.
+   *
+   * Solo pasaba con un `type` explícito: sin él no hay atributo en el host, por
+   * eso los campos de texto se veían bien y los de fecha y número no.
+   */
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background-color: transparent;
+  box-shadow: none;
+  font-size: inherit;
+  line-height: inherit;
+}

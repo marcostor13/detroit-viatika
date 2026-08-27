@@ -39,6 +39,14 @@ export const routes: Routes = [
         canActivate: [AuthColaboradorGuard],
       },
       {
+        path: 'invoices/carga-masiva',
+        loadComponent: () =>
+          import('./modules/invoices/bulk-upload/bulk-upload.component').then(
+            (m) => m.BulkUploadComponent
+          ),
+        canActivate: [AuthColaboradorGuard],
+      },
+      {
         path: 'invoices/edit/:id',
         component: AddInvoiceComponent,
         canActivate: [AuthColaboradorGuard],
