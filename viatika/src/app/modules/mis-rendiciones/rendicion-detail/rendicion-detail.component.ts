@@ -17,6 +17,7 @@ import {
 } from '../../../services/accounting-entries.service';
 import { IExpenseReport, IChainStep, ICajaChicaFondoResumen } from '../../../interfaces/expense-report.interface';
 import { buildReportFlowSteps, FlowStep } from '../../../shared/flow-steps.util';
+import { chainLevelLabels } from '../../../shared/approval-level-label.util';
 import { rendicionCajaChicaStatusLabel } from '../../../interfaces/fondo-caja-chica.interface';
 import { FlowTimelineComponent } from '../../../design-system/flow-timeline/flow-timeline.component';
 import { IProject } from '../../invoices/interfaces/project.interface';
@@ -4042,6 +4043,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   /** Cadena completa del comprobante para la visualización de niveles (N1/N2/…). Aprobación en paralelo: cada paso es independiente, no hay "futuro". */
   getExpenseChainSteps(expense: any): Array<{
     level: number;
+    /** Etiqueta del paso: "N1", o "N2-1"/"N2-2" si el nivel se repite en la cadena. */
+    nivelLabel: string;
     state: 'completado' | 'pendiente';
     approverNames: string;
     escalatedFrom?: number;
@@ -4050,11 +4053,16 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }> {
     const chain: IChainStep[] = expense?.approverChain ?? [];
     const history: Array<{ level: number; approvedBy: string; action: string; date: string }> = expense?.approvalHistory ?? [];
-    return chain.map((step: any) => {
+    // Un comprobante imputado a un centro de costo ajeno tiene DOS pasos de
+    // nivel 2 (el del centro principal y el del seleccionado): sin sub-numerar
+    // salían los dos como "N2" y no se distinguía cuál era cuál.
+    const nivelLabels = chainLevelLabels(chain.map((step: any, i: number) => Number(step?.level ?? i + 1)));
+    return chain.map((step: any, i: number) => {
       const state: 'completado' | 'pendiente' = step.approved ? 'completado' : 'pendiente';
       const entry = history.find(h => h.level === step.level && h.action === 'approved');
       return {
         level: step.level,
+        nivelLabel: nivelLabels[i],
         state,
         approverNames: this.chainStepApproverNames(step),
         escalatedFrom: step.escalatedFrom,

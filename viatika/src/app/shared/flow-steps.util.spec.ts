@@ -94,8 +94,10 @@ describe('buildReportFlowSteps', () => {
       expenseIds: [{ _id: 'e1', status: 'pending', approverChain: chain }],
     });
 
+    // Acepta también los niveles sub-numerados (N2-1 / N2-2) que aparecen
+    // cuando un mismo nivel se repite en la cadena.
     const approverSteps = (r: any) =>
-      buildReportFlowSteps(r).filter(s => /^N\d+ · /.test(s.label));
+      buildReportFlowSteps(r).filter(s => /^N\d+(-\d+)? · /.test(s.label));
 
     it('abre un paso por nivel, en orden N1 y luego N2', () => {
       const steps = approverSteps(
@@ -250,6 +252,132 @@ describe('buildReportFlowSteps', () => {
         'N1 · Aprobado por Ana',
         'N2 · Falta aprobación de Ana',
       ]);
+    });
+
+    /**
+     * Rendición imputada a un centro de costo que NO es del colaborador
+     * (`buildRendicionChain`, rama no asignada): la cadena lleva tres pasos
+     * —N1 y N2 del centro principal, N2 del centro seleccionado— y los dos
+     * últimos son de nivel 2. Agrupados solo por `level` salían fundidos en una
+     * única línea "N2" con los aprobadores de ambas etapas mezclados, así que
+     * no se podía saber en cuál de las dos estaba trabada la rendición.
+     */
+    describe('centro de costo ajeno: N1 / N2-1 / N2-2', () => {
+      const cadenaAjena = (n1Aprobado: boolean, n2PrincipalAprobado = false) => [
+        {
+          level: 1,
+          projectRole: 'principal',
+          approved: n1Aprobado,
+          approvedAt: n1Aprobado ? '2026-08-26T10:00:00.000Z' : undefined,
+          approverIds: [{ _id: 'u1', name: 'Leon' }],
+        },
+        {
+          level: 2,
+          projectRole: 'principal',
+          approved: n2PrincipalAprobado,
+          approvedAt: n2PrincipalAprobado ? '2026-08-26T12:00:00.000Z' : undefined,
+          approverIds: [{ _id: 'u2', name: 'Eddy' }, { _id: 'u3', name: 'Juan' }],
+        },
+        {
+          level: 2,
+          projectRole: 'seleccionado',
+          approved: false,
+          approverIds: [{ _id: 'u4', name: 'Jorge' }],
+        },
+      ];
+
+      it('abre las tres etapas y sub-numera los dos niveles 2', () => {
+        const steps = approverSteps(rendicionCon(cadenaAjena(true)));
+
+        expect(steps.map(s => s.label)).toEqual([
+          'N1 · Aprobado por Leon',
+          'N2-1 · Falta aprobación de Eddy / Juan',
+          'N2-2 · Falta aprobación de Jorge',
+        ]);
+      });
+
+      // VD-133: la cadena es consecutiva. El N2 del centro seleccionado no
+      // puede firmar todavía, así que no se anuncia como acción pendiente suya.
+      it('deja activa solo la etapa cuyo turno es', () => {
+        const steps = approverSteps(rendicionCon(cadenaAjena(true)));
+
+        expect(steps.map(s => s.state)).toEqual(['completed', 'active', 'upcoming']);
+      });
+
+      it('avanza el turno a N2-2 cuando N2-1 ya firmó', () => {
+        const steps = approverSteps(rendicionCon(cadenaAjena(true, true)));
+
+        expect(steps.map(s => s.label)).toEqual([
+          'N1 · Aprobado por Leon',
+          'N2-1 · Aprobado por Eddy / Juan',
+          'N2-2 · Falta aprobación de Jorge',
+        ]);
+        expect(steps.map(s => s.state)).toEqual(['completed', 'completed', 'active']);
+      });
+
+      // El centro de costo se elige por comprobante: en la misma rendición
+      // puede haber uno propio (dos pasos) y otro ajeno (tres).
+      it('junta las etapas de comprobantes con cadenas distintas', () => {
+        const steps = approverSteps({
+          _id: 'r-mixta',
+          type: 'rendicion',
+          status: 'submitted',
+          createdAt: '2026-08-25T00:00:00.000Z',
+          expenseIds: [
+            { _id: 'e1', status: 'pending', approverChain: cadenaAjena(true).slice(0, 2) },
+            { _id: 'e2', status: 'pending', approverChain: cadenaAjena(true) },
+          ],
+        });
+
+        expect(steps.map(s => s.label)).toEqual([
+          'N1 · Aprobado por Leon',
+          'N2-1 · Falta aprobación de Eddy / Juan',
+          'N2-2 · Falta aprobación de Jorge',
+        ]);
+      });
+
+      // Sin repetición no hay sub-numeración: el centro propio sigue mostrando
+      // "N1" y "N2" a secas.
+      it('no sub-numera cuando el nivel aparece una sola vez', () => {
+        const steps = approverSteps(rendicionCon(cadenaAjena(true).slice(0, 2)));
+
+        expect(steps.map(s => s.label)).toEqual([
+          'N1 · Aprobado por Leon',
+          'N2 · Falta aprobación de Eddy / Juan',
+        ]);
+      });
+
+      // La solicitud de fondos hacia otro centro de costo tiene el mismo
+      // problema: `buildSolicitudChain` arma dos pasos, ambos de nivel 2.
+      it('sub-numera también la fase solicitud de un viático', () => {
+        const steps = buildReportFlowSteps({
+          _id: 'v-ajeno',
+          type: 'viatico',
+          status: 'submitted',
+          createdAt: '2026-08-20T00:00:00.000Z',
+          viaticoPaidAmount: 100,
+          viaticoApproverChain: [
+            {
+              level: 2,
+              projectRole: 'principal',
+              approved: true,
+              approvedAt: '2026-08-21T09:00:00.000Z',
+              approverIds: [{ _id: 'u2', name: 'Eddy' }],
+            },
+            {
+              level: 2,
+              projectRole: 'seleccionado',
+              approved: true,
+              approvedAt: '2026-08-21T11:00:00.000Z',
+              approverIds: [{ _id: 'u4', name: 'Jorge' }],
+            },
+          ],
+          expenseIds: [],
+        }).filter(s => s.group === 'solicitud');
+
+        expect(steps[1].label).toBe('N2-1 · Aprobado por Eddy');
+        expect(steps[2].label).toBe('N2-2 · Aprobado por Jorge');
+      });
     });
   });
 });
@@ -620,6 +748,72 @@ describe('rendición directa del colaborador', () => {
   it('una directa que terminó en devolución sigue el otro camino', () => {
     const r: any = { ...directaEnAprobacion(), status: 'returned', settlement: { type: 'devolucion' } };
     expect(labels(r)).not.toContain('Reembolso de Tesorería');
+  });
+
+  /**
+   * La directa no nace de una solicitud: el colaborador la abre y carga sus
+   * comprobantes. El primer hito decía "Solicitud enviada" desde el minuto
+   * cero, así que mientras todavía estaba registrando gastos la pantalla le
+   * decía que ya la había enviado.
+   */
+  describe('primer hito: registrando gastos / rendición enviada', () => {
+    const directaAbierta = () => ({
+      _id: 'rd-open',
+      isDirecta: true,
+      status: 'open',
+      createdAt: '2026-08-19T00:00:00.000Z',
+      expenseIds: [],
+    });
+
+    it('mientras registra gastos no dice que la envió', () => {
+      const l = labels(directaAbierta());
+
+      expect(l).not.toContain('Solicitud enviada');
+      expect(l).not.toContain('Rendición enviada');
+      expect(l[0]).toBe('Registrando gastos');
+    });
+
+    it('da por hecho el registro, con fecha de apertura', () => {
+      const p = paso(directaAbierta(), 'Registrando gastos');
+
+      expect(p?.state).toBe('completed');
+      expect(p?.date).toBeTruthy();
+      // Sin descripción: el label ya dice en qué etapa está.
+      expect(p?.description).toBeUndefined();
+    });
+
+    it('agrega el hito del envío una vez enviada', () => {
+      const l = labels(directaEnAprobacion());
+
+      expect(l[0]).toBe('Registrando gastos');
+      expect(l[1]).toBe('Rendición enviada');
+      expect(paso(directaEnAprobacion(), 'Rendición enviada')?.state).toBe('completed');
+    });
+
+    it('una directa cancelada sin enviar no dice que se envió', () => {
+      const r: any = { ...directaAbierta(), status: 'cancelled' };
+      expect(labels(r)).not.toContain('Rendición enviada');
+    });
+
+    it('el viático y la rendición normal conservan su solicitud', () => {
+      const viatico = labels({
+        _id: 'v-sol',
+        type: 'viatico',
+        status: 'pending_l1',
+        createdAt: '2026-08-19T00:00:00.000Z',
+        viaticoApproverChain: [{ level: 2, approved: false, approverIds: [{ _id: 'u1', name: 'Ana' }] }],
+      });
+      const normal = labels({
+        _id: 'r-sol',
+        type: 'rendicion',
+        status: 'solicited',
+        createdAt: '2026-08-19T00:00:00.000Z',
+        expenseIds: [],
+      });
+
+      expect(viatico[0]).toBe('Solicitud enviada');
+      expect(normal[0]).toBe('Solicitud enviada');
+    });
   });
 });
 

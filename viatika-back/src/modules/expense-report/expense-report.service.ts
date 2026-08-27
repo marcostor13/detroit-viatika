@@ -4808,7 +4808,26 @@ export class ExpenseReportService implements OnModuleInit {
     return updated
   }
 
-  /** Contabilidad reabre una rendición directamente (sin ciclo request/approve). Vuelve a estado 'open'. */
+  /**
+   * Contabilidad reabre una rendición directamente (sin ciclo request/approve).
+   * Vuelve a estado 'open' Y reabre sus comprobantes.
+   *
+   * Lo segundo no es un extra: sin ello la reapertura no sirve para nada. Un
+   * comprobante `approved` está bloqueado de por vida para el colaborador
+   * (`ExpenseService.assertCanMutateExpense` y `canMutateOwnExpense` en el
+   * detalle), así que una rendición reabierta sin tocar sus comprobantes queda
+   * "Abierta" pero con todos los gastos congelados en "Pendiente Contabilidad" y
+   * sin un solo botón de editar. Es el mismo reset que ya hacía la devolución de
+   * Contabilidad (`update()` → status 'rejected'); reabrir tiene exactamente la
+   * misma intención — que el colaborador corrija — y necesita el mismo reset.
+   *
+   * `open` es reabrible a propósito: es justamente el estado en el que quedaron
+   * las rendiciones reabiertas antes de este arreglo (cabecera abierta,
+   * comprobantes congelados), y con el reset ya incluido volver a reabrir es la
+   * forma de desatascarlas. Sobre una rendición abierta normal la operación es
+   * inocua salvo por devolver a `pending` aprobaciones que el colaborador va a
+   * tener que pedir de nuevo, que es lo que Contabilidad pide al reabrir.
+   */
   async reopen(
     id: string,
     reopenedBy: string,
@@ -4821,7 +4840,7 @@ export class ExpenseReportService implements OnModuleInit {
     const report = await this.expenseReportModel.findById(id).exec()
     if (!report) throw new NotFoundException(`Rendición ${id} no encontrada`)
 
-    const nonReopenable: string[] = ['open', 'solicited', 'cancelled']
+    const nonReopenable: string[] = ['solicited', 'cancelled']
     if (nonReopenable.includes(report.status)) {
       throw new BadRequestException(
         `La rendición ya está en estado "${report.status}". No se puede reabrir.`
@@ -4855,6 +4874,15 @@ export class ExpenseReportService implements OnModuleInit {
       )
       .exec()
     if (!updated) throw new NotFoundException(`Rendición ${id} no encontrada`)
+
+    // Los comprobantes vuelven a ser editables: los no observados a `pending`
+    // con la cadena de aprobadores limpia, los observados conservan su rechazo y
+    // su motivo. Sin esto la rendición se reabre pero no se puede corregir.
+    await this.reopenExpensesForCollaboratorCorrection(id).catch(err => {
+      this.logger.error(
+        `No se pudieron reabrir los comprobantes de la rendición ${id}: ${err instanceof Error ? err.message : String(err)}`
+      )
+    })
 
     const collaborator = await this.userService.findEmailNameClient(
       report.userId.toString()
@@ -6184,8 +6212,10 @@ export class ExpenseReportService implements OnModuleInit {
    *
    * Ya NO lo llama `ExpenseService.rejectByContabilidad`: observar un
    * comprobante deja la rendición en Contabilidad (para poder observar varios).
-   * Lo llama `update()` cuando Contabilidad rechaza la rendición desde
-   * `pending_accounting`, que es el único acto que la devuelve.
+   * Lo llaman `update()` cuando Contabilidad rechaza la rendición desde
+   * `pending_accounting` (el único acto que la devuelve) y `reopen()`, que
+   * persigue lo mismo — que el colaborador corrija — y sin este reset dejaba la
+   * rendición abierta pero con todos sus comprobantes bloqueados.
    */
   async reopenExpensesForCollaboratorCorrection(
     reportId: string
