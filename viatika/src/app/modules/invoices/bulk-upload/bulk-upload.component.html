@@ -1,0 +1,493 @@
+<div class="p-4 sm:p-6 max-w-6xl mx-auto">
+
+  <!-- Cabecera -->
+  <div class="flex items-start gap-3 mb-6">
+    <button
+      type="button"
+      (click)="volver()"
+      aria-label="Volver"
+      class="mt-1 p-2 rounded-lg text-ink-500 hover:text-ink-900 hover:bg-ink-100 transition-colors"
+    >
+      <app-icon name="arrow-left" size="sm" />
+    </button>
+    <div>
+      <h1 class="text-xl sm:text-2xl font-bold text-secondary">Cargar varios comprobantes</h1>
+      <p class="text-sm text-tertiary mt-0.5">
+        Sube o fotografía todas las facturas juntas. Después le asignas la categoría a cada una.
+        @if (nombreRendicion()) {
+          <span class="text-ink-500"> · {{ nombreRendicion() }}</span>
+        }
+      </p>
+    </div>
+  </div>
+
+  <!-- Centro de costo del lote: fuera de caja chica no se elige por comprobante -->
+  @if (!isCajaChica()) {
+    <div class="bg-quaternary border border-divider rounded-xl p-4 mb-4">
+      @if (proyectoBloqueado()) {
+        <div class="flex items-center gap-2 text-sm text-tertiary">
+          <app-icon name="briefcase" size="sm" class="text-ink-500" />
+          <span>El centro de costo lo fija la rendición y se aplica a todo el lote.</span>
+        </div>
+      } @else {
+        <app-form-field
+          #loteProyectoField
+          label="Centro de costo del lote"
+          [required]="true"
+          helperText="Se aplica a todos los comprobantes de esta carga."
+        >
+          <app-project-select
+            [id]="loteProyectoField.fieldId"
+            [attr.aria-describedby]="loteProyectoField.describedBy()"
+            [projects]="projects"
+            [(ngModel)]="loteProyectId"
+            [invalid]="items.length > 0 && !loteProyectId"
+            placeholder="Seleccione el centro de costo…"
+          />
+        </app-form-field>
+      }
+    </div>
+  }
+
+  <!-- Zona de captura -->
+  <div
+    appFileDrop
+    [accept]="ACCEPT"
+    (filesDropped)="onFilesDropped($event)"
+    (filesRejected)="onFilesRejected($event)"
+    class="border-2 border-dashed border-ink-300 rounded-xl bg-quaternary text-center transition-colors"
+    [class.p-8]="items.length === 0"
+    [class.p-4]="items.length > 0"
+  >
+    @if (items.length === 0) {
+      <app-icon name="upload" size="xl" class="text-ink-300 mx-auto block" />
+      <p class="mt-3 font-semibold text-secondary">
+        Arrastra aquí todos los comprobantes
+      </p>
+      <p class="mt-1 text-sm text-tertiary">
+        No importa la categoría ni el orden. Se leen todos juntos y después los clasificas.
+      </p>
+    }
+    <div class="flex flex-wrap justify-center gap-2" [class.mt-4]="items.length === 0">
+      <app-button
+        label="Elegir archivos"
+        variant="primary"
+        size="sm"
+        [disabled]="isSaving()"
+        (clicked)="archivosInput.click()"
+      />
+      <app-button
+        label="Tomar fotos"
+        variant="secondary"
+        size="sm"
+        [disabled]="isSaving()"
+        (clicked)="camaraInput.click()"
+      />
+    </div>
+    <p class="mt-3 text-xs text-tertiary">
+      PDF, JPG o PNG · hasta {{ MAX_ARCHIVOS }} por lote · máx. 10 MB cada uno
+    </p>
+    <input
+      #archivosInput
+      type="file"
+      class="hidden"
+      multiple
+      [accept]="ACCEPT"
+      (change)="onFilesSelected($event)"
+    />
+    <input
+      #camaraInput
+      type="file"
+      class="hidden"
+      multiple
+      accept="image/*"
+      capture="environment"
+      (change)="onFilesSelected($event)"
+    />
+  </div>
+
+  @if (items.length > 0) {
+
+    <!-- Resumen del lote -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+      <div class="bg-quaternary border border-divider rounded-xl p-3">
+        <p class="text-xs font-semibold uppercase tracking-wide text-tertiary">En el lote</p>
+        <p class="text-2xl font-bold text-secondary tabular-nums">{{ items.length }}</p>
+      </div>
+      <div class="bg-quaternary border border-divider rounded-xl p-3">
+        <p class="text-xs font-semibold uppercase tracking-wide text-tertiary">Listos</p>
+        <p class="text-2xl font-bold tabular-nums" [class.text-success-ink]="listos.length > 0" [class.text-secondary]="listos.length === 0">
+          {{ listos.length }}
+        </p>
+      </div>
+      <div class="bg-quaternary border rounded-xl p-3" [class.border-warning]="sinCategoria > 0" [class.border-divider]="sinCategoria === 0">
+        <p class="text-xs font-semibold uppercase tracking-wide text-tertiary">Sin categoría</p>
+        <p class="text-2xl font-bold tabular-nums" [class.text-warning-ink]="sinCategoria > 0" [class.text-secondary]="sinCategoria === 0">
+          {{ sinCategoria }}
+        </p>
+      </div>
+      <div class="bg-quaternary border rounded-xl p-3" [class.border-warning]="conProblemaSunat > 0" [class.border-divider]="conProblemaSunat === 0">
+        <p class="text-xs font-semibold uppercase tracking-wide text-tertiary">Sin validar en SUNAT</p>
+        <p class="text-2xl font-bold tabular-nums" [class.text-warning-ink]="conProblemaSunat > 0" [class.text-secondary]="conProblemaSunat === 0">
+          {{ conProblemaSunat }}
+        </p>
+      </div>
+    </div>
+
+    <!-- Acciones sobre varios comprobantes -->
+    <div
+      class="mt-4 rounded-xl border p-3 flex flex-wrap items-center gap-2"
+      [ngClass]="seleccionados.length > 0
+        ? 'border-primary bg-primary/5'
+        : 'border-divider bg-quaternary'"
+    >
+      @if (seleccionados.length > 0) {
+        <span class="text-sm font-semibold text-primary">
+          {{ seleccionados.length }} seleccionado{{ seleccionados.length === 1 ? '' : 's' }}
+        </span>
+        <div class="w-56">
+          <app-search-select
+            [options]="categoryOptions"
+            placeholder="Asignar categoría…"
+            searchPlaceholder="Buscar categoría o cuenta…"
+            [ngModel]="''"
+            (ngModelChange)="asignarASeleccionados('categoryId', $event)"
+          />
+        </div>
+        @if (isCajaChica()) {
+          <div class="w-56">
+            <app-project-select
+              [projects]="projects"
+              placeholder="Asignar centro de costo…"
+              [ngModel]="''"
+              (ngModelChange)="asignarASeleccionados('proyectId', $event)"
+            />
+          </div>
+        }
+        <app-button
+          label="Quitar selección"
+          variant="ghost"
+          size="sm"
+          (clicked)="limpiarSeleccion()"
+        />
+      } @else {
+        <span class="text-sm text-tertiary">
+          Marca varias filas para asignarles la categoría@if (isCajaChica()) { y el centro de costo } de una vez.
+        </span>
+      }
+    </div>
+
+    <!-- Lista de comprobantes -->
+    <div class="mt-4 bg-quaternary border border-divider rounded-xl overflow-hidden">
+
+      <div class="flex items-center gap-3 px-4 py-2.5 bg-ink-100 border-b border-divider">
+        <input
+          type="checkbox"
+          class="w-4 h-4 accent-primary cursor-pointer"
+          aria-label="Seleccionar todos los comprobantes"
+          [checked]="todosSeleccionados"
+          (change)="toggleSeleccionTodos($any($event.target).checked)"
+        />
+        <span class="text-xs font-semibold uppercase tracking-wide text-tertiary">
+          Proveedor y comprobante
+        </span>
+      </div>
+
+      @for (item of items; track item.id) {
+        <div class="border-b border-divider last:border-b-0" [class.bg-background]="item.open">
+
+          <!-- Fila -->
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3">
+            <input
+              type="checkbox"
+              class="w-4 h-4 accent-primary cursor-pointer"
+              [attr.aria-label]="'Seleccionar ' + item.fileName"
+              [checked]="item.selected"
+              [disabled]="item.state === 'guardado'"
+              (change)="item.selected = $any($event.target).checked"
+            />
+
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold text-sm text-secondary truncate">
+                {{ item.razonSocial || item.fileName }}
+              </p>
+              <p class="text-xs text-tertiary truncate">
+                @if (item.rucEmisor) {
+                  RUC {{ item.rucEmisor }} · {{ item.serie }}-{{ item.correlativo }}
+                  @if (item.fechaEmision) { · {{ item.fechaEmision }} }
+                } @else {
+                  {{ item.fileName }}
+                }
+              </p>
+            </div>
+
+            <p class="text-sm font-semibold text-secondary tabular-nums whitespace-nowrap">
+              @if (item.total) { {{ simbolo(item) }} {{ item.total | number:'1.2-2' }} }
+            </p>
+
+            <!-- Estado del comprobante -->
+            <div class="flex flex-wrap items-center gap-2 justify-end">
+              @switch (item.state) {
+                @case ('leyendo') {
+                  <app-badge variant="info" size="sm" [dot]="true">Leyendo…</app-badge>
+                }
+                @case ('guardando') {
+                  <app-badge variant="info" size="sm" [dot]="true">Guardando…</app-badge>
+                }
+                @case ('guardado') {
+                  <app-badge variant="success" size="sm">Guardado</app-badge>
+                }
+                @default {
+                  @if (item.isValidating) {
+                    <app-badge variant="info" size="sm" [dot]="true">Consultando SUNAT…</app-badge>
+                  } @else if (sunatEsValido(item)) {
+                    <app-badge variant="success" size="sm">SUNAT aceptado</app-badge>
+                  } @else if (item.sunatStatus) {
+                    <app-badge variant="error" size="sm">SUNAT rechazado</app-badge>
+                  } @else {
+                    <app-badge variant="warning" size="sm">Sin datos</app-badge>
+                  }
+                }
+              }
+
+              <!-- Categoría: se elige desde la fila, sin desplegar -->
+              @if (item.state !== 'guardado') {
+                <div class="w-48">
+                  <app-search-select
+                    [options]="categoryOptions"
+                    placeholder="Categoría…"
+                    searchPlaceholder="Buscar categoría o cuenta…"
+                    [invalid]="!item.categoryId"
+                    [(ngModel)]="item.categoryId"
+                  />
+                </div>
+
+                @if (isCajaChica()) {
+                  <div class="w-48">
+                    <app-project-select
+                      [projects]="projects"
+                      placeholder="Centro de costo…"
+                      [allowEmpty]="true"
+                      emptyLabel="Sin centro de costo"
+                      [(ngModel)]="item.proyectId"
+                      (ngModelChange)="onProyectoItemChange(item)"
+                    />
+                  </div>
+                  <div class="w-48">
+                    <app-search-select
+                      [options]="ordenTrabajoOptions(item)"
+                      placeholder="Orden de trabajo…"
+                      searchPlaceholder="Buscar OT…"
+                      [allowEmpty]="true"
+                      emptyLabel="Sin OT"
+                      [(ngModel)]="item.ordenTrabajoId"
+                    />
+                  </div>
+                }
+              }
+
+              <button
+                type="button"
+                (click)="toggleFila(item)"
+                [attr.aria-expanded]="item.open"
+                [attr.aria-label]="item.open ? 'Ocultar detalle' : 'Ver detalle'"
+                class="p-1.5 rounded-lg text-ink-500 hover:text-ink-900 hover:bg-ink-100 transition-colors"
+              >
+                <app-icon [name]="item.open ? 'chevron-up' : 'chevron-down'" size="sm" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Aviso de lo que falta, en la fila cerrada -->
+          @if (!item.open && item.state !== 'guardado' && faltaEn(item)) {
+            <p class="px-4 pb-3 -mt-1 text-xs text-warning-ink">{{ faltaEn(item) }}</p>
+          }
+          @if (!item.open && item.errorMessage) {
+            <p class="px-4 pb-3 -mt-1 text-xs text-error-ink">{{ item.errorMessage }}</p>
+          }
+
+          <!-- Detalle desplegado -->
+          @if (item.open) {
+            <div class="px-4 pb-5 grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
+
+              <!-- Vista previa -->
+              <div class="rounded-xl border border-divider bg-quaternary p-3 self-start">
+                @if (item.previewUrl) {
+                  <img
+                    [src]="item.previewUrl"
+                    [alt]="'Vista previa de ' + item.fileName"
+                    class="w-full rounded-lg border border-divider object-contain max-h-56"
+                  />
+                } @else {
+                  <div class="flex flex-col items-center justify-center gap-2 py-8 text-tertiary">
+                    <app-icon name="file-text" size="lg" />
+                    <span class="text-xs">PDF sin vista previa</span>
+                  </div>
+                }
+                <p class="mt-2 text-xs text-tertiary break-all">{{ item.fileName }}</p>
+                @if (item.objectUrl) {
+                  <app-button
+                    [label]="item.isPdf ? 'Abrir PDF' : 'Abrir archivo'"
+                    variant="secondary"
+                    size="sm"
+                    [fullWidth]="true"
+                    (clicked)="abrirArchivo(item)"
+                  />
+                }
+              </div>
+
+              <div class="flex flex-col gap-4">
+
+                <!-- Estado SUNAT -->
+                <div
+                  class="rounded-xl px-4 py-3 text-sm border flex items-start gap-2"
+                  [ngClass]="sunatEsValido(item)
+                    ? 'bg-success/10 border-success text-success-ink'
+                    : 'bg-warning/10 border-warning text-warning-ink'"
+                >
+                  <app-icon [name]="sunatEsValido(item) ? 'circle-check' : 'triangle-alert'" size="sm" />
+                  <span>{{ sunatMensaje(item) }}</span>
+                </div>
+
+                @if (item.errorMessage) {
+                  <div class="rounded-xl px-4 py-3 text-sm border border-error text-error-ink bg-error/10">
+                    {{ item.errorMessage }}
+                  </div>
+                }
+
+                <!-- Datos del comprobante -->
+                <div class="grid gap-3 sm:grid-cols-3">
+                  <app-form-field #tipoField label="Tipo">
+                    <select
+                      [id]="tipoField.fieldId"
+                      [attr.aria-describedby]="tipoField.describedBy()"
+                      class="w-full bg-quaternary border border-divider rounded px-3 py-2.5 text-sm text-secondary focus:outline-none focus:border-primary"
+                      [(ngModel)]="item.tipoComprobante"
+                    >
+                      @for (tipo of TIPOS_COMPROBANTE; track tipo) {
+                        <option [value]="tipo">{{ tipo }}</option>
+                      }
+                    </select>
+                  </app-form-field>
+                  <app-input label="RUC emisor" [(value)]="item.rucEmisor" />
+                  <app-input label="Razón social" [(value)]="item.razonSocial" />
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-4">
+                  <app-input label="Serie" [(value)]="item.serie" (changed)="onSerieChange(item)" />
+                  <app-input label="Correlativo" [(value)]="item.correlativo" />
+                  <app-input label="Fecha de emisión" type="date" [(value)]="item.fechaEmision" />
+                  <app-input
+                    label="Total"
+                    type="number"
+                    [value]="item.totalTexto"
+                    (changed)="onTotalChange(item, $event)"
+                  />
+                </div>
+
+                @if (!sunatEsValido(item)) {
+                  <div>
+                    <app-button
+                      [label]="item.sunatStatus ? 'Revalidar con SUNAT' : 'Validar con SUNAT'"
+                      variant="primary"
+                      size="sm"
+                      [loading]="item.isValidating"
+                      loadingLabel="Consultando…"
+                      (clicked)="revalidate(item)"
+                    />
+                  </div>
+                }
+
+                <app-input
+                  label="Comentario"
+                  [(value)]="item.comentario"
+                  placeholder="Ej. cena con cliente, 3 personas"
+                  [required]="true"
+                  helperText="Obligatorio: describe el gasto."
+                />
+
+                <!-- Firma: solo caja chica -->
+                @if (isCajaChica()) {
+                  <app-form-field
+                    label="Firma de quien recibió el dinero"
+                    [required]="true"
+                    helperText="Sin ella no se puede guardar el gasto de caja chica."
+                  >
+                    <div class="flex flex-wrap items-center gap-2">
+                      <app-button
+                        [label]="item.firmaFileName ? 'Cambiar firma' : 'Adjuntar firma'"
+                        variant="secondary"
+                        size="sm"
+                        [loading]="item.isUploadingFirma"
+                        loadingLabel="Subiendo…"
+                        (clicked)="firmaInput.click()"
+                      />
+                      @if (item.firmaFileName) {
+                        <span class="text-xs text-success-ink break-all">{{ item.firmaFileName }}</span>
+                        <app-button
+                          label="Copiar a los seleccionados"
+                          variant="ghost"
+                          size="sm"
+                          (clicked)="aplicarFirmaASeleccionados(item)"
+                        />
+                      }
+                      <input
+                        #firmaInput
+                        type="file"
+                        class="hidden"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        (change)="onFirmaSelected($event, item)"
+                      />
+                    </div>
+                  </app-form-field>
+                }
+
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                  <app-button
+                    label="Quitar del lote"
+                    variant="danger"
+                    size="sm"
+                    [disabled]="item.state === 'guardando'"
+                    (clicked)="quitar(item)"
+                  />
+                  <app-button label="Cerrar" variant="ghost" size="sm" (clicked)="toggleFila(item)" />
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Pie de guardado -->
+    <div class="mt-4 bg-quaternary border border-divider rounded-xl p-4 flex flex-wrap items-center gap-3">
+      <p class="text-sm text-secondary">
+        <span class="font-semibold tabular-nums">{{ listos.length }} de {{ items.length }}</span>
+        comprobantes listos para guardar
+        @if (pendientes.length > 0) {
+          <span class="text-warning-ink">
+            · {{ pendientes.length }} quedará{{ pendientes.length === 1 ? '' : 'n' }} pendiente{{ pendientes.length === 1 ? '' : 's' }}
+          </span>
+        }
+      </p>
+      <div class="ml-auto flex flex-wrap gap-2">
+        <app-button
+          label="Cancelar"
+          variant="secondary"
+          size="md"
+          [disabled]="isSaving()"
+          (clicked)="volver()"
+        />
+        <app-button
+          [label]="'Guardar ' + listos.length + ' comprobante' + (listos.length === 1 ? '' : 's')"
+          variant="primary"
+          size="md"
+          [disabled]="listos.length === 0 || isScanning()"
+          [loading]="isSaving()"
+          loadingLabel="Guardando…"
+          (clicked)="guardarListos()"
+        />
+      </div>
+    </div>
+  }
+</div>

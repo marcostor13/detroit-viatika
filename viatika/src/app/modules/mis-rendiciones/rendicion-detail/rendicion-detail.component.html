@@ -2473,6 +2473,17 @@
         </div>
       </button>
 
+      <button type="button" (click)="selectBulkUpload()"
+        class="flex items-center gap-4 p-4 rounded-xl border-2 border-divider hover:border-primary hover:bg-primary/5 transition-all text-left group">
+        <div class="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/10 transition-colors">
+          <app-icon name="upload" size="sm" />
+        </div>
+        <div>
+          <p class="font-semibold text-secondary text-sm">Varias facturas a la vez</p>
+          <p class="text-xs text-tertiary">Súbelas todas juntas y clasifícalas después</p>
+        </div>
+      </button>
+
       <button type="button" (click)="selectExpenseType('planilla_movilidad')"
         class="flex items-center gap-4 p-4 rounded-xl border-2 border-divider hover:border-primary hover:bg-primary/5 transition-all text-left group">
         <div class="p-2 rounded-lg bg-warning/10 text-warning-ink group-hover:bg-warning/10 transition-colors">
