@@ -31,7 +31,10 @@ import {
 import { ButtonComponent } from '../../../design-system/button/button.component';
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
-import { WorkerOption } from '../../../design-system/worker-select/worker-select.component';
+import {
+  WorkerOption,
+  WorkerSelectComponent,
+} from '../../../design-system/worker-select/worker-select.component';
 import {
   SearchSelectComponent,
   SearchSelectOption,
@@ -69,7 +72,7 @@ declare const google: any;
 @Component({
   selector: 'app-add-invoice',
   standalone: true,
-  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, SearchSelectComponent, PlacesAutocompleteDirective, FileDropDirective],
+  imports: [ReactiveFormsModule, FormsModule, CommonModule, ButtonComponent, IconComponent, ProjectSelectComponent, SearchSelectComponent, WorkerSelectComponent, PlacesAutocompleteDirective, FileDropDirective],
   templateUrl: './add-invoice.component.html',
   styleUrl: './add-invoice.component.scss',
 })
@@ -779,6 +782,17 @@ export default class AddInvoiceComponent implements OnInit {
               });
               this.mobilityRowsArray.push(group);
             }
+            // Caja chica: la planilla lleva un solo colaborador en todas sus
+            // filas, así que al editar se recupera del primero que lo traiga.
+            // Se asigna siempre (la bandera de caja chica llega por otra
+            // petición y puede resolver después); fuera de caja chica el
+            // control no se muestra ni se lee.
+            const colaboradorGuardado = rows.find((r: any) => r.colaboradorId)?.colaboradorId;
+            if (colaboradorGuardado) {
+              this.form.patchValue({
+                movilidadColaboradorId: String(colaboradorGuardado),
+              });
+            }
           }
         },
         error: (error) => {
@@ -1011,8 +1025,47 @@ export default class AddInvoiceComponent implements OnInit {
     return (u?.name || u?.email || '').trim();
   }
 
+  /**
+   * Caja chica: la planilla la registra el responsable del fondo, pero
+   * corresponde a quien realmente usó la movilidad, así que el colaborador se
+   * elige (uno para toda la planilla, igual que la firma que la acompaña).
+   * En viático y directa sigue siendo siempre quien rinde.
+   */
+  isCajaChicaPlanilla(): boolean {
+    return this.isCajaChicaReport() && this.expenseType() === 'planilla_movilidad';
+  }
+
+  /** Id del colaborador elegido en caja chica; vacío mientras no se elija. */
+  private get cajaChicaColaboradorId(): string {
+    return String(this.form.get('movilidadColaboradorId')?.value || '').trim();
+  }
+
+  /**
+   * Nombre que llevarán todas las filas de la planilla: el del colaborador
+   * elegido en caja chica, o el de quien rinde en el resto de casos.
+   */
+  get planillaColaboradorNombre(): string {
+    if (!this.isCajaChicaPlanilla()) return this.currentUserName;
+    const w = this.workers.find((x) => x._id === this.cajaChicaColaboradorId);
+    return w?.name?.trim() || w?.email || '';
+  }
+
+  /** Error inline del colaborador de la planilla (caja chica, sin elegir y tocado). */
+  isCajaChicaColaboradorInvalid(): boolean {
+    const ctrl = this.form.get('movilidadColaboradorId');
+    return this.isCajaChicaPlanilla() && !this.cajaChicaColaboradorId && !!ctrl?.touched;
+  }
+
   /** Resuelve id + nombre del colaborador de una fila a partir de sus valores de formulario. */
   private resolveRowColaborador(r: any): { colaboradorId: string; colaboradorNombre: string } {
+    // Caja chica: manda el colaborador de la planilla, no quien la registra ni
+    // lo que traiga la fila.
+    if (this.isCajaChicaPlanilla() && this.cajaChicaColaboradorId) {
+      return {
+        colaboradorId: this.cajaChicaColaboradorId,
+        colaboradorNombre: this.planillaColaboradorNombre,
+      };
+    }
     if (r?.colaboradorEsTercero && r?.colaboradorId) {
       const w = this.workers.find((x) => x._id === String(r.colaboradorId));
       return {
@@ -1397,6 +1450,10 @@ export default class AddInvoiceComponent implements OnInit {
       receiptMonto: [null],
       // Planilla de movilidad
       mobilityRows: this.fb.array([]),
+      // Caja chica: colaborador a cuyo nombre se registra TODA la planilla (el
+      // que realmente usó la movilidad). Solo se usa ahí; en viático y directa
+      // la planilla es siempre de quien rinde. Ver `isCajaChicaPlanilla`.
+      movilidadColaboradorId: [''],
     });
   }
 
@@ -1685,6 +1742,14 @@ export default class AddInvoiceComponent implements OnInit {
         catCtrl.setValidators([Validators.required]);
         catCtrl.updateValueAndValidity({ emitEvent: false });
       }
+    }
+    // Caja chica: la planilla va a nombre de quien usó la movilidad y ese
+    // colaborador es obligatorio. Fuera de caja chica el campo ni se muestra,
+    // así que se le quitan los validadores para no bloquear el guardado.
+    const colabCtrl = this.form.get('movilidadColaboradorId');
+    if (colabCtrl) {
+      colabCtrl.setValidators(this.isCajaChicaPlanilla() ? [Validators.required] : []);
+      colabCtrl.updateValueAndValidity({ emitEvent: false });
     }
     this.syncFechaGastoValidator();
     // Otros Gastos: AL trae su categoría puesta y el resto de sub-tipos la
@@ -2106,10 +2171,14 @@ export default class AddInvoiceComponent implements OnInit {
         const categoryOk = catCtrl?.disabled === true || catCtrl?.valid === true;
         // El colaborador debe tener al menos una categoría de Planilla de movilidad asignada.
         const movilidadCategoryOk = this.movilidadCategories.length > 0;
+        // Caja chica: sin elegir a quién corresponde la planilla no se guarda.
+        const colaboradorOk =
+          !this.isCajaChicaPlanilla() || !!this.cajaChicaColaboradorId;
         return (
           proyectOk &&
           categoryOk &&
           movilidadCategoryOk &&
+          colaboradorOk &&
           this.mobilityRowsArray.length > 0 &&
           this.mobilityRowsArray.valid &&
           !this.hasAnyMobilityLimitExceeded()
@@ -2282,6 +2351,14 @@ export default class AddInvoiceComponent implements OnInit {
         this.notificationService.show('Falta el proyecto de alguna fila', 'error');
         return;
       }
+    }
+    if (this.isCajaChicaPlanilla() && !this.cajaChicaColaboradorId) {
+      this.form.get('movilidadColaboradorId')?.markAsTouched();
+      this.notificationService.show(
+        'Selecciona el colaborador a nombre de quien va la planilla',
+        'error'
+      );
+      return;
     }
     if (this.hasMobilityTerceroSinColaborador()) {
       this.mobilityRowsArray.markAllAsTouched();
@@ -2767,6 +2844,14 @@ export default class AddInvoiceComponent implements OnInit {
       payload.fechaEmision = formValue.receiptFecha;
       payload.total = Number(formValue.receiptMonto) || 0;
     } else if (type === 'planilla_movilidad') {
+      if (this.isCajaChicaPlanilla() && !this.cajaChicaColaboradorId) {
+        this.form.get('movilidadColaboradorId')?.markAsTouched();
+        this.notificationService.show(
+          'Selecciona el colaborador a nombre de quien va la planilla',
+          'error'
+        );
+        return;
+      }
       if (this.hasMobilityTerceroSinColaborador()) {
         this.mobilityRowsArray.markAllAsTouched();
         this.notificationService.show('Selecciona el trabajador en las filas marcadas como tercero', 'error');
