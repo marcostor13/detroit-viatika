@@ -854,7 +854,7 @@ describe('AddInvoiceComponent', () => {
         const texto: string = fixture.nativeElement.textContent;
         expect(texto).toContain('Adjunto');
         expect(texto).toContain('(opcional)');
-        expect(texto).toContain('Haz clic para adjuntar un respaldo, si lo tienes');
+        expect(texto).toContain('Haz clic para adjuntar uno o varios respaldos, si los tienes');
       });
 
       it('en los demás sub-tipos el adjunto sigue siendo obligatorio', () => {
@@ -863,7 +863,7 @@ describe('AddInvoiceComponent', () => {
         fixture.detectChanges();
 
         const texto: string = fixture.nativeElement.textContent;
-        expect(texto).toContain('Haz clic para adjuntar un comprobante');
+        expect(texto).toContain('Haz clic para adjuntar uno o varios comprobantes');
         expect(fixture.componentInstance.isFormValid()).toBeFalse();
       });
 
@@ -1094,6 +1094,67 @@ describe('AddInvoiceComponent', () => {
       expect(payload.declaracionJuradaFirmante).toBe('John Doe');
       expect(payload.total).toBe(50);
       expect(notificationService.show).toHaveBeenCalledWith('Gasto guardado correctamente', 'success');
+    });
+
+    /**
+     * Un gasto puede necesitar más de un documento de respaldo: la zona de
+     * adjuntos acepta varios y todos tienen que llegar al backend.
+     */
+    describe('adjuntos de respaldo', () => {
+      function gastoListo(): AddInvoiceComponent {
+        invoicesService.createOtherExpense.and.returnValue(of({ _id: 'e1' } as any));
+        const component = createComponent();
+        component.form.patchValue({
+          proyectId: 'p1',
+          categoryId: 'cat1',
+          totalOtros: 30,
+          rucEmisor: '20123456789',
+          fechaEmision: '2026-08-12',
+        });
+        component.otrosSubTipo.set('TK');
+        return component;
+      }
+
+      it('sube los dos adjuntos y manda la lista completa', () => {
+        uploadService.uploadFile.and.returnValues(
+          { uploadProgress$: of(100), downloadUrl$: of('http://uno.pdf') } as any,
+          { uploadProgress$: of(100), downloadUrl$: of('http://dos.jpg') } as any
+        );
+        const component = gastoListo();
+        component.onFilesDroppedMultiple([
+          new File([''], 'uno.pdf'),
+          new File([''], 'dos.jpg'),
+        ]);
+        component.saveOtherExpense();
+
+        expect(uploadService.uploadFile).toHaveBeenCalledTimes(2);
+        const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+        expect(payload.imageUrl).toBe('http://uno.pdf');
+        expect(payload.attachments).toEqual(['http://uno.pdf', 'http://dos.jpg']);
+      });
+
+      it('con un solo adjunto no manda la lista', () => {
+        const component = gastoListo();
+        component.onFilesDroppedMultiple([new File([''], 'uno.pdf')]);
+        component.saveOtherExpense();
+
+        const payload = invoicesService.createOtherExpense.calls.mostRecent().args[0] as any;
+        expect(payload.imageUrl).toBe('http://file-url');
+        expect(payload.attachments).toBeUndefined();
+      });
+
+      // El adjunto sigue siendo obligatorio fuera de AL: adjuntar varios no
+      // aflojó esa regla.
+      it('sin ningún adjunto sigue pidiendo el comprobante', () => {
+        const component = gastoListo();
+        component.saveOtherExpense();
+
+        expect(notificationService.show).toHaveBeenCalledWith(
+          'Debes adjuntar el comprobante',
+          'error'
+        );
+        expect(invoicesService.createOtherExpense).not.toHaveBeenCalled();
+      });
     });
 
     it('creates a non-DJ expense without declaracionJuradaFirmante', () => {
@@ -1676,6 +1737,122 @@ describe('AddInvoiceComponent', () => {
       expect(notificationService.show).toHaveBeenCalledWith('Planilla guardada correctamente', 'success');
     });
 
+    /**
+     * Una planilla puede necesitar más de un documento de respaldo: la zona de
+     * adjuntos acepta varios y todos tienen que llegar al backend.
+     */
+    describe('adjuntos de respaldo', () => {
+      function planillaLista(): AddInvoiceComponent {
+        invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
+        const component = createComponent();
+        component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+        component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', ordenTrabajoId: 'ot1' });
+        component.addMobilityRow();
+        component.mobilityRowsArray.at(0).patchValue({
+          fecha: '2026-02-01', total: 10, origen: 'A', destino: 'B', gestion: 'g1',
+        });
+        return component;
+      }
+
+      it('sube los dos adjuntos y manda la lista completa', () => {
+        uploadService.uploadFile.and.returnValues(
+          { uploadProgress$: of(100), downloadUrl$: of('http://uno.pdf') } as any,
+          { uploadProgress$: of(100), downloadUrl$: of('http://dos.jpg') } as any
+        );
+        const component = planillaLista();
+        component.onFilesDroppedMultiple([
+          new File([''], 'uno.pdf'),
+          new File([''], 'dos.jpg'),
+        ]);
+        component.saveMobilitySheet();
+
+        expect(uploadService.uploadFile).toHaveBeenCalledTimes(2);
+        const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0];
+        // El primero queda como `imageUrl`: es el que abren las fichas.
+        expect(payload.imageUrl).toBe('http://uno.pdf');
+        expect(payload.attachments).toEqual(['http://uno.pdf', 'http://dos.jpg']);
+      });
+
+      it('con un solo adjunto no manda la lista', () => {
+        const component = planillaLista();
+        component.onFilesDroppedMultiple([new File([''], 'uno.pdf')]);
+        component.saveMobilitySheet();
+
+        const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0];
+        expect(payload.imageUrl).toBe('http://file-url');
+        expect(payload.attachments).toBeUndefined();
+      });
+
+      // El adjunto es opcional en la planilla.
+      it('sin adjuntos guarda igual y no sube nada', () => {
+        const component = planillaLista();
+        component.saveMobilitySheet();
+
+        expect(uploadService.uploadFile).not.toHaveBeenCalled();
+        const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0];
+        expect(payload.imageUrl).toBeUndefined();
+      });
+
+      it('quitar un adjunto lo saca de la carga', () => {
+        const component = planillaLista();
+        component.onFilesDroppedMultiple([
+          new File([''], 'uno.pdf'),
+          new File([''], 'dos.jpg'),
+        ]);
+        component.removeSelectedFile(0);
+        component.saveMobilitySheet();
+
+        expect(component.selectedFiles.map(f => f.name)).toEqual(['dos.jpg']);
+        expect(uploadService.uploadFile).toHaveBeenCalledTimes(1);
+      });
+
+      it('no adjunta dos veces el mismo archivo', () => {
+        const component = planillaLista();
+        component.onFilesDroppedMultiple([new File([''], 'uno.pdf')]);
+        component.onFilesDroppedMultiple([new File([''], 'uno.pdf')]);
+
+        expect(component.selectedFiles.length).toBe(1);
+        expect(notificationService.show).toHaveBeenCalledWith(
+          'Ese archivo ya estaba adjunto.',
+          'warning'
+        );
+      });
+
+      it('avisa y recorta al pasarse del tope', () => {
+        const component = planillaLista();
+        component.onFilesDroppedMultiple(
+          Array.from({ length: component.maxAdjuntos + 3 }, (_, i) => new File([''], `f${i}.pdf`))
+        );
+
+        expect(component.selectedFiles.length).toBe(component.maxAdjuntos);
+        expect(notificationService.show).toHaveBeenCalledWith(
+          jasmine.stringMatching(/Solo se pueden adjuntar/),
+          'warning'
+        );
+      });
+
+      it('selectedFile sigue siendo el primero de la lista', () => {
+        const component = planillaLista();
+        component.onFilesDroppedMultiple([
+          new File([''], 'uno.pdf'),
+          new File([''], 'dos.jpg'),
+        ]);
+        expect(component.selectedFile.name).toBe('uno.pdf');
+
+        component.removeSelectedFile(0);
+        expect(component.selectedFile.name).toBe('dos.jpg');
+      });
+
+      // Cambiar de tipo de gasto no puede arrastrar los adjuntos del anterior.
+      it('cambiar de tipo de gasto limpia los adjuntos', () => {
+        const component = planillaLista();
+        component.onFilesDroppedMultiple([new File([''], 'uno.pdf')]);
+        component.setExpenseType('otros_gastos');
+
+        expect(component.selectedFiles).toEqual([]);
+      });
+    });
+
     it('blocks submission when the daily limit is exceeded', () => {
       const component = createComponent();
       component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
@@ -1695,6 +1872,59 @@ describe('AddInvoiceComponent', () => {
         'error'
       );
       expect(invoicesService.createMobilitySheet).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * El cuarto tipo del selector lleva a la carga masiva. Antes solo estaba en el
+   * modal de "Añadir Gasto": quien ya había entrado con "Factura" y recién
+   * entonces veía que tenía varias, no podía cambiarse sin volver atrás.
+   */
+  describe('irACargaMasiva', () => {
+    it('navega a la carga masiva llevándose la rendición', () => {
+      const component = createComponent({}, { rendicionId: 'r1' });
+      component.irACargaMasiva();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/invoices/carga-masiva'], {
+        queryParams: { rendicionId: 'r1' },
+      });
+    });
+
+    // La carga masiva lee los mismos parámetros para saber con qué criterio
+    // trabajar: sin reenviarlos, una directa de Contabilidad se abriría como
+    // una rendición normal de colaborador.
+    it('reenvía también el modo y el origen con los que se abrió', () => {
+      const component = createComponent({}, {
+        rendicionId: 'r1',
+        mode: 'directa',
+        from: 'contabilidad',
+      });
+      component.irACargaMasiva();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/invoices/carga-masiva'], {
+        queryParams: { rendicionId: 'r1', mode: 'directa', from: 'contabilidad' },
+      });
+    });
+
+    it('sin rendición navega igual, sin parámetros vacíos', () => {
+      const component = createComponent();
+      component.irACargaMasiva();
+
+      expect(router.navigate).toHaveBeenCalledWith(['/invoices/carga-masiva'], {
+        queryParams: {},
+      });
+    });
+
+    it('el botón aparece en el selector de tipo al crear', () => {
+      createComponent(); // configura el TestBed con los servicios simulados
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      fixture.detectChanges();
+      const texto: string = fixture.nativeElement.textContent;
+      expect(texto).toContain('Varias Facturas');
+      // Los otros tres siguen ahí: es un cuarto tipo, no un reemplazo.
+      expect(texto).toContain('Factura');
+      expect(texto).toContain('Planilla de Movilidad');
+      expect(texto).toContain('Otros Gastos');
     });
   });
 

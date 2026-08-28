@@ -11,6 +11,8 @@ import {
 } from '../../../utils/fecha-emision.util';
 import { DEFAULT_MONEDA, monedaSymbol } from '../../../constants/moneda';
 import { chainLevelLabels } from '../../../shared/approval-level-label.util';
+import { AttachmentListComponent } from '../../../design-system/attachment-list/attachment-list.component';
+import { expenseAttachments, hasMultipleAttachments } from '../../../utils/adjuntos.util';
 
 // ─── Tipos auxiliares ─────────────────────────────────────────────────────────
 type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos';
@@ -18,7 +20,7 @@ type ExpenseTypeKey = 'factura' | 'planilla_movilidad' | 'otros_gastos';
 @Component({
   selector: 'app-gasto-detalle',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, AttachmentListComponent],
   templateUrl: './gasto-detalle.component.html',
 })
 export class GastoDetalleComponent implements OnInit {
@@ -345,6 +347,16 @@ emissionDateText(exp: Record<string, unknown>): string {
   }
 
   hasFile(exp: Record<string, unknown>): boolean { return this.getFileUrl(exp) !== null; }
+
+  /** Todos los adjuntos de respaldo del comprobante (ver `adjuntos.util`). */
+  attachments(exp: Record<string, unknown>): string[] {
+    return expenseAttachments(exp);
+  }
+
+  /** Solo hace falta listarlos cuando hay más de uno. */
+  hasMultipleAttachments(exp: Record<string, unknown>): boolean {
+    return hasMultipleAttachments(exp);
+  }
 
   isPreviewImage(exp: Record<string, unknown>): boolean {
     const u = this.getFileUrl(exp);

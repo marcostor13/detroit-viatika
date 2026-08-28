@@ -90,6 +90,14 @@ export interface BulkInvoiceItem {
   sunatValidation: any;
   isValidating: boolean;
 
+  /**
+   * Nombre del archivo que ya trae este mismo comprobante dentro del lote.
+   * Vacío cuando no está repetido. El backend detecta el duplicado contra lo
+   * guardado, pero dos copias del mismo archivo en un lote no se ven entre
+   * ellas hasta que la primera se guarda.
+   */
+  duplicadoDe: string;
+
   /** Clasificación que pone el usuario. */
   categoryId: string;
   /** Solo caja chica: centro de costo, OT y firma se eligen por comprobante. */
@@ -363,6 +371,7 @@ export class BulkUploadComponent implements OnInit, OnDestroy {
       sunatStatus: null,
       sunatValidation: null,
       isValidating: false,
+      duplicadoDe: '',
       categoryId: '',
       proyectId: this.isCajaChica() ? this.loteProyectId : '',
       ordenTrabajoId: '',
@@ -397,7 +406,17 @@ export class BulkUploadComponent implements OnInit, OnDestroy {
         mergeMap((item) => this.scanOne(item), this.LECTURAS_EN_PARALELO)
       )
       .subscribe({
-        complete: () => this.isScanning.set(false),
+        complete: () => {
+          this.isScanning.set(false);
+          const repetidos = this.repetidos;
+          if (repetidos > 0) {
+            this.notificationService.show(
+              `${repetidos} comprobante${repetidos === 1 ? '' : 's'} ya ` +
+                `${repetidos === 1 ? 'está' : 'están'} en el lote. Quítalo${repetidos === 1 ? '' : 's'} o corrige sus datos.`,
+              'warning'
+            );
+          }
+        },
       });
   }
 
@@ -466,12 +485,59 @@ export class BulkUploadComponent implements OnInit, OnDestroy {
       item.open = true;
     }
     this.scannedCount.set(this.scannedCount() + 1);
+    this.recalcularDuplicados();
   }
 
   /** Reajusta el tipo cuando el usuario corrige la serie. */
   onSerieChange(item: BulkInvoiceItem): void {
     const derived = deriveTipoFromSerie(item.serie);
     if (derived) item.tipoComprobante = derived;
+    this.recalcularDuplicados();
+  }
+
+  /**
+   * Corregir el RUC o el correlativo puede crear o deshacer un repetido, así
+   * que el lote se recalcula entero en cada cambio.
+   */
+  onIdentidadChange(): void {
+    this.recalcularDuplicados();
+  }
+
+  /**
+   * Identidad del comprobante para SUNAT: RUC del emisor, serie y correlativo.
+   * Es la misma tripleta con la que el backend busca duplicados. Vacía cuando
+   * falta alguno: sin los tres no se puede afirmar que dos filas sean el mismo
+   * comprobante.
+   */
+  private claveComprobante(item: BulkInvoiceItem): string {
+    const ruc = (item.rucEmisor || '').trim();
+    const serie = (item.serie || '').trim().toUpperCase();
+    const correlativo = (item.correlativo || '').trim();
+    if (!ruc || !serie || !correlativo) return '';
+    return `${ruc}|${serie}|${correlativo}`;
+  }
+
+  /**
+   * Marca como repetida toda fila cuyo comprobante ya esté en otra anterior del
+   * lote. La primera queda limpia; el guardado ya excluye a las marcadas, así
+   * que el aviso llega al terminar de leer y no al final del guardado.
+   */
+  private recalcularDuplicados(): void {
+    const vistos = new Map<string, BulkInvoiceItem>();
+    for (const item of this.items) {
+      const clave = this.claveComprobante(item);
+      if (!clave) {
+        item.duplicadoDe = '';
+        continue;
+      }
+      const primero = vistos.get(clave);
+      if (primero && primero !== item) {
+        item.duplicadoDe = primero.fileName;
+      } else {
+        item.duplicadoDe = '';
+        vistos.set(clave, item);
+      }
+    }
   }
 
   /** El total se edita como texto; el payload y los totales usan el número. */
@@ -544,6 +610,7 @@ export class BulkUploadComponent implements OnInit, OnDestroy {
   faltaEn(item: BulkInvoiceItem): string {
     if (item.state === 'guardado') return '';
     if (item.state === 'leyendo') return 'Leyendo el comprobante…';
+    if (item.duplicadoDe) return 'Repetido en el lote';
     if (!this.sunatEsValido(item)) return 'SUNAT no lo validó';
     if (!item.categoryId) return 'Falta la categoría';
     if (!(item.comentario || '').trim()) return 'Falta el comentario';
@@ -712,6 +779,14 @@ export class BulkUploadComponent implements OnInit, OnDestroy {
   quitar(item: BulkInvoiceItem): void {
     this.releasePreview(item);
     this.items = this.items.filter((i) => i.id !== item.id);
+    // Quitar el original libera a la copia que estaba marcada por él.
+    this.recalcularDuplicados();
+  }
+
+  /** Repetidos dentro del lote, para el resumen. */
+  get repetidos(): number {
+    return this.items.filter((i) => i.state !== 'guardado' && i.duplicadoDe)
+      .length;
   }
 
   abrirArchivo(item: BulkInvoiceItem): void {

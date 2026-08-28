@@ -12,6 +12,8 @@ import { CompanyConfigService } from '../../../services/company-config.service';
 import { ConfirmationService } from '../../../services/confirmation.service';
 import { InvoicesService } from '../../invoices/services/invoices.service';
 import { UploadService } from '../../../services/upload.service';
+import { CategoriaService } from '../../../services/categoria.service';
+import { ExpenseService } from '../../../services/expense.service';
 import { AccountingEntriesService } from '../../../services/accounting-entries.service';
 import { RendicionExportService } from '../../../services/rendicion-export.service';
 import { IExpenseReport } from '../../../interfaces/expense-report.interface';
@@ -30,6 +32,8 @@ describe('RendicionDetailComponent', () => {
   let accountingEntriesService: jasmine.SpyObj<AccountingEntriesService>;
   let rendicionExportService: jasmine.SpyObj<RendicionExportService>;
   let router: jasmine.SpyObj<Router>;
+  let categoriaService: jasmine.SpyObj<CategoriaService>;
+  let expenseService: jasmine.SpyObj<ExpenseService>;
 
   function makeReport(overrides: Partial<IExpenseReport> = {}): IExpenseReport {
     return {
@@ -92,6 +96,12 @@ describe('RendicionDetailComponent', () => {
       'exportToExcel', 'exportToPdf', 'exportFullRendicionPdf', 'exportAffidavitToPdf',
     ]);
     router = jasmine.createSpyObj('Router', ['navigate']);
+    categoriaService = jasmine.createSpyObj('CategoriaService', ['getAllFlatAdmin']);
+    categoriaService.getAllFlatAdmin.and.returnValue(
+      of([{ _id: 'cat2', name: 'Servicios de terceros' }] as any)
+    );
+    expenseService = jasmine.createSpyObj('ExpenseService', ['updateCategoria']);
+    expenseService.updateCategoria.and.returnValue(of({ categoryId: { _id: 'cat2', name: 'Servicios de terceros' } }));
 
     userState.getUser.and.returnValue({ _id: 'u1', companyId: 'c1' } as any);
     userState.isAdmin.and.returnValue(false);
@@ -128,6 +138,8 @@ describe('RendicionDetailComponent', () => {
         { provide: AccountingEntriesService, useValue: accountingEntriesService },
         { provide: RendicionExportService, useValue: rendicionExportService },
         { provide: Router, useValue: router },
+        { provide: CategoriaService, useValue: categoriaService },
+        { provide: ExpenseService, useValue: expenseService },
         {
           provide: ActivatedRoute,
           useValue: { snapshot: { params: { id: 'r1' }, queryParamMap: { get: () => null } } },
@@ -898,6 +910,182 @@ describe('RendicionDetailComponent', () => {
       expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones'], {
         queryParams: { tab: 'directas' },
       });
+    });
+
+    /**
+     * Quien entró desde la bandeja vuelve a la bandeja, sea cual sea su rol:
+     * ahí quedaron sus filtros y las rendiciones que le faltan por revisar.
+     * Antes, un aprobador que no es Contabilidad ni Administrador terminaba en
+     * /tesoreria.
+     */
+    describe('con ?from=rendiciones', () => {
+      beforeEach(() => {
+        (TestBed.inject(ActivatedRoute) as any).snapshot.queryParamMap = {
+          get: (k: string) => (k === 'from' ? 'rendiciones' : null),
+        };
+      });
+
+      it('devuelve a la bandeja a un aprobador que no es admin ni contabilidad', () => {
+        component.report = makeReport({ userId: { _id: 'other', name: 'x' } as any });
+        userState.isApprover.and.returnValue(true);
+        userState.hasModulePermission.and.returnValue(true);
+        component.goBack();
+        expect(router.navigate).toHaveBeenCalledWith(['/rendiciones'], {});
+      });
+
+      it('devuelve a la bandeja aunque el usuario pueda ver la ficha del colaborador', () => {
+        component.report = makeReport({ userId: { _id: 'other', name: 'x' } as any });
+        userState.isAdmin.and.returnValue(true);
+        component.goBack();
+        expect(router.navigate).toHaveBeenCalledWith(['/rendiciones'], {});
+      });
+
+      it('conserva la pestaña de la que salió', () => {
+        component.report = makeReport({ userId: { _id: 'other', name: 'x' } as any, isDirecta: true });
+        userState.isAdmin.and.returnValue(true);
+        component.goBack();
+        expect(router.navigate).toHaveBeenCalledWith(['/rendiciones'], {
+          queryParams: { tab: 'directas' },
+        });
+      });
+    });
+  });
+
+  /**
+   * Contabilidad corrige la categoría durante SU etapa de revisión, en vez de
+   * rechazar la rendición y hacerla volver a recorrer toda la cadena de
+   * aprobadores solo porque la categoría estaba mal elegida.
+   */
+  describe('corrección de la categoría por Contabilidad', () => {
+    const gasto = () => ({ _id: 'e1', categoryId: { _id: 'cat1', name: 'Alimentación' } });
+
+    function enRevisionContable(): void {
+      userState.isContabilidad.and.returnValue(true);
+      component.report = makeReport({ status: 'pending_accounting' });
+    }
+
+    describe('cuándo se ofrece', () => {
+      it('se ofrece a Contabilidad con la rendición en revisión contable', () => {
+        enRevisionContable();
+        expect(component.canEditExpenseCategoryAsCont).toBeTrue();
+      });
+
+      // Antes de que los aprobadores terminen no es su turno: el backend
+      // rechazaría la corrección igual que rechaza la aprobación.
+      it('no se ofrece mientras la rendición sigue con los aprobadores', () => {
+        userState.isContabilidad.and.returnValue(true);
+        component.report = makeReport({ status: 'submitted' });
+        expect(component.canEditExpenseCategoryAsCont).toBeFalse();
+      });
+
+      it('no se ofrece una vez aprobada la rendición', () => {
+        userState.isContabilidad.and.returnValue(true);
+        component.report = makeReport({ status: 'approved' });
+        expect(component.canEditExpenseCategoryAsCont).toBeFalse();
+      });
+
+      it('no se ofrece al colaborador ni al aprobador', () => {
+        component.report = makeReport({ status: 'pending_accounting' });
+        expect(component.canEditExpenseCategoryAsCont).toBeFalse();
+
+        userState.isApprover.and.returnValue(true);
+        expect(component.canEditExpenseCategoryAsCont).toBeFalse();
+      });
+    });
+
+    it('abre el editor con la categoría actual preseleccionada', () => {
+      enRevisionContable();
+      component.startEditExpenseCategory(gasto());
+
+      expect(component.isEditingExpenseCategory(gasto())).toBeTrue();
+      expect(component.categoryDraftId()).toBe('cat1');
+    });
+
+    /**
+     * Todas las de la empresa, no solo las asignadas a quien mira: el sentido
+     * del cambio es poner la categoría CORRECTA, que suele ser justo la que el
+     * colaborador no tenía.
+     */
+    it('carga el catálogo completo de la empresa una sola vez', () => {
+      enRevisionContable();
+      component.startEditExpenseCategory(gasto());
+      component.cancelEditExpenseCategory();
+      component.startEditExpenseCategory(gasto());
+
+      expect(categoriaService.getAllFlatAdmin).toHaveBeenCalledTimes(1);
+      expect(component.categoriaOptions.length).toBe(1);
+    });
+
+    it('guarda la categoría nueva y refresca la ficha abierta', () => {
+      enRevisionContable();
+      component.selectedExpense.set(gasto() as any);
+      component.startEditExpenseCategory(gasto());
+      component.categoryDraftId.set('cat2');
+      component.saveExpenseCategory(gasto());
+
+      expect(expenseService.updateCategoria).toHaveBeenCalledWith('e1', 'cat2');
+      expect(component.editingCategoryExpenseId()).toBeNull();
+      expect((component.selectedExpense() as any).categoryId.name).toBe(
+        'Servicios de terceros'
+      );
+      expect(notification.show).toHaveBeenCalledWith('Categoría actualizada', 'success');
+    });
+
+    it('elegir la misma categoría solo cierra el editor', () => {
+      enRevisionContable();
+      component.startEditExpenseCategory(gasto());
+      component.saveExpenseCategory(gasto());
+
+      expect(expenseService.updateCategoria).not.toHaveBeenCalled();
+      expect(component.editingCategoryExpenseId()).toBeNull();
+    });
+
+    it('deja el editor abierto y avisa cuando el backend rechaza', () => {
+      expenseService.updateCategoria.and.returnValue(
+        throwError(() => ({ error: { message: 'La rendición ya no está en revisión' } }))
+      );
+      enRevisionContable();
+      component.startEditExpenseCategory(gasto());
+      component.categoryDraftId.set('cat2');
+      component.saveExpenseCategory(gasto());
+
+      expect(notification.show).toHaveBeenCalledWith(
+        'La rendición ya no está en revisión',
+        'error'
+      );
+      expect(component.savingCategory()).toBeFalse();
+      expect(component.editingCategoryExpenseId()).toBe('e1');
+    });
+  });
+
+  /**
+   * La planilla de movilidad y Otros Gastos admiten varios documentos de
+   * respaldo; el resto de tipos, y todo lo cargado antes, trae solo `file`.
+   */
+  describe('adjuntos de respaldo del comprobante', () => {
+    it('lista los adjuntos cuando el comprobante trae varios', () => {
+      const exp = { file: 'http://s3/uno.pdf', attachments: ['http://s3/uno.pdf', 'http://s3/dos.jpg'] };
+      expect(component.expenseAttachments(exp)).toEqual([
+        'http://s3/uno.pdf',
+        'http://s3/dos.jpg',
+      ]);
+      expect(component.hasMultipleAttachments(exp)).toBeTrue();
+    });
+
+    it('cae en `file` para los comprobantes de un solo adjunto', () => {
+      const exp = { file: 'http://s3/uno.pdf' };
+      expect(component.expenseAttachments(exp)).toEqual(['http://s3/uno.pdf']);
+      expect(component.hasMultipleAttachments(exp)).toBeFalse();
+    });
+
+    it('sin adjunto devuelve la lista vacía', () => {
+      expect(component.expenseAttachments({})).toEqual([]);
+      expect(component.hasMultipleAttachments({})).toBeFalse();
+    });
+
+    it('descarta entradas vacías de la lista', () => {
+      const exp = { file: 'http://s3/uno.pdf', attachments: ['http://s3/uno.pdf', '  ', null] };
+      expect(component.expenseAttachments(exp as any)).toEqual(['http://s3/uno.pdf']);
     });
   });
 

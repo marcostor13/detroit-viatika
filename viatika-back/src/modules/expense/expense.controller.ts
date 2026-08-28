@@ -18,6 +18,7 @@ import { ExpenseActorContext, ExpenseService } from './expense.service'
 import { CreateExpenseDto } from './dto/create-expense.dto'
 import { CreateDeclaracionJuradaDto } from './dto/create-declaracion-jurada.dto'
 import { UpdateExpenseDto } from './dto/update-expense.dto'
+import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto'
 import { ApprovalDto } from './dto/approval.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../auth/guards/roles.guard'
@@ -541,6 +542,43 @@ export class ExpenseController {
       clientId: req.user?.clientId,
     })
     return result
+  }
+
+  /**
+   * Corrección de la categoría contable por Contabilidad durante su etapa de
+   * revisión. Evita el reproceso de rechazar la rendición solo para que el
+   * colaborador cambie la categoría y vuelva a pasar por toda la cadena de
+   * aprobadores. Ver `ExpenseService.updateCategoryByContabilidad`.
+   */
+  @Patch('invoice/:id/categoria')
+  @Roles(ROLES.CONTABILIDAD, ROLES.ADMIN, ROLES.SUPER_ADMIN)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  async updateCategoria(
+    @Param('id') id: string,
+    @Body() dto: UpdateExpenseCategoryDto,
+    @Request() req
+  ) {
+    const { expense, categoriaAnterior } =
+      await this.expenseService.updateCategoryByContabilidad(
+        id,
+        dto.categoryId,
+        this.toActorContext(req.user)
+      )
+    const categoriaNueva =
+      (expense as unknown as { categoryId?: { name?: string } })?.categoryId
+        ?.name ?? dto.categoryId
+    this.auditLogService.log({
+      userId: req.user?._id || req.user?.sub,
+      userName: req.user?.name || req.user?.email || 'Usuario',
+      action: 'update_expense_category',
+      module: 'facturas',
+      entityId: id,
+      // Queda el antes y el después: es una corrección contable sobre el
+      // comprobante de otra persona y tiene que poder rastrearse.
+      details: `Categoría corregida por Contabilidad: "${categoriaAnterior || '—'}" → "${categoriaNueva}"`,
+      clientId: req.user?.clientId,
+    })
+    return expense
   }
 
   @Patch('invoice/:id/approve')

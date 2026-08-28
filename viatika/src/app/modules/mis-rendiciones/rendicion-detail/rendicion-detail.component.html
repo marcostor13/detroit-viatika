@@ -1257,7 +1257,7 @@
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 shrink-0">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
                   </svg>
-                  Doc.
+                  Doc.@if (hasMultipleAttachments(expense)) { ({{ expenseAttachments(expense).length }}) }
                 </button>
                 }
                 @if (expense['expenseType'] === 'planilla_movilidad') {
@@ -1614,7 +1614,10 @@
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
                           </svg>
                         </button>
-                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/attach:opacity-100 pointer-events-none transition-opacity z-10">Ver adjunto</div>
+                        @if (hasMultipleAttachments(expense)) {
+                        <span class="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-primary text-white text-[9px] font-bold leading-[15px] text-center pointer-events-none">{{ expenseAttachments(expense).length }}</span>
+                        }
+                        <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-ink-900 text-white text-[11px] rounded whitespace-nowrap opacity-0 group-hover/attach:opacity-100 pointer-events-none transition-opacity z-10">{{ hasMultipleAttachments(expense) ? 'Ver adjuntos (abre el primero)' : 'Ver adjunto' }}</div>
                       </div>
                       }
                       <!-- PDF: planilla de movilidad -->
@@ -1849,6 +1852,14 @@
 
         </div>
 
+        <!-- Respaldo con varios documentos (planilla de movilidad y Otros
+             Gastos): el botón de arriba abre el primero, aquí están todos. -->
+        @if (hasMultipleAttachments(exp)) {
+        <div class="mb-3">
+          <app-attachment-list [urls]="expenseAttachments(exp)" heading="adjuntos de respaldo" />
+        </div>
+        }
+
         @if (hasExpenseFile(exp)) {
           @if (isPreviewableImage(exp)) {
           <div class="rounded-lg border border-divider bg-quaternary p-2 flex justify-center">
@@ -1878,7 +1889,49 @@
         </div>
         <div>
           <p class="text-xs text-tertiary/70">Categoría</p>
-          <p class="font-medium text-secondary">{{ getPopulatedName(exp['categoryId']) }}</p>
+          <!-- Contabilidad corrige aquí la categoría mal elegida, en vez de
+               rechazar la rendición y hacerla volver a pasar por toda la
+               cadena de aprobadores solo por eso. -->
+          @if (isEditingExpenseCategory(exp)) {
+          <div class="mt-1 space-y-2">
+            <app-search-select
+              [options]="categoriaOptions"
+              [ngModel]="categoryDraftId()"
+              (ngModelChange)="categoryDraftId.set($event)"
+              placeholder="Seleccione una categoría"
+              searchPlaceholder="Buscar categoría o cuenta…"
+            />
+            <div class="flex gap-2">
+              <app-button
+                label="Guardar"
+                size="sm"
+                [loading]="savingCategory()"
+                [disabled]="!categoryDraftId()"
+                (clicked)="saveExpenseCategory(exp)"
+              />
+              <app-button
+                label="Cancelar"
+                variant="secondary"
+                size="sm"
+                [disabled]="savingCategory()"
+                (clicked)="cancelEditExpenseCategory()"
+              />
+            </div>
+          </div>
+          } @else {
+          <div class="flex items-start gap-2">
+            <p class="font-medium text-secondary">{{ getPopulatedName(exp['categoryId']) }}</p>
+            @if (canEditExpenseCategoryAsCont) {
+            <button
+              type="button"
+              (click)="startEditExpenseCategory(exp)"
+              class="shrink-0 text-xs font-semibold text-primary hover:underline"
+            >
+              Corregir categoría
+            </button>
+            }
+          </div>
+          }
         </div>
         <div>
           <p class="text-xs text-tertiary/70">Centro de Costo</p>

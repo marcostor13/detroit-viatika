@@ -555,34 +555,41 @@ export class ExpenseService {
     return { observado: false }
   }
 
-  private async evaluateCategoryLimit(
-    body: CreateExpenseDto,
-    amount: number
-  ): Promise<{ percent?: number; warning?: string }> {
-    if (
-      !body.expenseReportId ||
-      !body.categoryId ||
-      !body.clientId ||
-      amount <= 0
-    ) {
+  /**
+   * Consumo del presupuesto de una categoría dentro de una rendición, sin
+   * decidir qué hacer con él. Se separó del gate porque el alta BLOQUEA al
+   * llegar al 100% mientras que la corrección de categoría por Contabilidad
+   * solo recalcula el aviso: negarle mover un gasto a la categoría correcta
+   * porque esa categoría ya llegó a su tope la dejaría sin la corrección y
+   * obligaría al reproceso que este cambio venía a evitar.
+   */
+  private async computeCategoryLimit(
+    clientId: string,
+    expenseReportId: string,
+    categoryId: string,
+    amount: number,
+    /** Se descuenta del acumulado: es el gasto que se está moviendo. */
+    excludeExpenseId?: string
+  ): Promise<{ percent?: number; warning?: string; exceeded?: boolean }> {
+    if (!expenseReportId || !categoryId || !clientId || amount <= 0) {
       return {}
     }
 
-    const category = await this.categoryService.findOne(
-      body.categoryId,
-      body.clientId
-    )
+    const category = await this.categoryService.findOne(categoryId, clientId)
     const limit = Number(category?.limit ?? 0)
     if (!limit || Number.isNaN(limit) || limit <= 0) return {}
 
+    const match: Record<string, unknown> = {
+      expenseReportId: new Types.ObjectId(expenseReportId),
+      categoryId: new Types.ObjectId(categoryId),
+      status: { $ne: 'rejected' },
+    }
+    if (excludeExpenseId) {
+      match['_id'] = { $ne: new Types.ObjectId(excludeExpenseId) }
+    }
+
     const aggregation = await this.expenseRepository.aggregate([
-      {
-        $match: {
-          expenseReportId: new Types.ObjectId(body.expenseReportId),
-          categoryId: new Types.ObjectId(body.categoryId),
-          status: { $ne: 'rejected' },
-        },
-      },
+      { $match: match },
       {
         $group: {
           _id: null,
@@ -595,11 +602,7 @@ export class ExpenseService {
     const projected = current + amount
     const percent = Number(((projected / limit) * 100).toFixed(2))
 
-    if (percent >= 100) {
-      throw new BadRequestException(
-        `Límite de categoría alcanzado. No se permiten más gastos en esta categoría. Solicite ampliación de presupuesto.`
-      )
-    }
+    if (percent >= 100) return { percent, exceeded: true }
 
     if (percent >= 90) {
       return {
@@ -610,6 +613,29 @@ export class ExpenseService {
     }
 
     return { percent }
+  }
+
+  private async evaluateCategoryLimit(
+    body: CreateExpenseDto,
+    amount: number
+  ): Promise<{ percent?: number; warning?: string }> {
+    const { percent, warning, exceeded } = await this.computeCategoryLimit(
+      String(body.clientId ?? ''),
+      String(body.expenseReportId ?? ''),
+      String(body.categoryId ?? ''),
+      amount
+    )
+
+    if (exceeded) {
+      throw new BadRequestException(
+        `Límite de categoría alcanzado. No se permiten más gastos en esta categoría. Solicite ampliación de presupuesto.`
+      )
+    }
+
+    // Sin categoría, sin tope configurado o sin monto no hay nada que informar:
+    // se devuelve el objeto vacío, como antes de separar el cálculo del gate.
+    if (percent === undefined) return {}
+    return warning ? { percent, warning } : { percent }
   }
 
   private buildUserInitials(name?: string | null): string {
@@ -1611,6 +1637,22 @@ export class ExpenseService {
     }
   }
 
+  /**
+   * Lista de adjuntos a guardar, con `imageUrl` siempre a la cabeza.
+   *
+   * El frontend manda `attachments` con todos los archivos e `imageUrl` con el
+   * primero; se normaliza igual por si llega solo uno de los dos (un cliente
+   * viejo, o una carga por API). Sin adjuntos devuelve `undefined` para no
+   * dejar un arreglo vacío en la base.
+   */
+  private normalizeAttachments(body: CreateExpenseDto): string[] | undefined {
+    const urls = [body.imageUrl, ...(body.attachments ?? [])]
+      .map((u) => (typeof u === 'string' ? u.trim() : ''))
+      .filter((u) => u.length > 0)
+    const unicas = [...new Set(urls)]
+    return unicas.length ? unicas : undefined
+  }
+
   async createMobilitySheet(body: CreateExpenseDto): Promise<Expense> {
     if (!body.clientId) {
       throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
@@ -1730,6 +1772,7 @@ export class ExpenseService {
       expenseType: 'planilla_movilidad',
       mobilityRows: body.mobilityRows,
       file: body.imageUrl,
+      attachments: this.normalizeAttachments(body),
       status: 'pending',
       createdBy: body.userId || 'system',
       observado: deadlineMeta.observado,
@@ -1933,6 +1976,7 @@ export class ExpenseService {
         ? body.declaracionJuradaFirmante
         : undefined,
       file: body.imageUrl || undefined,
+      attachments: this.normalizeAttachments(body),
       // Nota libre del colaborador. En AL la descripción la ocupa la comida
       // declarada (VD-109), así que el comentario es su único texto propio: sin
       // guardarlo, el gasto llegaba al revisor sin explicación.
@@ -3176,6 +3220,94 @@ export class ExpenseService {
     // ya estaba otra vez con los aprobadores. El reenvío es suyo y explícito
     // (PATCH status 'submitted'), que además reconstruye las cadenas.
     return updated ? applyFechaEmisionDisplayToExpense(updated) : null
+  }
+
+  /**
+   * Corrección de la categoría contable de un comprobante por Contabilidad,
+   * durante SU etapa de revisión (rendición en `pending_accounting`).
+   *
+   * Hasta ahora, ante una categoría mal elegida la única salida era rechazar la
+   * rendición: el colaborador la corregía y volvía a recorrer toda la cadena de
+   * aprobadores. Como quien rinde no siempre tiene criterio contable, ese
+   * reproceso era frecuente y caro. Contabilidad, que es quien sabe cuál
+   * corresponde, la corrige aquí sin devolver nada.
+   *
+   * Deliberadamente NO pasa por `update()`: el resto del comprobante (monto,
+   * fecha, adjuntos, documento) sigue siendo del colaborador y fuera del
+   * alcance de Contabilidad (VD-69). Solo se toca `categoryId` y el aviso de
+   * presupuesto, que quedaría hablando de la categoría anterior.
+   *
+   * Devuelve también el nombre de la categoría anterior, para la bitácora.
+   */
+  async updateCategoryByContabilidad(
+    id: string,
+    categoryId: string,
+    actor: ExpenseActorContext
+  ): Promise<{ expense: Expense | null; categoriaAnterior: string }> {
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      throw new BadRequestException(`ID de expense inválido: ${id}`)
+    }
+
+    const existing = await this.loadExpenseOrThrow(id)
+    this.assertCanReadExpense(existing, actor)
+    await this.assertReportInStatus(
+      existing,
+      ['pending_accounting'],
+      'La categoría solo se puede corregir mientras la rendición está en revisión de Contabilidad.'
+    )
+
+    // El comprobante manda el cliente, no el token: Contabilidad es un rol
+    // multiempresa (`assertCompanyAccess` la deja pasar) y su `clientId` puede
+    // no ser el de esta rendición.
+    const clientId = this.normalizeClientId(
+      (existing as unknown as { clientId: unknown }).clientId
+    )
+    // Valida de una vez que exista y que sea de la misma empresa: `findOne`
+    // filtra por clientId y lanza 404 si no encaja.
+    const category = await this.categoryService.findOne(categoryId, clientId)
+
+    const anterior = (existing as unknown as { categoryId?: unknown }).categoryId
+    const categoriaAnterior =
+      anterior && typeof anterior === 'object' && 'name' in anterior
+        ? String((anterior as { name: unknown }).name)
+        : ''
+    const anteriorId =
+      anterior && typeof anterior === 'object' && '_id' in anterior
+        ? String((anterior as { _id: unknown })._id)
+        : String(anterior ?? '')
+
+    if (anteriorId === String(category._id)) {
+      return { expense: existing, categoriaAnterior }
+    }
+
+    // El aviso de presupuesto pasa a medirse contra la categoría nueva. Aquí no
+    // bloquea: ver `computeCategoryLimit`.
+    const limite = await this.computeCategoryLimit(
+      clientId,
+      this.expenseReportIdString(existing) ?? '',
+      String(category._id),
+      Number((existing as unknown as { total?: number }).total ?? 0),
+      id
+    )
+
+    const updated = await this.expenseRepository
+      .findOneAndUpdate(
+        { _id: Types.ObjectId.createFromHexString(id) },
+        {
+          categoryId: category._id,
+          categoryLimitPercent: limite.percent ?? null,
+          categoryLimitWarning: limite.warning ?? null,
+        },
+        { new: true }
+      )
+      .populate('clientId')
+      .populate('categoryId')
+      .exec()
+
+    return {
+      expense: updated ? applyFechaEmisionDisplayToExpense(updated) : null,
+      categoriaAnterior,
+    }
   }
 
   async approveInvoice(id: string, approvalDto: ApprovalDto) {

@@ -1154,6 +1154,59 @@ describe('ExpenseService — createMobilitySheet (OT del formato ADF-FOR-005)', 
     // No se consulta la rendición: con OT en el cuerpo no hace falta la excepción.
     expect(expenseReportService.isReportSinOrdenTrabajo).not.toHaveBeenCalled()
   })
+
+  // Una planilla puede necesitar más de un documento de respaldo.
+  describe('adjuntos de respaldo', () => {
+    const sinOt = () => {
+      expenseReportService.isReportSinOrdenTrabajo.mockResolvedValue(true)
+      return baseBody()
+    }
+
+    it('guarda todos los adjuntos con el primero también en `file`', async () => {
+      await service.createMobilitySheet({
+        ...sinOt(),
+        imageUrl: 'https://s3/uno.pdf',
+        attachments: ['https://s3/uno.pdf', 'https://s3/dos.jpg'],
+      } as CreateExpenseDto)
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(doc.file).toBe('https://s3/uno.pdf')
+      expect(doc.attachments).toEqual([
+        'https://s3/uno.pdf',
+        'https://s3/dos.jpg',
+      ])
+    })
+
+    // Un cliente viejo manda solo `imageUrl`: el adjunto único también queda en
+    // la lista, para que quien lee no tenga que mirar los dos campos.
+    it('con un solo adjunto guarda la lista de uno', async () => {
+      await service.createMobilitySheet({
+        ...sinOt(),
+        imageUrl: 'https://s3/uno.pdf',
+      } as CreateExpenseDto)
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(doc.attachments).toEqual(['https://s3/uno.pdf'])
+    })
+
+    it('sin adjuntos no deja un arreglo vacío en la base', async () => {
+      await service.createMobilitySheet(sinOt())
+
+      expect(expenseModel.create.mock.calls[0][0].attachments).toBeUndefined()
+    })
+
+    it('no repite el adjunto que ya venía en imageUrl', async () => {
+      await service.createMobilitySheet({
+        ...sinOt(),
+        imageUrl: 'https://s3/uno.pdf',
+        attachments: ['https://s3/uno.pdf'],
+      } as CreateExpenseDto)
+
+      expect(expenseModel.create.mock.calls[0][0].attachments).toEqual([
+        'https://s3/uno.pdf',
+      ])
+    })
+  })
 })
 
 describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
@@ -1305,6 +1358,33 @@ describe('ExpenseService — AL: comida y tope por gasto (VD-109)', () => {
 
     const doc = expenseModel.create.mock.calls[0][0]
     expect(doc.comentario).toBeUndefined()
+  })
+
+  // Un gasto puede necesitar más de un documento de respaldo.
+  describe('adjuntos de respaldo', () => {
+    it('guarda todos los adjuntos con el primero también en `file`', async () => {
+      await service.createOtherExpense(
+        alBody({
+          total: 30,
+          imageUrl: 'https://s3/uno.pdf',
+          attachments: ['https://s3/uno.pdf', 'https://s3/dos.jpg'],
+        })
+      )
+
+      const doc = expenseModel.create.mock.calls[0][0]
+      expect(doc.file).toBe('https://s3/uno.pdf')
+      expect(doc.attachments).toEqual([
+        'https://s3/uno.pdf',
+        'https://s3/dos.jpg',
+      ])
+    })
+
+    // AL (Alimentación sin documentación) va sin adjunto: nada que listar.
+    it('sin adjuntos no deja un arreglo vacío en la base', async () => {
+      await service.createOtherExpense(alBody({ total: 30 }))
+
+      expect(expenseModel.create.mock.calls[0][0].attachments).toBeUndefined()
+    })
   })
 
   it('sin tope configurado para esa comida no valida el monto', async () => {

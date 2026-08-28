@@ -38,6 +38,7 @@ import {
 } from '../../../design-system/search-select/search-select.component';
 import { PlacesAutocompleteDirective, PlaceResult } from '../../../directives/places-autocomplete.directive';
 import { CompanyConfigService } from '../../../services/company-config.service';
+import { Observable, concatMap, from, of, toArray } from 'rxjs';
 import {
   DEFAULT_MONEDA,
   expenseAmountInReport,
@@ -106,7 +107,30 @@ export default class AddInvoiceComponent implements OnInit {
    * completa".
    */
   previewObjectUrl: string | null = null;
-  selectedFile!: File;
+  /**
+   * Adjuntos de respaldo del comprobante, en el orden en que se cargaron.
+   * Las zonas de un solo archivo (factura, recibo, DJ) dejan aquí ese único
+   * archivo; solo la planilla de movilidad y Otros Gastos pueden acumular
+   * varios — una rendición suele necesitar más de un documento de sustento.
+   */
+  selectedFiles: File[] = [];
+  /** Tope de adjuntos por comprobante, para no armar cargas interminables. */
+  readonly maxAdjuntos = 10;
+
+  /**
+   * El primero de la lista. Es lo que miran las validaciones del formulario,
+   * la vista previa y todo lo que existía antes de admitir varios adjuntos;
+   * derivarlo (en vez de guardarlo aparte) evita que los dos se desincronicen.
+   * Asignarlo reemplaza la lista entera, que es el comportamiento de una zona
+   * de un solo archivo.
+   */
+  get selectedFile(): File {
+    return this.selectedFiles[0];
+  }
+  set selectedFile(file: File | undefined) {
+    this.selectedFiles = file ? [file] : [];
+    this.syncSelectedFile();
+  }
   originalInvoice: any = null;
   sunatValidation: SunatValidationInfo | null = null;
   isSunatValidating = signal(false);
@@ -1518,12 +1542,34 @@ export default class AddInvoiceComponent implements OnInit {
     return rows.valid && !!this.djCategoryIdFor(rubro);
   }
 
+  /**
+   * Cuarto tipo del selector: varias facturas de una sola pasada.
+   *
+   * No es un `expenseType` sino otra pantalla, así que en vez de cambiar el
+   * formulario navega a la carga masiva. Estaba solo en el modal de "Añadir
+   * Gasto": quien ya había entrado aquí con "Factura" y recién entonces se daba
+   * cuenta de que tenía varias, no tenía forma de cambiarse sin volver a la
+   * rendición.
+   *
+   * Se reenvían los mismos parámetros con los que se abrió esta pantalla
+   * (`rendicionId`, `mode`, `from`), que son los que la carga masiva lee para
+   * saber a qué rendición pertenece y con qué criterio (directa, contabilidad).
+   */
+  irACargaMasiva(): void {
+    const origen = this.route.snapshot.queryParamMap;
+    const queryParams: Record<string, string> = {};
+    for (const clave of ['rendicionId', 'mode', 'from']) {
+      const valor = origen.get(clave);
+      if (valor) queryParams[clave] = valor;
+    }
+    this.router.navigate(['/invoices/carga-masiva'], { queryParams });
+  }
+
   setExpenseType(type: ExpenseType) {
     this.expenseType.set(type);
-    // Limpiar archivo al cambiar de tipo para evitar adjuntos cruzados
-    this.selectedFile = undefined as any;
-    this.previewImage = null;
-    this.previewObjectUrl = null;
+    // Limpiar archivos al cambiar de tipo para evitar adjuntos cruzados
+    this.selectedFiles = [];
+    this.releasePreview();
     if (type === 'factura') {
       this.form.get('file')?.setValidators([Validators.required]);
     } else {
@@ -2251,7 +2297,8 @@ export default class AddInvoiceComponent implements OnInit {
     }
     this.isLoading.set(true);
 
-    const doSave = (imageUrl?: string) => {
+    const doSave = (adjuntos: string[] = []) => {
+      const imageUrl = adjuntos[0];
       const rows = this.mobilityRowsArray.value.map((r: any) => ({
         fecha: r.fecha,
         total: r.total,
@@ -2302,6 +2349,9 @@ export default class AddInvoiceComponent implements OnInit {
         firmaUrl: this.form.get('firmaUrl')?.value || undefined,
         mobilityRows: rows,
         imageUrl,
+        // Respaldo con varios documentos: `imageUrl` sigue siendo el primero
+        // (es el que abren las fichas y los reportes) y aquí van todos.
+        ...(adjuntos.length > 1 ? { attachments: adjuntos } : {}),
       };
       this.invoiceService.createMobilitySheet(payload).subscribe({
         next: (res) => {
@@ -2320,18 +2370,13 @@ export default class AddInvoiceComponent implements OnInit {
       });
     };
 
-    if (this.selectedFile) {
-      const { downloadUrl$ } = this.uploadService.uploadFile(this.selectedFile, environment.storagePath);
-      downloadUrl$.subscribe({
-        next: (url) => doSave(url),
-        error: (err) => {
-          this.isLoading.set(false);
-          this.notificationService.show('Error al subir el adjunto: ' + err.message, 'error');
-        },
-      });
-    } else {
-      doSave();
-    }
+    this.uploadSelectedFiles().subscribe({
+      next: (urls) => doSave(urls),
+      error: (err) => {
+        this.isLoading.set(false);
+        this.notificationService.show('Error al subir el adjunto: ' + err.message, 'error');
+      },
+    });
   }
 
   /**
@@ -2544,7 +2589,8 @@ export default class AddInvoiceComponent implements OnInit {
     const correlativo = muestraDoc ? (this.form.get('correlativo')?.value || '').toString().trim() : '';
     const rucEmisor = muestraDoc ? (this.form.get('rucEmisor')?.value || '').toString().trim() : '';
 
-    const proceed = (imageUrl?: string) => {
+    const proceed = (adjuntos: string[] = []) => {
+      const imageUrl = adjuntos[0];
       const payload: any = {
         proyectId: this.form.get('proyectId')?.value,
         firmaUrl: this.form.get('firmaUrl')?.value || undefined,
@@ -2557,6 +2603,9 @@ export default class AddInvoiceComponent implements OnInit {
         declaracionJurada: requiereDeclaracion,
         declaracionJuradaFirmante: requiereDeclaracion ? firmante : undefined,
         imageUrl,
+        // Respaldo con varios documentos: `imageUrl` sigue siendo el primero
+        // (es el que abren las fichas y los reportes) y aquí van todos.
+        ...(adjuntos.length > 1 ? { attachments: adjuntos } : {}),
         ...(serie ? { serie } : {}),
         ...(correlativo ? { correlativo } : {}),
         ...(rucEmisor ? { rucEmisor } : {}),
@@ -2590,18 +2639,13 @@ export default class AddInvoiceComponent implements OnInit {
       });
     };
 
-    if (this.selectedFile) {
-      const { downloadUrl$ } = this.uploadService.uploadFile(this.selectedFile, environment.storagePath);
-      downloadUrl$.subscribe({
-        next: (url) => proceed(url),
-        error: (err) => {
-          this.isLoading.set(false);
-          this.notificationService.show('Error al subir el adjunto: ' + err.message, 'error');
-        },
-      });
-    } else {
-      proceed();
-    }
+    this.uploadSelectedFiles().subscribe({
+      next: (urls) => proceed(urls),
+      error: (err) => {
+        this.isLoading.set(false);
+        this.notificationService.show('Error al subir el adjunto: ' + err.message, 'error');
+      },
+    });
   }
 
   saveOrUpdate() {
@@ -2798,6 +2842,78 @@ export default class AddInvoiceComponent implements OnInit {
   }
 
   /**
+   * Selector de las zonas que aceptan varios adjuntos (planilla de movilidad y
+   * Otros Gastos). Se limpia el `value` del input para que volver a elegir el
+   * mismo archivo —tras haberlo quitado— dispare el `change` igual.
+   */
+  onFilesSelectedMultiple(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files?.length) this.addSelectedFiles(Array.from(input.files));
+    input.value = '';
+  }
+
+  /** Arrastre sobre una zona de varios adjuntos: entran todos. */
+  onFilesDroppedMultiple(files: File[]): void {
+    if (files.length) this.addSelectedFiles(files);
+  }
+
+  /**
+   * Suma archivos a la lista de adjuntos. Descarta los repetidos (mismo nombre
+   * y tamaño: arrastrar dos veces la misma carpeta es el error típico) y avisa
+   * al pasarse del tope en vez de recortar en silencio.
+   */
+  private addSelectedFiles(files: File[]): void {
+    const yaEsta = (f: File) =>
+      this.selectedFiles.some((s) => s.name === f.name && s.size === f.size);
+    const nuevos = files.filter((f) => !yaEsta(f));
+    const repetidos = files.length - nuevos.length;
+    if (repetidos > 0) {
+      this.notificationService.show(
+        repetidos === 1
+          ? 'Ese archivo ya estaba adjunto.'
+          : `${repetidos} archivos ya estaban adjuntos.`,
+        'warning'
+      );
+    }
+    const espacio = this.maxAdjuntos - this.selectedFiles.length;
+    if (espacio <= 0) {
+      if (nuevos.length) {
+        this.notificationService.show(
+          `Ya alcanzaste el máximo de ${this.maxAdjuntos} adjuntos.`,
+          'warning'
+        );
+      }
+      return;
+    }
+    if (nuevos.length > espacio) {
+      this.notificationService.show(
+        `Solo se pueden adjuntar ${this.maxAdjuntos} archivos: se agregaron los primeros ${espacio}.`,
+        'warning'
+      );
+    }
+    this.selectedFiles = [...this.selectedFiles, ...nuevos.slice(0, espacio)];
+    this.syncSelectedFile();
+  }
+
+  /** Quita un adjunto de la lista. */
+  removeSelectedFile(index: number): void {
+    this.selectedFiles = this.selectedFiles.filter((_, i) => i !== index);
+    this.syncSelectedFile();
+  }
+
+  /** Alinea la vista previa y el control `file` con el primer adjunto. */
+  private syncSelectedFile(): void {
+    const first = this.selectedFiles[0];
+    if (!first) {
+      this.releasePreview();
+      this.form.patchValue({ file: null });
+      return;
+    }
+    this.buildPreview(first);
+    this.form.patchValue({ file: first });
+  }
+
+  /**
    * VD-134: mismo camino para el archivo venga del selector o de un arrastre.
    * Se extrajo de `onFileSelected` en vez de duplicarlo, para que la vista
    * previa y el `patchValue` no se puedan quedar solo en una de las dos vías.
@@ -2824,17 +2940,39 @@ export default class AddInvoiceComponent implements OnInit {
     );
   }
 
+  /** Zona de un solo archivo: el nuevo reemplaza al anterior. */
   private takeSelectedFile(file: File): void {
     this.selectedFile = file;
-    const isImage = this.selectedFile.type.startsWith('image/');
-    if (isImage) {
-      this.previewObjectUrl = URL.createObjectURL(this.selectedFile);
-      this.previewImage = this.sanitizer.bypassSecurityTrustUrl(this.previewObjectUrl);
-    } else {
-      this.previewObjectUrl = null;
-      this.previewImage = null;
-    }
-    this.form.patchValue({ file: this.selectedFile });
+  }
+
+  /**
+   * Sube todos los adjuntos y devuelve sus URLs EN EL MISMO ORDEN en que se
+   * cargaron. Van de uno en uno (`concatMap`) y no en paralelo: el orden
+   * importa —la primera URL es la que queda como `file` del comprobante, la que
+   * ve quien revisa— y así un error corta la cadena sin dejar archivos sueltos
+   * subidos a medias.
+   */
+  private uploadSelectedFiles(): Observable<string[]> {
+    if (this.selectedFiles.length === 0) return of([]);
+    return from(this.selectedFiles).pipe(
+      concatMap((file) =>
+        this.uploadService.uploadFile(file, environment.storagePath).downloadUrl$
+      ),
+      toArray()
+    );
+  }
+
+  private buildPreview(file: File): void {
+    this.releasePreview();
+    if (!file.type.startsWith('image/')) return;
+    this.previewObjectUrl = URL.createObjectURL(file);
+    this.previewImage = this.sanitizer.bypassSecurityTrustUrl(this.previewObjectUrl);
+  }
+
+  private releasePreview(): void {
+    if (this.previewObjectUrl) URL.revokeObjectURL(this.previewObjectUrl);
+    this.previewObjectUrl = null;
+    this.previewImage = null;
   }
 
   /**
