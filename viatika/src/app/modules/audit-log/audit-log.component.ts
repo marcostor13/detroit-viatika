@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<string, string> = {
   delete_invoice: 'Eliminó factura',
   create_mobility_sheet: 'Creó planilla de movilidad',
   create_other_expense: 'Registró otro gasto',
+  update_expense_category: 'Corrigió categoría del gasto',
   create_rendicion: 'Creó rendición',
   delete_rendicion: 'Eliminó rendición',
   update_rendicion_status: 'Cambió estado rendición',

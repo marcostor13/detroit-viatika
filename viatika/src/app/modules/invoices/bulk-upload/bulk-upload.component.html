@@ -227,6 +227,9 @@
 
             <!-- Estado del comprobante -->
             <div class="flex flex-wrap items-center gap-2 justify-end">
+              @if (item.duplicadoDe && item.state !== 'guardado') {
+                <app-badge variant="error" size="sm">Repetido</app-badge>
+              }
               @switch (item.state) {
                 @case ('leyendo') {
                   <app-badge variant="info" size="sm" [dot]="true">Leyendo…</app-badge>
@@ -338,6 +341,19 @@
 
               <div class="flex flex-col gap-4">
 
+                <!-- Repetido dentro del lote -->
+                @if (item.duplicadoDe && item.state !== 'guardado') {
+                  <div class="rounded-xl px-4 py-3 text-sm border border-error text-error-ink bg-error/10 flex items-start gap-2">
+                    <app-icon name="triangle-alert" size="sm" />
+                    <span>
+                      <span class="font-semibold block">Este comprobante ya está en el lote</span>
+                      Es el mismo que <span class="break-all">{{ item.duplicadoDe }}</span>:
+                      igual RUC, serie y correlativo. Quítalo del lote, o corrige los datos si
+                      el lector se equivocó en alguno de los dos.
+                    </span>
+                  </div>
+                }
+
                 <!-- Estado SUNAT -->
                 <div
                   class="rounded-xl px-4 py-3 text-sm border flex items-start gap-2"
@@ -369,13 +385,21 @@
                       }
                     </select>
                   </app-form-field>
-                  <app-input label="RUC emisor" [(value)]="item.rucEmisor" />
+                  <app-input
+                    label="RUC emisor"
+                    [(value)]="item.rucEmisor"
+                    (changed)="onIdentidadChange()"
+                  />
                   <app-input label="Razón social" [(value)]="item.razonSocial" />
                 </div>
 
                 <div class="grid gap-3 sm:grid-cols-4">
                   <app-input label="Serie" [(value)]="item.serie" (changed)="onSerieChange(item)" />
-                  <app-input label="Correlativo" [(value)]="item.correlativo" />
+                  <app-input
+                    label="Correlativo"
+                    [(value)]="item.correlativo"
+                    (changed)="onIdentidadChange()"
+                  />
                   <app-input label="Fecha de emisión" type="date" [(value)]="item.fechaEmision" />
                   <app-input
                     label="Total"

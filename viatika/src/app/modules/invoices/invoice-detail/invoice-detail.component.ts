@@ -9,11 +9,13 @@ import { BadgeComponent, BadgeVariant } from '../../../design-system/badge/badge
 import { IconComponent } from '../../../design-system/icon/icon.component';
 import { EmptyStateComponent } from '../../../design-system/empty-state/empty-state.component';
 import { UserStateService } from '../../../services/user-state.service';
+import { AttachmentListComponent } from '../../../design-system/attachment-list/attachment-list.component';
+import { expenseAttachments, hasMultipleAttachments } from '../../../utils/adjuntos.util';
 
 @Component({
   selector: 'app-invoice-detail',
   standalone: true,
-  imports: [CommonModule, RouterModule, ButtonComponent, CardComponent, BadgeComponent, IconComponent, EmptyStateComponent],
+  imports: [CommonModule, RouterModule, ButtonComponent, CardComponent, BadgeComponent, IconComponent, EmptyStateComponent, AttachmentListComponent],
   templateUrl: './invoice-detail.component.html',
   styleUrls: ['./invoice-detail.component.scss']
 })
@@ -70,6 +72,20 @@ export class InvoiceDetailComponent implements OnInit {
     if (this.invoice?.file) {
       window.open(this.invoice.file, '_blank');
     }
+  }
+
+  /**
+   * Adjuntos de respaldo del comprobante. La planilla de movilidad y Otros
+   * Gastos admiten varios: el botón de arriba abre el principal y la lista
+   * deja llegar al resto (ver `adjuntos.util`).
+   */
+  get attachments(): string[] {
+    return expenseAttachments(this.invoice as unknown as Record<string, unknown>);
+  }
+
+  /** Solo hace falta listarlos cuando hay más de uno. */
+  get hasMultipleAttachments(): boolean {
+    return hasMultipleAttachments(this.invoice as unknown as Record<string, unknown>);
   }
 
   getStatusName(status?: string): string {

@@ -24,6 +24,7 @@ import {
   formatFechaEmisionDdMmYyyy,
   resolveExpenseFechaEmision,
 } from '../../utils/fecha-emision.util';
+import { ListFiltersService } from '../../services/list-filters.service';
 
 @Component({
   selector: 'app-rendiciones-directas',
@@ -40,6 +41,7 @@ export class RendicionesDirectasComponent implements OnInit {
   private router = inject(Router);
   private adminUsersService = inject(AdminUsersService);
   private ordenTrabajoService = inject(OrdenTrabajoService);
+  private listFilters = inject(ListFiltersService);
 
   // Pestañas: "rendiciones" (una fila por rendición) y "gastos" (por comprobante).
   activeTab = signal<'rendiciones' | 'gastos'>('rendiciones');
@@ -157,6 +159,7 @@ export class RendicionesDirectasComponent implements OnInit {
   clearSelection(): void { this.selectedIds.set(new Set<string>()); }
 
   ngOnInit(): void {
+    this.restoreFilters();
     this.loadCatalogs();
     this.loadReports();
     this.loadData();
@@ -224,13 +227,54 @@ export class RendicionesDirectasComponent implements OnInit {
     });
   }
 
-  applyFilters(): void { this.page = 1; this.loadReports(); this.loadData(); }
+  applyFilters(): void { this.page = 1; this.persistFilters(); this.loadReports(); this.loadData(); }
 
   clearFilters(): void {
     this.filterDateFrom = ''; this.filterDateTo = ''; this.filterProjectId = '';
     this.filterCategoryId = ''; this.filterDocNumber = ''; this.filterTipo = '';
     this.filterUserId = ''; this.filterStatus = ''; this.filterOrdenTrabajoId = '';
-    this.page = 1; this.loadReports(); this.loadData();
+    this.page = 1; this.persistFilters(); this.loadReports(); this.loadData();
+  }
+
+  // ─── Filtros recordados entre visitas ──────────────────────────────────────
+
+  /**
+   * Los filtros sobreviven a entrar en una rendición y volver: la revisión se
+   * hace documento por documento sobre una lista ya acotada (p. ej. las que
+   * están "En contabilidad") y re-filtrar en cada vuelta era el trabajo manual
+   * que se pedía quitar. Solo se recuerdan los que el usuario ve en la barra;
+   * `page` no, para que la lista vuelva a empezar arriba.
+   */
+  private static readonly FILTERS_KEY = 'rendiciones-directas';
+
+  private persistFilters(): void {
+    this.listFilters.write(RendicionesDirectasComponent.FILTERS_KEY, {
+      filterDateFrom: this.filterDateFrom,
+      filterDateTo: this.filterDateTo,
+      filterProjectId: this.filterProjectId,
+      filterCategoryId: this.filterCategoryId,
+      filterDocNumber: this.filterDocNumber,
+      filterTipo: this.filterTipo,
+      filterUserId: this.filterUserId,
+      filterStatus: this.filterStatus,
+      filterOrdenTrabajoId: this.filterOrdenTrabajoId,
+    });
+  }
+
+  private restoreFilters(): void {
+    const saved = this.listFilters.read<Record<string, string>>(
+      RendicionesDirectasComponent.FILTERS_KEY
+    );
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    this.filterDateFrom = text(saved['filterDateFrom']);
+    this.filterDateTo = text(saved['filterDateTo']);
+    this.filterProjectId = text(saved['filterProjectId']);
+    this.filterCategoryId = text(saved['filterCategoryId']);
+    this.filterDocNumber = text(saved['filterDocNumber']);
+    this.filterTipo = text(saved['filterTipo']);
+    this.filterUserId = text(saved['filterUserId']);
+    this.filterStatus = text(saved['filterStatus']);
+    this.filterOrdenTrabajoId = text(saved['filterOrdenTrabajoId']);
   }
 
   // ─── Helpers pestaña Rendiciones directas (nivel reporte) ────────────────────
@@ -318,7 +362,11 @@ export class RendicionesDirectasComponent implements OnInit {
   reportFecha(r: any): string { return formatFechaEmisionDdMmYyyy(r?.createdAt) || '—'; }
 
   viewReport(r: any): void {
-    this.router.navigate(['/mis-rendiciones', String(r._id), 'detalle']);
+    // `from` devuelve el botón "Volver" del detalle a esta bandeja, con los
+    // filtros como quedaron, en vez de a la pantalla que toque por rol.
+    this.router.navigate(['/mis-rendiciones', String(r._id), 'detalle'], {
+      queryParams: { from: 'rendiciones' },
+    });
   }
 
   /** La rendición se lleva en una moneda distinta a la base de la empresa. */
@@ -363,7 +411,9 @@ export class RendicionesDirectasComponent implements OnInit {
     // Una fila de depósito apunta al reporte (su _id es el id de la rendición),
     // no a un gasto: navega al detalle de la rendición directa.
     if (this.isDeposito(e)) {
-      this.router.navigate(['/mis-rendiciones', String(e._id), 'detalle']);
+      this.router.navigate(['/mis-rendiciones', String(e._id), 'detalle'], {
+        queryParams: { from: 'rendiciones' },
+      });
       return;
     }
     this.router.navigate(['/mis-rendiciones/gasto', String(e._id)]);

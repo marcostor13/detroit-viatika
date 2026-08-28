@@ -74,6 +74,16 @@ export class ExpenseService {
     return this.http.patch<any>(`${this.url}/invoice/${id}/desglose`, payload);
   }
 
+  /**
+   * Corrección de la categoría contable de un comprobante por Contabilidad,
+   * mientras la rendición está en su etapa de revisión (`pending_accounting`).
+   * Evita tener que rechazarla —y hacerle recorrer otra vez toda la cadena de
+   * aprobadores— cuando lo único mal elegido es la categoría.
+   */
+  updateCategoria(id: string, categoryId: string): Observable<any> {
+    return this.http.patch<any>(`${this.url}/invoice/${id}/categoria`, { categoryId });
+  }
+
   deleteExpense(id: string, companyId: string): Observable<any> {
     return this.http.delete<any>(`${this.url}/${id}/${companyId}`);
   }

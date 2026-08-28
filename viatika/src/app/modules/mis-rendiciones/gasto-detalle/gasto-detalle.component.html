@@ -63,6 +63,12 @@
           <p class="text-sm text-gray-500">No hay archivo digital asociado.</p>
         }
       </div>
+      <!-- Respaldo con varios documentos: el botón de arriba abre el primero. -->
+      @if (hasMultipleAttachments(exp)) {
+      <div class="mt-4">
+        <app-attachment-list [urls]="attachments(exp)" heading="adjuntos de respaldo" />
+      </div>
+      }
       @if (hasFile(exp) && isPreviewImage(exp)) {
       <div class="mt-4 rounded-xl border border-gray-200 bg-white p-2 flex justify-center">
         <img [src]="getFileUrl(exp)!" alt="Vista previa" class="max-h-72 w-full max-w-full object-contain rounded-lg" loading="lazy" />

@@ -172,6 +172,17 @@ Arrastrar y soltar archivos sobre una zona de subida (VD-134). Es una **directiv
 - La directiva pone la clase `is-dragging` en el host mientras se arrastra encima; **el estilo lo define cada zona**, para no imponer colores desde el design system.
 - El archivo arrastrado debe pasar por el mismo camino que el del selector. Extraer un método común en vez de duplicarlo: si no, la vista previa o el `patchValue` se quedan solo en una de las dos vías.
 
+### `app-attachment-list`
+Lista los adjuntos de respaldo de un comprobante, cada uno abrible en una pestaña nueva.
+
+```html
+<app-attachment-list [urls]="expenseAttachments(exp)" heading="adjuntos de respaldo" />
+```
+
+- `urls`: las URLs en el orden en que se cargaron. Se leen con `expenseAttachments()` de `utils/adjuntos.util.ts`, que resuelve `attachments` o, para los comprobantes de un solo archivo, `file`.
+- `heading`: texto del encabezado, precedido por la cantidad ("3 adjuntos de respaldo"). Vacío = sin encabezado.
+- Se abre de uno en uno: abrir todos de golpe lo corta el bloqueador de ventanas emergentes.
+
 ## Íconos: por qué Lucide
 
 La plataforma no tenía librería de íconos — 65 archivos con SVG de Heroicons pegado a mano, en 3 tamaños distintos para el mismo ícono conceptual. `app-icon` reemplaza eso con Lucide (`@lucide/angular`): trazo uniforme de 2px, tree-shakeable, y un único punto de control de tamaño/color. La migración de los SVG existentes es progresiva (ver plan de UI kit) — no reemplazar todo de una vez.

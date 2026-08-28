@@ -127,6 +127,35 @@ describe('InvoiceDetailComponent', () => {
     });
   });
 
+  /**
+   * La planilla de movilidad y Otros Gastos admiten varios documentos de
+   * respaldo: el botón abre el principal y la lista deja llegar al resto.
+   */
+  describe('adjuntos de respaldo', () => {
+    it('lista los adjuntos cuando el comprobante trae varios', () => {
+      const component = createComponent('inv1');
+      component.invoice = {
+        file: 'http://uno.pdf',
+        attachments: ['http://uno.pdf', 'http://dos.jpg'],
+      } as any;
+      expect(component.attachments).toEqual(['http://uno.pdf', 'http://dos.jpg']);
+      expect(component.hasMultipleAttachments).toBeTrue();
+    });
+
+    it('con un solo adjunto no muestra la lista', () => {
+      const component = createComponent('inv1');
+      component.invoice = { file: 'http://uno.pdf' } as any;
+      expect(component.attachments).toEqual(['http://uno.pdf']);
+      expect(component.hasMultipleAttachments).toBeFalse();
+    });
+
+    it('sin comprobante cargado no revienta', () => {
+      const component = createComponent('inv1');
+      expect(component.attachments).toEqual([]);
+      expect(component.hasMultipleAttachments).toBeFalse();
+    });
+  });
+
   describe('getStatusName', () => {
     it('returns Pendiente when no status is given', () => {
       const component = createComponent('inv1');

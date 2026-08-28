@@ -48,6 +48,11 @@ export interface ICreateMobilitySheetPayload {
   firmaUrl?: string;
   mobilityRows: IMobilityRow[];
   imageUrl?: string;
+  /**
+   * Adjuntos de respaldo cuando hay más de uno. El primero coincide con
+   * `imageUrl`, que es el que sigue quedando como `file` del comprobante.
+   */
+  attachments?: string[];
 }
 
 export interface ICreateOtherExpensePayload {
@@ -59,6 +64,8 @@ export interface ICreateOtherExpensePayload {
   declaracionJurada: true;
   declaracionJuradaFirmante: string;
   imageUrl?: string;
+  /** Ver `ICreateMobilitySheetPayload.attachments`. */
+  attachments?: string[];
 }
 
 /** Fila diaria de un rubro de la Declaración Jurada al extranjero (DJE). */
@@ -137,6 +144,8 @@ export interface IInvoiceResponse {
   projectName?: string;
   category: string;
   file: string;
+  /** Todos los adjuntos de respaldo; `attachments[0] === file`. */
+  attachments?: string[];
   data: any;
   total: string;
   date: string;

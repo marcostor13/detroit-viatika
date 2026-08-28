@@ -76,6 +76,7 @@ export type AuditAction =
   | 'upsert_accounting_config'
   | 'download_accounting_entries'
   | 'update_expense_desglose'
+  | 'update_expense_category'
   | 'create_viatico'
   | 'approve_viatico'
   | 'approve_viatico_l1'

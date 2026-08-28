@@ -92,6 +92,14 @@
               <app-icon name="download" size="sm" />
             </app-button>
           </div>
+
+          <!-- Respaldo con varios documentos (planilla de movilidad y Otros
+               Gastos): el botón de arriba abre el principal, aquí están todos. -->
+          @if (hasMultipleAttachments) {
+          <div class="mt-4">
+            <app-attachment-list [urls]="attachments" heading="adjuntos de respaldo" />
+          </div>
+          }
         </app-card>
 
       </div>

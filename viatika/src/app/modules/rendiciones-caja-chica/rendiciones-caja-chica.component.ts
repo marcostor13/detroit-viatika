@@ -1,10 +1,11 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, effect, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { CajaChicaReportService } from '../../services/caja-chica-report.service';
 import { NotificationService } from '../../services/notification.service';
 import { ICajaChicaReport } from '../../interfaces/caja-chica-report.interface';
+import { ListFiltersService } from '../../services/list-filters.service';
 
 @Component({
   selector: 'app-rendiciones-caja-chica',
@@ -16,6 +17,7 @@ export class RendicionesCajaChicaComponent implements OnInit {
   private service = inject(CajaChicaReportService);
   private notifications = inject(NotificationService);
   private router = inject(Router);
+  private listFilters = inject(ListFiltersService);
 
   reports = signal<ICajaChicaReport[]>([]);
   loading = signal(false);
@@ -25,6 +27,30 @@ export class RendicionesCajaChicaComponent implements OnInit {
 
   searchFilter = signal('');
   filterStatus = signal('');
+
+  /**
+   * Los filtros sobreviven a abrir un reporte y volver: se revisa uno por uno
+   * sobre una lista ya acotada y re-filtrar en cada vuelta era trabajo manual
+   * de más. Se escriben desde un `effect` porque la plantilla los cambia con
+   * `.set()` directo.
+   */
+  private static readonly FILTERS_KEY = 'rendiciones-caja-chica-reportes';
+
+  private readonly persistFilters = effect(() => {
+    this.listFilters.write(RendicionesCajaChicaComponent.FILTERS_KEY, {
+      searchFilter: this.searchFilter(),
+      filterStatus: this.filterStatus(),
+    });
+  });
+
+  private restoreFilters(): void {
+    const saved = this.listFilters.read<Record<string, string>>(
+      RendicionesCajaChicaComponent.FILTERS_KEY
+    );
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    this.searchFilter.set(text(saved['searchFilter']));
+    this.filterStatus.set(text(saved['filterStatus']));
+  }
 
   // ─── Filas expandibles (detalle inline para no cortar columnas) ─────────────
   expandedRows = signal<Set<string>>(new Set<string>());
@@ -47,6 +73,7 @@ export class RendicionesCajaChicaComponent implements OnInit {
   });
 
   ngOnInit(): void {
+    this.restoreFilters();
     const removedId: string | undefined = (window.history.state as any)?.['removedId'];
     this.loadReports(removedId);
   }
