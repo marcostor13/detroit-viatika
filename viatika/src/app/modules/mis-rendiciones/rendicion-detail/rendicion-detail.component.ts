@@ -42,6 +42,15 @@ import {
 } from '../../../utils/fecha-emision.util';
 import { SuplenciaService } from '../../../services/suplencia.service';
 import { SuplenciaBannerComponent } from '../../../components/suplencia-banner/suplencia-banner.component';
+import { AttachmentListComponent } from '../../../design-system/attachment-list/attachment-list.component';
+import {
+  SearchSelectComponent,
+  SearchSelectOption,
+} from '../../../design-system/search-select/search-select.component';
+import { CategoriaService } from '../../../services/categoria.service';
+import { ExpenseService } from '../../../services/expense.service';
+import { ICategory } from '../../invoices/interfaces/category.interface';
+import { expenseAttachments, hasMultipleAttachments } from '../../../utils/adjuntos.util';
 
 /** Paso del proceso de generación de asientos, para el modal de progreso. */
 interface AsientoStep {
@@ -57,6 +66,8 @@ interface AsientoStep {
     FormsModule,
     ButtonComponent,
     IconComponent,
+    AttachmentListComponent,
+    SearchSelectComponent,
     RouterModule,
     FlowTimelineComponent,
     SuplenciaBannerComponent,
@@ -78,6 +89,8 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   private companyConfigService = inject(CompanyConfigService);
   private uploadService = inject(UploadService);
   private accountingEntriesService = inject(AccountingEntriesService);
+  private categoriaService = inject(CategoriaService);
+  private expenseService = inject(ExpenseService);
   id: string = this.route.snapshot.params['id'];
   report: IExpenseReport | null = null;
   isLoading = true;
@@ -509,6 +522,15 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const ownerId = typeof this.report?.userId === 'object' ? this.report?.userId?._id : this.report?.userId;
     const canViewAdminUsers = this.userStateService.isAdmin() || this.userStateService.isSuperAdmin();
     const tab = this.listTab();
+    // Quien llegó desde la bandeja vuelve a la bandeja, sea cual sea su rol:
+    // ahí quedaron sus filtros y el resto de rendiciones por revisar. Sin esto,
+    // un aprobador que no es Contabilidad ni Administrador terminaba en
+    // /tesoreria —una pantalla que ni siquiera le corresponde— y perdía la lista.
+    if (this.route.snapshot.queryParamMap.get('from') === 'rendiciones') {
+      const adminTab = tab === 'caja-chica' || tab === 'directas' ? tab : null;
+      this.router.navigate(['/rendiciones'], adminTab ? { queryParams: { tab: adminTab } } : {});
+      return;
+    }
     if (this.isAdminView && ownerId && canViewAdminUsers) {
       this.router.navigate(['/admin-users', ownerId, 'details']);
     } else if (this.isAdminView && this.userStateService.isContabilidad()) {
@@ -1478,6 +1500,16 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
 
   hasExpenseFile(expense: Record<string, unknown> | null | undefined): boolean {
     return this.getExpenseFileUrl(expense) !== null;
+  }
+
+  /** Todos los adjuntos de respaldo del comprobante (ver `adjuntos.util`). */
+  expenseAttachments(expense: Record<string, unknown> | null | undefined): string[] {
+    return expenseAttachments(expense);
+  }
+
+  /** Solo hace falta listarlos cuando hay más de uno. */
+  hasMultipleAttachments(expense: Record<string, unknown> | null | undefined): boolean {
+    return hasMultipleAttachments(expense);
   }
 
   openExpenseFile(expense: Record<string, unknown>): void {
@@ -3852,6 +3884,112 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   get isRendicionApprovedByContabilidad(): boolean {
     const s = this.report?.status ?? '';
     return ['approved', 'reimbursed', 'settled', 'returned', 'closed'].includes(s);
+  }
+
+  // ─── Corrección de la categoría por Contabilidad ───────────────────────────
+
+  /**
+   * Categorías de la empresa para el selector de corrección. Se piden por
+   * `flat-all` (todas las de la empresa) y no por las asignadas a quien mira:
+   * el sentido del cambio es que Contabilidad ponga la categoría CORRECTA, que
+   * es justo la que el colaborador no tenía o no supo elegir.
+   */
+  categoriasEmpresa = signal<ICategory[]>([]);
+  /** Id del comprobante cuya categoría se está corrigiendo; null = ninguno. */
+  editingCategoryExpenseId = signal<string | null>(null);
+  categoryDraftId = signal('');
+  savingCategory = signal(false);
+
+  /** Id de una referencia que puede llegar poblada (`{_id, name}`) o como id suelto. */
+  private refId(field: unknown): string {
+    if (field && typeof field === 'object' && '_id' in field) {
+      return String((field as { _id: unknown })._id ?? '');
+    }
+    return String(field ?? '');
+  }
+
+  get categoriaOptions(): SearchSelectOption[] {
+    return this.categoriasEmpresa().map(c => ({
+      value: String(c._id ?? ''),
+      label: c.name,
+      subLabel: (c as { cuenta?: string }).cuenta,
+    }));
+  }
+
+  /**
+   * Contabilidad puede corregir la categoría durante SU etapa de revisión.
+   * Antes, una categoría mal elegida obligaba a rechazar la rendición entera y
+   * a que volviera a pasar por toda la cadena de aprobadores solo por eso.
+   * Mismo gate que aprobar el comprobante como Contabilidad: si no le toca
+   * revisar, tampoco corrige.
+   */
+  get canEditExpenseCategoryAsCont(): boolean {
+    return this.canApproveExpenseAsCont;
+  }
+
+  startEditExpenseCategory(expense: Record<string, unknown>): void {
+    const id = String(expense['_id'] ?? '');
+    if (!id) return;
+    this.editingCategoryExpenseId.set(id);
+    this.categoryDraftId.set(this.refId(expense['categoryId']));
+    // Se piden una sola vez, y recién al abrir el selector: al resto de perfiles
+    // —y a Contabilidad mientras solo mira— no les hace falta el catálogo.
+    if (this.categoriasEmpresa().length === 0) {
+      this.categoriaService.getAllFlatAdmin().subscribe({
+        next: (cats) => this.categoriasEmpresa.set(cats ?? []),
+        error: () =>
+          this.notificationService.show(
+            'No se pudieron cargar las categorías',
+            'error'
+          ),
+      });
+    }
+  }
+
+  cancelEditExpenseCategory(): void {
+    this.editingCategoryExpenseId.set(null);
+    this.categoryDraftId.set('');
+  }
+
+  isEditingExpenseCategory(expense: Record<string, unknown>): boolean {
+    return this.editingCategoryExpenseId() === String(expense['_id'] ?? '');
+  }
+
+  saveExpenseCategory(expense: Record<string, unknown>): void {
+    const id = String(expense['_id'] ?? '');
+    const categoryId = this.categoryDraftId();
+    if (!id || !categoryId || this.savingCategory()) return;
+    if (categoryId === this.refId(expense['categoryId'])) {
+      this.cancelEditExpenseCategory();
+      return;
+    }
+    this.savingCategory.set(true);
+    this.expenseService.updateCategoria(id, categoryId).subscribe({
+      next: (updated) => {
+        this.savingCategory.set(false);
+        this.cancelEditExpenseCategory();
+        // La ficha abierta se refresca en el acto; la tabla y los totales por
+        // categoría, con la recarga de la página que ya se está viendo.
+        const actual = this.selectedExpense();
+        if (actual && String(actual['_id'] ?? '') === id) {
+          this.selectedExpense.set({
+            ...actual,
+            categoryId: updated?.categoryId ?? categoryId,
+          });
+        }
+        this.loadExpensesPage(this.expensesPage()?.page ?? 1);
+        this.refreshReport();
+        this.notificationService.show('Categoría actualizada', 'success');
+      },
+      error: (e) => {
+        this.savingCategory.set(false);
+        const msg = e?.error?.message;
+        this.notificationService.show(
+          typeof msg === 'string' ? msg : 'No se pudo actualizar la categoría',
+          'error'
+        );
+      },
+    });
   }
 
   get canApproveExpenseAsCont(): boolean {

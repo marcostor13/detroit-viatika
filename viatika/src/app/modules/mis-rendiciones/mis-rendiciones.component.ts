@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
@@ -43,6 +43,7 @@ import {
 } from '../../interfaces/advance.interface';
 import { expenseAmountBase, expenseAmountInReport, monedaSymbol } from '../../constants/moneda';
 import { SuplenciaService } from '../../services/suplencia.service';
+import { ListFiltersService } from '../../services/list-filters.service';
 
 type UnifiedViaticoItem = {
   _id: string;
@@ -89,6 +90,7 @@ export class MisRendicionesComponent implements OnInit {
   private uploadService = inject(UploadService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private listFilters = inject(ListFiltersService);
 
   expenseReports: IExpenseReport[] = [];
   myAdvances: IAdvance[] = [];
@@ -154,6 +156,58 @@ export class MisRendicionesComponent implements OnInit {
   cajaDateFrom = signal('');
   cajaDateTo = signal('');
 
+  /**
+   * Los filtros de las tres pestañas sobreviven a entrar en una rendición y
+   * volver: se revisa documento por documento sobre una lista ya acotada y
+   * re-filtrar en cada vuelta era el trabajo manual que se pedía quitar. Se
+   * escriben desde un `effect` porque la plantilla los cambia con `.set()`
+   * directo, sin pasar por ningún método del componente.
+   */
+  private static readonly FILTERS_KEY = 'mis-rendiciones';
+
+  private readonly persistFilters = effect(() => {
+    this.listFilters.write(MisRendicionesComponent.FILTERS_KEY, {
+      viaticosTypeFilter: this.viaticosTypeFilter(),
+      viaticosStatusFilter: this.viaticosStatusFilter(),
+      viaticosProjectFilter: this.viaticosProjectFilter(),
+      viaticosOtFilter: this.viaticosOtFilter(),
+      viaticosDateFrom: this.viaticosDateFrom(),
+      viaticosDateTo: this.viaticosDateTo(),
+      advancesStatusFilter: this.advancesStatusFilter(),
+      directasStatusFilter: this.directasStatusFilter(),
+      directasProjectFilter: this.directasProjectFilter(),
+      directasOtFilter: this.directasOtFilter(),
+      directasDateFrom: this.directasDateFrom(),
+      directasDateTo: this.directasDateTo(),
+      cajaDateFrom: this.cajaDateFrom(),
+      cajaDateTo: this.cajaDateTo(),
+    });
+  });
+
+  private restoreFilters(): void {
+    const saved = this.listFilters.read<Record<string, string>>(
+      MisRendicionesComponent.FILTERS_KEY
+    );
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    const tipo = text(saved['viaticosTypeFilter']);
+    this.viaticosTypeFilter.set(
+      tipo === 'solicitudes' || tipo === 'rendiciones' ? tipo : ''
+    );
+    this.viaticosStatusFilter.set(text(saved['viaticosStatusFilter']));
+    this.viaticosProjectFilter.set(text(saved['viaticosProjectFilter']));
+    this.viaticosOtFilter.set(text(saved['viaticosOtFilter']));
+    this.viaticosDateFrom.set(text(saved['viaticosDateFrom']));
+    this.viaticosDateTo.set(text(saved['viaticosDateTo']));
+    this.advancesStatusFilter.set(text(saved['advancesStatusFilter']));
+    this.directasStatusFilter.set(text(saved['directasStatusFilter']));
+    this.directasProjectFilter.set(text(saved['directasProjectFilter']));
+    this.directasOtFilter.set(text(saved['directasOtFilter']));
+    this.directasDateFrom.set(text(saved['directasDateFrom']));
+    this.directasDateTo.set(text(saved['directasDateTo']));
+    this.cajaDateFrom.set(text(saved['cajaDateFrom']));
+    this.cajaDateTo.set(text(saved['cajaDateTo']));
+  }
+
   toggleGuidelines() {
     this.showGuidelines.update(v => !v);
   }
@@ -171,6 +225,7 @@ export class MisRendicionesComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    this.restoreFilters();
     this.loadMyReports();
     this.loadMyAdvances();
     this.loadMyViaticoReports();

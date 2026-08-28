@@ -27,6 +27,7 @@ import {
 import { ProjectSelectComponent } from '../../../design-system/project-select/project-select.component';
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { SuplenciaService } from '../../../services/suplencia.service';
+import { ListFiltersService } from '../../../services/list-filters.service';
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   // Rendición normal
@@ -126,6 +127,7 @@ export class RendicionesAdminComponent implements OnInit {
   private notifications = inject(NotificationService);
   private advanceService = inject(AdvanceService);
   private categoriaService = inject(CategoriaService);
+  private listFilters = inject(ListFiltersService);
   private fb = inject(FormBuilder);
 
   private allReports: IExpenseReport[] = [];
@@ -216,6 +218,9 @@ export class RendicionesAdminComponent implements OnInit {
     this.rejectForm = this.fb.group({
       rejectionReason: ['', [Validators.required, Validators.minLength(10)]],
     });
+    this.restoreFilters();
+    // El ?userId= de un enlace directo manda sobre lo recordado: se entró a la
+    // bandeja para ver a ese colaborador, no para retomar la revisión anterior.
     const preselectedUser = this.route.snapshot.queryParamMap.get('userId');
     if (preselectedUser) this.filterUserId = preselectedUser;
     this.loadData();
@@ -502,6 +507,46 @@ export class RendicionesAdminComponent implements OnInit {
     this.filteredItems = result.sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+
+    this.persistFilters();
+  }
+
+  // ─── Filtros recordados entre visitas ──────────────────────────────────────
+
+  /**
+   * Clave por pestaña: "Solicitud de Fondos" y "Caja Chica" son dos bandejas
+   * distintas (con estados y tipos distintos) montadas sobre este componente.
+   */
+  private get filtersKey(): string {
+    return `rendiciones-${this.mode}`;
+  }
+
+  /**
+   * Guarda los filtros para cuando se vuelva de aprobar una rendición. Se llama
+   * desde `applyFilters` —el único punto por donde pasan todos los cambios de
+   * filtro— y ya con las opciones depuradas, así que nunca se recuerda un
+   * estado que dejó de existir en los datos.
+   */
+  private persistFilters(): void {
+    this.listFilters.write(this.filtersKey, {
+      filterUserId: this.filterUserId,
+      filterProjectId: this.filterProjectId,
+      filterStatus: this.filterStatus,
+      filterKind: this.filterKind,
+      filterDateFrom: this.filterDateFrom,
+      filterDateTo: this.filterDateTo,
+    });
+  }
+
+  private restoreFilters(): void {
+    const saved = this.listFilters.read<Record<string, string>>(this.filtersKey);
+    const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+    this.filterUserId = text(saved['filterUserId']);
+    this.filterProjectId = text(saved['filterProjectId']);
+    this.filterStatus = text(saved['filterStatus']);
+    this.filterKind = text(saved['filterKind']);
+    this.filterDateFrom = text(saved['filterDateFrom']);
+    this.filterDateTo = text(saved['filterDateTo']);
   }
 
   /** VD-84: usuarios mapeados a WorkerOption para el selector buscable de colaborador. */
@@ -547,7 +592,12 @@ export class RendicionesAdminComponent implements OnInit {
     if (item.source === 'advance') {
       this.router.navigate(['/viaticos', item._id]);
     } else {
-      this.router.navigate(['/mis-rendiciones', item._id, 'detalle']);
+      // `from` marca de dónde vino para que el botón "Volver" del detalle
+      // devuelva a esta bandeja —con sus filtros intactos— y no a la pantalla
+      // que le tocaría por rol.
+      this.router.navigate(['/mis-rendiciones', item._id, 'detalle'], {
+        queryParams: { from: 'rendiciones' },
+      });
     }
   }
 
@@ -905,6 +955,20 @@ export class RendicionesAdminComponent implements OnInit {
   openExpenseFile(exp: any): void {
     const url = this.expenseFileUrl(exp);
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  /**
+   * Cuántos adjuntos de respaldo tiene el comprobante. La planilla de movilidad
+   * y Otros Gastos admiten varios; el enlace de la fila abre el primero, y el
+   * número avisa de que en el detalle hay más.
+   */
+  expenseAttachmentCount(exp: any): number {
+    const list = exp?.attachments;
+    if (Array.isArray(list)) {
+      const urls = list.filter((u: unknown) => typeof u === 'string' && !!u.trim());
+      if (urls.length) return urls.length;
+    }
+    return this.expenseFileUrl(exp) ? 1 : 0;
   }
 
   private getReportUserName(report: IExpenseReport): string {

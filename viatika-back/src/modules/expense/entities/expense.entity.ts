@@ -118,6 +118,14 @@ export interface ExpenseDocument extends Document {
   description: string
   categoryId: Types.ObjectId
   file?: string
+  /**
+   * Adjuntos de respaldo del comprobante, en el orden en que se cargaron.
+   * `file` es SIEMPRE el primero de la lista: los tipos de gasto que aceptan un
+   * solo archivo (factura, recibo, DJ) no llenan este campo, y todo lo que ya
+   * leía `file` —vistas, exportaciones, correos— sigue funcionando igual.
+   * Solo la planilla de movilidad y Otros Gastos admiten varios.
+   */
+  attachments?: string[]
   data: string
   status?: ExpenseStatus
   statusDate?: Date
@@ -244,6 +252,10 @@ export class Expense {
 
   @Prop({ required: false })
   file?: string
+
+  /** Ver el comentario del campo en `ExpenseDocument`. `attachments[0] === file`. */
+  @Prop({ type: [String], required: false })
+  attachments?: string[]
 
   @Prop()
   data: string

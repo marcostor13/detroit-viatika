@@ -52,6 +52,16 @@ export class CreateExpenseDto {
   imageUrl?: string
 
   /**
+   * Adjuntos de respaldo cuando el tipo de gasto admite varios (planilla de
+   * movilidad y Otros Gastos). El primero coincide con `imageUrl`, que se
+   * mantiene porque es lo que leen las validaciones y todo lo que ya existía.
+   */
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  attachments?: string[]
+
+  /**
    * Moneda ISO del comprobante ('PEN' / 'USD'). Si se omite se asume la moneda
    * base de la empresa: un comprobante emitido en Perú va en soles aunque la
    * rendición sea en dólares, y se convierte al mostrarlo.

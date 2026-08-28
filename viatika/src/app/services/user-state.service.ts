@@ -4,6 +4,7 @@ import { Observable, of } from 'rxjs';
 import { tap, map, catchError, retry } from 'rxjs/operators';
 import { IUserResponse } from '../interfaces/user.interface';
 import { USER_LOCALSTORAGE_KEY } from '../constants/user-localstorage.constant';
+import { ListFiltersService } from './list-filters.service';
 import { environment } from '../../environments/environment';
 
 const HUB_TOKEN_KEY = 'hub_token';
@@ -17,6 +18,7 @@ export class UserStateService {
   /** null = aún no se consultó. Se llena vía refreshApproverStatus(). */
   private _isApprover = signal<boolean | null>(null);
   private http = inject(HttpClient);
+  private listFilters = inject(ListFiltersService);
 
   constructor() {
     const raw = localStorage.getItem(USER_LOCALSTORAGE_KEY);
@@ -116,6 +118,10 @@ export class UserStateService {
     localStorage.removeItem('token');
     localStorage.removeItem(HUB_TOKEN_KEY);
     localStorage.removeItem(HUB_USER_KEY);
+    // Los filtros recordados de las bandejas son de ESTE usuario: llevan ids de
+    // colaborador y de centro de costo que el siguiente puede no tener a la
+    // vista, y le dejarían la lista vacía sin explicación.
+    this.listFilters.clearAll();
   }
 
   refreshPermissions(): Observable<void> {

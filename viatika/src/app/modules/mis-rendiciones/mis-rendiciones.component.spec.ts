@@ -1,8 +1,8 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ActivatedRoute, Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { MisRendicionesComponent } from './mis-rendiciones.component';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { ExpenseService } from '../../services/expense.service';
@@ -14,6 +14,7 @@ import { FondoCajaChicaService } from '../../services/fondo-caja-chica.service';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { IExpenseReport } from '../../interfaces/expense-report.interface';
 import { IAdvance } from '../../interfaces/advance.interface';
+import { ListFiltersService } from '../../services/list-filters.service';
 
 describe('MisRendicionesComponent', () => {
   let component: MisRendicionesComponent;
@@ -61,6 +62,10 @@ describe('MisRendicionesComponent', () => {
   }
 
   beforeEach(() => {
+    // Los filtros de las pestañas se recuerdan entre visitas (sessionStorage):
+    // sin limpiarlos, lo que filtra un spec se arrastra al siguiente.
+    new ListFiltersService().clearAll();
+
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
       'findAllByUser', 'getMyViaticos', 'getMyCajaChica', 'cancelRendicion', 'delete',
     ]);
@@ -130,6 +135,73 @@ describe('MisRendicionesComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  /**
+   * Los filtros se recuerdan entre visitas, pero además tienen que VERSE
+   * puestos al volver.
+   *
+   * El fallo que cubre: las opciones del <select> se derivan de las filas ya
+   * cargadas, así que en el primer render todavía no existen. Con un binding
+   * `[value]` de una sola vía el navegador no podía seleccionar el valor
+   * restaurado y se quedaba en "Todos"; cuando las opciones llegaban, la
+   * expresión no había cambiado y Angular ya no reescribía el valor. Resultado:
+   * la lista salía filtrada pero el selector decía "Todos". Con `ngModel` el
+   * accessor reaplica el valor cada vez que se registra una opción nueva.
+   */
+  describe('filtros recordados: el selector los refleja al volver', () => {
+    const ESTADO = 'Pendiente de Contabilidad';
+
+    const viatico = () =>
+      ({
+        _id: 'v1',
+        type: 'viatico',
+        status: 'pending_contabilidad',
+        userId: { _id: 'u1', name: 'Juan' },
+        clientId: 'c1',
+        expenseIds: [],
+        createdBy: 'u1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        viaticoAmount: 100,
+      }) as any;
+
+    it('el <select> queda con el estado guardado aunque las opciones lleguen después', fakeAsync(() => {
+      // Se llega a la pantalla con un filtro ya recordado de la visita anterior.
+      // Se simula la lectura en vez de escribir en sessionStorage: el
+      // componente que arma el `beforeEach` sigue vivo y su `effect` vacía lo
+      // guardado al vaciarse los efectos, lo que haría inestable la prueba.
+      const filtros = TestBed.inject(ListFiltersService);
+      spyOn(filtros, 'read').and.returnValue({ viaticosStatusFilter: ESTADO });
+      spyOn(filtros, 'write');
+
+      // Los datos —y con ellos las opciones del selector— llegan TARDE, que es
+      // la condición en la que fallaba.
+      const tardios = new Subject<any[]>();
+      expenseReportsService.getMyViaticos.and.returnValue(tardios.asObservable());
+
+      const fixture = TestBed.createComponent(MisRendicionesComponent);
+      fixture.detectChanges();
+      tick();
+
+      const select = (): HTMLSelectElement | null =>
+        fixture.nativeElement.querySelector('select');
+
+      // Antes de los datos solo existe la opción "Todos": el valor no se puede
+      // aplicar todavía.
+      expect(fixture.componentInstance.viaticosStatusFilter()).toBe(ESTADO);
+      expect(select()?.value).toBe('');
+
+      tardios.next([viatico()]);
+      fixture.detectChanges();
+      tick();
+      fixture.detectChanges();
+
+      // Al aparecer la opción, el selector tiene que mostrarla.
+      expect(fixture.componentInstance.viaticoStatusOptions).toContain(ESTADO);
+      expect(select()?.value).toBe(ESTADO);
+      fixture.destroy();
+    }));
   });
 
   describe('ngOnInit', () => {

@@ -13,6 +13,7 @@ import { AdvanceService } from '../../../services/advance.service';
 import { CategoriaService } from '../../../services/categoria.service';
 import { IExpenseReport } from '../../../interfaces/expense-report.interface';
 import { IAdvance } from '../../../interfaces/advance.interface';
+import { ListFiltersService } from '../../../services/list-filters.service';
 
 describe('RendicionesAdminComponent', () => {
   let component: RendicionesAdminComponent;
@@ -63,6 +64,11 @@ describe('RendicionesAdminComponent', () => {
   };
 
   beforeEach(() => {
+    // La bandeja recuerda sus filtros entre visitas (sessionStorage): sin
+    // limpiarlos, lo que filtra un spec se arrastra al siguiente y le deja la
+    // lista vacía.
+    new ListFiltersService().clearAll();
+
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
       'findAllByClient', 'getDeletionPreview', 'delete', 'findOne',
       'approveViatico', 'approveViaticoContabilidad',
@@ -252,6 +258,100 @@ describe('RendicionesAdminComponent', () => {
       expect(component.hasActiveFilters).toBeFalse();
       component.filterUserId = 'u1';
       expect(component.hasActiveFilters).toBeTrue();
+    });
+  });
+
+  /**
+   * Quien revisa filtra por un estado, entra a una rendición, la aprueba y
+   * vuelve. Al volver, la bandeja se construye de cero: los filtros tienen que
+   * seguir puestos para poder seguir con las que faltan sin re-filtrar.
+   */
+  describe('filtros recordados al volver a la bandeja', () => {
+    /** Segunda visita: mismo componente, instancia nueva. */
+    function revisitar(): RendicionesAdminComponent {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [RendicionesAdminComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
+          { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+          { provide: ExpenseReportsService, useValue: expenseReportsService },
+          { provide: AdminUsersService, useValue: adminUsersService },
+          { provide: InvoicesService, useValue: invoicesService },
+          { provide: UserStateService, useValue: userStateService },
+          { provide: NotificationService, useValue: notifications },
+          { provide: AdvanceService, useValue: advanceService },
+          { provide: CategoriaService, useValue: categoriaService },
+        ],
+      });
+      const nuevo = TestBed.createComponent(RendicionesAdminComponent).componentInstance;
+      nuevo.ngOnInit();
+      return nuevo;
+    }
+
+    it('conserva el filtro por estado', () => {
+      component.ngOnInit();
+      component.filterStatus = component.statusOptions[0].label;
+      component.applyFilters();
+      const esperados = component.filteredItems.length;
+
+      const nuevo = revisitar();
+      expect(nuevo.filterStatus).toBe(component.filterStatus);
+      expect(nuevo.filteredItems.length).toBe(esperados);
+    });
+
+    it('conserva colaborador, centro de costo y fechas', () => {
+      component.ngOnInit();
+      component.filterUserId = 'u1';
+      component.filterProjectId = 'p1';
+      component.filterDateFrom = '2024-01-01';
+      component.filterDateTo = '2024-01-31';
+      component.applyFilters();
+
+      const nuevo = revisitar();
+      expect(nuevo.filterUserId).toBe('u1');
+      expect(nuevo.filterProjectId).toBe('p1');
+      expect(nuevo.filterDateFrom).toBe('2024-01-01');
+      expect(nuevo.filterDateTo).toBe('2024-01-31');
+    });
+
+    it('limpiar filtros también se recuerda', () => {
+      component.ngOnInit();
+      component.filterUserId = 'u1';
+      component.applyFilters();
+      component.clearFilters();
+
+      expect(revisitar().filterUserId).toBe('');
+    });
+
+    // Un enlace directo a la ficha de un colaborador manda sobre lo recordado.
+    it('el ?userId= de la URL gana sobre el filtro guardado', () => {
+      component.ngOnInit();
+      component.filterUserId = 'u9';
+      component.applyFilters();
+
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        imports: [RendicionesAdminComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => 'u1' } } } },
+          { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+          { provide: ExpenseReportsService, useValue: expenseReportsService },
+          { provide: AdminUsersService, useValue: adminUsersService },
+          { provide: InvoicesService, useValue: invoicesService },
+          { provide: UserStateService, useValue: userStateService },
+          { provide: NotificationService, useValue: notifications },
+          { provide: AdvanceService, useValue: advanceService },
+          { provide: CategoriaService, useValue: categoriaService },
+        ],
+      });
+      const nuevo = TestBed.createComponent(RendicionesAdminComponent).componentInstance;
+      nuevo.ngOnInit();
+      expect(nuevo.filterUserId).toBe('u1');
     });
   });
 
@@ -502,14 +602,18 @@ describe('RendicionesAdminComponent', () => {
         userStateService.getUser.and.returnValue({ _id: 'u9', companyId: 'c1' } as any);
         openFirstItem({ status: 'open' });
         expect(component.showDetailModal()).toBeFalse();
-        expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'rep1', 'detalle']);
+        expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'rep1', 'detalle'], {
+          queryParams: { from: 'rendiciones' },
+        });
       });
 
       it('navigates for a paid viatico even before it leaves viatico_approved', () => {
         userStateService.getUser.and.returnValue({ _id: 'u9', companyId: 'c1' } as any);
         openFirstItem({ status: 'viatico_approved', viaticoPaidAmount: 30 });
         expect(component.showDetailModal()).toBeFalse();
-        expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'rep1', 'detalle']);
+        expect(router.navigate).toHaveBeenCalledWith(['/mis-rendiciones', 'rep1', 'detalle'], {
+          queryParams: { from: 'rendiciones' },
+        });
       });
     });
   });

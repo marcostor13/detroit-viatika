@@ -69,7 +69,20 @@
         <app-icon name="clipboard-list" size="sm" />
         Otros Gastos
       </button>
+      <!-- Cuarto tipo: no cambia el formulario, lleva a la carga masiva. Nunca
+           se pinta como seleccionado porque es otra pantalla, no un estado de
+           esta. -->
+      <button type="button"
+        (click)="irACargaMasiva()"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors"
+      >
+        <app-icon name="upload" size="sm" />
+        Varias Facturas
+      </button>
     </div>
+    <p class="mt-3 text-xs text-tertiary">
+      ¿Tienes varias facturas del mismo viaje? Con "Varias Facturas" las subes todas juntas y las clasificas después.
+    </p>
   </div>
   }
 
@@ -785,30 +798,37 @@
   <div class="bg-quaternary rounded-xl shadow-soft border border-tertiary/20 p-6">
     <div class="flex items-center gap-2 mb-4">
       <app-icon name="paperclip" size="sm" class="text-tertiary" />
-      <p class="text-sm font-medium text-secondary">Adjunto de respaldo <span class="text-tertiary font-normal">(opcional)</span></p>
+      <p class="text-sm font-medium text-secondary">Adjuntos de respaldo <span class="text-tertiary font-normal">(opcional)</span></p>
     </div>
 
     <div
       appFileDrop accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-        (filesDropped)="onFilesDropped($event)" (filesRejected)="onFilesRejected($event)"
+        (filesDropped)="onFilesDroppedMultiple($event)" (filesRejected)="onFilesRejected($event)"
       class="bg-background border-2 border-dashed border-tertiary/40 rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
       (click)="fileInputMobility.click()"
     >
-      @if (selectedFile) {
-      <div class="flex items-center justify-center gap-3">
-        <app-icon name="file-text" size="lg" class="text-primary" />
-        <div class="text-left">
-          <p class="text-sm font-medium text-secondary">{{ selectedFile.name }}</p>
-          <p class="text-xs text-tertiary">Haz clic para cambiar el archivo</p>
-        </div>
-      </div>
-      } @else {
       <app-icon name="upload" size="xl" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
-      <p class="mt-2 text-sm text-secondary font-medium">Haz clic para adjuntar un comprobante</p>
-      <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
-      }
-      <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputMobility />
+      <p class="mt-2 text-sm text-secondary font-medium">
+        {{ selectedFiles.length ? 'Haz clic para adjuntar otro documento' : 'Haz clic para adjuntar uno o varios documentos' }}
+      </p>
+      <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG · hasta {{ maxAdjuntos }} archivos</p>
+      <input type="file" accept="*/*" multiple (change)="onFilesSelectedMultiple($event)" class="hidden" #fileInputMobility />
     </div>
+
+    @if (selectedFiles.length) {
+    <ul class="mt-3 space-y-2">
+      @for (f of selectedFiles; track f.name + f.size; let i = $index) {
+      <li class="flex items-center gap-3 px-3 py-2 rounded-lg border border-tertiary/20 bg-background">
+        <app-icon name="file-text" size="sm" class="text-primary shrink-0" />
+        <span class="flex-1 min-w-0 text-sm text-secondary truncate">{{ f.name }}</span>
+        <app-button label="" variant="ghost" size="sm" [ariaLabel]="'Quitar ' + f.name"
+          (clicked)="removeSelectedFile(i)">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      </li>
+      }
+    </ul>
+    }
   </div>
   }
   }
@@ -1005,7 +1025,7 @@
       <!-- VD-110: en "Alimentación sin documentación" el adjunto es opcional
            (el gasto va sin comprobante, respaldado por la declaración jurada). -->
       <label class="text-sm font-medium text-secondary">
-        Adjunto
+        Adjuntos de respaldo
         @if (otrosSubTipo() === 'AL') {
         <span class="text-tertiary font-normal">(opcional)</span>
         } @else {
@@ -1013,24 +1033,39 @@
         }
       </label>
       <div appFileDrop accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-        (filesDropped)="onFilesDropped($event)" (filesRejected)="onFilesRejected($event)"
+        (filesDropped)="onFilesDroppedMultiple($event)" (filesRejected)="onFilesRejected($event)"
         class="bg-background border-2 border-dashed border-tertiary rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-all duration-200 group"
         (click)="fileInputOtros.click()">
         <app-icon name="upload" size="lg" class="mx-auto text-tertiary group-hover:text-primary transition-colors" />
         <p class="mt-2 text-sm text-secondary font-medium">
-          @if (selectedFile) {
-            {{ selectedFile.name }}
+          @if (selectedFiles.length) {
+            Haz clic para adjuntar otro documento
           } @else if (otrosSubTipo() === 'AL') {
-            Haz clic para adjuntar un respaldo, si lo tienes
+            Haz clic para adjuntar uno o varios respaldos, si los tienes
           } @else if (isExtranjeroDocumento()) {
             Haz clic para adjuntar el recibo del exterior
           } @else {
-            Haz clic para adjuntar un comprobante
+            Haz clic para adjuntar uno o varios comprobantes
           }
         </p>
-        <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG</p>
-        <input type="file" accept="*/*" (change)="onFileSelected($event)" class="hidden" #fileInputOtros />
+        <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG · hasta {{ maxAdjuntos }} archivos</p>
+        <input type="file" accept="*/*" multiple (change)="onFilesSelectedMultiple($event)" class="hidden" #fileInputOtros />
       </div>
+
+      @if (selectedFiles.length) {
+      <ul class="space-y-2">
+        @for (f of selectedFiles; track f.name + f.size; let i = $index) {
+        <li class="flex items-center gap-3 px-3 py-2 rounded-lg border border-tertiary/20 bg-background">
+          <app-icon name="file-text" size="sm" class="text-primary shrink-0" />
+          <span class="flex-1 min-w-0 text-sm text-secondary truncate">{{ f.name }}</span>
+          <app-button label="" variant="ghost" size="sm" [ariaLabel]="'Quitar ' + f.name"
+            (clicked)="removeSelectedFile(i)">
+            <app-icon name="close" size="sm" />
+          </app-button>
+        </li>
+        }
+      </ul>
+      }
     </div>
     }
     }
