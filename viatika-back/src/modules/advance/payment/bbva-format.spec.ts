@@ -11,6 +11,9 @@ import {
   normalizeName,
   namesMatch,
   parseBbvaPdfText,
+  readBbvaPdfText,
+  mergeBbvaReadings,
+  clasificarSituacion,
   splitDocAndAmount,
   isSuccessfulSituacion,
   toBbvaAccount20,
@@ -838,5 +841,148 @@ describe('bbva-format · casos límite de la conciliación por OCR', () => {
     expect(p.declared).toBeUndefined()
     expect(p.rows.map(r => r.success)).toEqual([true, false])
     expect(p.inconsistenteConCabecera).toBe(false)
+  })
+})
+
+describe('bbva-format · lectura de la columna "Situación"', () => {
+  it('lee los recortes que deja la impresión del reporte', () => {
+    // Lote 000025800: la impresión cortó la columna en el borde de la página y
+    // "ABONO ENVIADO" quedó en "ABC" + "ENVI".
+    expect(clasificarSituacion('\nGARCIA GARCIA ABC\nENVI\n')).toBe('ok')
+    expect(clasificarSituacion('\nDEL PERU ENVI\n')).toBe('ok')
+    expect(clasificarSituacion('\nCLAUDIA CLAUDIA CORR\n')).toBe('ok')
+    // Lote 000025714: el mismo corte con otras letras mal leídas.
+    expect(clasificarSituacion('\nABONC\nENVIAL\n')).toBe('ok')
+    expect(clasificarSituacion('\nABONC\nCORREC\n')).toBe('ok')
+    expect(clasificarSituacion(' ABONO ENVIADO\n')).toBe('ok')
+  })
+
+  it('lee el fallo, tanto entero como recortado', () => {
+    expect(clasificarSituacion('\nMARIO\nERR/\n')).toBe('fallo')
+    expect(clasificarSituacion(' ABONO RECHAZADO\n')).toBe('fallo')
+    expect(clasificarSituacion(' ABONO NO PROCESADO\n')).toBe('fallo')
+    expect(clasificarSituacion(' NO ABONADO\n')).toBe('fallo')
+  })
+
+  it('un fallo gana a un éxito dentro de la misma ventana', () => {
+    expect(clasificarSituacion('\nABONO\nRECHAZADO\n')).toBe('fallo')
+  })
+
+  it('un apellido NO se confunde con una situación', () => {
+    // Se compara por token completo justamente por esto: con substrings,
+    // "CORREA" activaba "CORR" y daba por abonado a quien no cobró. Y "PEA"
+    // (de PEÑA, que el PDF corrompe) casaba con PENDIENTE y lo daba por
+    // rechazado, bloqueando además el rescate por cabecera de todo el reporte.
+    expect(clasificarSituacion('\nESTACIO PEA\nASTRID SELENE\n')).toBe('ilegible')
+    expect(clasificarSituacion('\nCORREA MENDOZA\n')).toBe('ilegible')
+    expect(clasificarSituacion('\nARENAS LOZA\nCARLOS ALBERTO\n')).toBe('ilegible')
+  })
+
+  it('sin nada legible devuelve "ilegible", no "ok"', () => {
+    expect(clasificarSituacion('\nDEL PERU\nJHORDY MAMANI\n')).toBe('ilegible')
+    expect(clasificarSituacion('')).toBe('ilegible')
+  })
+})
+
+describe('bbva-format · lote repartido en varias páginas (000025800)', () => {
+  // OCR real de las dos páginas del reporte del lote 000025800: 26 abonos por
+  // S/ 12,384.60, de los que el banco procesó 25 (S/ 12,082.60) y rechazó uno
+  // (S/ 302.00, carné de extranjería E-0397043). La página 1 trae 25 filas y la
+  // 2 la restante, porque el banco pagina la relación de abonos.
+  const leer = (archivo: string) =>
+    readBbvaPdfText(
+      readFileSync(join(__dirname, '__fixtures__', archivo), 'utf8')
+    )
+  const pag1 = () => leer('lote-25800-ocr-pag1.txt')
+  const pag2 = () => leer('lote-25800-ocr-pag2.txt')
+
+  it('con la primera página sola NO se marca ningún pago', () => {
+    // Faltan filas para cuadrar contra la cabecera: se falla cerrado. Es el
+    // caso que llevó a que Tesorería viera "25 abonos no exitosos" cuando en
+    // realidad el banco había pagado 25 de 26.
+    const solo = parseBbvaPdfText(
+      readFileSync(join(__dirname, '__fixtures__', 'lote-25800-ocr-pag1.txt'), 'utf8')
+    )
+    expect(solo.rows.length).toBe(25)
+    expect(solo.rows.some(r => r.success)).toBe(false)
+    expect(solo.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('con las dos páginas concilia los 25 abonados y deja fuera el rechazado', () => {
+    const { summary, conflicto } = mergeBbvaReadings([pag1(), pag2()])
+
+    expect(conflicto).toBeUndefined()
+    expect(summary.operationNumber).toBe('000025800')
+    expect(summary.executedAt).toBe('27/08/2026 - 17:54:25')
+    expect(summary.declared).toEqual({
+      procesados: 25,
+      noProcesados: 1,
+      importeAbonado: 12082.6,
+    })
+    expect(summary.rows.length).toBe(26)
+    expect(summary.inconsistenteConCabecera).toBe(false)
+
+    const abonados = summary.rows.filter(r => r.success)
+    expect(abonados.length).toBe(25)
+    expect(
+      Math.round(abonados.reduce((s, r) => s + r.amount, 0) * 100)
+    ).toBe(1208260)
+
+    const rechazados = summary.rows.filter(r => !r.success)
+    expect(rechazados.map(r => [r.documentNumber, r.amount])).toEqual([
+      ['0397043', 302],
+    ])
+  })
+
+  it('no deduplica dos abonos iguales del mismo trabajador', () => {
+    // El lote trae dos filas de S/266.00 al DNI 72233722 y son dos pagos
+    // distintos: un dedupe por documento+importe se comería uno.
+    const { summary } = mergeBbvaReadings([pag1(), pag2()])
+    const repetidos = summary.rows.filter(
+      r => r.documentNumber === '72233722' && r.amount === 266
+    )
+    expect(repetidos.length).toBe(2)
+  })
+
+  it('una página subida dos veces no marca nada', () => {
+    // El guardián de la página repetida es el conteo contra la cabecera: 51
+    // filas leídas contra 26 declaradas.
+    const { summary } = mergeBbvaReadings([pag1(), pag1(), pag2()])
+    expect(summary.rows.length).toBe(51)
+    expect(summary.rows.some(r => r.success)).toBe(false)
+    expect(summary.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('rechaza fusionar PDF de órdenes distintas', () => {
+    const otroLote = readBbvaPdfText(
+      readFileSync(join(__dirname, '__fixtures__', 'lote-25800-ocr-pag2.txt'), 'utf8')
+        .replace('000025800', '000025999')
+    )
+    const { conflicto, summary } = mergeBbvaReadings([pag1(), otroLote])
+    expect(conflicto).toMatch(/órdenes distintas/i)
+    expect(summary.rows).toEqual([])
+  })
+
+  it('rechaza fusionar PDF con totales de cabecera distintos', () => {
+    const adulterado = readBbvaPdfText(
+      readFileSync(join(__dirname, '__fixtures__', 'lote-25800-ocr-pag2.txt'), 'utf8')
+        .replace('Abonos procesados 25', 'Abonos procesados 30')
+    )
+    const { conflicto } = mergeBbvaReadings([pag1(), adulterado])
+    expect(conflicto).toMatch(/totales distintos/i)
+  })
+
+  it('un solo archivo sigue funcionando igual que antes', () => {
+    // `mergeBbvaReadings` con una sola lectura debe dar lo mismo que
+    // `parseBbvaPdfText`: el camino de un archivo no cambia.
+    const texto = readFileSync(
+      join(__dirname, '__fixtures__', 'consulta-pagos-masivos-ocr.txt'),
+      'utf8'
+    )
+    const { summary } = mergeBbvaReadings([readBbvaPdfText(texto)])
+    expect(summary.rows.map(r => r.success)).toEqual(
+      parseBbvaPdfText(texto).rows.map(r => r.success)
+    )
+    expect(summary.rows.every(r => r.success)).toBe(true)
   })
 })

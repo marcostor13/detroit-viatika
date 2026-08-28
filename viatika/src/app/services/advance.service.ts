@@ -127,13 +127,18 @@ export class AdvanceService {
   }
 
   /**
-   * Sube el PDF de "Consulta de Pagos Masivos" de BBVA y concilia los abonos.
-   * `moneda` es la de la planilla que se subió al banco: el PDF no la declara,
-   * y sin ese dato un PDF de la planilla en dólares no cruzaría con nada.
+   * Sube el/los PDF de "Consulta de Pagos Masivos" de BBVA y concilia los
+   * abonos. `moneda` es la de la planilla que se subió al banco: el PDF no la
+   * declara, y sin ese dato un PDF de la planilla en dólares no cruzaría con
+   * nada.
+   *
+   * Se mandan varios archivos porque el banco reparte la relación de abonos en
+   * varias páginas ("Siguiente"), y un lote grande llega como un PDF por
+   * página; el backend los fusiona como un solo lote.
    */
-  reconcilePayments(file: File, moneda?: string): Observable<IReconcileResult> {
+  reconcilePayments(files: File[], moneda?: string): Observable<IReconcileResult> {
     const form = new FormData();
-    form.append('file', file);
+    for (const file of files) form.append('files', file);
     const params = moneda ? `?moneda=${encodeURIComponent(moneda)}` : '';
     return this.http.post<IReconcileResult>(
       `${this.url}/payments/reconcile/client/${this.clientId}${params}`,

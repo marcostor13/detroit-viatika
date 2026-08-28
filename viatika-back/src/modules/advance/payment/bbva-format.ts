@@ -346,6 +346,13 @@ export interface BbvaPdfRow {
   situacion: string
   /** true si la situación indica abono exitoso. */
   success: boolean
+  /**
+   * Cómo se leyó la columna "Situación" de ESTA fila, antes de contrastar con la
+   * cabecera. Se conserva en la fila (y no en un arreglo aparte) porque el
+   * contraste ocurre después de fusionar las filas de varios PDF del mismo lote
+   * y ahí ya no hay forma de mantener un arreglo paralelo en orden.
+   */
+  estado?: 'ok' | 'fallo' | 'ilegible'
 }
 
 /**
@@ -420,6 +427,111 @@ export function isSuccessfulSituacion(situacion: string): boolean {
   return s.includes('ABONO ENVIADO') || s.includes('ABONO CORRECTO')
 }
 
+/** Palabras de la columna "Situación" que indican abono exitoso. */
+const SITUACION_OK = ['ABONO', 'ABONADO', 'ENVIADO', 'CORRECTO', 'PROCESADO']
+
+/** Palabras de la columna "Situación" que indican que el abono NO se hizo. */
+const SITUACION_FALLO = [
+  'ERRADO',
+  'ERRADA',
+  'ERROR',
+  'RECHAZADO',
+  'DEVUELTO',
+  'ANULADO',
+  'EXTORNADO',
+  'OBSERVADO',
+  'PENDIENTE',
+]
+
+/**
+ * "NO ABONADO" / "NO PROCESADO" / "NO ENVIADO": el NO invierte el sentido de la
+ * palabra que sigue, así que hay que verlos como frase y antes que los tokens.
+ */
+const SITUACION_FALLO_FRASE = /\bNO\s+(?:ABON|PROCES|ENVIA)/
+
+/**
+ * Recortes de 3 letras admitidos uno por uno. Con solo 3 letras —y la última
+ * pudiendo estar mal leída— quedan 2 caracteres de señal, que es demasiado poco
+ * para una regla general: "PEA" (de PEÑA, un apellido) casaría con PENDIENTE y
+ * marcaría como rechazado un abono que sí se hizo. Se listan entonces los
+ * recortes que el banco produce de verdad y ninguno más.
+ */
+const SITUACION_OK_CORTO = ['ABC', 'ABO', 'ABN']
+const SITUACION_FALLO_CORTO = ['ERR']
+
+/**
+ * ¿`token` es la palabra `palabra` o un recorte suyo? "Situación" es la última
+ * columna de la tabla y la impresión del reporte la corta en el borde de la
+ * página: "ABONO ENVIADO" llega partido en dos líneas y recortado como
+ * "ABC"+"ENVI" (lote 000025800) o "ABONC"+"ENVIAL" (lote 000025714). Se admite
+ * el prefijo y también el prefijo con la última letra mal leída, que es justo
+ * donde el corte parte el trazo del carácter.
+ */
+function esFragmentoDe(token: string, palabra: string): boolean {
+  if (token.length < 4) return false
+  return palabra.startsWith(token) || palabra.startsWith(token.slice(0, -1))
+}
+
+/**
+ * Como `esFragmentoDe` pero SIN tolerar la última letra mal leída. Se usa para
+ * los fallos: un falso "abonado" lo caza el contraste con la cabecera, pero un
+ * falso "rechazado" además bloquea ese rescate para todo el documento, así que
+ * conviene ser más exigente de este lado.
+ */
+function esPrefijoDe(token: string, palabra: string): boolean {
+  return token.length >= 4 && palabra.startsWith(token)
+}
+
+/** Tokens alfabéticos de una línea, sin puntuación ("ERR/" → "ERR"). */
+function tokensDeLinea(linea: string): string[] {
+  return linea
+    .split(/\s+/)
+    .map(t => t.replace(/[^A-Z]/g, ''))
+    .filter(Boolean)
+}
+
+/**
+ * Lee la situación de un abono a partir de la ventana de texto que le sigue.
+ *
+ * Se compara por TOKEN COMPLETO y no por substring: con substrings, un apellido
+ * como CORREA activaría el patrón "CORR" y daría por abonado a quien no cobró.
+ *
+ * La asimetría entre éxito y fallo es deliberada. Un fallo se acepta desde
+ * cualquier posición de la línea; un éxito solo si el fragmento es el ÚLTIMO
+ * token de su línea, que es donde cae la última columna de la tabla. Ante la
+ * duda conviene equivocarse hacia "no abonado", que manda a confirmación
+ * manual, y nunca hacia dar por pagado a alguien.
+ *
+ * Devuelve tres estados, no dos: hay que distinguir "el banco dice que falló"
+ * de "no se pudo leer la situación", porque solo el segundo admite resolverse
+ * contra los totales de la cabecera (ver `verificarContraCabecera`).
+ */
+export function clasificarSituacion(ventana: string): 'ok' | 'fallo' | 'ilegible' {
+  const texto = (ventana ?? '').toUpperCase()
+  if (SITUACION_FALLO_FRASE.test(texto)) return 'fallo'
+
+  const lineas = texto.split('\n')
+  const ultimoToken = (linea: string) => {
+    const tokens = tokensDeLinea(linea)
+    return tokens[tokens.length - 1]
+  }
+
+  for (const linea of lineas) {
+    if (tokensDeLinea(linea).some(t => SITUACION_FALLO.includes(t))) return 'fallo'
+    const ultimo = ultimoToken(linea)
+    if (!ultimo) continue
+    if (SITUACION_FALLO_CORTO.includes(ultimo)) return 'fallo'
+    if (SITUACION_FALLO.some(p => esPrefijoDe(ultimo, p))) return 'fallo'
+  }
+  for (const linea of lineas) {
+    const ultimo = ultimoToken(linea)
+    if (!ultimo) continue
+    if (SITUACION_OK_CORTO.includes(ultimo)) return 'ok'
+    if (SITUACION_OK.some(p => esFragmentoDe(ultimo, p))) return 'ok'
+  }
+  return 'ilegible'
+}
+
 /** Longitud del número de documento por tipo (Perú): DNI=8, RUC=11. */
 const DOC_LEN: Partial<Record<BbvaDocType, number>> = { L: 8, R: 11 }
 
@@ -480,17 +592,20 @@ function extractTitularBefore(before: string): string {
 }
 
 /**
- * Parser del texto extraído del PDF "Consulta de Pagos Masivos" de BBVA (vía
- * pdf-parse). El PDF real es MUY frágil: el documento y el importe salen pegados
- * (`L - 75162447304.00`), los nombres se parten en varias líneas y la situación
- * aparece en líneas aparte o pegada al importe (`249.80CORRECTO`). Por eso la
- * conciliación cruza por DNI+monto (no por el nombre) y admite un fallback
- * manual. Extrae, por abono: documento, importe y si el abono fue exitoso.
+ * Lee UN PDF "Consulta de Pagos Masivos" de BBVA, sin contrastar todavía con los
+ * totales de la cabecera. El PDF real es MUY frágil: el documento y el importe
+ * salen pegados (`L - 75162447304.00`), los nombres se parten en varias líneas y
+ * la situación aparece en líneas aparte o pegada al importe (`249.80CORRECTO`).
+ * Por eso la conciliación cruza por DNI+monto (no por el nombre) y admite un
+ * fallback manual. Extrae, por abono: documento, importe y cómo se leyó su
+ * situación.
+ *
+ * El contraste contra la cabecera va aparte (`verificarContraCabecera`) porque
+ * el banco pagina la relación de abonos: un lote puede llegar repartido en
+ * varios PDF y los totales solo cuadran una vez fusionadas TODAS las filas.
  */
-export function parseBbvaPdfText(text: string): BbvaPdfSummary {
+export function readBbvaPdfText(text: string): BbvaPdfSummary {
   const rows: BbvaPdfRow[] = []
-  /** Estado leído por fila, en paralelo a `rows` (misma longitud y orden). */
-  const estados: Array<'ok' | 'fallo' | 'ilegible'> = []
   const clean = (text ?? '').replace(/\r/g, '')
 
   // N° de movimiento de cargo (N° de operación del lote).
@@ -523,24 +638,8 @@ export function parseBbvaPdfText(text: string): BbvaPdfSummary {
     // el inicio del siguiente documento (o +120 chars), para no “robar” la
     // situación de la fila siguiente. Un abono fallido gana sobre uno exitoso.
     const nextIdx = k + 1 < hits.length ? hits[k + 1].index : clean.length
-    const sit = clean.slice(cur.end, Math.min(nextIdx, cur.end + 120)).toUpperCase()
-    // Tres estados, no dos: hay que distinguir "el banco dice que falló" de "no
-    // se pudo leer la situación". Sólo el segundo caso admite resolverse por la
-    // cabecera más abajo; un fallo declarado nunca se reinterpreta.
-    //
-    // Los patrones van RECORTADOS respecto de la palabra completa porque la
-    // columna "Situación" es la última de la tabla y el PDF real la corta en el
-    // borde de la página: "ABONO ENVIADO" llega como "ABONC"/"ENVIAL" y
-    // "ABONO CORRECTO" como "CORREC". Los patrones negativos se recortan MÁS
-    // que los positivos: ante la duda conviene equivocarse hacia "no abonado",
-    // que manda a confirmación manual, y nunca hacia dar por pagado a alguien.
-    let estado: 'ok' | 'fallo' | 'ilegible' = 'ilegible'
-    if (/RECHA|DEVUEL|NO\s*ABON|NO\s*PROCES|OBSERV|PENDIEN|ANULA|EXTORN/.test(sit)) {
-      estado = 'fallo'
-    } else if (/ENVIA|CORREC|ABONAD|PROCESAD/.test(sit)) {
-      estado = 'ok'
-    }
-    estados.push(estado)
+    const sit = clean.slice(cur.end, Math.min(nextIdx, cur.end + 120))
+    const estado = clasificarSituacion(sit)
     const success = estado === 'ok'
 
     // Titular ACOTADO entre el documento anterior y el actual (mejor esfuerzo).
@@ -555,24 +654,42 @@ export function parseBbvaPdfText(text: string): BbvaPdfSummary {
       amount,
       situacion: success ? 'ABONO ENVIADO' : '',
       success,
+      estado,
     })
   }
 
-  // ── Contraste contra los totales que declara el propio reporte ─────────────
-  //
-  // La lectura fila por fila depende de una tabla que el PDF recorta y que el
-  // OCR puede equivocar. La cabecera ("Abonos procesados", "Abonos NO
-  // procesados", "Importe cargado por abonos") es un invariante a nivel
-  // documento: sirve para CONFIRMAR la lectura, para RESCATARLA cuando la
-  // columna "Situación" es ilegible, y para DESAUTORIZARLA cuando no cuadra.
-  //
-  // Sólo se aplica si los tres datos están; con la cabecera incompleta no hay
-  // invariante que verificar y se respeta lo leído por fila.
-  const declared = parseDeclaredTotals(clean)
-  let situacionResueltaPorCabecera = false
-  let inconsistenteConCabecera = false
-  const hayIlegibles = estados.includes('ilegible')
-  const hayFallos = estados.includes('fallo')
+  return {
+    rows,
+    operationNumber: opMatch?.[1],
+    executedAt: dateMatch?.[1],
+    declared: parseDeclaredTotals(clean),
+  }
+}
+
+/**
+ * Contrasta lo leído fila por fila contra los totales que declara el propio
+ * reporte, y ajusta el `success` de las filas en consecuencia.
+ *
+ * La lectura fila por fila depende de una tabla que el PDF recorta y que el OCR
+ * puede equivocar. La cabecera ("Abonos procesados", "Abonos NO procesados",
+ * "Importe cargado por abonos") es un invariante a nivel documento: sirve para
+ * CONFIRMAR la lectura, para RESCATARLA cuando la columna "Situación" es
+ * ilegible, y para DESAUTORIZARLA cuando no cuadra.
+ *
+ * Sólo se aplica si los tres datos están; con la cabecera incompleta no hay
+ * invariante que verificar y se respeta lo leído por fila.
+ *
+ * Va separado de la lectura porque el banco pagina la relación de abonos: con
+ * un lote repartido en varios PDF, los totales solo cuadran contra la UNIÓN de
+ * las filas, nunca contra las de un archivo suelto.
+ */
+export function verificarContraCabecera(summary: BbvaPdfSummary): BbvaPdfSummary {
+  const { rows, declared } = summary
+  summary.situacionResueltaPorCabecera = false
+  summary.inconsistenteConCabecera = false
+
+  const hayIlegibles = rows.some(r => r.estado === 'ilegible')
+  const hayFallos = rows.some(r => r.estado === 'fallo')
 
   if (declared && declaracionCompleta(declared)) {
     if (!coincideConCabecera(rows, declared)) {
@@ -582,8 +699,9 @@ export function parseBbvaPdfText(text: string): BbvaPdfSummary {
         for (const row of rows) {
           row.success = true
           row.situacion = 'ABONO ENVIADO'
+          row.estado = 'ok'
         }
-        situacionResueltaPorCabecera = true
+        summary.situacionResueltaPorCabecera = true
       } else {
         // Lo leído contradice a la cabecera: se leyó de más, de menos o mal.
         // Se falla cerrado — ninguna fila se da por abonada y el flujo cae a la
@@ -593,19 +711,83 @@ export function parseBbvaPdfText(text: string): BbvaPdfSummary {
           row.success = false
           row.situacion = ''
         }
-        inconsistenteConCabecera = true
+        summary.inconsistenteConCabecera = true
       }
+    }
+  }
+  return summary
+}
+
+/** Resultado de fusionar las lecturas de varios PDF del mismo lote. */
+export interface BbvaMergeResult {
+  summary: BbvaPdfSummary
+  /** Por qué NO se pueden fusionar (son de lotes distintos). Vacío si todo bien. */
+  conflicto?: string
+}
+
+/**
+ * Fusiona las lecturas de varios PDF del MISMO lote y las verifica como un
+ * único documento.
+ *
+ * El reporte del banco pagina la "Relación de las cuentas de abono" (botones
+ * "Siguiente"/"Anterior"), de modo que un lote grande sale repartido en varios
+ * archivos y cada uno REPITE la cabecera completa. Por eso se validan primero
+ * el N° de movimiento de cargo y los totales: si difieren, son órdenes
+ * distintas y fusionarlas validaría las filas de una contra los totales de la
+ * otra.
+ *
+ * A propósito NO se deduplica por documento+importe: un mismo trabajador puede
+ * tener dos abonos idénticos en la misma planilla (en el lote 000025800 hay dos
+ * filas de S/266.00 al DNI 72233722, y son dos pagos distintos). Si alguien
+ * sube dos veces la misma página, quien lo detecta es el conteo contra la
+ * cabecera, no un dedupe que se comería un pago legítimo.
+ */
+export function mergeBbvaReadings(parts: BbvaPdfSummary[]): BbvaMergeResult {
+  const operaciones = [
+    ...new Set(parts.map(p => p.operationNumber).filter(Boolean) as string[]),
+  ]
+  if (operaciones.length > 1) {
+    return {
+      summary: { rows: [] },
+      conflicto:
+        `Los PDF son de órdenes distintas (N° ${operaciones.join(' y N° ')}). ` +
+        'Sube solo las páginas de un mismo lote.',
+    }
+  }
+
+  const declaraciones = parts
+    .map(p => p.declared)
+    .filter((d): d is BbvaPdfTotals => !!d && declaracionCompleta(d))
+  const base = declaraciones[0]
+  const difiere = (d: BbvaPdfTotals) =>
+    d.procesados !== base.procesados ||
+    d.noProcesados !== base.noProcesados ||
+    Math.abs((d.importeAbonado ?? 0) - (base.importeAbonado ?? 0)) >= 0.01
+  if (base && declaraciones.some(difiere)) {
+    return {
+      summary: { rows: [] },
+      conflicto:
+        'Los PDF declaran totales distintos en su cabecera: no son del mismo ' +
+        'lote. Sube solo las páginas de un mismo reporte.',
     }
   }
 
   return {
-    rows,
-    operationNumber: opMatch?.[1],
-    executedAt: dateMatch?.[1],
-    declared,
-    situacionResueltaPorCabecera,
-    inconsistenteConCabecera,
+    summary: verificarContraCabecera({
+      rows: parts.flatMap(p => p.rows),
+      operationNumber: operaciones[0],
+      executedAt: parts.find(p => p.executedAt)?.executedAt,
+      declared: base ?? parts.find(p => p.declared)?.declared,
+    }),
   }
+}
+
+/**
+ * Lee y verifica UN solo PDF. Atajo de `readBbvaPdfText` +
+ * `verificarContraCabecera` para el caso de un lote que cabe en un archivo.
+ */
+export function parseBbvaPdfText(text: string): BbvaPdfSummary {
+  return verificarContraCabecera(readBbvaPdfText(text))
 }
 
 /** ¿La cabecera trae los tres datos que hacen falta para verificar? */
