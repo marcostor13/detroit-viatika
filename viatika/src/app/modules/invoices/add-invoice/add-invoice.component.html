@@ -583,6 +583,31 @@
     </div>
     }
 
+    <!-- Caja chica: la planilla la registra el responsable del fondo, pero va a
+         nombre de quien realmente usó la movilidad. Un solo colaborador para
+         toda la planilla, igual que la firma que la acompaña. En viático y
+         directa la planilla es siempre de quien rinde (VD-28). -->
+    @if (isCajaChicaPlanilla()) {
+    <div class="flex flex-col gap-1 mb-4">
+      <label class="text-xs font-medium text-secondary">
+        Colaborador de la planilla <span class="text-error">*</span>
+      </label>
+      <app-worker-select
+        [workers]="workers"
+        formControlName="movilidadColaboradorId"
+        placeholder="Selecciona quién usó la movilidad…"
+        [invalid]="isCajaChicaColaboradorInvalid()"
+      />
+      @if (isCajaChicaColaboradorInvalid()) {
+      <span class="text-xs text-error">Selecciona el colaborador de la planilla.</span>
+      } @else {
+      <span class="text-xs text-tertiary">
+        Todas las filas se registran a su nombre, no al de quien carga la planilla.
+      </span>
+      }
+    </div>
+    }
+
     @if(mobilityRowsArray.length === 0) {
     <div class="text-center py-8 text-tertiary text-sm">
       No hay filas aún. Haz clic en "Agregar fila" para empezar.
@@ -603,10 +628,13 @@
           </button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <!-- Colaborador (por fila): siempre quien rinde. La planilla de movilidad ya no admite terceros (VD-28). -->
+          <!-- Colaborador (por fila): no se elige aquí. Es quien rinde, salvo en
+               caja chica, donde lo fija el selector de arriba para toda la
+               planilla. La planilla ya no admite terceros por fila (VD-28). -->
           <div class="flex flex-col gap-1 sm:col-span-3">
             <label class="text-xs font-medium text-secondary">Colaborador</label>
-            <input type="text" [value]="currentUserName" readonly
+            <input type="text" [value]="planillaColaboradorNombre" readonly
+              placeholder="Elige el colaborador de la planilla"
               class="w-full h-[42px] px-3 rounded-lg border border-tertiary/40 bg-gray-50 text-tertiary text-sm cursor-not-allowed" />
           </div>
           <!-- Fecha -->

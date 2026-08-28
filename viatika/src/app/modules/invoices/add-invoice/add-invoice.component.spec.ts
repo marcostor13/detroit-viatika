@@ -2321,6 +2321,120 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  /**
+   * Caja chica: la planilla la carga quien tiene el perfil del fondo, pero el
+   * viaje lo hizo otra persona. Se registra a nombre del colaborador elegido,
+   * no del que la digita. Fuera de caja chica no cambia nada (VD-28).
+   */
+  describe('planilla de movilidad en caja chica', () => {
+    function cajaChicaLista(): AddInvoiceComponent {
+      expenseReportsService.findOne.and.returnValue(
+        of({ _id: 'r1', isCajaChica: true } as any)
+      );
+      invoicesService.getClientUsers.and.returnValue(
+        of([{ _id: 'u9', name: 'Ana Perez', email: 'ana@test.com' }] as any)
+      );
+      invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent({}, { rendicionId: 'r1' });
+      component.ngOnInit();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+      component.setExpenseType('planilla_movilidad');
+      component.form.patchValue({
+        proyectId: 'p1',
+        categoryId: 'cat1',
+        ordenTrabajoId: 'ot1',
+        firmaUrl: 'http://firma.png',
+      });
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-01', total: 10, origen: 'A', destino: 'B', gestion: 'g1',
+      });
+      return component;
+    }
+
+    it('fuera de caja chica la planilla sigue siendo de quien rinde', () => {
+      const component = createComponent();
+      component.setExpenseType('planilla_movilidad');
+      expect(component.isCajaChicaPlanilla()).toBeFalse();
+      expect(component.planillaColaboradorNombre).toBe('John Doe');
+      expect(
+        component.form.get('movilidadColaboradorId')?.hasValidator(Validators.required)
+      ).toBeFalse();
+    });
+
+    it('no deja guardar sin elegir a quién corresponde la planilla', () => {
+      const component = cajaChicaLista();
+      expect(component.isCajaChicaPlanilla()).toBeTrue();
+      expect(component.isFormValid()).toBeFalse();
+
+      component.saveMobilitySheet();
+
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'Selecciona el colaborador a nombre de quien va la planilla',
+        'error'
+      );
+      expect(invoicesService.createMobilitySheet).not.toHaveBeenCalled();
+      expect(component.isCajaChicaColaboradorInvalid()).toBeTrue();
+    });
+
+    it('manda todas las filas a nombre del colaborador elegido', () => {
+      const component = cajaChicaLista();
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-02', total: 15, origen: 'C', destino: 'D', gestion: 'g2',
+      });
+      component.form.patchValue({ movilidadColaboradorId: 'u9' });
+
+      expect(component.planillaColaboradorNombre).toBe('Ana Perez');
+      expect(component.isFormValid()).toBeTrue();
+
+      component.saveMobilitySheet();
+
+      const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0];
+      expect(payload.mobilityRows.length).toBe(2);
+      for (const row of payload.mobilityRows as any[]) {
+        expect(row.colaboradorId).toBe('u9');
+        expect(row.colaboradorNombre).toBe('Ana Perez');
+      }
+    });
+
+    it('sin caja chica las filas viajan a nombre del usuario actual', () => {
+      invoicesService.createMobilitySheet.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.categories = [{ _id: 'catMov', name: 'Planilla de movilidad' } as any];
+      component.form.patchValue({ proyectId: 'p1', categoryId: 'cat1', ordenTrabajoId: 'ot1' });
+      component.addMobilityRow();
+      component.mobilityRowsArray.at(0).patchValue({
+        fecha: '2026-02-01', total: 10, origen: 'A', destino: 'B', gestion: 'g1',
+      });
+
+      component.saveMobilitySheet();
+
+      const payload = invoicesService.createMobilitySheet.calls.mostRecent().args[0];
+      expect(payload.mobilityRows[0].colaboradorId).toBe('u1');
+      expect(payload.mobilityRows[0].colaboradorNombre).toBe('John Doe');
+    });
+
+    it('al editar recupera el colaborador guardado en las filas', () => {
+      expenseReportsService.findOne.and.returnValue(
+        of({ _id: 'r1', isCajaChica: true } as any)
+      );
+      invoicesService.getInvoiceById.and.returnValue(
+        of({
+          _id: 'inv1',
+          expenseType: 'planilla_movilidad',
+          mobilityRows: [
+            { fecha: '2026-02-01', total: 20, origen: 'A', destino: 'B', gestion: 'g1', colaboradorId: 'u9' },
+          ],
+        } as any)
+      );
+      const component = createComponent({ id: 'inv1' }, { rendicionId: 'r1' });
+      component.ngOnInit();
+
+      expect(component.form.get('movilidadColaboradorId')?.value).toBe('u9');
+    });
+  });
+
   describe('lookupRazonSocial', () => {
     it('ignores RUCs that are not 11 digits', () => {
       const component = createComponent();

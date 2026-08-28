@@ -19,6 +19,13 @@ export interface IMobilityRow {
   proyectId?: string;
   /** Categoría de la fila, según el perfil del proyecto de la fila (Rendiciones Directas). */
   categoryId?: string;
+  /**
+   * Colaborador al que corresponde la fila. Es quien rinde, salvo en caja
+   * chica: ahí el responsable del fondo elige a quien usó la movilidad y todas
+   * las filas de la planilla van a su nombre.
+   */
+  colaboradorId?: string;
+  colaboradorNombre?: string;
   origen: string;
   origenDepartamento?: string;
   origenProvincia?: string;
