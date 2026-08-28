@@ -1011,6 +1011,7 @@ describe('RendicionDetailComponent', () => {
         'reimbursed',
         'settled',
         'returned',
+        'closed',
       ];
 
       for (const status of permitidos) {
@@ -1021,14 +1022,13 @@ describe('RendicionDetailComponent', () => {
         });
       }
 
-      // Antes de que los aprobadores terminen no es su turno; `closed` y
-      // `cancelled` son documento archivado o anulado.
+      // Antes de que los aprobadores terminen no es su turno; `cancelled` es
+      // una rendición anulada, sin nada que clasificar.
       const noPermitidos = [
         'open',
         'submitted',
         'partially_paid',
         'rejected',
-        'closed',
         'cancelled',
       ];
 

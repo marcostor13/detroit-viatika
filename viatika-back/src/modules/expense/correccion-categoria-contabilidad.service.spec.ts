@@ -134,6 +134,7 @@ describe('ExpenseService.updateCategoryByContabilidad', () => {
       'reimbursed',
       'settled',
       'returned',
+      'closed',
     ]
 
     for (const status of permitidos) {
@@ -152,15 +153,14 @@ describe('ExpenseService.updateCategoryByContabilidad', () => {
     /**
      * Antes de su revisión el colaborador todavía carga gastos y los
      * aprobadores no han pasado (`partially_paid` es el viático con anticipo a
-     * medio pagar, en plena carga). `closed` y `cancelled` quedan fuera porque
-     * el documento se archivó o se anuló.
+     * medio pagar, en plena carga). `cancelled` queda fuera porque la rendición
+     * se anuló y no hay nada que clasificar.
      */
     const fueraDeSuEtapa = [
       'open',
       'submitted',
       'partially_paid',
       'rejected',
-      'closed',
       'cancelled',
     ]
 

@@ -3957,16 +3957,18 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     'reimbursed',
     'settled',
     'returned',
+    'closed',
   ];
 
   /**
    * Contabilidad puede corregir la categoría desde su etapa de revisión en
-   * adelante: mientras el documento espera a Tesorería, después del reembolso, y
-   * también cuando quedó saldo a favor de la empresa y el colaborador tiene que
-   * depositar. Un error de clasificación detectado en cualquiera de esos pasos
-   * no debería obligar a reabrir nada. Antes, una categoría mal elegida obligaba
-   * a rechazar la rendición entera y a que volviera a pasar por toda la cadena
-   * de aprobadores.
+   * adelante: mientras el documento espera a Tesorería, después del reembolso,
+   * cuando quedó saldo a favor de la empresa y el colaborador tiene que
+   * depositar, y también con la rendición ya cerrada —la clasificación contable
+   * se sigue usando después del cierre—. Un error detectado en cualquiera de
+   * esos pasos no debería obligar a reabrir nada. Antes, una categoría mal
+   * elegida obligaba a rechazar la rendición entera y a que volviera a pasar
+   * por toda la cadena de aprobadores.
    *
    * No reusa el gate de aprobar el comprobante porque ese termina justo cuando
    * la rendición se aprueba, que es donde esto tiene que seguir disponible.

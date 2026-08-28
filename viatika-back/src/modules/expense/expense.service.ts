@@ -3241,6 +3241,10 @@ export class ExpenseService {
    * - `reimbursed`: Tesorería ya pagó el reembolso.
    * - `settled` / `returned`: liquidada con saldo a favor de la empresa; el
    *   colaborador tiene que depositar la diferencia, o ya la depositó.
+   * - `closed`: cerrada. Se incluye porque la clasificación contable se sigue
+   *   usando después del cierre —los asientos se descargan de rendiciones ya
+   *   cerradas— y reabrir la rendición entera para arreglar una cuenta mal
+   *   puesta es justamente el reproceso que este endpoint vino a evitar.
    *
    * El criterio es que un error de clasificación detectado en cualquiera de
    * esos pasos no debería obligar a reabrir nada: es una corrección contable,
@@ -3250,7 +3254,7 @@ export class ExpenseService {
    * - todo lo ANTERIOR a su revisión (`open`, `submitted`, `partially_paid`,
    *   `rejected`…): ahí el colaborador todavía carga gastos y los aprobadores
    *   no han pasado; Contabilidad no corrige lo que aún no le tocó revisar.
-   * - `closed` y `cancelled`: el documento se archivó o se anuló.
+   * - `cancelled`: la rendición se anuló, no hay nada que clasificar.
    */
   private static readonly CATEGORIA_CORREGIBLE_STATUSES: string[] = [
     'pending_accounting',
@@ -3259,6 +3263,7 @@ export class ExpenseService {
     'reimbursed',
     'settled',
     'returned',
+    'closed',
   ]
 
   /**
@@ -3294,7 +3299,7 @@ export class ExpenseService {
     await this.assertReportInStatus(
       existing,
       ExpenseService.CATEGORIA_CORREGIBLE_STATUSES,
-      'La categoría solo se puede corregir desde la revisión de Contabilidad en adelante, y mientras la rendición no esté cerrada ni anulada.'
+      'La categoría solo se puede corregir desde la revisión de Contabilidad en adelante, y mientras la rendición no esté anulada.'
     )
 
     // El comprobante manda el cliente, no el token: Contabilidad es un rol
