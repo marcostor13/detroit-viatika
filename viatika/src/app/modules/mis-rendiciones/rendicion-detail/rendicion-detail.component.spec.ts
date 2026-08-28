@@ -871,6 +871,39 @@ describe('RendicionDetailComponent', () => {
     });
   });
 
+  /**
+   * Quien revisa llega desde una bandeja con documentos de mucha gente; sin el
+   * nombre en la ficha no había forma de saber de quién era la rendición.
+   */
+  describe('colaborador dueño de la rendición', () => {
+    it('toma el nombre de userId, no de quien la creó', () => {
+      component.report = makeReport({
+        userId: { _id: 'u9', name: 'CABEZAS BRAVO, NATHALY' } as any,
+        createdBy: { _id: 'u1', name: 'Contabilidad' } as any,
+      });
+      expect(component.getOwnerName()).toBe('CABEZAS BRAVO, NATHALY');
+    });
+
+    it('acompaña el área cuando el backend la manda', () => {
+      component.report = makeReport({
+        userId: { _id: 'u9', name: 'Juan Pérez', area: 'Operaciones' } as any,
+      });
+      expect(component.getOwnerArea()).toBe('Operaciones');
+    });
+
+    // Se pinta solo si hay nombre: con el id suelto no se inventa una etiqueta.
+    it('devuelve vacío cuando userId llega sin poblar', () => {
+      component.report = makeReport({ userId: 'u9' as any });
+      expect(component.getOwnerName()).toBe('');
+      expect(component.getOwnerArea()).toBe('');
+    });
+
+    it('devuelve vacío sin rendición cargada', () => {
+      component.report = null as any;
+      expect(component.getOwnerName()).toBe('');
+    });
+  });
+
   describe('goBack', () => {
     it('navigates to admin-users details when viewing as an admin who can see it', () => {
       component.report = makeReport({ userId: { _id: 'other', name: 'x' } as any });
@@ -965,24 +998,47 @@ describe('RendicionDetailComponent', () => {
     }
 
     describe('cuándo se ofrece', () => {
-      it('se ofrece a Contabilidad con la rendición en revisión contable', () => {
-        enRevisionContable();
-        expect(component.canEditExpenseCategoryAsCont).toBeTrue();
-      });
+      /**
+       * Desde su etapa de revisión en adelante: esperando a Tesorería, tras el
+       * reembolso y con la devolución que el colaborador debe depositar
+       * (`settled` → `returned`). Espejo de `CATEGORIA_CORREGIBLE_STATUSES` en
+       * el backend; si aquí se ofrece de más, la llamada devuelve 400.
+       */
+      const permitidos = [
+        'pending_accounting',
+        'approved',
+        'viatico_approved',
+        'reimbursed',
+        'settled',
+        'returned',
+      ];
 
-      // Antes de que los aprobadores terminen no es su turno: el backend
-      // rechazaría la corrección igual que rechaza la aprobación.
-      it('no se ofrece mientras la rendición sigue con los aprobadores', () => {
-        userState.isContabilidad.and.returnValue(true);
-        component.report = makeReport({ status: 'submitted' });
-        expect(component.canEditExpenseCategoryAsCont).toBeFalse();
-      });
+      for (const status of permitidos) {
+        it(`se ofrece a Contabilidad con la rendición en ${status}`, () => {
+          userState.isContabilidad.and.returnValue(true);
+          component.report = makeReport({ status } as any);
+          expect(component.canEditExpenseCategoryAsCont).toBeTrue();
+        });
+      }
 
-      it('no se ofrece una vez aprobada la rendición', () => {
-        userState.isContabilidad.and.returnValue(true);
-        component.report = makeReport({ status: 'approved' });
-        expect(component.canEditExpenseCategoryAsCont).toBeFalse();
-      });
+      // Antes de que los aprobadores terminen no es su turno; `closed` y
+      // `cancelled` son documento archivado o anulado.
+      const noPermitidos = [
+        'open',
+        'submitted',
+        'partially_paid',
+        'rejected',
+        'closed',
+        'cancelled',
+      ];
+
+      for (const status of noPermitidos) {
+        it(`no se ofrece con la rendición en ${status}`, () => {
+          userState.isContabilidad.and.returnValue(true);
+          component.report = makeReport({ status } as any);
+          expect(component.canEditExpenseCategoryAsCont).toBeFalse();
+        });
+      }
 
       it('no se ofrece al colaborador ni al aprobador', () => {
         component.report = makeReport({ status: 'pending_accounting' });

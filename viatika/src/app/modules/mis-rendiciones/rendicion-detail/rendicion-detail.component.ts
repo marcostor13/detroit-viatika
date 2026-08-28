@@ -1916,6 +1916,35 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     return this.coordinatorApprover()?.dni || undefined;
   }
 
+  /**
+   * Colaborador a quien pertenece la rendición (`userId`, el que rinde), no
+   * quien la creó: Contabilidad puede abrir una rendición directa a nombre de
+   * otro, y `createdBy` guardaría a Contabilidad.
+   *
+   * Se muestra en el encabezado ("Rendido por") porque quien revisa
+   * —Contabilidad, Tesorería, un aprobador— llega desde una bandeja con
+   * documentos de mucha gente y en la ficha no había forma de saber de quién
+   * era. La etiqueta no dice "Colaborador" a propósito: el dueño puede ser un
+   * Coordinador o la propia Contabilidad, no solo alguien con ese rol.
+   */
+  getOwnerName(): string {
+    const u = this.report?.userId;
+    if (u == null) return '';
+    if (typeof u === 'object' && u !== null && 'name' in u) {
+      return String((u as { name?: string }).name || '').trim();
+    }
+    return '';
+  }
+
+  /** Área del colaborador, para acompañar al nombre cuando el backend la manda. */
+  getOwnerArea(): string {
+    const u = this.report?.userId;
+    if (u && typeof u === 'object' && 'area' in u) {
+      return String((u as { area?: string }).area || '').trim();
+    }
+    return '';
+  }
+
   getCreatedByName(): string {
     const u = this.report?.createdBy;
     if (u == null) return '—';
@@ -3917,14 +3946,36 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Contabilidad puede corregir la categoría durante SU etapa de revisión.
-   * Antes, una categoría mal elegida obligaba a rechazar la rendición entera y
-   * a que volviera a pasar por toda la cadena de aprobadores solo por eso.
-   * Mismo gate que aprobar el comprobante como Contabilidad: si no le toca
-   * revisar, tampoco corrige.
+   * Estados en que se ofrece la corrección. Espejo de
+   * `CATEGORIA_CORREGIBLE_STATUSES` en `expense.service.ts` (backend): si aquí
+   * se agrega uno que allá no está, el botón aparece y la llamada devuelve 400.
+   */
+  private readonly categoriaCorregibleStatuses = [
+    'pending_accounting',
+    'approved',
+    'viatico_approved',
+    'reimbursed',
+    'settled',
+    'returned',
+  ];
+
+  /**
+   * Contabilidad puede corregir la categoría desde su etapa de revisión en
+   * adelante: mientras el documento espera a Tesorería, después del reembolso, y
+   * también cuando quedó saldo a favor de la empresa y el colaborador tiene que
+   * depositar. Un error de clasificación detectado en cualquiera de esos pasos
+   * no debería obligar a reabrir nada. Antes, una categoría mal elegida obligaba
+   * a rechazar la rendición entera y a que volviera a pasar por toda la cadena
+   * de aprobadores.
+   *
+   * No reusa el gate de aprobar el comprobante porque ese termina justo cuando
+   * la rendición se aprueba, que es donde esto tiene que seguir disponible.
    */
   get canEditExpenseCategoryAsCont(): boolean {
-    return this.canApproveExpenseAsCont;
+    const esContabilidad =
+      this.userStateService.isContabilidad() || this.userStateService.isSuperAdmin();
+    if (!esContabilidad) return false;
+    return this.categoriaCorregibleStatuses.includes(this.report?.status ?? '');
   }
 
   startEditExpenseCategory(expense: Record<string, unknown>): void {

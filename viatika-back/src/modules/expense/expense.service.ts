@@ -3231,8 +3231,38 @@ export class ExpenseService {
   }
 
   /**
-   * Corrección de la categoría contable de un comprobante por Contabilidad,
-   * durante SU etapa de revisión (rendición en `pending_accounting`).
+   * Estados de la rendición en que Contabilidad puede corregir la categoría de
+   * un comprobante: desde SU etapa de revisión en adelante, mientras el
+   * documento siga vivo.
+   *
+   * - `pending_accounting`: su etapa de revisión.
+   * - `approved` / `viatico_approved`: ya la aprobó y el documento está en la
+   *   cola de pago o reembolso de Tesorería.
+   * - `reimbursed`: Tesorería ya pagó el reembolso.
+   * - `settled` / `returned`: liquidada con saldo a favor de la empresa; el
+   *   colaborador tiene que depositar la diferencia, o ya la depositó.
+   *
+   * El criterio es que un error de clasificación detectado en cualquiera de
+   * esos pasos no debería obligar a reabrir nada: es una corrección contable,
+   * no un cambio del gasto. Los asientos se regeneran solos (ver más abajo).
+   *
+   * Quedan fuera, a propósito:
+   * - todo lo ANTERIOR a su revisión (`open`, `submitted`, `partially_paid`,
+   *   `rejected`…): ahí el colaborador todavía carga gastos y los aprobadores
+   *   no han pasado; Contabilidad no corrige lo que aún no le tocó revisar.
+   * - `closed` y `cancelled`: el documento se archivó o se anuló.
+   */
+  private static readonly CATEGORIA_CORREGIBLE_STATUSES: string[] = [
+    'pending_accounting',
+    'approved',
+    'viatico_approved',
+    'reimbursed',
+    'settled',
+    'returned',
+  ]
+
+  /**
+   * Corrección de la categoría contable de un comprobante por Contabilidad.
    *
    * Hasta ahora, ante una categoría mal elegida la única salida era rechazar la
    * rendición: el colaborador la corregía y volvía a recorrer toda la cadena de
@@ -3244,6 +3274,9 @@ export class ExpenseService {
    * fecha, adjuntos, documento) sigue siendo del colaborador y fuera del
    * alcance de Contabilidad (VD-69). Solo se toca `categoryId` y el aviso de
    * presupuesto, que quedaría hablando de la categoría anterior.
+   *
+   * Los asientos contables no quedan desfasados: su caché se invalida por el
+   * `updatedAt` de los gastos, así que se regeneran con la categoría corregida.
    *
    * Devuelve también el nombre de la categoría anterior, para la bitácora.
    */
@@ -3260,8 +3293,8 @@ export class ExpenseService {
     this.assertCanReadExpense(existing, actor)
     await this.assertReportInStatus(
       existing,
-      ['pending_accounting'],
-      'La categoría solo se puede corregir mientras la rendición está en revisión de Contabilidad.'
+      ExpenseService.CATEGORIA_CORREGIBLE_STATUSES,
+      'La categoría solo se puede corregir desde la revisión de Contabilidad en adelante, y mientras la rendición no esté cerrada ni anulada.'
     )
 
     // El comprobante manda el cliente, no el token: Contabilidad es un rol
