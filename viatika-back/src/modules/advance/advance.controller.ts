@@ -10,10 +10,10 @@ import {
   Request,
   UseGuards,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
   BadRequestException,
 } from '@nestjs/common'
-import { FileInterceptor } from '@nestjs/platform-express'
+import { AnyFilesInterceptor } from '@nestjs/platform-express'
 import { memoryStorage } from 'multer'
 import { AdvanceService } from './advance.service'
 import { PaymentBatchService, PaymentKind } from './payment/payment-batch.service'
@@ -97,19 +97,25 @@ export class AdvanceController {
    */
   @Post('payments/reconcile/client/:clientId')
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA)
+  // Varios archivos: el banco reparte la relación de abonos en varias páginas y
+  // un lote grande llega como un PDF por página. `AnyFilesInterceptor` acepta
+  // cualquier nombre de campo, así que sigue funcionando quien mande `file`.
   @UseInterceptors(
-    FileInterceptor('file', {
+    AnyFilesInterceptor({
       storage: memoryStorage(),
-      limits: { fileSize: 15 * 1024 * 1024 },
+      limits: { fileSize: 15 * 1024 * 1024, files: 10 },
     })
   )
   async reconcilePayments(
     @Param('clientId') clientId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
     @Request() req,
     @Query('moneda') moneda?: string
   ) {
-    if (!file?.buffer) {
+    const pdfs = (files ?? [])
+      .filter(f => f?.buffer?.length)
+      .map((f, i) => ({ buffer: f.buffer, nombre: f.originalname || `PDF ${i + 1}` }))
+    if (!pdfs.length) {
       throw new BadRequestException('Debes adjuntar el PDF de BBVA.')
     }
     const actor = {
@@ -119,7 +125,7 @@ export class AdvanceController {
     // El PDF no declara la moneda: hay que decirle de qué planilla viene.
     const result = await this.paymentBatchService.reconcileFromPdf(
       clientId,
-      file.buffer,
+      pdfs,
       actor,
       moneda
     )
@@ -128,7 +134,7 @@ export class AdvanceController {
       userName: req.user.name || req.user.email,
       action: 'reconcile_payments',
       module: 'tesoreria',
-      details: `${result.moneda} · conciliados: ${result.conciliados.length}, sin conciliar: ${result.sinConciliar.length}`,
+      details: `${result.moneda} · ${pdfs.length} archivo(s) · conciliados: ${result.conciliados.length}, sin conciliar: ${result.sinConciliar.length}`,
       clientId: req.user.clientId,
     })
     return result

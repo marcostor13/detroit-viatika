@@ -426,6 +426,124 @@ describe('PaymentBatchService', () => {
     })
   })
 
+  describe('reconcileFromPdf · lote repartido en varios PDF', () => {
+    // El banco pagina la "Relación de las cuentas de abono": un lote de más de
+    // ~25 abonos llega como un PDF por página y cada uno repite la cabecera.
+    // Con un solo archivo las filas nunca cuadran contra los totales y no se
+    // concilia nada, aunque el banco sí haya pagado.
+    const cabecera = [
+      'No. Movimiento de Cargo 000030100',
+      'Fecha y Hora de Ejecución 27/08/2026 - 17:54:25',
+      'Abonos procesados 2',
+      'Importe cargado por abonos 400.00 - SOLES',
+      'Abonos NO procesados 0',
+      'Importe NO abonado 0.00 - SOLES',
+    ]
+    const pagina1 = [...cabecera, 'ANA TORRES L - 11111111 100.00 ABONO ENVIADO'].join('\n')
+    const pagina2 = [...cabecera, 'LUIS PEREZ L - 22222222 300.00 ABONO ENVIADO'].join('\n')
+
+    beforeEach(() => {
+      advanceService.findBatchPayableAdvances.mockResolvedValue([
+        {
+          advanceId: 'a1',
+          user: { name: 'ANA TORRES', dni: '11111111', documentType: 'L', email: 'a@x.pe' },
+          remaining: 100,
+          cci: CCI_OTRO,
+        },
+        {
+          advanceId: 'a2',
+          user: { name: 'LUIS PEREZ', dni: '22222222', documentType: 'L', email: 'l@x.pe' },
+          remaining: 300,
+          cci: CCI_OTRO,
+        },
+      ])
+    })
+
+    it('con una sola página no concilia nada y explica que faltan abonos', async () => {
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(pagina1)
+
+      const res = await service.reconcileFromPdf('c1', [Buffer.from('p1')], {
+        role: 'TESORERIA',
+      })
+      expect(res.conciliados).toHaveLength(0)
+      expect(res.advertencias.join(' ')).toMatch(/Faltan abonos por leer: se leyeron 1 de los 2/)
+      expect(res.advertencias.join(' ')).toMatch(/adjunta también las que faltan/i)
+    })
+
+    it('con las dos páginas concilia el lote completo', async () => {
+      jest
+        .spyOn(service as any, 'extractPdfText')
+        .mockResolvedValueOnce(pagina1)
+        .mockResolvedValueOnce(pagina2)
+
+      const res = await service.reconcileFromPdf(
+        'c1',
+        [
+          { buffer: Buffer.from('p1'), nombre: 'pagina1.pdf' },
+          { buffer: Buffer.from('p2'), nombre: 'pagina2.pdf' },
+        ],
+        { role: 'TESORERIA' }
+      )
+      expect(res.operationNumber).toBe('000030100')
+      expect(res.conciliados.map(c => c.id).sort()).toEqual(['a1', 'a2'])
+      expect(res.sinConciliar).toHaveLength(0)
+      expect(res.advertencias.join(' ')).toMatch(/2 archivos como un solo lote: 2 abonos/)
+    })
+
+    it('rechaza PDF de órdenes distintas en vez de mezclarlos', async () => {
+      jest
+        .spyOn(service as any, 'extractPdfText')
+        .mockResolvedValueOnce(pagina1)
+        .mockResolvedValueOnce(pagina2.replace('000030100', '000030999'))
+
+      await expect(
+        service.reconcileFromPdf('c1', [Buffer.from('p1'), Buffer.from('p2')], {
+          role: 'TESORERIA',
+        })
+      ).rejects.toThrow(/órdenes distintas/i)
+      expect(advanceService.registerPayment).not.toHaveBeenCalled()
+    })
+
+    it('avisa del archivo que no aportó ninguna fila', async () => {
+      jest
+        .spyOn(service as any, 'extractPdfText')
+        .mockResolvedValueOnce(pagina1)
+        .mockResolvedValueOnce(pagina2)
+        .mockResolvedValueOnce('un PDF cualquiera sin tabla de abonos')
+      jest
+        .spyOn(service as any, 'extractPdfTextByOcr')
+        .mockResolvedValue({ texto: '', paginasTotales: 0, paginasLeidas: 0 })
+
+      const res = await service.reconcileFromPdf(
+        'c1',
+        [
+          { buffer: Buffer.from('p1'), nombre: 'pagina1.pdf' },
+          { buffer: Buffer.from('p2'), nombre: 'pagina2.pdf' },
+          { buffer: Buffer.from('x'), nombre: 'otra-cosa.pdf' },
+        ],
+        { role: 'TESORERIA' }
+      )
+      expect(res.conciliados).toHaveLength(2)
+      expect(res.advertencias.join(' ')).toMatch(/Sin abonos legibles en otra-cosa\.pdf/)
+    })
+
+    it('se leyeron MÁS abonos de los declarados: apunta a la página repetida', async () => {
+      jest
+        .spyOn(service as any, 'extractPdfText')
+        .mockResolvedValueOnce(pagina1)
+        .mockResolvedValueOnce(pagina1)
+        .mockResolvedValueOnce(pagina2)
+
+      const res = await service.reconcileFromPdf(
+        'c1',
+        [Buffer.from('p1'), Buffer.from('p1'), Buffer.from('p2')],
+        { role: 'TESORERIA' }
+      )
+      expect(res.conciliados).toHaveLength(0)
+      expect(res.advertencias.join(' ')).toMatch(/página repetida/i)
+    })
+  })
+
   describe('reconcileFromPdf · empates de documento + monto', () => {
     // Caso real: en el archivo del 13-ago el mismo colaborador aparecía dos
     // veces por el mismo importe (Carlos Zamudio S/ 785.69 x2). El PDF trae

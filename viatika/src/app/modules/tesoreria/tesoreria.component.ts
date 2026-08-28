@@ -1467,29 +1467,35 @@ export class TesoreriaComponent implements OnInit {
     URL.revokeObjectURL(url);
   }
 
-  /** Sube el PDF de BBVA y muestra el resultado de la conciliación. */
+  /**
+   * Sube el/los PDF de BBVA y muestra el resultado de la conciliación.
+   *
+   * Se admiten varios de una vez porque el banco pagina la relación de abonos
+   * ("Siguiente"): con más de ~25 abonos, la primera página sola nunca cuadra
+   * contra los totales del reporte y no se concilia nada.
+   */
   onReconcileFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') {
-      this.notificationService.show('Debes subir el PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
+    const files = Array.from(input.files ?? []);
+    if (!files.length) return;
+    if (files.some((f) => f.type !== 'application/pdf')) {
+      this.notificationService.show('Debes subir el/los PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
       input.value = '';
       return;
     }
-    this.reconcileFile(file);
+    this.reconcileFiles(files);
     input.value = '';
   }
 
-  /** Envía el PDF (real o simulado) a conciliación y procesa el resultado. */
-  private reconcileFile(file: File): void {
+  /** Envía los PDF (reales o simulados) a conciliación y procesa el resultado. */
+  private reconcileFiles(files: File[]): void {
     this.isReconciling.set(true);
     // Se concilia contra la moneda de la última planilla generada. Sin este
     // dato el backend asume la moneda base y un PDF de la planilla en dólares
     // no cruzaría con ningún pendiente.
     const moneda = this.monedaPlanilla() ?? undefined;
     this.generateResult.set(null);
-    this.advanceService.reconcilePayments(file, moneda).subscribe({
+    this.advanceService.reconcilePayments(files, moneda).subscribe({
       next: (res) => {
         this.isReconciling.set(false);
         this.reconcileResult.set(res);

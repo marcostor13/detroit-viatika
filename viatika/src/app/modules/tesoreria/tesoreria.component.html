@@ -16,7 +16,9 @@
         [class.opacity-50]="isReconciling()" [class.pointer-events-none]="isReconciling()">
         <app-icon name="upload" size="sm" />
         {{ isReconciling() ? 'Procesando...' : 'Cargar pagos' }}
-        <input type="file" accept="application/pdf" class="hidden"
+        <!-- multiple: el banco pagina la relación de abonos y un lote grande
+             llega como un PDF por página; hay que subirlas todas juntas. -->
+        <input type="file" accept="application/pdf" multiple class="hidden"
           (change)="onReconcileFileSelected($event)" />
       </label>
     </div>
