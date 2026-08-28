@@ -1744,3 +1744,269 @@ describe('ExpenseService — update: las equivalencias siguen al nuevo importe',
     expect(doc.montoReporte).toBeUndefined()
   })
 })
+
+/**
+ * Caso RD-0012: una rendición quedó bloqueada para siempre en `submitted`
+ * porque la corrección de un comprobante observado por Contabilidad no limpió
+ * su rechazo. Dos defectos encadenados, uno por cada `describe` de abajo.
+ */
+describe('ExpenseService — corrección de un comprobante observado (RD-0012)', () => {
+  let service: ExpenseService
+  const clientId = new Types.ObjectId().toHexString()
+  const expenseId = new Types.ObjectId().toHexString()
+  const duenoId = new Types.ObjectId().toHexString()
+
+  const expenseModel = {
+    findOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    aggregate: jest.fn().mockResolvedValue([]),
+  }
+  const expenseReportService = {
+    findOne: jest.fn().mockResolvedValue(null),
+    resubmitSilent: jest.fn(),
+    advanceToAccountingIfAllExpensesApproved: jest.fn(),
+  }
+
+  /** Comprobante observado por Contabilidad, tal como lo deja `rejectByContabilidad`. */
+  const observado = (extra: Record<string, unknown> = {}) => ({
+    _id: new Types.ObjectId(expenseId),
+    clientId,
+    createdBy: duenoId,
+    expenseType: 'factura',
+    status: 'rejected',
+    contabilidadStatus: 'rejected',
+    contabilidadRejectionReason: 'Corregir categoria del gasto',
+    rejectionReason: 'Corregir categoria del gasto',
+    approvalLevel: 0,
+    requiredLevels: 1,
+    approverChain: [{ level: 2, approverIds: [], approved: false }],
+    ...extra,
+  })
+
+  const editar = async (
+    existente: Record<string, unknown>,
+    dto: Record<string, unknown>,
+    actor: { userId: string; roleName: string; clientId: string }
+  ) => {
+    expenseModel.findOne.mockReturnValue({
+      populate: () => ({
+        populate: () => ({
+          populate: () => ({ exec: () => Promise.resolve(existente) }),
+        }),
+      }),
+    })
+    await service.update(expenseId, dto as never, actor)
+    return expenseModel.findOneAndUpdate.mock.calls[0][1]
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    expenseModel.findOneAndUpdate.mockReturnValue({
+      populate: () => ({
+        populate: () => ({ exec: () => Promise.resolve({ _id: expenseId }) }),
+      }),
+    })
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue('sk-test') },
+        },
+        { provide: getModelToken(Expense.name), useValue: expenseModel },
+        {
+          provide: getModelToken(Client.name),
+          useValue: {
+            findById: jest.fn().mockReturnValue({
+              lean: () => ({ exec: () => Promise.resolve(null) }),
+            }),
+          },
+        },
+        { provide: EmailService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: UserService, useValue: {} },
+        { provide: SunatConfigService, useValue: {} },
+        { provide: HttpService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ExpenseReportService, useValue: expenseReportService },
+        { provide: NotificationsService, useValue: {} },
+        { provide: CategoryService, useValue: {} },
+        {
+          provide: CurrencyService,
+          useValue: {
+            getConfig: jest.fn().mockResolvedValue({ monedaBase: 'PEN' }),
+            resolveRate: jest.fn().mockResolvedValue(1),
+          },
+        },
+      ],
+    }).compile()
+    service = module.get<ExpenseService>(ExpenseService)
+  })
+
+  /**
+   * El defecto original: el reset estaba condicionado a `roleName === Colaborador`.
+   * En Detroit hay dueños de rendición con rol `Coordinador` (el rol dice qué
+   * aprueba la persona, no si rinde), así que su corrección no limpiaba nada y
+   * el comprobante quedaba observado de por vida.
+   */
+  it('el dueño con rol Coordinador reabre su comprobante observado', async () => {
+    const doc = await editar(
+      observado(),
+      { categoryId: new Types.ObjectId().toHexString() },
+      { userId: duenoId, roleName: ROLES.COORDINADOR, clientId }
+    )
+
+    expect(doc.contabilidadStatus).toBe('pending')
+    expect(doc.contabilidadRejectionReason).toBe('')
+    expect(doc.status).toBe('pending')
+    expect(doc.rejectionReason).toBe('')
+  })
+
+  it('el dueño con rol Colaborador sigue reabriéndolo igual', async () => {
+    const doc = await editar(
+      observado(),
+      { categoryId: new Types.ObjectId().toHexString() },
+      { userId: duenoId, roleName: ROLES.COLABORADOR, clientId }
+    )
+
+    expect(doc.contabilidadStatus).toBe('pending')
+    expect(doc.status).toBe('pending')
+  })
+
+  /**
+   * El reset lo dispara ser el DUEÑO, no el rol: un rol de sistema tocando el
+   * comprobante de otro (escotilla de soporte de `assertCanMutateExpense`) no
+   * debe borrarle a Contabilidad la observación que acaba de emitir.
+   */
+  it('un rol de sistema que no es el dueño no borra la observación', async () => {
+    const doc = await editar(
+      observado(),
+      { comentario: 'ajuste de soporte' },
+      {
+        userId: new Types.ObjectId().toHexString(),
+        roleName: ROLES.ADMIN,
+        clientId,
+      }
+    )
+
+    expect(doc.contabilidadStatus).toBeUndefined()
+    expect(doc.status).toBeUndefined()
+  })
+})
+
+describe('ExpenseService — validateWithSunatData no pisa el estado del flujo', () => {
+  let service: ExpenseService
+  const clientId = new Types.ObjectId().toHexString()
+  const expenseId = new Types.ObjectId().toHexString()
+  const actor = {
+    userId: new Types.ObjectId().toHexString(),
+    roleName: ROLES.SUPER_ADMIN,
+    clientId,
+  }
+
+  const expenseModel = {
+    findOne: jest.fn(),
+    findByIdAndUpdate: jest.fn(),
+    aggregate: jest.fn().mockResolvedValue([]),
+  }
+
+  /**
+   * Sin RUC de empresa configurado, `validateWithSunatIfPossible` corta antes de
+   * llamar a SUNAT y devuelve `expenseStatus: 'pending'`. Alcanza para la
+   * regresión: lo que se prueba es SI se escribe `status`, no con qué valor.
+   */
+  const validar = async (existente: Record<string, unknown>) => {
+    expenseModel.findOne.mockReturnValue({
+      populate: () => ({
+        populate: () => ({
+          populate: () => ({ exec: () => Promise.resolve(existente) }),
+        }),
+      }),
+    })
+    await service.validateWithSunatData(
+      expenseId,
+      {
+        rucEmisor: '',
+        serie: 'F540',
+        correlativo: '00091570',
+        fechaEmision: '16/08/2026',
+      },
+      clientId,
+      actor
+    )
+    return expenseModel.findByIdAndUpdate.mock.calls[0][1]
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks()
+    expenseModel.findByIdAndUpdate.mockReturnValue({
+      exec: () => Promise.resolve({ _id: expenseId }),
+    })
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseService,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue('sk-test') },
+        },
+        { provide: getModelToken(Expense.name), useValue: expenseModel },
+        { provide: getModelToken(Client.name), useValue: {} },
+        { provide: EmailService, useValue: {} },
+        { provide: ProjectService, useValue: {} },
+        { provide: UserService, useValue: {} },
+        {
+          provide: SunatConfigService,
+          useValue: { findOne: jest.fn().mockResolvedValue({}) },
+        },
+        { provide: HttpService, useValue: {} },
+        { provide: UploadService, useValue: {} },
+        { provide: ExpenseReportService, useValue: { findOne: jest.fn() } },
+        { provide: NotificationsService, useValue: {} },
+        { provide: CategoryService, useValue: {} },
+        { provide: CurrencyService, useValue: {} },
+      ],
+    }).compile()
+    service = module.get<ExpenseService>(ExpenseService)
+  })
+
+  /**
+   * El front encadena `updateInvoice` + esta validación al guardar una factura.
+   * Escribir el veredicto de SUNAT en `status` borraba el 'rejected' y dejaba el
+   * comprobante mostrándose "Rechazado por Contabilidad" (por
+   * `contabilidadStatus`) pero sin botón para aprobarlo, con la rendición
+   * congelada en `submitted`.
+   */
+  it('un comprobante observado conserva su rechazo', async () => {
+    const doc = await validar({
+      _id: new Types.ObjectId(expenseId),
+      clientId,
+      status: 'rejected',
+      contabilidadStatus: 'rejected',
+    })
+
+    expect(doc).not.toHaveProperty('status')
+    expect(doc.sunatValidation).toBeDefined()
+  })
+
+  it('un comprobante ya aprobado conserva su aprobación', async () => {
+    const doc = await validar({
+      _id: new Types.ObjectId(expenseId),
+      clientId,
+      status: 'approved',
+    })
+
+    expect(doc).not.toHaveProperty('status')
+  })
+
+  it('sin estado de flujo que perder, sí guarda el veredicto en status', async () => {
+    const doc = await validar({
+      _id: new Types.ObjectId(expenseId),
+      clientId,
+      status: 'VALIDO_ACEPTADO',
+    })
+
+    expect(doc.status).toBe('pending')
+  })
+})

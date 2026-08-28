@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { TesoreriaComponent } from './tesoreria.component';
-import { AdvanceService } from '../../services/advance.service';
+import { AdvanceService, IReconcileResult } from '../../services/advance.service';
 import { ExpenseReportsService } from '../../services/expense-reports.service';
 import { UserStateService } from '../../services/user-state.service';
 import { NotificationService } from '../../services/notification.service';
@@ -58,6 +58,7 @@ describe('TesoreriaComponent', () => {
   beforeEach(() => {
     advanceService = jasmine.createSpyObj('AdvanceService', [
       'getStats', 'findAll', 'findPendingReturns', 'registerPayment', 'registerReturn', 'validateReturn',
+      'reconcilePayments',
     ]);
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
       'findPendingReimbursements', 'findAllByClient', 'findDirectaDepositReports',
@@ -900,6 +901,87 @@ describe('TesoreriaComponent', () => {
       expect(component.directaUserName({ userId: { name: 'Luis' } })).toBe('Luis');
       expect(component.directaUserName({ userId: { email: 'x@test.com' } })).toBe('x@test.com');
       expect(component.directaUserName({ userId: 'u1' })).toBe('—');
+    });
+  });
+
+  describe('conciliación del reporte del banco (varias páginas)', () => {
+    const pdf = (name: string, size = 1024) =>
+      new File([new Uint8Array(size)], name, { type: 'application/pdf' });
+    const evento = (files: File[]) =>
+      ({ target: { files, value: 'x' } }) as unknown as Event;
+
+    it('elegir archivos NO concilia todavía: los deja en la lista', () => {
+      // Conciliar en cuanto se elige un archivo llevaba a subir las páginas de
+      // una en una, y un archivo suelto nunca cuadra contra el total del lote.
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf')]));
+
+      expect(advanceService.reconcilePayments).not.toHaveBeenCalled();
+      expect(component.showReconcileFilesModal()).toBeTrue();
+      expect(component.reconcilePendingFiles().map((f) => f.name)).toEqual(['pagina1.pdf']);
+    });
+
+    it('acumula las páginas elegidas en varias tandas', () => {
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf')]));
+      component.onReconcileFileSelected(evento([pdf('pagina2.pdf'), pdf('pagina3.pdf')]));
+
+      expect(component.reconcilePendingFiles().map((f) => f.name)).toEqual([
+        'pagina1.pdf', 'pagina2.pdf', 'pagina3.pdf',
+      ]);
+    });
+
+    it('no agrega dos veces el mismo archivo', () => {
+      // Repetir una página duplicaría sus abonos y el lote dejaría de cuadrar.
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf')]));
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf'), pdf('pagina2.pdf')]));
+
+      expect(component.reconcilePendingFiles().length).toBe(2);
+      expect(notifications.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/ya estaban en la lista/), 'warning'
+      );
+    });
+
+    it('permite quitar un archivo y cierra la lista al vaciarla', () => {
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf'), pdf('pagina2.pdf')]));
+      component.removeReconcileFile(0);
+      expect(component.reconcilePendingFiles().map((f) => f.name)).toEqual(['pagina2.pdf']);
+
+      component.removeReconcileFile(0);
+      expect(component.reconcilePendingFiles().length).toBe(0);
+      expect(component.showReconcileFilesModal()).toBeFalse();
+    });
+
+    it('manda TODAS las páginas juntas al confirmar', () => {
+      advanceService.reconcilePayments.and.returnValue(of({
+        moneda: 'PEN', advertencias: [], conciliados: [], sinConciliar: [], noAbonados: [],
+      } as unknown as IReconcileResult));
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf')]));
+      component.onReconcileFileSelected(evento([pdf('pagina2.pdf')]));
+      component.confirmReconcileFiles();
+
+      const [files] = advanceService.reconcilePayments.calls.mostRecent().args;
+      expect((files as File[]).map((f) => f.name)).toEqual(['pagina1.pdf', 'pagina2.pdf']);
+      expect(component.reconcilePendingFiles().length).toBe(0);
+      expect(component.showReconcileFilesModal()).toBeFalse();
+    });
+
+    it('cancelar descarta la selección sin conciliar', () => {
+      component.onReconcileFileSelected(evento([pdf('pagina1.pdf')]));
+      component.cancelReconcileFiles();
+
+      expect(advanceService.reconcilePayments).not.toHaveBeenCalled();
+      expect(component.reconcilePendingFiles().length).toBe(0);
+      expect(component.showReconcileFilesModal()).toBeFalse();
+    });
+
+    it('rechaza un archivo que no sea PDF', () => {
+      const noPdf = new File([new Uint8Array(10)], 'foto.png', { type: 'image/png' });
+      component.onReconcileFileSelected(evento([noPdf]));
+
+      expect(component.reconcilePendingFiles().length).toBe(0);
+      expect(component.showReconcileFilesModal()).toBeFalse();
+      expect(notifications.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/Consulta de Pagos Masivos/), 'error'
+      );
     });
   });
 });

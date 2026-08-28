@@ -3,17 +3,18 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common'
 import { ExpenseService } from './expense.service'
 
 /**
- * Contabilidad corrige la categoría contable de un comprobante durante SU
- * etapa de revisión.
+ * Contabilidad corrige la categoría contable de un comprobante desde SU etapa
+ * de revisión en adelante: esperando a Tesorería, tras el reembolso y con la
+ * devolución que el colaborador debe depositar.
  *
  * Antes, una categoría mal elegida solo se podía arreglar rechazando la
  * rendición: el colaborador la corregía y el documento volvía a recorrer toda
  * la cadena de aprobadores. Como quien rinde no siempre tiene criterio
  * contable, ese reproceso era frecuente.
  *
- * Lo que estas pruebas fijan es el ALCANCE: solo la categoría, solo en
- * `pending_accounting` y solo dentro de la misma empresa. El resto del
- * comprobante sigue siendo del colaborador (VD-69).
+ * Lo que estas pruebas fijan es el ALCANCE: solo la categoría, solo en los
+ * estados de `CATEGORIA_CORREGIBLE_STATUSES` y solo dentro de la misma
+ * empresa. El resto del comprobante sigue siendo del colaborador (VD-69).
  */
 describe('ExpenseService.updateCategoryByContabilidad', () => {
   const clientId = new Types.ObjectId()
@@ -120,15 +121,50 @@ describe('ExpenseService.updateCategoryByContabilidad', () => {
   })
 
   describe('etapa del flujo', () => {
-    const fueraDeContabilidad = [
-      'open',
-      'submitted',
+    /**
+     * Desde su etapa de revisión en adelante: la espera a Tesorería, el
+     * reembolso ya pagado y la devolución que el colaborador tiene que
+     * depositar (`settled` → `returned`). Un error de clasificación detectado
+     * en cualquiera de esos pasos no debería obligar a reabrir nada.
+     */
+    const permitidos = [
+      'pending_accounting',
       'approved',
-      'rejected',
-      'closed',
+      'viatico_approved',
+      'reimbursed',
+      'settled',
+      'returned',
     ]
 
-    for (const status of fueraDeContabilidad) {
+    for (const status of permitidos) {
+      it(`la permite con la rendición en ${status}`, async () => {
+        const { svc, actualizaciones } = montar({ reportStatus: status })
+
+        await svc.updateCategoryByContabilidad(
+          String(expenseId),
+          String(categoriaNueva),
+          actor
+        )
+        expect(actualizaciones).toHaveLength(1)
+      })
+    }
+
+    /**
+     * Antes de su revisión el colaborador todavía carga gastos y los
+     * aprobadores no han pasado (`partially_paid` es el viático con anticipo a
+     * medio pagar, en plena carga). `closed` y `cancelled` quedan fuera porque
+     * el documento se archivó o se anuló.
+     */
+    const fueraDeSuEtapa = [
+      'open',
+      'submitted',
+      'partially_paid',
+      'rejected',
+      'closed',
+      'cancelled',
+    ]
+
+    for (const status of fueraDeSuEtapa) {
       it(`la rechaza con la rendición en ${status}`, async () => {
         const { svc, actualizaciones } = montar({ reportStatus: status })
 

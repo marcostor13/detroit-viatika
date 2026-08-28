@@ -35,7 +35,8 @@ import {
   solesToCents,
   normalizeName,
   namesMatch,
-  parseBbvaPdfText,
+  readBbvaPdfText,
+  mergeBbvaReadings,
   resolveBbvaAccount,
   describeBbvaAccountProblem,
   BBVA_BANK_PREFIX,
@@ -49,6 +50,22 @@ const CONCEPTO = {
 } as const
 
 export type PaymentKind = 'advance' | 'viatico' | 'reembolso'
+
+/** Un PDF del reporte del banco, con su nombre para poder señalarlo en los avisos. */
+export interface PdfConciliacion {
+  buffer: Buffer
+  nombre: string
+}
+
+/** Lo que se obtuvo de leer UN archivo del reporte. */
+interface LecturaPdf {
+  nombre: string
+  lectura: BbvaPdfSummary
+  /** Se leyó por OCR porque el PDF no traía capa de texto. */
+  viaOcr: boolean
+  /** Páginas que quedaron fuera por el tope de OCR. */
+  paginasOmitidas: number
+}
 
 /** Un pago pendiente ya resuelto a datos de beneficiario + importe. */
 export interface PendingPayment {
@@ -683,44 +700,73 @@ export class PaymentBatchService {
 
   // ── Conciliación por PDF ───────────────────────────────────────────────────
 
-  /**
-   * Concilia el PDF de retorno. `moneda` debe ser la de la planilla que se
-   * subió al banco: el PDF no la declara, así que sin este dato se asume la
-   * base y un PDF de la planilla en dólares no cruzaría con nada.
-   */
-  async reconcileFromPdf(
-    clientId: string,
-    pdfBuffer: Buffer,
-    actor: BatchActor,
-    moneda?: string
-  ): Promise<ReconcileResult> {
+  /** Normaliza la entrada a la forma `{ buffer, nombre }`. */
+  private normalizarEntradas(
+    pdfs: Buffer | Buffer[] | PdfConciliacion[]
+  ): PdfConciliacion[] {
+    const lista = Array.isArray(pdfs) ? pdfs : [pdfs]
+    return lista.map((p, i) =>
+      Buffer.isBuffer(p) ? { buffer: p, nombre: `PDF ${i + 1}` } : p
+    )
+  }
+
+  /** Lee UN PDF por capa de texto y, si no da filas, por OCR. */
+  private async leerPdf(pdf: PdfConciliacion): Promise<LecturaPdf> {
     // Cascada de lectura. No se le puede pedir a Tesorería que consiga un
     // formato concreto: el PDF llega como lo dé el banco o como lo reimprima
     // quien lo baja.
     //   1) capa de texto  — exacta e instantánea cuando el PDF es digital;
     //   2) OCR            — para el PDF reimpreso ("Microsoft: Print To PDF"),
     //                       que no trae texto sino el dibujo de las letras.
-    let parsed = parseBbvaPdfText(await this.extractPdfText(pdfBuffer))
-    let viaOcr = false
+    const porTexto = readBbvaPdfText(await this.extractPdfText(pdf.buffer))
+    if (porTexto.rows.length) {
+      return { nombre: pdf.nombre, lectura: porTexto, viaOcr: false, paginasOmitidas: 0 }
+    }
 
-    let paginasOmitidas = 0
-
-    if (!parsed.rows.length) {
-      const ocr = await this.extractPdfTextByOcr(pdfBuffer)
-      if (ocr.texto) {
-        const porOcr = parseBbvaPdfText(ocr.texto)
-        if (porOcr.rows.length) {
-          parsed = porOcr
-          viaOcr = true
-          paginasOmitidas = Math.max(ocr.paginasTotales - ocr.paginasLeidas, 0)
-          this.logger.log(
-            `Conciliación por OCR: ${porOcr.rows.length} abonos leídos de ${ocr.paginasLeidas}/${ocr.paginasTotales} páginas.`
-          )
+    const ocr = await this.extractPdfTextByOcr(pdf.buffer)
+    if (ocr.texto) {
+      const porOcr = readBbvaPdfText(ocr.texto)
+      if (porOcr.rows.length) {
+        this.logger.log(
+          `Conciliación por OCR (${pdf.nombre}): ${porOcr.rows.length} abonos leídos de ${ocr.paginasLeidas}/${ocr.paginasTotales} páginas.`
+        )
+        return {
+          nombre: pdf.nombre,
+          lectura: porOcr,
+          viaOcr: true,
+          paginasOmitidas: Math.max(ocr.paginasTotales - ocr.paginasLeidas, 0),
         }
       }
     }
+    return { nombre: pdf.nombre, lectura: porTexto, viaOcr: false, paginasOmitidas: 0 }
+  }
 
-    if (!parsed.rows.length) {
+  /**
+   * Concilia el/los PDF de retorno. `moneda` debe ser la de la planilla que se
+   * subió al banco: el PDF no la declara, así que sin este dato se asume la
+   * base y un PDF de la planilla en dólares no cruzaría con nada.
+   *
+   * Se aceptan VARIOS archivos porque el banco pagina la "Relación de las
+   * cuentas de abono" ("Siguiente"/"Anterior"): un lote de más de ~25 abonos no
+   * cabe en una sola página y, con un archivo suelto, las filas leídas nunca
+   * cuadran contra los totales de la cabecera y no se concilia nada. Cada
+   * archivo se lee por separado (cada uno decide si necesita OCR) y las filas se
+   * fusionan antes de verificar.
+   */
+  async reconcileFromPdf(
+    clientId: string,
+    pdfs: Buffer | Buffer[] | PdfConciliacion[],
+    actor: BatchActor,
+    moneda?: string
+  ): Promise<ReconcileResult> {
+    const entradas = this.normalizarEntradas(pdfs)
+    const lecturas: LecturaPdf[] = []
+    for (const entrada of entradas) {
+      lecturas.push(await this.leerPdf(entrada))
+    }
+
+    const vacios = lecturas.filter(l => !l.lectura.rows.length)
+    if (vacios.length === lecturas.length) {
       throw new BadRequestException(
         'No se pudieron leer abonos del PDF, ni siquiera por OCR. Verifica que sea la ' +
           '"Consulta de Pagos Masivos" de BBVA y que se vea la tabla "Relación de las ' +
@@ -728,6 +774,11 @@ export class PaymentBatchService {
           'confirmación manual indicando el N° de operación.'
       )
     }
+
+    const { summary: parsed, conflicto } = mergeBbvaReadings(
+      lecturas.map(l => l.lectura)
+    )
+    if (conflicto) throw new BadRequestException(conflicto)
 
     const result = await this.reconcileParsedRows(
       clientId,
@@ -738,7 +789,17 @@ export class PaymentBatchService {
     // Que quede rastro en pantalla de CÓMO se leyó y de si la situación por fila
     // hubo que deducirla: son los dos datos que Tesorería necesita para decidir
     // si revisa el resultado contra el reporte del banco antes de darlo por bueno.
-    if (viaOcr) {
+    if (lecturas.length > 1) {
+      result.advertencias.push(
+        `Se leyeron ${lecturas.length} archivos como un solo lote: ${parsed.rows.length} abonos en total.`
+      )
+    }
+    if (vacios.length) {
+      result.advertencias.push(
+        `Sin abonos legibles en ${vacios.map(v => v.nombre).join(', ')}: ese archivo no aportó ninguna fila.`
+      )
+    }
+    if (lecturas.some(l => l.viaOcr)) {
       result.advertencias.push(
         'El PDF no tenía texto seleccionable y se leyó por OCR. Contrasta los importes con el reporte del banco antes de darlos por buenos.'
       )
@@ -752,6 +813,7 @@ export class PaymentBatchService {
     // Sin este aviso, una planilla más larga que el tope se veía como un simple
     // "no cuadra con sus totales" y Tesorería no tenía cómo saber que el motivo
     // era que faltaron páginas por leer.
+    const paginasOmitidas = lecturas.reduce((s, l) => s + l.paginasOmitidas, 0)
     if (paginasOmitidas > 0) {
       result.advertencias.push(
         `El PDF tiene ${paginasOmitidas} página(s) más de las que se alcanzaron a leer (tope: ${this.OCR_MAX_PAGINAS}). ` +
@@ -759,13 +821,50 @@ export class PaymentBatchService {
       )
     }
     if (parsed.inconsistenteConCabecera) {
-      result.advertencias.push(
-        `Lo leído del PDF no cuadra con sus propios totales: se leyeron ${parsed.rows.length} abonos, ` +
-          `pero la cabecera declara ${parsed.declared?.procesados} procesados y ${parsed.declared?.noProcesados} no procesados ` +
-          `por ${parsed.declared?.importeAbonado?.toFixed(2)}. No se marcó ningún pago; regístralos con la confirmación manual.`
-      )
+      result.advertencias.push(this.explicarInconsistencia(parsed))
     }
     return result
+  }
+
+  /**
+   * Explica POR QUÉ lo leído no cuadra con la cabecera. El caso más común con
+   * diferencia es que falten páginas —el banco pagina la relación de abonos y
+   * quien la imprime se queda con la primera—, y decirlo con esas palabras es
+   * la diferencia entre que Tesorería adjunte la página que falta o crea que el
+   * banco rechazó todos los abonos.
+   */
+  private explicarInconsistencia(parsed: BbvaPdfSummary): string {
+    const leidas = parsed.rows.length
+    const procesados = parsed.declared?.procesados ?? 0
+    const noProcesados = parsed.declared?.noProcesados ?? 0
+    const total = procesados + noProcesados
+    const cola =
+      ' No se marcó ningún pago: revisa el archivo o regístralos con la confirmación manual.'
+
+    if (leidas < total) {
+      return (
+        `Faltan abonos por leer: se leyeron ${leidas} de los ${total} que declara el reporte ` +
+        `(${procesados} procesados y ${noProcesados} no procesados). El banco reparte la relación ` +
+        'de abonos en varias páginas ("Siguiente"), y hay que subirlas TODAS DE UNA VEZ: vuelve a ' +
+        'pulsar "Cargar pagos" y selecciona los PDF de todas las páginas juntos en el explorador ' +
+        '(clic en el primero y Ctrl+clic en los demás). Subirlos de uno en uno no sirve, porque ' +
+        'cada archivo suelto se compara contra el total del lote completo.' +
+        cola
+      )
+    }
+    if (leidas > total) {
+      return (
+        `Se leyeron ${leidas} abonos y el lote solo tiene ${total}: probablemente subiste una página repetida ` +
+        'o un PDF de otro reporte.' +
+        cola
+      )
+    }
+    return (
+      `Lo leído del PDF no cuadra con sus propios totales: se leyeron ${leidas} abonos, ` +
+      `pero la cabecera declara ${procesados} procesados y ${noProcesados} no procesados ` +
+      `por ${parsed.declared?.importeAbonado?.toFixed(2)}.` +
+      cola
+    )
   }
 
   /**
@@ -949,7 +1048,7 @@ export class PaymentBatchService {
           amount: row.amount,
           reason: ambiguo
             ? 'Hay varios pagos pendientes con el mismo documento y monto y el PDF no permite saber cuál se abonó. Confírmalo a mano.'
-            : 'No se encontró un pago pendiente con titular + DNI + monto coincidentes',
+            : 'No hay ningún pago PENDIENTE con ese documento y ese importe. Suele ser porque ya está pagado (por esta misma conciliación o a mano); si no, revisa que el pendiente sea de esta empresa y de esta moneda.',
         })
         continue
       }
@@ -979,6 +1078,18 @@ export class PaymentBatchService {
           reason: `Error al registrar el pago: ${msg}`,
         })
       }
+    }
+
+    // Que NINGUNO cruce casi siempre significa que el lote ya se concilió antes:
+    // al conciliar, los pagos quedan marcados y salen de los pendientes, así que
+    // volver a subir el mismo PDF da una pantalla llena de "sin conciliar" que
+    // parece un fallo grave y no lo es. Sin este aviso, lo natural es insistir.
+    if (!result.conciliados.length && result.sinConciliar.length) {
+      advertencias.push(
+        `Ninguno de los ${result.sinConciliar.length} abonos cruzó con un pago pendiente. ` +
+          'Si ya conciliaste este lote antes, es lo esperado: los pagos quedaron marcados y ' +
+          'ya no están pendientes. Compruébalo en la pestaña "Fondos" antes de volver a subir el PDF.'
+      )
     }
 
     return result

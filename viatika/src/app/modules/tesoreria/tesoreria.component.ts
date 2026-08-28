@@ -1467,29 +1467,76 @@ export class TesoreriaComponent implements OnInit {
     URL.revokeObjectURL(url);
   }
 
-  /** Sube el PDF de BBVA y muestra el resultado de la conciliación. */
+  /**
+   * PDF del banco elegidos y todavía SIN conciliar. Existe porque el reporte
+   * del banco viene paginado y hay que juntar sus páginas antes de mandarlas:
+   * conciliar en cuanto se elige un archivo llevaba a subirlos de uno en uno,
+   * y cada archivo suelto se compara contra el total del lote completo, así que
+   * ninguno cuadraba y no se conciliaba nada.
+   */
+  reconcilePendingFiles = signal<File[]>([]);
+  /** Lista de archivos elegidos, antes de mandarlos a conciliar. */
+  showReconcileFilesModal = signal(false);
+
+  /**
+   * Recoge los PDF elegidos y los ACUMULA en la lista, sin conciliar todavía.
+   * Se pueden añadir en varias tandas (el explorador no siempre deja elegir de
+   * varias carpetas a la vez) y quitar los que sobren antes de enviar.
+   */
   onReconcileFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') {
-      this.notificationService.show('Debes subir el PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
-      input.value = '';
+    const elegidos = Array.from(input.files ?? []);
+    input.value = '';
+    if (!elegidos.length) return;
+    if (elegidos.some((f) => f.type !== 'application/pdf')) {
+      this.notificationService.show('Debes subir el/los PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
       return;
     }
-    this.reconcileFile(file);
-    input.value = '';
+    // El mismo archivo elegido dos veces duplicaría sus abonos y el lote dejaría
+    // de cuadrar contra los totales del reporte.
+    const yaEstan = new Set(this.reconcilePendingFiles().map((f) => `${f.name}|${f.size}`));
+    const nuevos = elegidos.filter((f) => !yaEstan.has(`${f.name}|${f.size}`));
+    const repetidos = elegidos.length - nuevos.length;
+    if (repetidos > 0) {
+      this.notificationService.show(
+        `${repetidos} archivo(s) ya estaban en la lista y no se volvieron a agregar.`,
+        'warning'
+      );
+    }
+    this.reconcilePendingFiles.update((actuales) => [...actuales, ...nuevos]);
+    this.showReconcileFilesModal.set(true);
   }
 
-  /** Envía el PDF (real o simulado) a conciliación y procesa el resultado. */
-  private reconcileFile(file: File): void {
+  /** Quita un archivo de la lista antes de conciliar. */
+  removeReconcileFile(index: number): void {
+    this.reconcilePendingFiles.update((files) => files.filter((_, i) => i !== index));
+    if (!this.reconcilePendingFiles().length) this.showReconcileFilesModal.set(false);
+  }
+
+  /** Descarta la selección sin conciliar nada. */
+  cancelReconcileFiles(): void {
+    this.reconcilePendingFiles.set([]);
+    this.showReconcileFilesModal.set(false);
+  }
+
+  /** Manda a conciliar los archivos acumulados, como un solo lote. */
+  confirmReconcileFiles(): void {
+    const files = this.reconcilePendingFiles();
+    if (!files.length) return;
+    this.showReconcileFilesModal.set(false);
+    this.reconcilePendingFiles.set([]);
+    this.reconcileFiles(files);
+  }
+
+  /** Envía los PDF (reales o simulados) a conciliación y procesa el resultado. */
+  private reconcileFiles(files: File[]): void {
     this.isReconciling.set(true);
     // Se concilia contra la moneda de la última planilla generada. Sin este
     // dato el backend asume la moneda base y un PDF de la planilla en dólares
     // no cruzaría con ningún pendiente.
     const moneda = this.monedaPlanilla() ?? undefined;
     this.generateResult.set(null);
-    this.advanceService.reconcilePayments(file, moneda).subscribe({
+    this.advanceService.reconcilePayments(files, moneda).subscribe({
       next: (res) => {
         this.isReconciling.set(false);
         this.reconcileResult.set(res);

@@ -254,6 +254,44 @@ describe('AdvanceController', () => {
     })
   })
 
+  describe('reconcilePayments', () => {
+    const archivo = (nombre: string, contenido = 'pdf') =>
+      ({ originalname: nombre, buffer: Buffer.from(contenido) }) as Express.Multer.File
+
+    it('pasa TODOS los archivos al servicio, con su nombre', async () => {
+      // El banco pagina la relación de abonos: un lote grande llega como un PDF
+      // por página y hay que conciliarlas juntas o no cuadra ninguna.
+      const req = makeReq()
+      await controller.reconcilePayments(
+        clientId,
+        [archivo('pagina1.pdf'), archivo('pagina2.pdf')],
+        req as never,
+        'PEN'
+      )
+      expect(mockPaymentBatchService.reconcileFromPdf).toHaveBeenCalledWith(
+        clientId,
+        [
+          { buffer: expect.any(Buffer), nombre: 'pagina1.pdf' },
+          { buffer: expect.any(Buffer), nombre: 'pagina2.pdf' },
+        ],
+        expect.any(Object),
+        'PEN'
+      )
+    })
+
+    it('ignora archivos vacíos y exige al menos uno', async () => {
+      const req = makeReq()
+      await expect(
+        controller.reconcilePayments(
+          clientId,
+          [{ originalname: 'vacio.pdf', buffer: Buffer.alloc(0) } as Express.Multer.File],
+          req as never
+        )
+      ).rejects.toThrow(/Debes adjuntar el PDF/)
+      expect(mockPaymentBatchService.reconcileFromPdf).not.toHaveBeenCalled()
+    })
+  })
+
   describe('cancelByCollaborator', () => {
     it('cancela el anticipo y registra auditoria', async () => {
       const req = makeReq()

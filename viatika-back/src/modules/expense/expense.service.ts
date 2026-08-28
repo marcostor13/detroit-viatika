@@ -3160,22 +3160,30 @@ export class ExpenseService {
       )
     }
 
-    // Corrección de un comprobante rechazado por el colaborador dueño: vuelve a
+    // Corrección de un comprobante rechazado por su DUEÑO: vuelve a
     // revisión. El front reenvía el `status: 'rejected'` original del documento, así
     // que aquí se sobreescribe el estado y se reabre únicamente el lado que estaba
     // rechazado (la aprobación ya emitida por el otro rol se conserva). El lado
     // "coordinador" ahora es una cadena de niveles: reabrirlo reinicia el turno al
     // primer paso de la cadena ya construida (no se re-resuelve el centro de costo aquí).
+    //
+    // El disparador es ser el dueño del comprobante, NO tener rol `Colaborador`:
+    // en Detroit hay dueños de rendición con rol `Coordinador` (el rol marca lo
+    // que la persona aprueba, no si rinde). Con el gate por rol, un dueño
+    // Coordinador corregía su comprobante observado y el reset no corría: el
+    // comprobante conservaba `contabilidadStatus='rejected'` y quedaba en un
+    // limbo sin botón para aprobarlo, bloqueando la rendición entera en
+    // `submitted` para siempre (caso RD-0012). Ser el dueño es además lo que
+    // `assertCanMutateExpense` ya exige a todo el que no sea rol de sistema.
     const existingAny = existing as unknown as {
       status?: string
       contabilidadStatus?: string
       approverChain?: ChainStep[]
       requiredLevels?: number
     }
-    if (
-      actor.roleName === ROLES.COLABORADOR &&
-      existingAny.status === 'rejected'
-    ) {
+    const isOwner =
+      String(existing.createdBy ?? '').trim() === String(actor.userId ?? '')
+    if (isOwner && existingAny.status === 'rejected') {
       const contRejected = existingAny.contabilidadStatus === 'rejected'
       const coordRejected = !contRejected
       const nextCont = contRejected ? 'pending' : (existingAny.contabilidadStatus ?? 'pending')
@@ -3223,8 +3231,38 @@ export class ExpenseService {
   }
 
   /**
-   * Corrección de la categoría contable de un comprobante por Contabilidad,
-   * durante SU etapa de revisión (rendición en `pending_accounting`).
+   * Estados de la rendición en que Contabilidad puede corregir la categoría de
+   * un comprobante: desde SU etapa de revisión en adelante, mientras el
+   * documento siga vivo.
+   *
+   * - `pending_accounting`: su etapa de revisión.
+   * - `approved` / `viatico_approved`: ya la aprobó y el documento está en la
+   *   cola de pago o reembolso de Tesorería.
+   * - `reimbursed`: Tesorería ya pagó el reembolso.
+   * - `settled` / `returned`: liquidada con saldo a favor de la empresa; el
+   *   colaborador tiene que depositar la diferencia, o ya la depositó.
+   *
+   * El criterio es que un error de clasificación detectado en cualquiera de
+   * esos pasos no debería obligar a reabrir nada: es una corrección contable,
+   * no un cambio del gasto. Los asientos se regeneran solos (ver más abajo).
+   *
+   * Quedan fuera, a propósito:
+   * - todo lo ANTERIOR a su revisión (`open`, `submitted`, `partially_paid`,
+   *   `rejected`…): ahí el colaborador todavía carga gastos y los aprobadores
+   *   no han pasado; Contabilidad no corrige lo que aún no le tocó revisar.
+   * - `closed` y `cancelled`: el documento se archivó o se anuló.
+   */
+  private static readonly CATEGORIA_CORREGIBLE_STATUSES: string[] = [
+    'pending_accounting',
+    'approved',
+    'viatico_approved',
+    'reimbursed',
+    'settled',
+    'returned',
+  ]
+
+  /**
+   * Corrección de la categoría contable de un comprobante por Contabilidad.
    *
    * Hasta ahora, ante una categoría mal elegida la única salida era rechazar la
    * rendición: el colaborador la corregía y volvía a recorrer toda la cadena de
@@ -3236,6 +3274,9 @@ export class ExpenseService {
    * fecha, adjuntos, documento) sigue siendo del colaborador y fuera del
    * alcance de Contabilidad (VD-69). Solo se toca `categoryId` y el aviso de
    * presupuesto, que quedaría hablando de la categoría anterior.
+   *
+   * Los asientos contables no quedan desfasados: su caché se invalida por el
+   * `updatedAt` de los gastos, así que se regeneran con la categoría corregida.
    *
    * Devuelve también el nombre de la categoría anterior, para la bitácora.
    */
@@ -3252,8 +3293,8 @@ export class ExpenseService {
     this.assertCanReadExpense(existing, actor)
     await this.assertReportInStatus(
       existing,
-      ['pending_accounting'],
-      'La categoría solo se puede corregir mientras la rendición está en revisión de Contabilidad.'
+      ExpenseService.CATEGORIA_CORREGIBLE_STATUSES,
+      'La categoría solo se puede corregir desde la revisión de Contabilidad en adelante, y mientras la rendición no esté cerrada ni anulada.'
     )
 
     // El comprobante manda el cliente, no el token: Contabilidad es un rol
@@ -3789,9 +3830,26 @@ export class ExpenseService {
         await this.validateWithSunatIfPossible(data, clientId, configSunat?.ruc)
 
       // Paso 3: guardar razón social + resultado de validación en un solo update
+      //
+      // `status` está compartido entre el resultado de la validación SUNAT
+      // ('VALIDO_ACEPTADO', 'sunat_error'…) y el estado del flujo de aprobación
+      // ('pending'/'approved'/'rejected'). Pisarlo a ciegas borraba un veredicto
+      // ya emitido: el front llama a esta validación justo después de guardar la
+      // edición, así que corregir una factura observada la dejaba con
+      // `status='VALIDO_ACEPTADO'` y `contabilidadStatus='rejected'` a la vez —
+      // sin botón de aprobar (la ficha la pinta "Rechazado por Contabilidad") y
+      // frenando el avance a Contabilidad de toda la rendición (caso RD-0012).
+      // `status` solo refleja el veredicto mientras no haya un estado de flujo
+      // que perder. No se pierde nada al no escribirlo: el veredicto íntegro
+      // viaja en la respuesta de este método, que es de donde lo toma el front
+      // para mostrarlo (`sunatValidation` no está en el schema del gasto, así
+      // que Mongoose lo descarta y nunca llegó a persistirse).
+      const tieneEstadoDeFlujo = ['approved', 'rejected'].includes(
+        String((expense as unknown as { status?: string }).status ?? '')
+      )
       const updateDoc: any = {
         sunatValidation: validation,
-        status: expenseStatus,
+        ...(tieneEstadoDeFlujo ? {} : { status: expenseStatus }),
       }
       if (updatedData !== undefined) updateDoc.data = updatedData
 
