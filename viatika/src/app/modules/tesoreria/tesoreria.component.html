@@ -17,7 +17,8 @@
         <app-icon name="upload" size="sm" />
         {{ isReconciling() ? 'Procesando...' : 'Cargar pagos' }}
         <!-- multiple: el banco pagina la relación de abonos y un lote grande
-             llega como un PDF por página; hay que subirlas todas juntas. -->
+             llega como un PDF por página. Elegir archivos NO concilia todavía:
+             se acumulan en la lista de arriba y se mandan juntos. -->
         <input type="file" accept="application/pdf" multiple class="hidden"
           (change)="onReconcileFileSelected($event)" />
       </label>
@@ -1196,6 +1197,57 @@
         </button>
       </div>
       }
+    </div>
+  </div>
+</div>
+}
+
+<!-- ── Archivos del reporte del banco, antes de conciliar ───────────────────── -->
+<!-- El reporte de BBVA viene paginado ("Siguiente"), y sus paginas tienen que
+     mandarse JUNTAS: cada archivo suelto se compara contra el total del lote
+     completo, asi que de uno en uno no cuadra ninguno. Por eso se acumulan aqui
+     y se concilia cuando Tesoreria confirma, en vez de disparar la conciliacion
+     en cuanto se elige un archivo. -->
+@if (showReconcileFilesModal()) {
+<div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" (click)="cancelReconcileFiles()">
+  <div class="bg-quaternary rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6"
+    (click)="$event.stopPropagation()">
+    <h2 class="text-lg font-bold text-secondary mb-1">Conciliar pagos del banco</h2>
+    <p class="text-sm text-tertiary mb-4">
+      Si el reporte de BBVA tiene varias páginas (botón "Siguiente"), añádelas
+      <span class="font-semibold text-secondary">todas</span> antes de conciliar: se procesan como un solo lote.
+    </p>
+
+    <ul class="space-y-2 mb-4">
+      @for (f of reconcilePendingFiles(); track f.name + f.size; let i = $index) {
+      <li class="flex items-center gap-3 rounded-xl border border-tertiary/20 bg-background px-3 py-2">
+        <app-icon name="file-text" size="sm" />
+        <span class="flex-1 text-sm text-secondary truncate" [title]="f.name">{{ f.name }}</span>
+        <span class="text-xs text-tertiary whitespace-nowrap">{{ (f.size / 1024 / 1024) | number:'1.1-1' }} MB</span>
+        <button type="button" (click)="removeReconcileFile(i)" title="Quitar de la lista"
+          class="text-xs px-2 py-1 text-error hover:bg-error/10 rounded-lg transition-colors font-medium">
+          Quitar
+        </button>
+      </li>
+      }
+    </ul>
+
+    <label
+      class="inline-flex items-center gap-2 h-[38px] px-3 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium cursor-pointer mb-5">
+      <app-icon name="upload" size="sm" />
+      Añadir más páginas
+      <input type="file" accept="application/pdf" multiple class="hidden" (change)="onReconcileFileSelected($event)" />
+    </label>
+
+    <div class="flex justify-end gap-2">
+      <button type="button" (click)="cancelReconcileFiles()"
+        class="h-[42px] px-5 border border-tertiary/30 text-secondary rounded-xl text-sm font-medium hover:bg-background transition-colors">
+        Cancelar
+      </button>
+      <button type="button" (click)="confirmReconcileFiles()" [disabled]="isReconciling()"
+        class="h-[42px] px-5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+        {{ isReconciling() ? 'Procesando...' : 'Conciliar ' + reconcilePendingFiles().length + ' archivo(s)' }}
+      </button>
     </div>
   </div>
 </div>

@@ -845,7 +845,10 @@ export class PaymentBatchService {
       return (
         `Faltan abonos por leer: se leyeron ${leidas} de los ${total} que declara el reporte ` +
         `(${procesados} procesados y ${noProcesados} no procesados). El banco reparte la relación ` +
-        'de abonos en varias páginas ("Siguiente"): adjunta también las que faltan y vuelve a intentarlo.' +
+        'de abonos en varias páginas ("Siguiente"), y hay que subirlas TODAS DE UNA VEZ: vuelve a ' +
+        'pulsar "Cargar pagos" y selecciona los PDF de todas las páginas juntos en el explorador ' +
+        '(clic en el primero y Ctrl+clic en los demás). Subirlos de uno en uno no sirve, porque ' +
+        'cada archivo suelto se compara contra el total del lote completo.' +
         cola
       )
     }
@@ -1045,7 +1048,7 @@ export class PaymentBatchService {
           amount: row.amount,
           reason: ambiguo
             ? 'Hay varios pagos pendientes con el mismo documento y monto y el PDF no permite saber cuál se abonó. Confírmalo a mano.'
-            : 'No se encontró un pago pendiente con titular + DNI + monto coincidentes',
+            : 'No hay ningún pago PENDIENTE con ese documento y ese importe. Suele ser porque ya está pagado (por esta misma conciliación o a mano); si no, revisa que el pendiente sea de esta empresa y de esta moneda.',
         })
         continue
       }
@@ -1075,6 +1078,18 @@ export class PaymentBatchService {
           reason: `Error al registrar el pago: ${msg}`,
         })
       }
+    }
+
+    // Que NINGUNO cruce casi siempre significa que el lote ya se concilió antes:
+    // al conciliar, los pagos quedan marcados y salen de los pendientes, así que
+    // volver a subir el mismo PDF da una pantalla llena de "sin conciliar" que
+    // parece un fallo grave y no lo es. Sin este aviso, lo natural es insistir.
+    if (!result.conciliados.length && result.sinConciliar.length) {
+      advertencias.push(
+        `Ninguno de los ${result.sinConciliar.length} abonos cruzó con un pago pendiente. ` +
+          'Si ya conciliaste este lote antes, es lo esperado: los pagos quedaron marcados y ' +
+          'ya no están pendientes. Compruébalo en la pestaña "Fondos" antes de volver a subir el PDF.'
+      )
     }
 
     return result

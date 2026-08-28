@@ -1468,23 +1468,64 @@ export class TesoreriaComponent implements OnInit {
   }
 
   /**
-   * Sube el/los PDF de BBVA y muestra el resultado de la conciliación.
-   *
-   * Se admiten varios de una vez porque el banco pagina la relación de abonos
-   * ("Siguiente"): con más de ~25 abonos, la primera página sola nunca cuadra
-   * contra los totales del reporte y no se concilia nada.
+   * PDF del banco elegidos y todavía SIN conciliar. Existe porque el reporte
+   * del banco viene paginado y hay que juntar sus páginas antes de mandarlas:
+   * conciliar en cuanto se elige un archivo llevaba a subirlos de uno en uno,
+   * y cada archivo suelto se compara contra el total del lote completo, así que
+   * ninguno cuadraba y no se conciliaba nada.
+   */
+  reconcilePendingFiles = signal<File[]>([]);
+  /** Lista de archivos elegidos, antes de mandarlos a conciliar. */
+  showReconcileFilesModal = signal(false);
+
+  /**
+   * Recoge los PDF elegidos y los ACUMULA en la lista, sin conciliar todavía.
+   * Se pueden añadir en varias tandas (el explorador no siempre deja elegir de
+   * varias carpetas a la vez) y quitar los que sobren antes de enviar.
    */
   onReconcileFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
-    if (!files.length) return;
-    if (files.some((f) => f.type !== 'application/pdf')) {
+    const elegidos = Array.from(input.files ?? []);
+    input.value = '';
+    if (!elegidos.length) return;
+    if (elegidos.some((f) => f.type !== 'application/pdf')) {
       this.notificationService.show('Debes subir el/los PDF de "Consulta de Pagos Masivos" de BBVA.', 'error');
-      input.value = '';
       return;
     }
+    // El mismo archivo elegido dos veces duplicaría sus abonos y el lote dejaría
+    // de cuadrar contra los totales del reporte.
+    const yaEstan = new Set(this.reconcilePendingFiles().map((f) => `${f.name}|${f.size}`));
+    const nuevos = elegidos.filter((f) => !yaEstan.has(`${f.name}|${f.size}`));
+    const repetidos = elegidos.length - nuevos.length;
+    if (repetidos > 0) {
+      this.notificationService.show(
+        `${repetidos} archivo(s) ya estaban en la lista y no se volvieron a agregar.`,
+        'warning'
+      );
+    }
+    this.reconcilePendingFiles.update((actuales) => [...actuales, ...nuevos]);
+    this.showReconcileFilesModal.set(true);
+  }
+
+  /** Quita un archivo de la lista antes de conciliar. */
+  removeReconcileFile(index: number): void {
+    this.reconcilePendingFiles.update((files) => files.filter((_, i) => i !== index));
+    if (!this.reconcilePendingFiles().length) this.showReconcileFilesModal.set(false);
+  }
+
+  /** Descarta la selección sin conciliar nada. */
+  cancelReconcileFiles(): void {
+    this.reconcilePendingFiles.set([]);
+    this.showReconcileFilesModal.set(false);
+  }
+
+  /** Manda a conciliar los archivos acumulados, como un solo lote. */
+  confirmReconcileFiles(): void {
+    const files = this.reconcilePendingFiles();
+    if (!files.length) return;
+    this.showReconcileFilesModal.set(false);
+    this.reconcilePendingFiles.set([]);
     this.reconcileFiles(files);
-    input.value = '';
   }
 
   /** Envía los PDF (reales o simulados) a conciliación y procesa el resultado. */

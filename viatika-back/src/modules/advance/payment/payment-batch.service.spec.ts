@@ -424,6 +424,24 @@ describe('PaymentBatchService', () => {
       expect(res.sinConciliar).toHaveLength(1) // el de 500 no tiene pendiente
       expect(advanceService.registerPayment).not.toHaveBeenCalled()
     })
+
+    it('avisa de que el lote ya se concilió cuando no cruza NINGUNO', async () => {
+      // Volver a subir el mismo PDF deja la pantalla llena de "sin conciliar",
+      // que parece un fallo grave y solo significa que ya se pagaron.
+      advanceService.findBatchPayableAdvances.mockResolvedValue([])
+      const pdfText = [
+        'No. Movimiento de Cargo 000025041',
+        'ANA TORRES L - 11111111 100.00 ABONO ENVIADO',
+        'LUIS PEREZ L - 22222222 200.00 ABONO ENVIADO',
+      ].join('\n')
+      jest.spyOn(service as any, 'extractPdfText').mockResolvedValue(pdfText)
+
+      const res = await service.reconcileFromPdf('c1', Buffer.from('x'), { role: 'TESORERIA' })
+      expect(res.conciliados).toHaveLength(0)
+      expect(res.sinConciliar).toHaveLength(2)
+      expect(res.advertencias.join(' ')).toMatch(/Si ya conciliaste este lote antes/i)
+      expect(res.sinConciliar[0].reason).toMatch(/ya está pagado/i)
+    })
   })
 
   describe('reconcileFromPdf · lote repartido en varios PDF', () => {
@@ -467,7 +485,10 @@ describe('PaymentBatchService', () => {
       })
       expect(res.conciliados).toHaveLength(0)
       expect(res.advertencias.join(' ')).toMatch(/Faltan abonos por leer: se leyeron 1 de los 2/)
-      expect(res.advertencias.join(' ')).toMatch(/adjunta también las que faltan/i)
+      // El mensaje tiene que decir explícitamente que las páginas van juntas:
+      // subirlas de una en una es el error natural y el que ya se cometió.
+      expect(res.advertencias.join(' ')).toMatch(/TODAS DE UNA VEZ/)
+      expect(res.advertencias.join(' ')).toMatch(/de uno en uno no sirve/i)
     })
 
     it('con las dos páginas concilia el lote completo', async () => {
