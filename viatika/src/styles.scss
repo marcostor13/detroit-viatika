@@ -146,3 +146,12 @@ select:not([multiple]) {
   background-size: 1.125rem 1.125rem;
   padding-right: 2rem;
 }
+
+/* Con el teclado abierto, el navegador desplaza el campo enfocado justo contra
+   el borde visible. Este margen le deja aire arriba y abajo. */
+input,
+select,
+textarea {
+  scroll-margin-top: 5rem;
+  scroll-margin-bottom: 6rem;
+}

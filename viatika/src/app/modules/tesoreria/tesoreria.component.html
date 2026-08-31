@@ -264,7 +264,7 @@
   <!-- Rendiciones Directas tab (iniciadas por Contabilidad) -->
   @if (activeTab() === 'rendiciones-directas') {
   <div class="flex flex-col gap-4">
-    <div class="flex items-center justify-between gap-3">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-sm text-tertiary">Rendiciones directas asignadas a colaboradores/aprobadores con saldo inicial.</p>
     </div>
 
@@ -1333,7 +1333,7 @@
       <p class="text-sm font-semibold text-secondary mb-2">Quedan pagos en otra moneda. El archivo BBVA admite una sola moneda por planilla:</p>
       <div class="space-y-2">
         @for (m of monedasPorEmitir(); track m.moneda) {
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span class="text-xs text-tertiary">{{ m.count }} pago(s) por {{ m.moneda }} {{ m.total | number:'1.2-2' }}</span>
           <app-button
             size="sm"

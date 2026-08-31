@@ -1,18 +1,33 @@
-<div class="min-h-screen w-full flex items-center justify-center bg-background p-4 md:p-8">
-  <div class="w-full max-w-[1200px] h-[800px] bg-quaternary rounded-3xl shadow-2xl overflow-hidden flex relative">
+<!-- Capa anclada al area visible: con el teclado abierto sigue al viewport
+     visual, tanto si el sistema encoge la WebView como si desplaza la
+     ventana entera. Ver aplicarViewport() en el componente. -->
+<div
+  class="fixed inset-x-0 top-0 overflow-y-auto flex items-start lg:items-center justify-center bg-background p-4 md:p-8"
+  [style.height]="'var(--vvh, 100dvh)'"
+  [style.transform]="'translateY(var(--vvtop, 0px))'"
+>
+  <div class="w-full max-w-[1200px] lg:h-[800px] bg-quaternary rounded-3xl shadow-2xl overflow-hidden flex relative">
     
     <!-- Left Side - Form -->
-    <div class="w-full lg:w-5/12 p-8 md:p-12 lg:p-16 flex flex-col justify-center relative z-10">
+    <div class="w-full lg:w-5/12 p-6 md:p-12 lg:p-16 flex flex-col justify-start lg:justify-center relative z-10">
       <!-- Logo -->
-      <div class="mb-12 flex justify-center lg:justify-start">
+      <div class="mb-8 lg:mb-12 flex justify-center lg:justify-start">
         <img src="/logo_header.png" alt="TEMA" width="120" />
       </div>
 
       <!-- Header -->
-      <div class="mb-8">
-        <h1 class="text-4xl font-bold text-secondary mb-3">Ingresar</h1>
+      <div class="mb-6 lg:mb-8">
+        <h1 class="text-3xl lg:text-4xl font-bold text-secondary mb-3">Ingresar</h1>
         <p class="text-tertiary text-base">Ingresa tus credenciales para acceder</p>
       </div>
+
+      <!-- Distintivo de entorno: el APK de QA y el de produccion son identicos
+           salvo por el backend, asi que conviene verlo antes de entrar. -->
+      @if (entornoNoProductivo) {
+      <div class="mb-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-xs text-warning-ink">
+        <span class="font-bold">Entorno de pruebas</span> · {{ apiHost }}
+      </div>
+      }
 
       <!-- Form -->
       <form (ngSubmit)="login()" autocomplete="off" class="space-y-6">
@@ -27,6 +42,14 @@
             class="p-0 border-0"
           ></app-input>
         </div>
+
+        @if (entornoNoProductivo) {
+        <!-- Diagnostico del teclado: va pegado al campo Email porque es lo que
+             queda visible cuando el sistema desplaza la ventana. -->
+        <div class="rounded-lg bg-warning/10 px-3 py-2 font-mono text-[10px] leading-tight text-warning-ink">
+          {{ infoEquipo }}<br />{{ medidaViewport() }}
+        </div>
+        }
 
         <div>
            <app-input
@@ -58,7 +81,7 @@
       </form>
 
       <!-- Footer Links -->
-       <div class="mt-auto pt-8 flex justify-between text-xs text-tertiary">
+       <div class="mt-8 lg:mt-auto pt-6 lg:pt-8 flex justify-between text-xs text-tertiary">
           <a href="#" class="hover:text-primary transition-colors">¿No tienes cuenta? Regístrate</a>
           <a href="#" class="hover:text-primary transition-colors">Términos y condiciones</a>
        </div>
