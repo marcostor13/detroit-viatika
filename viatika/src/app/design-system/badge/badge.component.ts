@@ -43,7 +43,7 @@ export class BadgeComponent {
 
   badgeClasses = computed(
     () =>
-      `inline-flex items-center gap-1.5 font-medium rounded-full whitespace-nowrap ${VARIANT_CLASSES[this.variant()]} ${SIZE_CLASSES[this.size()]}`,
+      `inline-flex items-center gap-1.5 font-medium rounded-full max-w-full break-words ${VARIANT_CLASSES[this.variant()]} ${SIZE_CLASSES[this.size()]}`,
   );
 
   dotClasses = computed(() => `w-1.5 h-1.5 rounded-full shrink-0 ${DOT_CLASSES[this.variant()]}`);

@@ -18,7 +18,7 @@
 
   @if (canConfigureEmpresa) {
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-6">
       <h2 class="text-xl font-semibold text-secondary">
         Configuración de Empresa
       </h2>
@@ -150,7 +150,7 @@
 
   @if (isAdminUser) {
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-6">
       <h2 class="text-xl font-semibold text-secondary">
         Configuración de SUNAT
       </h2>
@@ -299,7 +299,7 @@
 
   @if (canConfigureEmpresa) {
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-6">
       <div>
         <h2 class="text-xl font-semibold text-secondary">Límites</h2>
         <p class="text-sm text-tertiary mt-1">Configura los montos máximos permitidos por tipo de gasto.</p>
@@ -463,7 +463,7 @@
 
   @if (canConfigureEmpresa) {
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-6">
       <div>
         <h2 class="text-xl font-semibold text-secondary">Cuenta de cargo (pagos BBVA)</h2>
         <p class="text-sm text-tertiary mt-1">
@@ -528,7 +528,7 @@
     @if (showBancosForm) {
     <div class="space-y-6">
       <div>
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex flex-wrap gap-2 items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-secondary">Cuentas de la empresa</h3>
           <app-button variant="ghost" size="sm" label="+ Añadir banco" (clicked)="addBankAccount()" />
         </div>
@@ -599,7 +599,7 @@
 
   @if (canConfigureEmpresa) {
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-6">
       <div>
         <h2 class="text-xl font-semibold text-secondary">Notificaciones Automaticas</h2>
         <p class="text-sm text-tertiary mt-1">Configura el envio automatico de recordatorios de rendicion a colaboradores y aprobadores.</p>
@@ -742,7 +742,7 @@
 
   @if (canConfigureContabilidad) {
   <section class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-6 mb-8">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center mb-6">
       <div>
         <h2 class="text-xl font-semibold text-secondary">Plan de Cuentas y Bancos (Asientos Contables)</h2>
         <p class="text-sm text-tertiary mt-1">Parametriza las cuentas del PCGE, tasas de IGV y bancos para generar los archivos de importación a Contanet.</p>
@@ -824,7 +824,7 @@
 
       <!-- Tasas de IGV -->
       <div>
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex flex-wrap gap-2 items-center justify-between mb-3">
           <h3 class="text-sm font-semibold text-secondary">Tasas de IGV y cuenta 40</h3>
           <app-button variant="ghost" size="sm" label="+ Añadir tasa" (clicked)="addIgvRate()" />
         </div>

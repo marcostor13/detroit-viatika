@@ -31,7 +31,7 @@ export class ButtonComponent {
 
   // Computed classes
   buttonClasses = computed(() => {
-    const base = 'font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2';
+    const base = 'font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap shrink-0';
     
     const variants = {
       primary: 'bg-primary text-quaternary hover:bg-accent shadow-soft hover:shadow-lg',

@@ -229,12 +229,20 @@
           type="file"
           id="file"
           accept="*/*"
-          capture="environment"
           (change)="onFileSelected($event)"
           class="hidden"
           #fileInput
         />
       </div>
+
+      <!-- En el APK de Android, Capacitor abre la camara solo si el input pide
+           image/* junto con capture; el selector de archivos necesita */* para
+           poder adjuntar un PDF. Por eso hay dos inputs con sus dos botones. -->
+      <div class="flex gap-2">
+        <app-button label="Tomar foto" variant="secondary" [fullWidth]="true" (clicked)="cameraInput.click()"></app-button>
+        <app-button label="Elegir archivo" variant="secondary" [fullWidth]="true" (clicked)="fileInput.click()"></app-button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" (change)="onFileSelected($event)" class="hidden" #cameraInput />
       @if (imageUrl?.invalid && imageUrl?.touched) {
       <span class="text-sm text-error mt-1">La factura es requerida</span>
       }
@@ -553,7 +561,7 @@
   <!-- ===== PLANILLA DE MOVILIDAD ===== -->
   @if(expenseType() === 'planilla_movilidad') {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6">
-    <div class="flex items-center justify-between mb-4">
+    <div class="flex flex-wrap gap-2 items-center justify-between mb-4">
       <h3 class="text-sm font-semibold text-secondary">Filas de la planilla</h3>
       <button type="button"
         (click)="addMobilityRow()"
@@ -843,6 +851,15 @@
       <input type="file" accept="*/*" multiple (change)="onFilesSelectedMultiple($event)" class="hidden" #fileInputMobility />
     </div>
 
+    <!-- En el APK de Android, Capacitor abre la camara solo si el input pide
+         image/* junto con capture; el selector de archivos necesita */* para
+         poder adjuntar un PDF. Por eso hay dos inputs con sus dos botones. -->
+    <div class="flex gap-2">
+      <app-button label="Tomar foto" variant="secondary" [fullWidth]="true" (clicked)="cameraInputMobility.click()"></app-button>
+      <app-button label="Elegir archivo" variant="secondary" [fullWidth]="true" (clicked)="fileInputMobility.click()"></app-button>
+    </div>
+    <input type="file" accept="image/*" capture="environment" (change)="onFilesSelectedMultiple($event)" class="hidden" #cameraInputMobility />
+
     @if (selectedFiles.length) {
     <ul class="mt-3 space-y-2">
       @for (f of selectedFiles; track f.name + f.size; let i = $index) {
@@ -1079,6 +1096,15 @@
         <p class="mt-1 text-xs text-tertiary">PDF, JPG, PNG · hasta {{ maxAdjuntos }} archivos</p>
         <input type="file" accept="*/*" multiple (change)="onFilesSelectedMultiple($event)" class="hidden" #fileInputOtros />
       </div>
+
+      <!-- En el APK de Android, Capacitor abre la camara solo si el input pide
+           image/* junto con capture; el selector de archivos necesita */* para
+           poder adjuntar un PDF. Por eso hay dos inputs con sus dos botones. -->
+      <div class="flex gap-2">
+        <app-button label="Tomar foto" variant="secondary" [fullWidth]="true" (clicked)="cameraInputOtros.click()"></app-button>
+        <app-button label="Elegir archivo" variant="secondary" [fullWidth]="true" (clicked)="fileInputOtros.click()"></app-button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" (change)="onFilesSelectedMultiple($event)" class="hidden" #cameraInputOtros />
 
       @if (selectedFiles.length) {
       <ul class="space-y-2">
