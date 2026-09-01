@@ -1,4 +1,4 @@
-<div class="px-4 sm:px-5 py-4 sm:py-6" [ngClass]="collaboratorCanEdit ? 'pb-24 sm:pb-8' : 'pb-8'">
+<div class="px-4 sm:px-5 py-4 sm:py-6" [ngClass]="collaboratorCanEdit ? 'espacio-barra-fija sm:pb-8' : 'pb-8'">
   <!-- Suplencia por vacaciones (VD-124). Va aqui ademas de en la bandeja
        porque la cadena sigue nombrando al TITULAR: sin el aviso, el suplente
        lee "pendiente de aprobacion de <titular>" junto a un boton de aprobar
@@ -1748,7 +1748,7 @@
 
 <!-- Sticky bottom bar (mobile only) — colaborador con rendición editable -->
 @if (report && collaboratorCanEdit) {
-<div class="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-quaternary border-t border-divider shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex gap-3">
+<div class="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-quaternary border-t border-divider shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 pt-3 pb-area-segura flex gap-3">
   <button
     type="button"
     (click)="openAddExpenseModal()"
