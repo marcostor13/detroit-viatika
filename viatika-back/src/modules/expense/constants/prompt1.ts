@@ -8,6 +8,8 @@ export const PROMPT1 = `
       - Normalmente los campos de la factura vienen en diferentes posiciones, normalmente los datos de emisos aparecen en la cabecera de la factura sin títulos, por ejemplo: Empresa de Transporte S.A., 20503000001, Av. Lima 123. Y los datos del cliente aparecen mas abajo como RUC, Razón Social, Dirección, etc.
     # Campos del objeto:
       - rucEmisor: normalmente es un numero, por ejemplo 20503000001 siempre tiene 11 digitos, si hay 2, analiza cual es el ruc del emisor, normalmente el ruc del emisor está en la cabecera de la factura y puede venir sin el titulo de "RUC".
+      - rucReceptor: el RUC del CLIENTE al que se emite el comprobante, no el del emisor. Aparece mas abajo en el cuerpo, junto a etiquetas como "Cliente", "Señor(es)", "Adquiriente", "Nombre" o "Razon Social", y siempre tiene 11 digitos. Es el que permite saber a que empresa se facturó. Si el comprobante no identifica al cliente (boleta a consumidor final), omite este campo o devuelve null. NUNCA repitas aqui el rucEmisor.
+      - razonSocialReceptor: el nombre o razon social del CLIENTE al que se emite el comprobante. Mismo criterio que rucReceptor: si no aparece, null.
       - tipoComprobante: normalmente es una palabra, por ejemplo Factura
       - serie: normalmente es una letra con numeros, por ejemplo E001, si hay 2, analiza cual es la serie del emisor, normalmente la serie del emisor está en la cabecera de la factura.
       - correlativo: normalmente es un numero, y va seguido de la serie, por ejemplo E001-123
