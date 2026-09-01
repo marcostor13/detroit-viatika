@@ -284,6 +284,13 @@
         <label class="text-xs font-medium text-gray-600">Comprobante <span class="text-red-500">*</span></label>
         <input type="file" accept=".pdf,.jpg,.jpeg,.png" (change)="onFundReceiptSelected($event)"
           class="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm bg-white file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-gray-100 file:text-gray-700" />
+        <!-- Capacitor solo abre la camara si el input pide image/* junto con
+             capture, y el selector de arriba necesita aceptar PDF: por eso van
+             dos inputs separados. -->
+        <label class="flex items-center justify-center gap-2 cursor-pointer px-3 py-2 mt-2 border border-divider rounded-lg text-sm text-secondary hover:bg-background transition-colors">
+          <input type="file" accept="image/*" capture="environment" class="hidden" (change)="onFundReceiptSelected($event)" />
+          Tomar foto
+        </label>
         @if (isUploadingFundReceipt()) {
         <p class="text-xs text-blue-600">Subiendo...</p>
         } @else if (fundReceiptName) {

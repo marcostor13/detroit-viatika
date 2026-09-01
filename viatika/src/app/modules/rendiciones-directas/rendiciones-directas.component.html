@@ -588,7 +588,7 @@
     <h3 class="text-lg font-bold text-gray-900 mb-2">Marcar como revisado</h3>
     <p class="text-sm text-gray-600 mb-1">¿Confirmas que este documento fue revisado por Contabilidad?</p>
     <p class="text-xs text-gray-400 mb-5">Esta accion no se puede deshacer.</p>
-    <div class="flex gap-3">
+    <div class="flex flex-wrap gap-3">
       <button type="button" (click)="cancelApprove()" class="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">Cancelar</button>
       <button type="button" (click)="doApprove()"
         class="flex-1 py-2.5 bg-teal-600 rounded-xl text-sm font-semibold text-white hover:bg-teal-700 transition-colors">
@@ -607,7 +607,7 @@
     <h3 class="text-lg font-bold text-gray-900 mb-2">Eliminar documento</h3>
     <p class="text-sm text-gray-600 mb-1">¿Confirmas la eliminacion de este comprobante?</p>
     <p class="text-xs text-gray-400 mb-5">Esta accion no se puede deshacer.</p>
-    <div class="flex gap-3">
+    <div class="flex flex-wrap gap-3">
       <button type="button" (click)="cancelDelete()" class="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">Cancelar</button>
       <button type="button" (click)="doDelete()" [disabled]="deletingId() !== null"
         class="flex-1 py-2.5 bg-red-600 rounded-xl text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 transition-colors">

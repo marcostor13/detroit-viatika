@@ -155,3 +155,10 @@ textarea {
   scroll-margin-top: 5rem;
   scroll-margin-bottom: 6rem;
 }
+
+/* Un <select> nativo se ensancha hasta el ancho de su opción más larga, así que
+   con listas como los centros de costo se sale de la tarjeta que lo contiene.
+   Esto lo acota sin cambiar nada más. */
+select {
+  max-width: 100%;
+}

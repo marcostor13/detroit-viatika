@@ -334,7 +334,7 @@
         ¿Confirmas la cancelacion de la solicitud de <span class="font-semibold">{{ currencySymbol() }} {{ advance()?.amount | number:'1.2-2' }}</span>?
         La solicitud pasara a estado Cancelada.
       </p>
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
         <button (click)="showCancelModal.set(false)"
           class="flex-1 h-[42px] border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
           Volver

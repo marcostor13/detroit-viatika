@@ -218,15 +218,32 @@
 <ng-template #kpiCard let-title="title" let-value="value" let-hint="hint" let-link="link"
   let-qp="qp" let-accent="accent" let-money="money">
   <a [routerLink]="link" [queryParams]="qp || {}"
-    class="bg-quaternary rounded-2xl border border-tertiary/20 p-5 flex flex-col gap-3 hover:border-primary/40 hover:bg-primary/5 transition-all">
-    <div class="flex items-center justify-between">
-      <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">{{ title }}</span>
-      <div class="w-8 h-8 rounded-xl flex items-center justify-center" [class]="iconBg(accent, value > 0)">
+    class="bg-quaternary rounded-2xl border border-tertiary/20 p-4 sm:p-5 hover:border-primary/40 hover:bg-primary/5 transition-all">
+
+    <!-- En movil va como fila compacta: la tarjeta vertical gastaba 150px de
+         alto para un solo numero y cuatro de ellas llenaban toda la pantalla. -->
+    <div class="flex items-center gap-3 sm:hidden">
+      <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" [class]="iconBg(accent, value > 0)">
         <app-icon [name]="money ? 'dollar-sign' : 'clipboard-list'" size="sm" [class]="iconText(accent, value > 0)" />
       </div>
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-semibold text-tertiary uppercase tracking-wider">{{ title }}</p>
+        <p class="text-xs text-tertiary">{{ hint }}</p>
+      </div>
+      <p class="text-2xl font-bold text-secondary shrink-0">@if (money) {S/. {{ value | number:'1.2-2' }}} @else {{{ value }}}</p>
     </div>
-    <p class="text-3xl font-bold text-secondary">@if (money) {S/. {{ value | number:'1.2-2' }}} @else {{{ value }}}</p>
-    <p class="text-xs text-tertiary">{{ hint }}</p>
+
+    <!-- Desde 640px se mantiene la tarjeta de siempre. -->
+    <div class="hidden sm:flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-tertiary uppercase tracking-wider">{{ title }}</span>
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center" [class]="iconBg(accent, value > 0)">
+          <app-icon [name]="money ? 'dollar-sign' : 'clipboard-list'" size="sm" [class]="iconText(accent, value > 0)" />
+        </div>
+      </div>
+      <p class="text-3xl font-bold text-secondary">@if (money) {S/. {{ value | number:'1.2-2' }}} @else {{{ value }}}</p>
+      <p class="text-xs text-tertiary">{{ hint }}</p>
+    </div>
   </a>
 </ng-template>
 
@@ -235,8 +252,8 @@
 <ng-template #miActividad>
   <!-- VIÁTICOS -->
   @if (canSeeViaticos) {
-  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Solicitud de Fondos</h3>
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-5 sm:mt-6 mb-2 sm:mb-3">Solicitud de Fondos</h3>
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
     <ng-container *ngTemplateOutlet="kpiCard; context: {
       title: 'Solicitudes de viáticos', value: kpiSolicitudesViaticos(), accent: 'yellow',
       link: '/mis-rendiciones', qp: { tab: 'viaticos' }, hint: 'pendientes de aprobación'
@@ -266,7 +283,7 @@
 
   <!-- RENDICIONES DIRECTAS -->
   @if (canSeeRendiciones) {
-  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-6 mb-3">Rendiciones directas</h3>
+  <h3 class="text-xs font-bold text-tertiary uppercase tracking-wider mt-5 sm:mt-6 mb-2 sm:mb-3">Rendiciones directas</h3>
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
     <ng-container *ngTemplateOutlet="kpiCard; context: {
       title: 'Rendiciones directas', value: kpiDirectasSinCerrar(), accent: 'purple',

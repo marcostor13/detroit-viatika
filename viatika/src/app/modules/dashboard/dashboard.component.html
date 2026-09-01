@@ -87,14 +87,14 @@
     <!-- KPIs -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- Gasto total -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Gasto total</span>
           <span class="w-9 h-9 rounded-xl bg-primary/10 text-primary grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatCurrency(animated().totalGasto) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().totalGasto) }}</p>
         <div class="mt-1 flex items-center gap-1 text-xs">
           @if (kpis().totalGastoDeltaPct >= 0) {
             <span class="text-emerald-600 font-medium">▲ {{ formatPct(kpis().totalGastoDeltaPct) }}</span>
@@ -106,86 +106,86 @@
       </div>
 
       <!-- Ticket promedio -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Ticket promedio</span>
           <span class="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 0v6m0-6L9 17"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatCurrency(animated().ticketPromedio) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().ticketPromedio) }}</p>
         <p class="mt-1 text-xs text-secondary">{{ formatInt(animated().gastoCount) }} comprobantes</p>
       </div>
 
       <!-- Tasa aprobación -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Tasa de aprobación</span>
           <span class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatPct(animated().tasaAprobacionGastos) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatPct(animated().tasaAprobacionGastos) }}</p>
         <p class="mt-1 text-xs text-secondary">{{ formatCurrency(animated().gastoPendingAmount) }} pendiente</p>
       </div>
 
       <!-- Rendiciones pendientes -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Rendiciones pendientes</span>
           <span class="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatInt(animated().rendicionesPendientes) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatInt(animated().rendicionesPendientes) }}</p>
         <p class="mt-1 text-xs text-secondary">de {{ formatInt(animated().rendicionesTotal) }} en el periodo</p>
       </div>
 
       <!-- Anticipos solicitados -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Anticipos solicitados</span>
           <span class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatCurrency(animated().anticipoSolicitado) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().anticipoSolicitado) }}</p>
         <p class="mt-1 text-xs text-secondary">{{ formatInt(animated().anticipoSolicitadoCount) }} solicitudes</p>
       </div>
 
       <!-- Anticipos por aprobar -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Anticipos por aprobar</span>
           <span class="w-9 h-9 rounded-xl bg-orange-50 text-orange-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatCurrency(animated().anticipoPendienteAprobAmount) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().anticipoPendienteAprobAmount) }}</p>
         <p class="mt-1 text-xs text-secondary">{{ formatInt(animated().anticipoPendienteAprobCount) }} pendientes</p>
       </div>
 
       <!-- Anticipos pagados -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Anticipos pagados</span>
           <span class="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m3 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H10a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatCurrency(animated().anticipoPagadoAmount) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().anticipoPagadoAmount) }}</p>
         <p class="mt-1 text-xs text-secondary">aprobado: {{ formatCurrency(animated().anticipoAprobadoAmount) }}</p>
       </div>
 
       <!-- Devoluciones pendientes -->
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm hover:shadow-md transition">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm hover:shadow-md transition">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-secondary uppercase tracking-wide">Devoluciones pendientes</span>
           <span class="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 grid place-items-center">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
           </span>
         </div>
-        <p class="mt-3 text-2xl font-bold text-secondary">{{ formatCurrency(animated().devolucionesPendientesAmount) }}</p>
+        <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().devolucionesPendientesAmount) }}</p>
         <p class="mt-1 text-xs text-secondary">{{ formatInt(animated().devolucionesPendientesCount) }} por devolver</p>
       </div>
     </div>
@@ -197,7 +197,7 @@
     }
 
     <!-- Serie mensual -->
-    <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+    <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
       <h2 class="text-base font-semibold text-secondary mb-4">Evolución mensual: gasto vs anticipos</h2>
       <div class="h-72">
         <canvas #monthlyChart></canvas>
@@ -206,13 +206,13 @@
 
     <!-- Categoría + Estado de gastos -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
         <h2 class="text-base font-semibold text-secondary mb-4">Gasto por categoría</h2>
         <div class="h-72">
           <canvas #categoryChart></canvas>
         </div>
       </div>
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
         <h2 class="text-base font-semibold text-secondary mb-4">Gasto por estado de aprobación</h2>
         <div class="h-72">
           <canvas #statusChart></canvas>
@@ -222,13 +222,13 @@
 
     <!-- Centros de costo + Colaboradores -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
         <h2 class="text-base font-semibold text-secondary mb-4">Top centros de costo</h2>
         <div class="h-80">
           <canvas #projectChart></canvas>
         </div>
       </div>
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
         <h2 class="text-base font-semibold text-secondary mb-4">Top colaboradores por consumo</h2>
         <div class="h-80">
           <canvas #collaboratorChart></canvas>
@@ -238,14 +238,14 @@
 
     <!-- Anticipos por estado + Rendiciones / tipos -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
         <h2 class="text-base font-semibold text-secondary mb-4">Anticipos por estado</h2>
         <div class="h-72">
           <canvas #advanceChart></canvas>
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+      <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
         <h2 class="text-base font-semibold text-secondary mb-4">Rendiciones por estado</h2>
         <div class="space-y-2">
           @for (r of data()?.reportByStatus; track r.status) {
@@ -364,7 +364,7 @@
         <!-- Panel derecho: top destinos lista + mini chart -->
         <div class="flex flex-col gap-4">
           <!-- Top destinos bar chart -->
-          <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm flex-1">
+          <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm flex-1">
             <h2 class="text-base font-semibold text-secondary mb-4">Top destinos por monto</h2>
             <div class="h-64">
               <canvas #locationChart></canvas>
@@ -372,7 +372,7 @@
           </div>
 
           <!-- Lista ranking destinos -->
-          <div class="bg-white rounded-2xl border border-tertiary/15 p-5 shadow-sm">
+          <div class="bg-white rounded-2xl border border-tertiary/15 p-4 sm:p-5 shadow-sm">
             <h3 class="text-sm font-semibold text-secondary mb-3">Ranking de destinos</h3>
             <div class="space-y-2">
               @for (loc of data()?.topLocations?.slice(0, 5); track loc.place; let i = $index) {

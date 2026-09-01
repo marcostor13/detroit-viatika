@@ -7,12 +7,12 @@
       <p class="text-sm text-tertiary mt-0.5">Gestión de solicitudes de fondos y comprobantes de pago</p>
     </div>
     @if (canUseBatchPayments) {
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
       <app-button variant="primary" size="sm"
         [label]="isGeneratingTxt() ? 'Generando...' : 'Generar archivo de pagos'"
         [disabled]="isGeneratingTxt()" (clicked)="generateAllPaymentsTxt()" />
       <label
-        class="inline-flex items-center gap-2 h-[38px] px-3 border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium cursor-pointer"
+        class="inline-flex items-center gap-2 h-[38px] px-3 whitespace-nowrap border border-primary/30 text-primary rounded-lg hover:bg-primary/5 transition-colors text-sm font-medium cursor-pointer"
         [class.opacity-50]="isReconciling()" [class.pointer-events-none]="isReconciling()">
         <app-icon name="upload" size="sm" />
         {{ isReconciling() ? 'Procesando...' : 'Cargar pagos' }}
@@ -935,7 +935,7 @@
           class="w-full border border-tertiary/30 rounded-xl px-3 py-2 text-sm text-secondary bg-background focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"></textarea>
         <p class="text-xs text-tertiary">{{ returnRejectReason().length }} / 50</p>
       </div>
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
         <app-button variant="secondary" [fullWidth]="true" label="Cancelar" (clicked)="showValidateReturnModal=false" />
         <app-button
           variant="danger"
