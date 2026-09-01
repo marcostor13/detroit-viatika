@@ -76,9 +76,15 @@ el toolchain lo usa sin descargar nada.
   estan en `viatika/assets/` (icon.png 1024x1024, splash.png 2732x2732) y se
   regeneran con:
   `npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff'`
-- El teclado no debe desplazar la pantalla: `windowSoftInputMode="adjustResize"`
-  en el manifest cubre Android 14 y anteriores, y `MainActivity` consume el inset
-  del teclado para Android 15+ (donde ese modo se ignora por el edge-to-edge).
+- El teclado se resuelve **solo** con `windowSoftInputMode="adjustResize"` en el
+  manifest. Sin esa linea el sistema elige `ADJUST_PAN` y desplaza la ventana
+  entera. NO agregar ademas un listener de insets ni de OnGlobalLayout en
+  `MainActivity` para encoger la WebView: el sistema ya la encogio y el padding
+  extra la encoge por segunda vez. Medido en el emulador con Android 14: con
+  `adjustResize` solo, la ventana pasa de 778 a 499 px y el contenido llena el
+  area visible; con el listener bajaba a 196 px y dejaba un bloque vacio sobre el
+  teclado. En Android 15+ el sistema ignora `adjustResize`, pero ahi lo cubre
+  Capacitor (`SystemBars`).
 - Si Gradle falla con un `NoClassDefFoundError` raro (por ejemplo
   `com/google/gson/TypeAdapter`), es un jar truncado en la cache
   (`D:\Android\.gradle\caches\modules-2`) por un corte de energia: borrar el

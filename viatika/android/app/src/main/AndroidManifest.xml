@@ -30,7 +30,35 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!-- Permisos -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Camara: el boton "Tomar foto" de los comprobantes lanza
+         ACTION_IMAGE_CAPTURE. Al declarar el permiso, Capacitor lo pide en
+         tiempo de ejecucion antes de abrir la camara; ver
+         isMediaCaptureSupported en BridgeWebChromeClient. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Guardar los PDF y Excel en la carpeta Descargas. Desde Android 10 se
+         escribe por MediaStore y no hace falta permiso; en Android 9 y
+         anteriores si. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- La camara no es obligatoria para instalar: sin esto Play Store excluye
+         a los equipos que no la tienen. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- Desde Android 11 una app solo "ve" los paquetes que declara. Sin este
+         bloque, resolveActivity() devuelve null, Capacitor concluye que no hay
+         camara disponible y cae al selector de archivos sin ningun aviso
+         (showImageCapturePicker -> "Falling back to default file picker"). -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 </manifest>
