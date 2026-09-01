@@ -273,7 +273,7 @@
         </div>
 
         <!-- Acciones -->
-        <div class="flex gap-3 pt-1">
+        <div class="flex flex-wrap gap-3 pt-1">
           @if (!id && selectedRoleNeedsPermissions) {
             <app-button
               label="Siguiente: Permisos"
@@ -414,7 +414,7 @@
       </div>
 
       <!-- Actions -->
-      <div class="flex gap-3 border-t border-tertiary/10 pt-4">
+      <div class="flex flex-wrap gap-3 border-t border-tertiary/10 pt-4">
         <app-button label="Crear colaborador" variant="primary" size="md" (clicked)="createUser()" />
         <app-button label="Atrás" variant="secondary" size="md" (clicked)="step = 1" />
       </div>

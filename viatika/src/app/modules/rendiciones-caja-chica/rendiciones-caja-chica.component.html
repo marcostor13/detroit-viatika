@@ -64,6 +64,7 @@
 
     <!-- Desktop table -->
     <div class="hidden sm:block bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-gray-50 border-b border-gray-200 text-left">
@@ -126,6 +127,7 @@
           }
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Mobile list -->
@@ -171,7 +173,7 @@
       class="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 mb-4"
       (keyup.enter)="create()"
     />
-    <div class="flex gap-3">
+    <div class="flex flex-wrap gap-3">
       <button
         type="button"
         (click)="showCreateModal.set(false)"

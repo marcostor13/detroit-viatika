@@ -113,6 +113,7 @@
 
       @if (filasVisibles().length) {
         <div class="max-h-[45vh] overflow-y-auto border border-tertiary/20 rounded-lg">
+          <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="sticky top-0 bg-quaternary border-b border-tertiary/20">
               <tr class="text-left text-xs text-tertiary">
@@ -139,6 +140,7 @@
               }
             </tbody>
           </table>
+          </div>
         </div>
         <p class="text-xs text-tertiary mt-2">
           Mostrando {{ filasVisibles().length }} de {{ plan.rows.length }} fila(s).
@@ -179,16 +181,17 @@
           class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
         />
       </div>
-      <select
-        [ngModel]="filterCostCenter()"
-        (ngModelChange)="onFilterCostCenter($event)"
-        class="px-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-      >
-        <option value="">Todos los centros de costo</option>
-        @for (cc of centrosCosto(); track cc._id) {
-          <option [value]="cc._id">{{ cc.code ? cc.code + ' — ' + cc.name : cc.name }}</option>
-        }
-      </select>
+      <div class="w-full sm:w-72">
+        <app-search-select
+          [ngModel]="filterCostCenter()"
+          (ngModelChange)="onFilterCostCenter($event)"
+          [options]="centroCostoOptions()"
+          [allowEmpty]="true"
+          emptyLabel="Todos los centros de costo"
+          placeholder="Todos los centros de costo"
+          searchPlaceholder="Buscar centro de costo…"
+        />
+      </div>
     </div>
   </div>
 

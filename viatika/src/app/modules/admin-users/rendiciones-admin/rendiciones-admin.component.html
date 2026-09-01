@@ -343,11 +343,11 @@
                 >
                   {{ item.userName }}
                 </button>
-                <div class="flex items-center gap-1.5 mt-0.5">
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap shrink-0" [class]="item.kindColor">
+                <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold max-w-full" [class]="item.kindColor">
                     {{ item.kindLabel }}
                   </span>
-                  <p class="text-xs text-secondary truncate font-medium" [title]="item.title">{{ item.title }}</p>
+                  <p class="text-xs text-secondary truncate font-medium min-w-0" [title]="item.title">{{ item.title }}</p>
                 </div>
                 <p class="text-xs text-tertiary mt-0.5 truncate">
                   {{ item.projectName }}
@@ -499,6 +499,7 @@
 
         <!-- Desktop: tabla completa (hay espacio para todas las columnas) -->
         <div class="hidden md:block rounded-xl border border-tertiary/15 overflow-hidden">
+          <div class="overflow-x-auto">
           <table class="min-w-full text-xs">
             <thead class="bg-background">
               <tr>
@@ -524,6 +525,7 @@
               }
             </tbody>
           </table>
+          </div>
         </div>
       </div>
       }
@@ -558,7 +560,7 @@
         </div>
       </div>
       }
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
         <button (click)="showApproveModal.set(false)"
           class="flex-1 h-10 border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
           Cancelar
@@ -698,6 +700,7 @@
 
         <!-- Desktop: tabla completa -->
         <div class="hidden md:block rounded-xl border border-tertiary/15 overflow-hidden">
+          <div class="overflow-x-auto">
           <table class="min-w-full text-xs">
             <thead class="bg-background">
               <tr>
@@ -723,6 +726,7 @@
               }
             </tbody>
           </table>
+          </div>
         </div>
       </div>
       }
@@ -900,7 +904,7 @@
       }
     }
 
-    <div class="flex gap-3">
+    <div class="flex flex-wrap gap-3">
       <button (click)="cancelDelete()"
         class="flex-1 h-[42px] border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
         Cancelar

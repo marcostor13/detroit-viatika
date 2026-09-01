@@ -12,7 +12,7 @@
   </div>
 
   <!-- Tabs -->
-  <div class="flex gap-1 border-b border-gray-200 mb-6">
+  <div class="flex gap-1 overflow-x-auto border-b border-gray-200 mb-6">
     @if (canViewViaticos) {
     <button
       type="button"
@@ -692,6 +692,7 @@
     <div class="mt-8">
       <p class="text-sm font-semibold text-ink-900 mb-3">Solicitudes de presupuesto</p>
       <div class="rounded-2xl border border-divider overflow-hidden">
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-quaternary">
             <tr class="text-left text-xs uppercase tracking-wide text-ink-500">
@@ -741,6 +742,7 @@
             }
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   }
@@ -794,6 +796,13 @@
         } @else {
           Seleccionar archivo
         }
+      </label>
+      <!-- Capacitor solo abre la camara si el input pide image/* junto con
+           capture, y el selector de arriba necesita aceptar PDF: por eso van
+           dos inputs separados. -->
+      <label class="flex items-center justify-center gap-2 cursor-pointer px-3 py-2 mt-2 border border-divider rounded-lg text-sm text-secondary hover:bg-background transition-colors">
+        <input type="file" accept="image/*" capture="environment" class="hidden" (change)="onDevolucionFile($event)" />
+        Tomar foto
       </label>
       @if (isScanningDevolucion()) {
         <p class="text-xs text-tertiary flex items-center gap-1.5 mt-1">

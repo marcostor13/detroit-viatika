@@ -104,7 +104,7 @@
                   {{ project.isActive !== false ? 'Activo' : 'Inactivo' }}
                 </app-badge>
               </div>
-              <div class="flex gap-2 justify-end">
+              <div class="flex flex-wrap gap-2 justify-end">
                 <app-button variant="secondary" size="sm" label="Editar" (clicked)="navigateToForm(project._id)">
                   <app-icon name="edit" size="sm" />
                 </app-button>

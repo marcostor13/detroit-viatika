@@ -123,7 +123,7 @@
         </div>
       </div>
 
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           [label]="isUploadingLogo ? 'Guardando...' : 'Guardar Cambios'"
           variant="primary"
@@ -203,7 +203,7 @@
         </p>
       </div>
       }       @if (sunatConfig) {
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           label="Probar Conexión"
           variant="primary"
@@ -278,7 +278,7 @@
         </label>
       </div>
 
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           label="Guardar Configuración"
           variant="primary"
@@ -440,7 +440,7 @@
           </div>
         </div>
       </div>
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           [label]="isSavingLimits ? 'Guardando...' : 'Guardar Límites'"
           variant="primary"
@@ -576,7 +576,7 @@
         </div>
       </div>
 
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           [label]="isSavingAccounting ? 'Guardando...' : 'Guardar Configuración'"
           variant="primary"
@@ -719,7 +719,7 @@
       </p>
       }
 
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           [label]="isSavingNotifications ? 'Guardando...' : 'Guardar Configuracion'"
           variant="primary"
@@ -908,7 +908,7 @@
       <!-- Los bancos de la empresa se configuran en "Cuenta de cargo (pagos
            BBVA)": es donde el usuario los busca y ahí se ve para qué sirven. -->
 
-      <div class="flex space-x-3">
+      <div class="flex flex-wrap gap-3">
         <app-button
           [label]="isSavingAccounting ? 'Guardando...' : 'Guardar Configuración'"
           variant="primary"
