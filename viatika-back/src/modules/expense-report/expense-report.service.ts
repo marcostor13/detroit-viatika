@@ -64,6 +64,7 @@ import { Logger } from '@nestjs/common'
 import { monedaSymbol, DEFAULT_MONEDA } from '../../common/moneda.constants'
 import { CurrencyService } from '../exchange-rate/currency.service'
 import { normalizeMoneda } from '../../common/moneda.constants'
+import { ESTADOS_SOLICITUD_CERRADA } from '../../common/solicitud-estados.constants'
 
 /** Contexto del usuario que solicita eliminar una solicitud. */
 export interface SolicitudDeleteActor {
@@ -77,17 +78,7 @@ export interface SolicitudDeleteActor {
  */
 const MAX_SOLICITUDES_ABIERTAS = 2
 
-/**
- * Estados en los que una solicitud de fondos YA NO ocupa cupo. Cerrar es una
- * acción de Tesorería (`PATCH /:id/close`, VD-66/VD-49); rechazada y cancelada
- * entran porque tampoco van a rendirse nunca.
- *
- * Van fuera de la clase y no como campos de instancia: media suite construye el
- * servicio con `Object.create(prototype)`, que no ejecuta el constructor y
- * dejaría estas constantes en `undefined` — con el tope comparándose contra
- * `undefined`, el bloqueo no saltaría y la prueba pasaría en verde.
- */
-const ESTADOS_SOLICITUD_CERRADA = ['closed', 'rejected', 'cancelled']
+
 
 @Injectable()
 export class ExpenseReportService implements OnModuleInit {

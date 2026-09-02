@@ -9,12 +9,8 @@ export interface IDashboardFilters {
   projectId?: string;
   categoryId?: string;
   collaboratorId?: string;
-}
-
-export interface IStatusAmount {
-  status: string;
-  amount: number;
-  count: number;
+  ordenTrabajoId?: string;
+  department?: string;
 }
 
 export interface IReportStatus {
@@ -33,62 +29,80 @@ export interface INamedAmount {
   name: string;
   amount: number;
   count: number;
+  /** Porcentaje sobre el gasto total del periodo (solo en categorías). */
+  pct?: number;
   categoryId?: string;
   projectId?: string;
+  ordenTrabajoId?: string;
   userId?: string;
 }
 
+/** Un mes con las tres vías por las que sale dinero. */
 export interface IMonthlyPoint {
   month: string;
-  gasto: number;
-  anticipo: number;
+  solicitudes: number;
+  directas: number;
+  cajaChica: number;
 }
 
 export interface IDashboardKpis {
   totalGasto: number;
   gastoCount: number;
-  ticketPromedio: number;
   totalGastoPrev: number;
   totalGastoDeltaPct: number;
-  gastoApprovedAmount: number;
-  gastoPendingAmount: number;
-  gastoPendingCount: number;
-  gastoRejectedAmount: number;
-  tasaAprobacionGastos: number;
   anticipoSolicitado: number;
   anticipoSolicitadoCount: number;
-  anticipoAprobadoAmount: number;
-  anticipoPagadoAmount: number;
-  anticipoPendienteAprobAmount: number;
-  anticipoPendienteAprobCount: number;
   devolucionesPendientesAmount: number;
   devolucionesPendientesCount: number;
-  rendicionesTotal: number;
-  rendicionesPendientes: number;
-  rendicionesAprobadas: number;
+  porRendirAmount: number;
+  porRendirCount: number;
+  porRendirVencidoAmount: number;
+  porRendirVencidoCount: number;
 }
 
+/** Destino agrupado por departamento. */
 export interface ILocationPoint {
   place: string;
   count: number;
+  /** Gasto rendido en ese destino. */
   amount: number;
+  /** Monto solicitado por adelantado para ese destino. */
+  solicitado: number;
   lat?: number;
   lng?: number;
+}
+
+/** Fila de los paneles operativos (devoluciones / anticipos sin rendir). */
+export interface IPendienteRow {
+  reportId: string;
+  codigo: string;
+  place: string;
+  userName: string;
+  amount: number;
+  dias: number;
+  status?: string;
 }
 
 export interface IDashboardResponse {
   range: { dateFrom: string; dateTo: string };
   currency: string;
+  /** Recorte aplicado por rol: un coordinador solo ve sus centros de costo. */
+  scope: { restricted: boolean; projectIds: string[] };
   kpis: IDashboardKpis;
-  expenseByStatus: IStatusAmount[];
-  expenseByType: ITypeAmount[];
-  advanceByStatus: IStatusAmount[];
-  reportByStatus: IReportStatus[];
+  diasParaRendir: number;
+  monthlySeries: IMonthlyPoint[];
   topCategories: INamedAmount[];
+  topOrdenesTrabajo: INamedAmount[];
   topProjects: INamedAmount[];
   topCollaborators: INamedAmount[];
   topLocations: ILocationPoint[];
-  monthlySeries: IMonthlyPoint[];
+  departments: string[];
+  pendientes: {
+    devoluciones: IPendienteRow[];
+    porRendir: IPendienteRow[];
+  };
+  reportByStatus: IReportStatus[];
+  expenseByType: ITypeAmount[];
 }
 
 @Injectable({ providedIn: 'root' })
