@@ -41,8 +41,9 @@ const RESPUESTA: IDashboardResponse = {
   topProjects: [{ name: 'CC 123', amount: 700, count: 3, projectId: 'p1' }],
   topCollaborators: [{ name: 'Ana', amount: 700, count: 3, userId: 'u1' }],
   topLocations: [
-    { place: 'Loreto', count: 2, amount: 800, solicitado: 1200, lat: -3.7, lng: -73.2 },
-    { place: 'Lima', count: 1, amount: 200, solicitado: 300, lat: -12, lng: -77 },
+    { place: 'Sin departamento', count: 5, amount: 9000, solicitado: 9000, identificado: false },
+    { place: 'Loreto', count: 2, amount: 800, solicitado: 1200, identificado: true, lat: -3.7, lng: -73.2 },
+    { place: 'Lima', count: 1, amount: 200, solicitado: 300, identificado: true, lat: -12, lng: -77 },
   ],
   departments: ['Lima', 'Loreto'],
   pendientes: {
@@ -171,10 +172,14 @@ describe('DashboardComponent', () => {
     expect(component.isVencido(20)).toBe(false);
   });
 
-  it('resume los destinos por departamento', () => {
+  // "Sin departamento" agrupa los destinos que no se pudieron resolver: sigue en
+  // el grafico, pero contarlo daba un departamento de mas y podia salir como
+  // "destino principal" con solo tener destinos mal escritos.
+  it('los indicadores de destino ignoran "Sin departamento"', () => {
     montar();
     expect(component.uniqueDestinos).toBe(2);
     expect(component.topLocationName).toBe('Loreto');
+    expect(component.topLocationAmount).toBe(800);
     expect(component.avgGastoPorDestino).toBe(500);
   });
 

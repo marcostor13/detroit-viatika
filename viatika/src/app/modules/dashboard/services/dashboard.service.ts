@@ -68,6 +68,8 @@ export interface ILocationPoint {
   amount: number;
   /** Monto solicitado por adelantado para ese destino. */
   solicitado: number;
+  /** false para el agrupado "Sin departamento", que no es un destino real. */
+  identificado: boolean;
   lat?: number;
   lng?: number;
 }

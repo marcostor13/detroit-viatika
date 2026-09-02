@@ -255,7 +255,7 @@
       <app-card [hover]="false">
         <div class="flex items-baseline justify-between gap-2 mb-4">
           <h2 class="text-base font-semibold text-secondary">Anticipos entregados sin rendir</h2>
-          <span class="text-xs text-tertiary">rojo: más de {{ data()?.diasParaRendir }} días</span>
+          <span class="text-xs text-tertiary">al día de hoy · rojo: más de {{ data()?.diasParaRendir }} días</span>
         </div>
         <div class="space-y-2 max-h-80 overflow-y-auto">
           @for (r of data()?.pendientes?.porRendir; track r.reportId) {

@@ -974,6 +974,8 @@ export class DashboardService {
       count: number
       amount: number
       solicitado: number
+      /** false para el agrupado "Sin departamento", que no es un destino real. */
+      identificado: boolean
       lat?: number
       lng?: number
     }[]
@@ -1044,7 +1046,11 @@ export class DashboardService {
     }
 
     return Array.from(porDepartamento.values())
-      .map(d => ({ ...d, ...(DEPARTAMENTO_COORDS[d.place] ?? {}) }))
+      .map(d => ({
+        ...d,
+        identificado: d.place !== DEPARTAMENTO_DESCONOCIDO,
+        ...(DEPARTAMENTO_COORDS[d.place] ?? {}),
+      }))
       .sort((a, b) => b.amount - a.amount || b.solicitado - a.solicitado)
   }
 

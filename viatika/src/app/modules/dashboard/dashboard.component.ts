@@ -732,20 +732,30 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }));
   }
 
+  /**
+   * Destinos que resolvieron a un departamento real. El agrupado "Sin
+   * departamento" sigue en el gráfico (esa plata se gastó), pero queda fuera de
+   * los tres indicadores: contarlo daba "11 departamentos" habiendo 10, y con
+   * destinos mal escritos llegaba a salir como "destino principal".
+   */
+  private destinosIdentificados() {
+    return (this.data()?.topLocations ?? []).filter((l) => l.identificado);
+  }
+
   get topLocationName(): string {
-    return this.data()?.topLocations?.[0]?.place ?? '—';
+    return this.destinosIdentificados()[0]?.place ?? '—';
   }
 
   get topLocationAmount(): number {
-    return this.data()?.topLocations?.[0]?.amount ?? 0;
+    return this.destinosIdentificados()[0]?.amount ?? 0;
   }
 
   get uniqueDestinos(): number {
-    return this.data()?.topLocations?.length ?? 0;
+    return this.destinosIdentificados().length;
   }
 
   get avgGastoPorDestino(): number {
-    const locs = this.data()?.topLocations ?? [];
+    const locs = this.destinosIdentificados();
     if (!locs.length) return 0;
     return locs.reduce((s, l) => s + l.amount, 0) / locs.length;
   }
