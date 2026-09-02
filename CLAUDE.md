@@ -143,24 +143,27 @@ Solo existen **3 roles** en la plataforma:
 
 ## Acceso a Módulos por Rol
 
-### Superadministrador
-- Clientes (gestión multi-empresa)
-- Colaboradores (admin-users)
+**No hay bypass por rol** (VD-77): manda el módulo asignado, para cualquier
+rol. `UserStateService.hasModulePermission()` solo exceptúa al
+Superadministrador; a un Administrador o a Contabilidad sin el módulo el guard
+les cierra la ruta igual que a un Colaborador. `hasModuleStrict()` quedó como
+alias deprecado de `hasModulePermission()`.
 
-### Administrador
-- Aprobación de Facturas
-- Consolidado
-- Colaboradores (admin-users)
-- Configuración
-- Tesorería (siempre habilitada por rol)
+Las excepciones que quedan son puntuales y están en `user-state.service.ts`:
 
-### Colaborador (según permisos)
-- Mis Rendiciones — siempre (pantalla de inicio del colaborador)
-- Facturas — **NO aparece en el menú**; se accede desde el detalle de una rendición ("Añadir Gasto")
-- Tesorería — solo si tiene permiso `modules: ['tesoreria']`
-- Aprobación de Facturas — solo si tiene permiso `modules: ['invoice-approval']`
-- Consolidado — solo si tiene permiso `modules: ['consolidated-invoices']`
-- Configuración — solo si tiene permiso `modules: ['configuracion']`
+| Chequeo | Quién pasa siempre |
+|---------|--------------------|
+| `hasModulePermission` | Superadministrador |
+| `canApproveL1` | Superadministrador, Contabilidad, Administrador |
+| `canApproveL2` | los anteriores + Tesorería |
+| `canAccessTesoreria` | Superadministrador y rol Tesorería (Contabilidad y Administrador **no**) |
+
+Rutas que siguen abiertas por rol, no por módulo: `/admin-users`,
+`/configuracion`, `/clients` y `/invoice-approval` vía `AuthAdmin2Guard`, y
+`/clients-admin` y `/super/*` vía `AuthSuperGuard`.
+
+Facturas (`invoices`) **no aparece en el menú**: se accede desde el detalle de
+una rendición ("Añadir Gasto").
 
 ---
 
@@ -188,14 +191,21 @@ permissions: {
 
 ### Módulos disponibles para asignar
 
+Fuente de verdad: `MODULES` en
+`viatika/src/app/modules/admin-users/user-permissions/user-permissions.component.ts`.
+
 | Key | Label |
 |-----|-------|
-| `invoices` | Facturas |
+| `colaboradores` | Colaboradores |
+| `rendiciones` | Rendiciones (las de todos los colaboradores) |
 | `mis-rendiciones` | Mis Rendiciones |
-| `invoice-approval` | Aprobación de Facturas |
-| `consolidated-invoices` | Consolidado |
-| `tesoreria` | Tesorería |
+| `nueva-rendicion` | Rendición directa |
+| `viaticos` | Solicitud de Fondos |
+| `consolidated-invoices` | Dashboard |
+| `tesoreria` | Pagos |
 | `configuracion` | Configuración |
+| `audit-log` | Actividad |
+| `caja-chica` | Rendición Caja Chica |
 
 ### Gestión de permisos
 El **Administrador** accede a `/admin-users/:id/permisos` para configurar los permisos de cada colaborador.
