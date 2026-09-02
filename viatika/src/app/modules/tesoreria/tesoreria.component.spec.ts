@@ -61,8 +61,9 @@ describe('TesoreriaComponent', () => {
       'reconcilePayments',
     ]);
     expenseReportsService = jasmine.createSpyObj('ExpenseReportsService', [
-      'findPendingReimbursements', 'findAllByClient', 'findDirectaDepositReports',
-      'scanDepositAmount', 'registerViaticoPayment', 'registerReimbursementPayment',
+      'findPendingReimbursements', 'findPendingReturnReports', 'findAllByClient',
+      'findDirectaDepositReports', 'scanDepositAmount', 'registerViaticoPayment',
+      'registerReimbursementPayment', 'registerReturnVoucher',
     ]);
     userState = jasmine.createSpyObj('UserStateService', [
       'getUser', 'isSuperAdmin', 'isAdmin', 'isContabilidad', 'canApproveL2',
@@ -77,6 +78,7 @@ describe('TesoreriaComponent', () => {
     advanceService.findAll.and.returnValue(of([]));
     advanceService.findPendingReturns.and.returnValue(of([]));
     expenseReportsService.findPendingReimbursements.and.returnValue(of([]));
+    expenseReportsService.findPendingReturnReports.and.returnValue(of([]));
     expenseReportsService.findAllByClient.and.returnValue(of([]));
     expenseReportsService.findDirectaDepositReports.and.returnValue(of([]));
     userState.getUser.and.returnValue({ companyId: 'c1' } as any);
@@ -982,6 +984,106 @@ describe('TesoreriaComponent', () => {
       expect(notifications.show).toHaveBeenCalledWith(
         jasmine.stringMatching(/Consulta de Pagos Masivos/), 'error'
       );
+    });
+  });
+
+  /**
+   * La devolucion solo la podia cargar el colaborador desde su rendicion. Si el
+   * deposito entra por fuera de la app, Tesoreria no tenia como asentarlo y la
+   * rendicion se quedaba sin poder cerrar.
+   */
+  describe('devolucion manual', () => {
+    // Los formularios se arman en ngOnInit; estas pruebas abren el modal sin
+    // pasar por la carga, asi que hay que construirlos aparte.
+    beforeEach(() => component.initForms());
+
+    const reporteConSaldo = (overrides: Partial<IExpenseReport> = {}) =>
+      makeReport({
+        _id: 'rep-dev',
+        title: 'Viaje a Tacna',
+        status: 'approved',
+        settlement: { advanceTotal: 500, expenseTotal: 380, difference: 120, type: 'devolucion' },
+        ...overrides,
+      } as Partial<IExpenseReport>);
+
+    it('carga las rendiciones con saldo por devolver', () => {
+      expenseReportsService.findPendingReturnReports.and.returnValue(of([reporteConSaldo()]));
+      component.ngOnInit();
+      expect(component.pendingReturnReports.length).toBe(1);
+    });
+
+    it('no las pide si el usuario no puede pagar ni liquidar', () => {
+      userState.canApproveL2.and.returnValue(false);
+      component.ngOnInit();
+      expect(expenseReportsService.findPendingReturnReports).not.toHaveBeenCalled();
+      expect(component.pendingReturnReports).toEqual([]);
+    });
+
+    it('las cuenta en el badge de la pestaña Devoluciones', () => {
+      component.pendingReturnReports = [reporteConSaldo()];
+      const devoluciones = component.tabsList.find(t => t.value === 'devoluciones');
+      expect(devoluciones?.badge).toBe(1);
+    });
+
+    it('propone el saldo pendiente como monto a devolver', () => {
+      component.openManualReturnModal(reporteConSaldo());
+      expect(component.showManualReturnModal).toBeTrue();
+      expect(component.manualReturnForm.value.amountReturned).toBe(120);
+    });
+
+    // `settlement.difference` viene en moneda base: mostrar 120 junto al simbolo
+    // de dolares le diria a Tesoreria que cobre soles como si fueran dolares.
+    it('convierte el saldo a la moneda de la rendicion', () => {
+      const enDolares = reporteConSaldo({ viaticoMoneda: 'USD', tipoCambio: 4 } as Partial<IExpenseReport>);
+      expect(component.returnReportAmount(enDolares)).toBe(30);
+      expect(component.reimbursementSymbol(enDolares)).toBe('$');
+    });
+
+    it('exige la constancia del deposito antes de registrar', () => {
+      component.openManualReturnModal(reporteConSaldo());
+      component.confirmManualReturn();
+
+      expect(expenseReportsService.registerReturnVoucher).not.toHaveBeenCalled();
+      expect(notifications.show).toHaveBeenCalledWith(
+        jasmine.stringMatching(/constancia/), 'error'
+      );
+    });
+
+    it('registra la devolucion con los datos del formulario', () => {
+      expenseReportsService.registerReturnVoucher.and.returnValue(of(reporteConSaldo()));
+      component.openManualReturnModal(reporteConSaldo());
+      component.manualReturnReceiptUrl = 'https://s3/constancia.pdf';
+      component.manualReturnReceiptName = 'constancia.pdf';
+      component.manualReturnForm.patchValue({
+        depositDate: '2026-09-01',
+        bankOrigin: 'BCP',
+        operationNumber: '000123',
+      });
+      component.confirmManualReturn();
+
+      const [reportId, payload] = expenseReportsService.registerReturnVoucher.calls.mostRecent().args;
+      expect(reportId).toBe('rep-dev');
+      expect(payload).toEqual(jasmine.objectContaining({
+        depositDate: '2026-09-01',
+        amountReturned: 120,
+        bankOrigin: 'BCP',
+        operationNumber: '000123',
+        fileUrl: 'https://s3/constancia.pdf',
+      }));
+      expect(component.showManualReturnModal).toBeFalse();
+    });
+
+    it('deja el modal abierto si el backend rechaza el registro', () => {
+      expenseReportsService.registerReturnVoucher.and.returnValue(
+        throwError(() => ({ error: { message: 'Ya se ha cargado un comprobante' } }))
+      );
+      component.openManualReturnModal(reporteConSaldo());
+      component.manualReturnReceiptUrl = 'https://s3/constancia.pdf';
+      component.confirmManualReturn();
+
+      expect(component.showManualReturnModal).toBeTrue();
+      expect(component.isActing()).toBeFalse();
+      expect(notifications.show).toHaveBeenCalledWith('Ya se ha cargado un comprobante', 'error');
     });
   });
 });

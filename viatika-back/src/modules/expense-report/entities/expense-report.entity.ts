@@ -502,6 +502,8 @@ export class ExpenseReport {
       operationTime: { type: String },
       titular: { type: String },
       uploadedAt: { type: Date, required: true },
+      registeredBy: { type: Types.ObjectId, ref: 'User' },
+      registeredByName: { type: String },
       _id: false,
     },
     required: false,
@@ -520,6 +522,14 @@ export class ExpenseReport {
     operationTime?: string
     titular?: string
     uploadedAt: Date
+    /**
+     * Quién lo cargó, cuando NO fue el colaborador dueño: Tesorería puede
+     * registrar la devolución a mano (el colaborador depositó por ventanilla o
+     * avisó por fuera de la app) y hay que poder distinguir ese asiento del que
+     * subió el propio colaborador. Vacío = lo cargó el dueño.
+     */
+    registeredBy?: Types.ObjectId
+    registeredByName?: string
   }
 
   @Prop({ type: Object, required: false })

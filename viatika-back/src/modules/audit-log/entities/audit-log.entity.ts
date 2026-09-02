@@ -21,6 +21,7 @@ export type AuditAction =
   | 'update_rendicion_status'
   | 'reopen_rendicion'
   | 'register_reimbursement_payment'
+  | 'register_return_voucher'
   | 'approve_advance'
   | 'approve_advance_l1'
   | 'approve_advance_l2'

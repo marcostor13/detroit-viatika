@@ -984,6 +984,11 @@
             <p><span class="text-tertiary">Monto detectado:</span> {{ currencySymbol }} {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
           }
           <p><span class="text-tertiary">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
+          <!-- Solo viene cuando lo asentó Tesorería: el depósito entró por fuera
+               de la app y hay que poder distinguirlo del que subió el dueño. -->
+          @if (report.returnVoucher.registeredBy) {
+            <p><span class="text-tertiary">Registrado por Tesorería:</span> {{ report.returnVoucher.registeredByName || 'Tesorería' }}</p>
+          }
         </div>
         @if (report.returnVoucher.url) {
         <a [href]="report.returnVoucher.url" target="_blank" rel="noopener noreferrer"
