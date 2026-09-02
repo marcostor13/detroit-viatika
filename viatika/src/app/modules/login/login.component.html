@@ -21,14 +21,6 @@
         <p class="text-tertiary text-base">Ingresa tus credenciales para acceder</p>
       </div>
 
-      <!-- Distintivo de entorno: el APK de QA y el de produccion son identicos
-           salvo por el backend, asi que conviene verlo antes de entrar. -->
-      @if (entornoNoProductivo) {
-      <div class="mb-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-xs text-warning-ink">
-        <span class="font-bold">Entorno de pruebas</span> · {{ apiHost }}
-      </div>
-      }
-
       <!-- Form -->
       <form (ngSubmit)="login()" autocomplete="off" class="space-y-6">
         <div>
@@ -42,14 +34,6 @@
             class="p-0 border-0"
           ></app-input>
         </div>
-
-        @if (entornoNoProductivo) {
-        <!-- Diagnostico del teclado: va pegado al campo Email porque es lo que
-             queda visible cuando el sistema desplaza la ventana. -->
-        <div class="rounded-lg bg-warning/10 px-3 py-2 font-mono text-[10px] leading-tight text-warning-ink">
-          {{ infoEquipo }}<br />{{ medidaViewport() }}
-        </div>
-        }
 
         <div>
            <app-input
