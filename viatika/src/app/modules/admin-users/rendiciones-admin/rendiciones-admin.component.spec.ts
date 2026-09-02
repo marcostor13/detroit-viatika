@@ -259,6 +259,38 @@ describe('RendicionesAdminComponent', () => {
       component.filterUserId = 'u1';
       expect(component.hasActiveFilters).toBeTrue();
     });
+
+    // En móvil el panel de filtros va plegado: este número es lo único que
+    // delata que la lista viene acotada, así que tiene que contarlos todos.
+    it('activeFilterCount cuenta cada filtro puesto', () => {
+      expect(component.activeFilterCount).toBe(0);
+      component.filterUserId = 'u1';
+      component.filterProjectId = 'p1';
+      component.filterDateFrom = '2024-01-01';
+      expect(component.activeFilterCount).toBe(3);
+      component.clearFilters();
+      expect(component.activeFilterCount).toBe(0);
+    });
+  });
+
+  /**
+   * El aprobador entra a esta pantalla a ver qué le toca aprobar. En el móvil
+   * eso quedaba a varias pantallas de scroll, así que el resumen lo antepone.
+   */
+  describe('pendingActionCount', () => {
+    it('cuenta solo los documentos que este usuario puede aprobar ahora', () => {
+      component.filteredItems = [
+        { _id: 'a', canApproveNow: true },
+        { _id: 'b', canApproveNow: false },
+        { _id: 'c', canApproveNow: true },
+      ] as any;
+      expect(component.pendingActionCount).toBe(2);
+    });
+
+    it('es cero cuando no hay nada por aprobar', () => {
+      component.filteredItems = [{ _id: 'a', canApproveNow: false }] as any;
+      expect(component.pendingActionCount).toBe(0);
+    });
   });
 
   /**

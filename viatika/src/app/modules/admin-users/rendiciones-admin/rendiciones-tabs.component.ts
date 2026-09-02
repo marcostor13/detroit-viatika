@@ -15,10 +15,13 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
   imports: [CommonModule, RendicionesAdminComponent, RendicionesDirectasComponent, RendicionesCajaChicaComponent],
   template: `
     <div class="flex flex-col h-full">
-      <div class="flex gap-1 px-6 pt-4 border-b border-gray-200 bg-white">
+      <!-- En movil las tres etiquetas no entran a lo ancho: la barra desplaza en
+           horizontal en vez de partirse en dos lineas, que era lo que empujaba
+           la lista fuera del primer pantallazo. -->
+      <div class="flex gap-1 px-4 sm:px-6 pt-3 sm:pt-4 border-b border-gray-200 bg-white overflow-x-auto no-scrollbar">
         <button
           (click)="setTab('rendiciones')"
-          class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
+          class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap shrink-0"
           [class.border-b-2]="activeTab() === 'rendiciones'"
           [class.border-primary]="activeTab() === 'rendiciones'"
           [class.text-primary]="activeTab() === 'rendiciones'"
@@ -28,7 +31,7 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         </button>
         <button
           (click)="setTab('directas')"
-          class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
+          class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap shrink-0"
           [class.border-b-2]="activeTab() === 'directas'"
           [class.border-primary]="activeTab() === 'directas'"
           [class.text-primary]="activeTab() === 'directas'"
@@ -38,7 +41,7 @@ type Tab = 'rendiciones' | 'directas' | 'caja-chica';
         </button>
         <button
           (click)="setTab('caja-chica')"
-          class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
+          class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium rounded-t-lg transition-colors whitespace-nowrap shrink-0"
           [class.border-b-2]="activeTab() === 'caja-chica'"
           [class.border-primary]="activeTab() === 'caja-chica'"
           [class.text-primary]="activeTab() === 'caja-chica'"
