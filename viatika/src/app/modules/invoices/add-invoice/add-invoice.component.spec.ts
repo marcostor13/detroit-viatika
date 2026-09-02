@@ -1224,6 +1224,17 @@ describe('AddInvoiceComponent', () => {
       expect(component.ordenTrabajoObligatoria()).toBeTrue();
     });
 
+    // En caja chica el gasto no siempre nace de una OT, igual que pasa con el
+    // centro de costo. El campo se sigue mostrando para poder imputarla, pero
+    // sin asterisco y sin bloquear el guardado.
+    it('en la planilla de caja chica se muestra pero es opcional', () => {
+      const component = createComponent();
+      component.isCajaChicaReport.set(true);
+      component.setExpenseType('planilla_movilidad');
+      expect(component.mostrarOrdenTrabajo()).toBeTrue();
+      expect(component.ordenTrabajoObligatoria()).toBeFalse();
+    });
+
     it('la DJ al extranjero no la pide', () => {
       const component = createComponent();
       component.setExpenseType('otros_gastos');

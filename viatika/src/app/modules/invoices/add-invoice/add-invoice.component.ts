@@ -1686,9 +1686,14 @@ export default class AddInvoiceComponent implements OnInit {
     }
   }
 
-  /** Solo la planilla de movilidad la exige (ADF-FOR-005). */
+  /**
+   * Solo la planilla de movilidad la exige (ADF-FOR-005). Excepción: la caja
+   * chica, donde el gasto no siempre nace de una orden de trabajo — igual que
+   * el centro de costo, la OT ahí es opcional. El campo se sigue mostrando para
+   * poder imputarla cuando corresponda.
+   */
   ordenTrabajoObligatoria(): boolean {
-    return this.expenseType() === 'planilla_movilidad';
+    return this.expenseType() === 'planilla_movilidad' && !this.isCajaChicaReport();
   }
 
   /**
@@ -2328,10 +2333,12 @@ export default class AddInvoiceComponent implements OnInit {
     const categoryOk = !!(categoryCtrl?.disabled || categoryCtrl?.valid);
     // El formato oficial (ADF-FOR-005) exige la Orden de Trabajo junto al Centro de
     // Costo. Excepciones: viático sin OT en la solicitud y rendición directa sin OT
-    // propia — no hay ninguna que heredar ni que el colaborador pueda elegir aquí.
+    // propia — no hay ninguna que heredar ni que el colaborador pueda elegir aquí —
+    // y la caja chica, donde la OT es opcional (ver `ordenTrabajoObligatoria`).
     const otOk =
       this.viaticoSinOrdenTrabajo() ||
       this.directaSinOrdenTrabajo() ||
+      this.isCajaChicaReport() ||
       !!this.form.get('ordenTrabajoId')?.value;
     if (!proyectOk || !categoryOk || !otOk) {
       this.notificationService.show(
