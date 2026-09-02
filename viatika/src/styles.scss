@@ -175,3 +175,15 @@ select {
 .espacio-barra-fija {
   padding-bottom: calc(6rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
 }
+
+/* Barra que desplaza en horizontal (pestañas en movil): la barra de scroll del
+   navegador robaba alto y aparecia bajo las etiquetas. El desplazamiento sigue
+   funcionando con el dedo y con rueda. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

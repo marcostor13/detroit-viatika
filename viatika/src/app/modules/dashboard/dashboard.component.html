@@ -8,80 +8,91 @@
           Gastos, solicitudes de fondos y pendientes de rendir
         </p>
       </div>
-      <app-button label="Actualizar" variant="primary" (clicked)="loadDashboard()" />
+      <div class="flex items-center gap-2">
+        <!-- En movil el propio app-filter-panel ya ofrece "Limpiar", de ahi el hidden. -->
+        @if (activeFilterCount() > 0) {
+          <app-button label="Limpiar filtros" variant="secondary"
+            class="hidden md:inline-flex" (clicked)="clearFilters()" />
+        }
+        <app-button label="Actualizar" variant="primary" (clicked)="loadDashboard()" />
+      </div>
     </div>
 
-    <!-- Filtros -->
-    <app-card padding="sm" [hover]="false">
+    <!-- Filtros. Los selectores llevan buscador: las listas de OT, categorias
+         y colaboradores son largas y con un select nativo hay que recorrerlas a ojo. -->
+    <app-filter-panel [activeCount]="activeFilterCount()" (cleared)="clearFilters()">
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         <app-form-field #fDesde label="Desde">
           <input type="date" [id]="fDesde.fieldId" [ngModel]="filterDateFrom()"
             (ngModelChange)="filterDateFrom.set($event); onFilterChange()"
             class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
         </app-form-field>
+
         <app-form-field #fHasta label="Hasta">
           <input type="date" [id]="fHasta.fieldId" [ngModel]="filterDateTo()"
             (ngModelChange)="filterDateTo.set($event); onFilterChange()"
             class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
         </app-form-field>
-        <app-form-field #fCC label="Centro de costo">
-          <select [id]="fCC.fieldId" [ngModel]="filterProject()"
+
+        <app-form-field label="Centro de costo">
+          <app-project-select
+            [projects]="projects"
+            [ngModel]="filterProject()"
             (ngModelChange)="filterProject.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30">
-            <option value="">Todos</option>
-            @for (p of projects; track p._id) {
-              <option [value]="p._id">{{ p.name }}</option>
-            }
-          </select>
+            [allowEmpty]="true"
+            emptyLabel="Todos"
+            placeholder="Todos"
+            [triggerClass]="selectTrigger" />
         </app-form-field>
-        <app-form-field #fOt label="Orden de trabajo">
-          <select [id]="fOt.fieldId" [ngModel]="filterOrdenTrabajo()"
+
+        <app-form-field label="Orden de trabajo">
+          <app-search-select
+            [options]="ordenTrabajoOptions"
+            [ngModel]="filterOrdenTrabajo()"
             (ngModelChange)="filterOrdenTrabajo.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30">
-            <option value="">Todas</option>
-            @for (o of ordenesTrabajo; track o._id) {
-              <option [value]="o._id">{{ o.nombre }}</option>
-            }
-          </select>
+            [allowEmpty]="true"
+            emptyLabel="Todas"
+            placeholder="Todas"
+            searchPlaceholder="Buscar OT o centro de costo…"
+            [triggerClass]="selectTrigger" />
         </app-form-field>
-        <app-form-field #fDep label="Departamento">
-          <select [id]="fDep.fieldId" [ngModel]="filterDepartment()"
+
+        <app-form-field label="Departamento">
+          <app-search-select
+            [options]="departmentOptions"
+            [ngModel]="filterDepartment()"
             (ngModelChange)="filterDepartment.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30">
-            <option value="">Todos</option>
-            @for (d of departments(); track d) {
-              <option [value]="d">{{ d }}</option>
-            }
-          </select>
+            [allowEmpty]="true"
+            emptyLabel="Todos"
+            placeholder="Todos"
+            searchPlaceholder="Buscar departamento…"
+            [triggerClass]="selectTrigger" />
         </app-form-field>
-        <app-form-field #fCat label="Categoría">
-          <select [id]="fCat.fieldId" [ngModel]="filterCategory()"
+
+        <app-form-field label="Categoría">
+          <app-search-select
+            [options]="categoryOptions"
+            [ngModel]="filterCategory()"
             (ngModelChange)="filterCategory.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30">
-            <option value="">Todas</option>
-            @for (c of categories; track c._id) {
-              <option [value]="c._id">{{ c.name }}</option>
-            }
-          </select>
+            [allowEmpty]="true"
+            emptyLabel="Todas"
+            placeholder="Todas"
+            searchPlaceholder="Buscar categoría o cuenta…"
+            [triggerClass]="selectTrigger" />
         </app-form-field>
-        <app-form-field #fCol label="Colaborador">
-          <select [id]="fCol.fieldId" [ngModel]="filterCollaborator()"
+
+        <app-form-field label="Colaborador">
+          <app-worker-select
+            [workers]="collaborators"
+            [ngModel]="filterCollaborator()"
             (ngModelChange)="filterCollaborator.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm bg-quaternary focus:outline-none focus:ring-2 focus:ring-primary/30">
-            <option value="">Todos</option>
-            @for (u of collaborators; track u.id) {
-              <option [value]="u.id">{{ u.name }}</option>
-            }
-          </select>
+            [allowEmpty]="true"
+            emptyLabel="Todos"
+            placeholder="Todos"
+            [triggerClass]="selectTrigger" />
         </app-form-field>
       </div>
-      @if (activeFilterCount() > 0) {
-        <div class="mt-3 flex items-center gap-3">
-          <span class="text-xs text-tertiary">{{ activeFilterCount() }} filtro(s) activo(s)</span>
-          <app-button label="Limpiar filtros" variant="ghost" size="sm" (clicked)="clearFilters()" />
-        </div>
-      }
-    </app-card>
+    </app-filter-panel>
 
     @if (data()?.scope?.restricted) {
       <div class="flex items-center gap-2 text-xs text-tertiary">

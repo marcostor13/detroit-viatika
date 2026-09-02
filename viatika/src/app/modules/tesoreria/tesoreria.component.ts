@@ -63,7 +63,9 @@ export class TesoreriaComponent implements OnInit {
         value: 'devoluciones',
         label: 'Devoluciones',
         badge:
-          this.pendingReturns.length + this.cajaChicaConDevoluciones().length ||
+          this.pendingReturns.length +
+          this.pendingReturnReports.length +
+          this.cajaChicaConDevoluciones().length ||
           undefined,
       });
     }
@@ -142,6 +144,27 @@ export class TesoreriaComponent implements OnInit {
   showValidateReturnModal = false;
   returnRejectReason = signal('');
   isValidatingReturn = signal(false);
+
+  /**
+   * Rendiciones aprobadas con saldo a favor de la empresa y sin comprobante de
+   * devolución. Hasta que ese depósito quede asentado la rendición no puede
+   * cerrarse, y el único que podía asentarlo era el colaborador desde su propia
+   * rendición: si depositó por ventanilla o avisó por fuera de la app, no había
+   * forma de registrarlo. Tesorería lo hace a mano desde esta pestaña, igual que
+   * ya registra el pago del reembolso.
+   */
+  pendingReturnReports: IExpenseReport[] = [];
+  selectedReturnReport: IExpenseReport | null = null;
+  showManualReturnModal = false;
+  manualReturnForm!: FormGroup;
+  manualReturnReceiptUrl: string | null = null;
+  manualReturnReceiptName: string | null = null;
+  isUploadingManualReturn = signal(false);
+  isScanningManualReturn = signal(false);
+  manualReturnScannedAmount: number | null = null;
+  manualReturnTitular: string | null = null;
+  manualReturnOperationDate: string | null = null;
+  manualReturnOperationTime: string | null = null;
   returnProofForm!: FormGroup;
   showReturnProofModal = false;
   returnProofReceiptUrl: string | null = null;
@@ -244,6 +267,12 @@ export class TesoreriaComponent implements OnInit {
     this.returnForm = this.fb.group({
       returnedAmount: [null, [Validators.required, Validators.min(0.01)]],
     });
+    this.manualReturnForm = this.fb.group({
+      amountReturned: [null, [Validators.required, Validators.min(0.01)]],
+      depositDate: [new Date().toISOString().split('T')[0], Validators.required],
+      bankOrigin: [''],
+      operationNumber: [''],
+    });
   }
 
   loadData() {
@@ -301,6 +330,10 @@ export class TesoreriaComponent implements OnInit {
     this.advanceService.findPendingReturns(String(cid)).subscribe({
       next: rows => { this.pendingReturns = rows ?? []; },
       error: () => { this.pendingReturns = []; },
+    });
+    this.expenseReportsService.findPendingReturnReports(String(cid)).subscribe({
+      next: rows => { this.pendingReturnReports = rows ?? []; },
+      error: () => { this.pendingReturnReports = []; },
     });
   }
 
@@ -1193,6 +1226,139 @@ export class TesoreriaComponent implements OnInit {
         this.isValidatingReturn.set(false);
       },
     });
+  }
+
+  // ─── Devolución manual (Tesorería asienta el depósito) ──────────────────────
+
+  /**
+   * Saldo que el colaborador debe devolver, EN LA MONEDA DE LA RENDICIÓN.
+   * `settlement.difference` viene en moneda base, así que una rendición en
+   * dólares hay que deshacerla con el TC congelado — mismo cuidado que
+   * `reimbursementAmount`, o Tesorería vería soles junto al símbolo de dólares.
+   */
+  returnReportAmount(report: IExpenseReport): number {
+    const base = Math.abs(Number(report.settlement?.difference ?? 0));
+    if (normalizeMonedaCode(report.viaticoMoneda) === DEFAULT_MONEDA) return base;
+    const tc = Number(report.tipoCambio);
+    return tc > 0 ? base / tc : 0;
+  }
+
+  returnReportUserName(report: IExpenseReport): string {
+    const user = report.userId;
+    return typeof user === 'object' && user ? user.name : '—';
+  }
+
+  openManualReturnModal(report: IExpenseReport): void {
+    this.selectedReturnReport = report;
+    this.manualReturnForm.reset({
+      amountReturned: this.returnReportAmount(report) || null,
+      depositDate: new Date().toISOString().split('T')[0],
+      bankOrigin: '',
+      operationNumber: '',
+    });
+    this.manualReturnReceiptUrl = null;
+    this.manualReturnReceiptName = null;
+    this.manualReturnScannedAmount = null;
+    this.manualReturnTitular = null;
+    this.manualReturnOperationDate = null;
+    this.manualReturnOperationTime = null;
+    this.showManualReturnModal = true;
+  }
+
+  onManualReturnReceiptSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+      this.notificationService.show('Formato inválido. Usa PDF, JPG o PNG.', 'error');
+      input.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      this.notificationService.show('El comprobante no puede superar 10MB.', 'error');
+      input.value = '';
+      return;
+    }
+    this.isUploadingManualReturn.set(true);
+    this.uploadService.upload(file).subscribe({
+      next: res => {
+        this.manualReturnReceiptUrl = res.url;
+        this.manualReturnReceiptName = file.name;
+        this.isUploadingManualReturn.set(false);
+        this.scanManualReturnReceipt(res.url, file.type);
+      },
+      error: () => {
+        this.notificationService.show('No se pudo subir el comprobante', 'error');
+        this.isUploadingManualReturn.set(false);
+      },
+    });
+  }
+
+  /** Autocompleta desde el comprobante. Informativo: nunca bloquea el registro. */
+  private scanManualReturnReceipt(url: string, mimeType?: string): void {
+    this.isScanningManualReturn.set(true);
+    this.expenseReportsService.scanDepositAmount(url, mimeType).subscribe({
+      next: res => {
+        this.isScanningManualReturn.set(false);
+        const amount = Number(res?.amount) || 0;
+        this.manualReturnScannedAmount = amount > 0 ? amount : null;
+        this.manualReturnTitular = res?.titular || null;
+        this.manualReturnOperationDate = res?.fecha || null;
+        this.manualReturnOperationTime = res?.hora || null;
+        if (res?.operationNumber && !this.manualReturnForm.value.operationNumber) {
+          this.manualReturnForm.patchValue({ operationNumber: res.operationNumber });
+        }
+        if (res?.banco && !this.manualReturnForm.value.bankOrigin) {
+          this.manualReturnForm.patchValue({ bankOrigin: res.banco });
+        }
+      },
+      error: () => {
+        this.isScanningManualReturn.set(false);
+        this.notificationService.show(
+          'No se pudo escanear el comprobante. Completa los datos manualmente.',
+          'warning'
+        );
+      },
+    });
+  }
+
+  confirmManualReturn(): void {
+    if (!this.selectedReturnReport || this.manualReturnForm.invalid) return;
+    if (!this.manualReturnReceiptUrl) {
+      this.notificationService.show('Debes adjuntar la constancia del depósito.', 'error');
+      return;
+    }
+    this.isActing.set(true);
+    const form = this.manualReturnForm.value;
+    this.expenseReportsService
+      .registerReturnVoucher(this.selectedReturnReport._id, {
+        depositDate: form.depositDate,
+        amountReturned: Number(form.amountReturned),
+        bankOrigin: form.bankOrigin || undefined,
+        operationNumber: form.operationNumber || undefined,
+        fileUrl: this.manualReturnReceiptUrl,
+        fileName: this.manualReturnReceiptName || undefined,
+        scannedAmount: this.manualReturnScannedAmount ?? undefined,
+        operationDate: this.manualReturnOperationDate || undefined,
+        operationTime: this.manualReturnOperationTime || undefined,
+        titular: this.manualReturnTitular || undefined,
+      })
+      .subscribe({
+        next: () => {
+          this.notificationService.show('Devolución registrada correctamente', 'success');
+          this.showManualReturnModal = false;
+          this.loadData();
+          this.isActing.set(false);
+        },
+        error: e => {
+          this.notificationService.show(
+            e.error?.message || 'Error al registrar la devolución',
+            'error'
+          );
+          this.isActing.set(false);
+        },
+      });
   }
 
   // ─── Rendiciones Directas con saldo (iniciadas por Contabilidad) ─────────────

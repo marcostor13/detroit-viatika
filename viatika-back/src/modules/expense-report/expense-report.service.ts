@@ -3871,6 +3871,88 @@ export class ExpenseReportService implements OnModuleInit {
     )
   }
 
+  /**
+   * Rendiciones aprobadas con saldo A FAVOR DE LA EMPRESA y sin comprobante de
+   * devolución. Es la bandeja de la pestaña Devoluciones de Tesorería: son las
+   * que no pueden cerrarse hasta que el depósito quede asentado
+   * (`validateClosureConditions`).
+   *
+   * Espeja `findPendingReimbursementsByClient`, que es el mismo problema al
+   * revés: allí el saldo lo debe la empresa y aquí el colaborador. Quedan fuera
+   * las que ya devolvieron el sobrante al presupuesto de caja chica
+   * (`settlement.toBolsa`): ahí no hay depósito que registrar.
+   */
+  async findPendingReturnsByClient(clientId: string) {
+    const cid = new Types.ObjectId(clientId)
+    const noVoucher = [
+      { returnVoucher: { $exists: false } },
+      { returnVoucher: null },
+    ]
+
+    // 1. Liquidación persistida con saldo a devolver (la calcula la aprobación).
+    const settled = await this.expenseReportModel
+      .find({
+        clientId: cid,
+        status: 'approved',
+        'settlement.type': 'devolucion',
+        'settlement.toBolsa': { $ne: true },
+        $or: noVoucher,
+      })
+      .populate('userId', 'name email bankAccount bankAccountUsd dni documentType')
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec()
+
+    // 2. Directas y cajas chicas aprobadas sin liquidación persistida: el saldo
+    //    sale del depósito entregado menos lo gastado, igual que en el reembolso.
+    const directas = await this.expenseReportModel
+      .find({
+        clientId: cid,
+        $or: [{ isDirecta: true }, { isCajaChica: true }],
+        status: 'approved',
+        'settlement.type': { $ne: 'devolucion' },
+        $and: [{ $or: noVoucher }],
+      })
+      .populate('userId', 'name email bankAccount bankAccountUsd dni documentType')
+      .populate('expenseIds', 'total status montoBase moneda montoReporte monedaReporte')
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec()
+
+    const computedDirectas = directas
+      .map(r => {
+        const deposit = this.reportSettlementAmountBase(
+          r,
+          Number((r as any).directaDeposit?.amount ?? 0)
+        )
+        const gastado = (((r as any).expenseIds as any[]) || []).reduce(
+          (sum: number, e: any) => {
+            const st = String(e?.status || '').toLowerCase()
+            return st === 'rejected' ? sum : sum + this.expenseSettlementAmountBase(e)
+          },
+          0
+        )
+        return { r, deposit, gastado, difference: deposit - gastado }
+      })
+      // difference > 0 ⇒ sobró plata de la empresa ⇒ el colaborador devuelve.
+      .filter(x => x.difference > 0.01)
+      .map(({ r, deposit, gastado, difference }) => ({
+        ...r,
+        settlement: {
+          advanceTotal: deposit,
+          expenseTotal: gastado,
+          difference,
+          type: 'devolucion' as const,
+        },
+      }))
+
+    return [...settled, ...computedDirectas].sort((a, b) =>
+      String((b as any).updatedAt ?? '').localeCompare(
+        String((a as any).updatedAt ?? '')
+      )
+    )
+  }
+
   async findMyDocuments(userId: string, clientId: string) {
     const reimbursementRows = await this.expenseReportModel
       .find({
@@ -4487,7 +4569,12 @@ export class ExpenseReportService implements OnModuleInit {
       operationTime?: string
       titular?: string
     },
-    userId: string
+    userId: string,
+    actor?: {
+      role?: string
+      permissions?: { canApproveL2?: boolean }
+      name?: string
+    }
   ): Promise<ExpenseReportDocument> {
     const report = await this.expenseReportModel
       .findById(id)
@@ -4504,9 +4591,22 @@ export class ExpenseReportService implements OnModuleInit {
         'Ya se ha cargado un comprobante de devolución para esta rendición.'
       )
     }
-    if (report.userId.toString() !== userId) {
+    // Lo normal es que lo cargue el colaborador dueño desde su rendición. Pero
+    // el depósito muchas veces entra por fuera de la app —ventanilla, o el
+    // colaborador que avisa por teléfono— y sin registro manual la rendición se
+    // queda sin poder cerrar. Tesorería (o quien tenga autoridad de pago) puede
+    // asentarlo por él; queda marcado en `registeredBy` para que se distinga del
+    // que subió el propio colaborador. Mismo criterio de `canPay` que el pago de
+    // reembolso: el Coordinador queda fuera aunque tenga L2.
+    const isOwner = report.userId.toString() === userId
+    const canPay =
+      actor?.role !== ROLES.COORDINADOR &&
+      (actor?.role === ROLES.SUPER_ADMIN ||
+        actor?.role === ROLES.TESORERIA ||
+        actor?.permissions?.canApproveL2 === true)
+    if (!isOwner && !canPay) {
       throw new ForbiddenException(
-        'Solo el colaborador dueño puede cargar el comprobante de devolución.'
+        'Solo el colaborador dueño o Tesorería pueden cargar el comprobante de devolución.'
       )
     }
 
@@ -4582,6 +4682,12 @@ export class ExpenseReportService implements OnModuleInit {
       operationTime: dto.operationTime,
       titular: dto.titular,
       uploadedAt: new Date(),
+      ...(isOwner
+        ? {}
+        : {
+          registeredBy: new Types.ObjectId(userId),
+          registeredByName: actor?.name,
+        }),
     }
     await this.expenseReportModel
       .findByIdAndUpdate(id, { $set: { returnVoucher: voucher } })
@@ -4594,10 +4700,14 @@ export class ExpenseReportService implements OnModuleInit {
     const platformUrl = this.emailService.buildAppUrl(
       `/mis-rendiciones/${id}/detalle`
     )
-    const collaborator = await this.userService.findEmailNameClient(userId)
+    // El aviso es siempre para el DUEÑO de la rendición, que puede no ser quien
+    // cargó el comprobante: cuando lo asienta Tesorería, `userId` es el de
+    // Tesorería y avisarle a él dejaría al colaborador sin enterarse.
+    const ownerId = report.userId.toString()
+    const collaborator = await this.userService.findEmailNameClient(ownerId)
     const collaboratorName = collaborator?.name || 'Colaborador'
     const collaboratorEmailEnabled = collaborator?.email
-      ? await this.userService.isEmailEnabled(userId)
+      ? await this.userService.isEmailEnabled(ownerId)
       : false
 
     if (collaboratorEmailEnabled) {
@@ -4612,9 +4722,13 @@ export class ExpenseReportService implements OnModuleInit {
     }
     this.notificationsService
       .create({
-        userId,
-        title: 'Comprobante de devolución enviado',
-        message: `Tu comprobante de devolución para la rendición "${report.title}" fue enviado correctamente. Tesorería verificará el depósito.`,
+        userId: ownerId,
+        title: isOwner
+          ? 'Comprobante de devolución enviado'
+          : 'Devolución registrada por Tesorería',
+        message: isOwner
+          ? `Tu comprobante de devolución para la rendición "${report.title}" fue enviado correctamente. Tesorería verificará el depósito.`
+          : `Tesorería registró la devolución de tu rendición "${report.title}".`,
         type: 'success',
         actionUrl: `/mis-rendiciones/${id}/detalle`,
       })
@@ -4624,8 +4738,13 @@ export class ExpenseReportService implements OnModuleInit {
     // reembolsos, VD-37) y solo a ella le llega el aviso (correo + in-app).
     // VD-94: Contabilidad ya no recibe la copia informativa que había agregado
     // VD-88. Se mantiene el dedup por correo.
-    const tesoreriaUsers =
-      await this.userService.findTesoreriaRecipientsWithIds(clientId)
+    //
+    // Si el asiento lo hizo la propia Tesorería no hay nada que avisarle: el
+    // depósito ya lo verificó al registrarlo, y el correo diría que el
+    // colaborador adjuntó un comprobante que nunca adjuntó.
+    const tesoreriaUsers = isOwner
+      ? await this.userService.findTesoreriaRecipientsWithIds(clientId)
+      : []
     const sentDevolucion = new Set<string>()
     for (const u of tesoreriaUsers) {
       const key = u.email.trim().toLowerCase()

@@ -25,14 +25,27 @@ import { AdminUsersService } from '../admin-users/services/admin-users.service';
 import { OrdenTrabajoService } from '../../services/orden-trabajo.service';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ICategory } from '../invoices/interfaces/category.interface';
-import { IOrdenTrabajo } from '../../interfaces/orden-trabajo.interface';
+import {
+  IOrdenTrabajo,
+  otCentroCostoLabel,
+} from '../../interfaces/orden-trabajo.interface';
 import { IUserResponse } from '../../interfaces/user.interface';
 import { NotificationService } from '../../services/notification.service';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { CardComponent } from '../../design-system/card/card.component';
+import { FilterPanelComponent } from '../../design-system/filter-panel/filter-panel.component';
 import { FormFieldComponent } from '../../design-system/form-field/form-field.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
+import { ProjectSelectComponent } from '../../design-system/project-select/project-select.component';
+import {
+  SearchSelectComponent,
+  SearchSelectOption,
+} from '../../design-system/search-select/search-select.component';
+import {
+  WorkerSelectComponent,
+  WorkerOption,
+} from '../../design-system/worker-select/worker-select.component';
 
 declare var Chart: any;
 declare var L: any;
@@ -60,9 +73,13 @@ const EMPTY_KPIS: IDashboardKpis = {
     FormsModule,
     ButtonComponent,
     CardComponent,
+    FilterPanelComponent,
     FormFieldComponent,
     IconComponent,
     EmptyStateComponent,
+    ProjectSelectComponent,
+    SearchSelectComponent,
+    WorkerSelectComponent,
   ],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',
@@ -92,7 +109,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   projects: IProject[] = [];
   categories: ICategory[] = [];
-  collaborators: { id: string; name: string }[] = [];
+  collaborators: WorkerOption[] = [];
   ordenesTrabajo: IOrdenTrabajo[] = [];
 
   filterDateFrom = signal(this.defaultStartDate());
@@ -116,6 +133,39 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   /** Departamentos con destinos registrados; el backend los devuelve ordenados. */
   departments = computed(() => this.data()?.departments ?? []);
+
+  /**
+   * Opciones de los selectores con buscador. Las listas de Detroit son largas
+   * (~53 categorias, cientos de OT) y un select nativo obliga a recorrerlas a
+   * ojo, de ahi `app-search-select` en vez de `<select>`.
+   */
+  get ordenTrabajoOptions(): SearchSelectOption[] {
+    return this.ordenesTrabajo.map((o) => ({
+      value: o._id as string,
+      label: o.nombre,
+      subLabel: otCentroCostoLabel(o),
+    }));
+  }
+
+  get categoryOptions(): SearchSelectOption[] {
+    return this.categories
+      .filter((c) => !!c._id)
+      .map((c) => ({
+        value: c._id as string,
+        label: c.name,
+        subLabel: c.cuenta,
+      }));
+  }
+
+  get departmentOptions(): SearchSelectOption[] {
+    return this.departments().map((d) => ({ value: d, label: d }));
+  }
+
+  /**
+   * Ajuste del disparador de los selectores para que iguale la altura de los
+   * campos de fecha de la misma rejilla; por defecto vienen mas altos.
+   */
+  readonly selectTrigger = '!rounded-lg !border-divider !px-3 !py-2';
 
   private chartLibraryLoaded = false;
   private leafletLoaded = false;
@@ -226,8 +276,13 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       this.projects = (projects as IProject[]) || [];
       this.categories = (categories as ICategory[]) || [];
       this.collaborators = ((users as IUserResponse[]) || [])
-        .map((u) => ({ id: u._id || '', name: u.name || u.email || 'Sin nombre' }))
-        .filter((u) => !!u.id);
+        .filter((u) => !!u._id)
+        .map((u) => ({
+          _id: u._id as string,
+          name: u.name || u.email || 'Sin nombre',
+          email: u.email,
+          dni: u.dni,
+        }));
       this.ordenesTrabajo = ((ordenes as IOrdenTrabajo[]) || []).filter(
         (o) => !!o._id
       );

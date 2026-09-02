@@ -89,6 +89,13 @@ export class ExpenseReportsService {
     );
   }
 
+  /** Tesorería: rendiciones aprobadas con saldo a devolver y sin comprobante. */
+  findPendingReturnReports(clientId: string): Observable<IExpenseReport[]> {
+    return this.http.get<IExpenseReport[]>(
+      `${this.apiUrl}/expense-report/pending-returns/client/${clientId}`
+    );
+  }
+
   /** Contabilidad: crea una rendición directa con depósito inicial para un colaborador/coordinador. */
   createDirectaDeposit(payload: {
     userId: string;

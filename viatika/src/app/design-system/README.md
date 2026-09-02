@@ -88,6 +88,17 @@ tabs = [
 ```
 Navegación con flechas/Home/End integrada (`role="tablist"`/`role="tab"` con roving tabindex).
 
+### `app-filter-panel`
+Panel de filtros de una pantalla de listado. En escritorio (>= `md`) es la tarjeta de siempre con la rejilla siempre visible; en móvil se pliega detrás de un botón "Filtros" con el número de filtros puestos, para que la lista quede en el primer pantallazo.
+```html
+<app-filter-panel class="mb-4 md:mb-6" [activeCount]="activeFilterCount" (cleared)="clearFilters()">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+    <!-- los campos del filtro, tal cual -->
+  </div>
+</app-filter-panel>
+```
+`activeCount`: cuántos filtros tiene puestos el usuario (0 = sin filtrar). `label`: texto del botón (default `Filtros`). `cleared`: se emite al tocar "Limpiar". Arranca desplegado si la pantalla llega con filtros ya aplicados; después manda lo que toque el usuario.
+
 ### `app-icon`
 ```html
 <app-icon name="trash" size="sm" class="text-error" />

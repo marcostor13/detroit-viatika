@@ -244,6 +244,9 @@ export interface IExpenseReport {
     operationTime?: string;
     titular?: string;
     uploadedAt: string;
+    /** Presente solo si lo asentó Tesorería en lugar del colaborador dueño. */
+    registeredBy?: string;
+    registeredByName?: string;
   };
   closureRecord?: IClosureRecord;
   coordinatorApprovedAt?: string;

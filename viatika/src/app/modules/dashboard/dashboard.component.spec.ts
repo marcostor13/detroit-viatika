@@ -77,14 +77,27 @@ describe('DashboardComponent', () => {
       'getCategories',
     ]);
     invoicesService.getProjects.and.returnValue(of([]));
-    invoicesService.getCategories.and.returnValue(of([]));
+    invoicesService.getCategories.and.returnValue(
+      of([{ _id: 'c1', name: 'Alimentación', cuenta: '9101' }])
+    );
 
     const adminUsersService = jasmine.createSpyObj('AdminUsersService', ['getUsers']);
-    adminUsersService.getUsers.and.returnValue(of([]));
+    adminUsersService.getUsers.and.returnValue(
+      of([
+        { _id: 'u1', name: 'Ana', email: 'ana@x.pe', dni: '12345678' },
+        { _id: '', name: 'Sin id' },
+      ])
+    );
 
     const ordenTrabajoService = jasmine.createSpyObj('OrdenTrabajoService', ['getAll']);
     ordenTrabajoService.getAll.and.returnValue(
-      of([{ _id: 'o1', nombre: 'OT-1', costCenterId: 'p1' }])
+      of([
+        {
+          _id: 'o1',
+          nombre: 'OT-1',
+          costCenterId: { _id: 'p1', code: 'CC-006', name: 'Cerro Verde' },
+        },
+      ])
     );
 
     TestBed.configureTestingModule({
@@ -181,6 +194,41 @@ describe('DashboardComponent', () => {
     expect(component.topLocationName).toBe('Loreto');
     expect(component.topLocationAmount).toBe(800);
     expect(component.avgGastoPorDestino).toBe(500);
+  });
+
+  // Las listas de Detroit son largas: los selectores llevan buscador y el
+  // buscador mira label + subLabel, de ahi que la OT arrastre su centro de costo
+  // y la categoria su cuenta contable.
+  it('las OT se ofrecen con su centro de costo como segunda línea', () => {
+    montar();
+    const opciones = component.ordenTrabajoOptions;
+    expect(opciones.length).toBe(1);
+    expect(opciones[0].value).toBe('o1');
+    expect(opciones[0].label).toBe('OT-1');
+    expect(opciones[0].subLabel).toContain('CC-006');
+  });
+
+  it('las categorías se ofrecen con su cuenta contable', () => {
+    montar();
+    const opciones = component.categoryOptions;
+    expect(opciones[0].label).toBe('Alimentación');
+    expect(opciones[0].subLabel).toBe('9101');
+  });
+
+  it('los departamentos del backend se ofrecen como opciones', () => {
+    montar();
+    expect(component.departmentOptions).toEqual([
+      { value: 'Lima', label: 'Lima' },
+      { value: 'Loreto', label: 'Loreto' },
+    ]);
+  });
+
+  // app-worker-select espera `_id`; un usuario sin id romperia la seleccion.
+  it('los colaboradores se mapean para el selector y se descartan los que no tienen id', () => {
+    montar();
+    expect(component.collaborators).toEqual([
+      { _id: 'u1', name: 'Ana', email: 'ana@x.pe', dni: '12345678' },
+    ]);
   });
 
   it('avisa cuando la vista está recortada al alcance del usuario', () => {
