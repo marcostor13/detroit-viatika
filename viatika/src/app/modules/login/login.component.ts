@@ -10,7 +10,6 @@ import { finalize } from 'rxjs';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { InputComponent } from '../../design-system/input/input.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
-import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-login',
@@ -27,47 +26,18 @@ export class LoginComponent implements OnInit, OnDestroy {
   showPassword = signal(false);
 
   /**
-   * Host del backend, para distinguir de un vistazo el APK de QA del de
-   * produccion (los dos se pueden instalar a la vez en el mismo celular).
-   * En produccion no se muestra nada.
-   */
-  readonly apiHost = (() => {
-    try {
-      return new URL(environment.api).host;
-    } catch {
-      return '';
-    }
-  })();
-  readonly entornoNoProductivo = /^(qa-|localhost|127\.0\.0\.1|192\.)/.test(this.apiHost);
-
-  /**
    * El teclado de Android tapa la pantalla de dos maneras distintas segun el
    * equipo: o encoge la WebView, o desplaza toda la ventana hacia arriba
    * dejando media pantalla vacia. `visualViewport` es lo unico que refleja el
    * area realmente visible en los dos casos, asi que de ahi salen el alto
    * (--vvh) y el desplazamiento a compensar (--vvtop) que usa la plantilla.
    */
-  /** Lectura en vivo del viewport, visible solo en los builds de prueba. */
-  readonly medidaViewport = signal('');
-
-  /** Android y WebView del equipo, para diagnosticar el comportamiento del teclado. */
-  readonly infoEquipo = (() => {
-    if (typeof navigator === 'undefined') return '';
-    const ua = navigator.userAgent;
-    const android = ua.match(/Android (\d+(?:\.\d+)?)/)?.[1] ?? '?';
-    const chrome = ua.match(/Chrome\/(\d+)/)?.[1] ?? '?';
-    return `Android ${android} · WebView ${chrome}`;
-  })();
-
   private readonly aplicarViewport = () => {
     const vv = window.visualViewport;
     const raiz = document.documentElement;
     if (!vv) return;
     raiz.style.setProperty('--vvh', `${Math.round(vv.height)}px`);
     raiz.style.setProperty('--vvtop', `${Math.round(vv.offsetTop)}px`);
-    this.medidaViewport.set(
-      `visible ${Math.round(vv.height)} · ventana ${window.innerHeight} · desplazado ${Math.round(vv.offsetTop)}`
-    );
   };
 
   ngOnInit(): void {

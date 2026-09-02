@@ -70,6 +70,9 @@ export interface ExpenseActorContext {
 // Tipos auxiliares
 interface ExtractedInvoiceData {
   rucEmisor?: string
+  /** RUC del cliente al que se emitio el comprobante (no el del emisor). */
+  rucReceptor?: string
+  razonSocialReceptor?: string
   serie?: string
   correlativo?: string
   fechaEmision?: string
@@ -1099,23 +1102,54 @@ export class ExpenseService {
     return { razonSocial: null, fuente: 'not_found' }
   }
 
+  /**
+   * SUNAT avisa que el comprobante es de otro contribuyente dentro del arreglo
+   * `observaciones`, en texto libre. Se busca por significado y no por la frase
+   * exacta, porque la redaccion ha cambiado entre versiones del servicio.
+   */
+  private esDeOtroContribuyente(data: any): boolean {
+    const observaciones: unknown = data?.observaciones
+    if (!Array.isArray(observaciones)) return false
+    return observaciones.some(o =>
+      /emitido\s+a\s+otro\s+contribuyente/i.test(String(o ?? ''))
+    )
+  }
+
   private interpretSunatResponse(sunatData: any): {
     status: string
     details: any
     message: string
   } {
+    // `estadoCp` solo dice si el comprobante EXISTE y esta aceptado (1) o si
+    // SUNAT no lo encuentra con esos datos (0). A quien se facturo va aparte,
+    // en `observaciones`:
+    //
+    //   {"estadoCp":"1","observaciones":["- El comprobante de pago consultado
+    //    ha sido emitido a otro contribuyente."]}
+    //
+    // Mirar solo `estadoCp` daba por buena cualquier factura real emitida a
+    // otra empresa. Un comprobante que si es de la empresa llega sin esa
+    // observacion.
     if (sunatData.success === true && sunatData.data?.estadoCp === '1') {
+      if (this.esDeOtroContribuyente(sunatData.data)) {
+        return {
+          status: 'VALIDO_NO_PERTENECE',
+          details: sunatData.data,
+          message:
+            'El comprobante es válido, pero SUNAT indica que fue emitido a otro contribuyente.',
+        }
+      }
       return {
         status: 'VALIDO_ACEPTADO',
         details: sunatData.data,
-        message: 'El comprobante es válido y fue facturado a esta empresa.',
+        message: 'El comprobante es válido y fue emitido a esta empresa.',
       }
     } else if (sunatData.success === true && sunatData.data?.estadoCp === '0') {
       return {
-        status: 'VALIDO_NO_PERTENECE',
+        status: 'NO_ENCONTRADO',
         details: sunatData.data,
         message:
-          'El comprobante es válido, pero no fue facturado a esta empresa.',
+          'SUNAT no encuentra el comprobante con esos datos. Revisa serie, correlativo, fecha e importe.',
       }
     } else if (sunatData.cod === '98') {
       return {

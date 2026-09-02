@@ -21,7 +21,9 @@ cd viatika
 API_URL=https://apidetroit.viatika.tecdidata.com/api npm run build
 
 # 2. Copiar los assets web al proyecto nativo
-npx cap copy android
+#    APP_HOSTNAME define el origen con el que la WebView sirve la app; tiene que
+#    ser uno de los dominios que acepta el bucket de S3 (ver nota mas abajo).
+APP_HOSTNAME=detroit.viatika.tecdidata.com npx cap copy android
 
 # 3. Compilar el APK de debug
 cd android
@@ -37,7 +39,7 @@ Lo mismo, con el API de QA y el flag `-Pqa`:
 ```bash
 cd viatika
 API_URL=https://qa-apidetroit-viatika.tecdidata.com/api npm run build
-npx cap copy android
+APP_HOSTNAME=qa-detroit-viatika.tecdidata.com npx cap copy android
 cd android
 JAVA_HOME="/c/Program Files/Java/jdk-18.0.2" ./gradlew assembleDebug -Pqa
 ```
@@ -96,3 +98,30 @@ el toolchain lo usa sin descargar nada.
   foto, con su boton "Tomar foto" (`add-invoice.component.html`).
 - El login muestra un distintivo "Entorno de pruebas" con el host del backend
   cuando el API no es el de produccion, para no confundir el APK de QA con el otro.
+
+## El origen de la WebView y la subida de comprobantes
+
+Los comprobantes no pasan por el backend: el front pide una URL prefirmada y
+hace `PUT` directo al bucket de S3 (`upload.service.ts`). Ese bucket solo acepta
+como origen los dominios del frontend, comprobado con una peticion de
+verificacion previa:
+
+| Origen | Respuesta de S3 |
+|---|---|
+| `https://localhost` (el que usa Capacitor por defecto) | 403 Forbidden |
+| `https://qa-detroit-viatika.tecdidata.com` | 200 OK |
+| `https://detroit.viatika.tecdidata.com` | 200 OK |
+
+Por eso en el APK la validacion SUNAT funcionaba (va al backend, con CORS
+abierto) pero subir la factura fallaba con "Error de red al subir el archivo".
+
+La solucion actual es `server.hostname` en `capacitor.config.ts`, alimentado por
+`APP_HOSTNAME`: la WebView sigue sirviendo los archivos locales, pero declara un
+origen que el bucket si acepta. Hay que pasar el dominio que corresponda al
+entorno con el que se compila.
+
+**Lo correcto seria** agregar `https://localhost` y `capacitor://localhost` (iOS)
+a la politica CORS del bucket y quitar el `hostname`. Mientras tanto, ojo con dos
+cosas: el `localStorage` vive por origen, asi que al cambiar el hostname se
+pierde la sesion guardada una vez; y si el dominio del frontend cambia, hay que
+actualizar tambien este valor.

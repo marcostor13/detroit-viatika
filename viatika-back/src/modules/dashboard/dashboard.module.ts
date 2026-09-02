@@ -3,7 +3,6 @@ import { MongooseModule } from '@nestjs/mongoose'
 import { DashboardController } from './dashboard.controller'
 import { DashboardService } from './dashboard.service'
 import { Expense, ExpenseSchema } from '../expense/entities/expense.entity'
-import { Advance, AdvanceSchema } from '../advance/entities/advance.entity'
 import {
   ExpenseReport,
   ExpenseReportSchema,
@@ -18,7 +17,6 @@ import { AccountingConfigModule } from '../accounting-config/accounting-config.m
     AccountingConfigModule,
     MongooseModule.forFeature([
       { name: Expense.name, schema: ExpenseSchema },
-      { name: Advance.name, schema: AdvanceSchema },
       { name: ExpenseReport.name, schema: ExpenseReportSchema },
       { name: Project.name, schema: ProjectSchema },
       { name: Category.name, schema: CategorySchema },

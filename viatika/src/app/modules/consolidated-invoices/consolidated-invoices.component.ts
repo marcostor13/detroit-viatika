@@ -629,7 +629,7 @@ export class ConsolidatedInvoicesComponent implements OnInit {
         return 'Factura Válida y emitida a la empresa';
       case 'sunat_valid_not_ours':
       case 'VALIDO_NO_PERTENECE':
-        return 'Factura válida pero no ha sido emitida a la empresa';
+        return 'Comprobante emitido a otro contribuyente';
       case 'sunat_error':
       case 'ERROR_SUNAT':
         return 'Error en el servicio de sunat';

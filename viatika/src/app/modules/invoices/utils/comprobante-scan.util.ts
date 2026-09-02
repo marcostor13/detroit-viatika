@@ -14,11 +14,17 @@ export const TIPOS_COMPROBANTE = ['Factura', 'Boleta'];
 /** Único estado SUNAT que habilita guardar el comprobante. */
 export const SUNAT_STATUS_VALIDO = 'VALIDO_ACEPTADO';
 
+/**
+ * Los dos primeros estados salen de la consulta a SUNAT: `estadoCp` dice si el
+ * comprobante existe y esta aceptado, y el arreglo `observaciones` es el que
+ * avisa cuando fue emitido a otro contribuyente.
+ */
 export const SUNAT_STATUS_MESSAGES: Record<string, string> = {
   VALIDO_ACEPTADO: 'Factura válida y emitida a la empresa.',
   VALIDO_NO_PERTENECE:
-    'El comprobante no fue emitido a esta empresa. Verifica el RUC emisor.',
-  NO_ENCONTRADO: 'Comprobante no encontrado en SUNAT.',
+    'El comprobante es válido, pero SUNAT indica que fue emitido a otro contribuyente.',
+  NO_ENCONTRADO:
+    'SUNAT no encuentra el comprobante con esos datos. Revisa serie, correlativo, fecha e importe.',
   ERROR_SUNAT:
     'Error en el servicio de SUNAT. Revisa los datos e intenta de nuevo.',
   SUNAT_CONFIG_NOT_FOUND: 'No se encontró configuración SUNAT para esta empresa.',
