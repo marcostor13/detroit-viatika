@@ -3,7 +3,7 @@
   <div class="flex flex-col gap-4">
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div>
-        <h1 class="text-2xl font-bold text-primary">Dashboard</h1>
+        <h1 class="text-2xl font-bold text-secondary">Dashboard</h1>
         <p class="text-sm text-secondary">
           Gastos, solicitudes de fondos y pendientes de rendir
         </p>
@@ -11,10 +11,10 @@
       <div class="flex items-center gap-2">
         <!-- En movil el propio app-filter-panel ya ofrece "Limpiar", de ahi el hidden. -->
         @if (activeFilterCount() > 0) {
-          <app-button label="Limpiar filtros" variant="secondary"
+          <app-button label="Limpiar filtros" variant="neutral" size="sm"
             class="hidden md:inline-flex" (clicked)="clearFilters()" />
         }
-        <app-button label="Actualizar" variant="primary" (clicked)="loadDashboard()" />
+        <app-button label="Actualizar" variant="neutral" (clicked)="loadDashboard()" />
       </div>
     </div>
 
@@ -25,13 +25,13 @@
         <app-form-field #fDesde label="Desde">
           <input type="date" [id]="fDesde.fieldId" [ngModel]="filterDateFrom()"
             (ngModelChange)="filterDateFrom.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-info/30" />
         </app-form-field>
 
         <app-form-field #fHasta label="Hasta">
           <input type="date" [id]="fHasta.fieldId" [ngModel]="filterDateTo()"
             (ngModelChange)="filterDateTo.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-info/30" />
         </app-form-field>
 
         <app-form-field label="Centro de costo">
@@ -104,7 +104,7 @@
 
   @if (loading()) {
     <div class="flex items-center justify-center py-24">
-      <div class="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div class="w-10 h-10 border-4 border-ink-100 border-t-info rounded-full animate-spin"></div>
     </div>
   } @else {
     <!-- KPIs -->

@@ -19,7 +19,9 @@ Fuente única de verdad: `tailwind.config.js`. No declarar colores en otro lado 
 <app-button label="Guardar" variant="primary" size="md" (clicked)="onSave()" />
 <app-button label="Cancelar" variant="secondary" (clicked)="onCancel()" />
 ```
-`variant`: `primary | secondary | ghost | danger`. `size`: `sm | md | lg`. `disabled`, `fullWidth`, `loading` + `loadingLabel`, `type`.
+`variant`: `primary | secondary | ghost | danger | success | neutral`. `size`: `sm | md | lg`. `disabled`, `fullWidth`, `loading` + `loadingLabel`, `type`.
+
+`neutral` es para pantallas que no pueden mostrar rojo: el `primary` de Detroit es rojo y en un tablero se lee como alarma, y `secondary`/`ghost` tiñen de `primary` al pasar el mouse.
 
 ### `app-input`
 ```html
