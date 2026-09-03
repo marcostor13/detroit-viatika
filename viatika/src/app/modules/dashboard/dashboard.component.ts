@@ -187,7 +187,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * dE 13-14 entre pasos vecinos contra un piso de 15, o sea que ni con vision
    * de color completa se distinguen; por eso ese grafico usa dos tonos y no uno,
    * emparejados de a dos (los azules son la solicitud y su rendicion; los
-   * bronces, los otros dos canales).
+   * verdes, los otros dos canales. El segundo par paso por bronce y por violeta
+   * antes de quedar en verde: el paso oscuro de un dorado es marron y ensucia,
+   * y el violeta desentonaba. El verde es el unico que ademas del piso de
+   * separacion clava el contraste, asi que ninguna serie queda dependiendo de
+   * la regla de alivio.
    *
    * Todas las escalas estan validadas con el script de la guia de visualizacion
    * contra el blanco de las tarjetas: banda de luminosidad, piso de croma,
@@ -208,8 +212,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     // Mismo tono que su solicitud: son la misma plata en dos momentos y lo que
     // se lee es la distancia entre las dos barras.
     rendicionSolicitud: '#4A93C2',
-    directas: '#805400',
-    cajaChica: '#B88E22',
+    directas: '#0F6338',
+    cajaChica: '#479E6D',
   };
 
   /**
