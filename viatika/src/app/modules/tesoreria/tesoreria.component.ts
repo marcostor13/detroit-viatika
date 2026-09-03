@@ -117,6 +117,11 @@ export class TesoreriaComponent implements OnInit {
    */
   viaticoPaymentManual = false;
   showReimbursementModal = false;
+  /**
+   * Modo del modal del reembolso: `true` = registro manual (formulario),
+   * `false` = ficha de consulta (VD-129). Espeja `viaticoPaymentManual`.
+   */
+  reimbursementManual = false;
   reimbursementReceiptUrl: string | null = null;
   reimbursementReceiptName: string | null = null;
   reimbursementReceiptMimeType: string | null = null;
@@ -890,17 +895,51 @@ export class TesoreriaComponent implements OnInit {
     });
   }
 
+  /**
+   * Quién puede registrar el abono del reembolso a mano. Espeja
+   * `canRegisterViaticoPayment`: solo Tesorería y solo mientras el reembolso
+   * siga pendiente —el backend rechaza el segundo registro
+   * (`registerReimbursementPayment`) y el botón solo confundiría.
+   */
+  canRegisterReimbursement(report: IExpenseReport): boolean {
+    return this.canPayAndSettle && !(report as any).reimbursementPaymentInfo;
+  }
+
+  /** Ficha de consulta del reembolso (VD-129): sin escribir nada. */
   openReimbursementModal(report: IExpenseReport): void {
-    this.selectedReportReimbursement = report;
+    this.prepareReimbursementModal(report);
+    this.reimbursementManual = false;
     // `paymentForm` es COMPARTIDO entre los modales de Tesorería y aquí solo
     // alimenta la ficha de lectura (VD-129): se deja deshabilitado a propósito.
     // `reset()` no cambia el estado habilitado/deshabilitado, así que hay que
     // decirlo explícitamente en cada apertura y no confiar en la anterior.
     this.paymentForm.disable({ emitEvent: false });
-    // El monto del reembolso es fijo (= |settlement.difference|). El modal no
-    // tiene input de monto, así que lo seteamos aquí; de lo contrario el control
-    // `amount` (requerido) quedaría en null y el formulario nunca sería válido,
-    // bloqueando "Confirmar reembolso" incluso en efectivo.
+    this.showReimbursementModal = true;
+  }
+
+  /**
+   * Registro manual del abono del reembolso, igual que el de la solicitud de
+   * fondos: el pago que Tesorería hace fuera de la planilla BBVA no lo trae
+   * ninguna conciliación, así que se adjunta la constancia y se digitan fecha
+   * y N° de operación.
+   */
+  openManualReimbursementModal(report: IExpenseReport): void {
+    this.prepareReimbursementModal(report);
+    this.reimbursementManual = true;
+    // `reset()` no rehabilita un formulario deshabilitado: sin esto, haber
+    // abierto antes la ficha de consulta deja los campos en gris.
+    this.paymentForm.enable({ emitEvent: false });
+    this.showReimbursementModal = true;
+  }
+
+  /** Estado común a las dos formas de abrir el modal del reembolso. */
+  private prepareReimbursementModal(report: IExpenseReport): void {
+    this.selectedReportReimbursement = report;
+    // El monto del reembolso es fijo (= |settlement.difference|): el backend no
+    // recibe importe, paga lo liquidado. El formulario no tiene input de monto,
+    // así que se setea aquí; de lo contrario el control `amount` (requerido)
+    // quedaría en null y el formulario nunca sería válido, bloqueando el
+    // registro incluso en efectivo.
     const reembolsoAmount = Math.abs(Number(report.settlement?.difference ?? 0)) || null;
     this.paymentForm.reset({
       amount: reembolsoAmount,
@@ -927,7 +966,15 @@ export class TesoreriaComponent implements OnInit {
         cci: bankAccount.cci,
       });
     }
-    this.showReimbursementModal = true;
+  }
+
+  /** Quita la constancia adjunta y con ella lo que el escáner hubiera leído. */
+  removeReimbursementReceipt(): void {
+    this.reimbursementReceiptUrl = null;
+    this.reimbursementReceiptName = null;
+    this.reimbursementReceiptMimeType = null;
+    this.reimbursementReceiptSizeBytes = null;
+    this.resetReimbursementScanState();
   }
 
   onReimbursementReceiptSelected(event: Event): void {
@@ -1010,7 +1057,12 @@ export class TesoreriaComponent implements OnInit {
         paymentReceiptMimeType: this.reimbursementReceiptMimeType || undefined,
         paymentReceiptSizeBytes: this.reimbursementReceiptSizeBytes || undefined,
         scannedAmount: this.reimbursementScannedAmount ?? undefined,
-        operationNumber: this.reimbursementOperationNumber || this.paymentForm.value.reference || undefined,
+        // Manda lo digitado por Tesorería sobre lo que leyó el escáner: el
+        // lector está calibrado para BBVA y una constancia de otro banco puede
+        // salir con un número mal leído. El escáner ya rellena `reference` al
+        // subir el archivo, así que normalmente son el mismo valor; cuando
+        // difieren, es porque alguien lo corrigió a mano.
+        operationNumber: this.paymentForm.value.reference || this.reimbursementOperationNumber || undefined,
         operationDate: this.reimbursementOperationDate || undefined,
         operationTime: this.reimbursementOperationTime || undefined,
         titular: this.reimbursementTitular || undefined,

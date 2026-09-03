@@ -659,6 +659,20 @@ describe('TesoreriaComponent', () => {
       component.confirmReimbursementPayment();
       expect(notifications.show).toHaveBeenCalledWith('Error backend', 'error');
     });
+
+    // El lector esta calibrado para BBVA: en un pago manual desde otro banco
+    // puede leer mal, y lo que Tesoreria corrigio a mano tiene que prevalecer.
+    it('keeps the typed operation number over the scanned one', () => {
+      expenseReportsService.registerReimbursementPayment.and.returnValue(of(makeReport()));
+      spyOn(component, 'loadData');
+      component.reimbursementOperationNumber = 'MAL-LEIDO';
+      component.paymentForm.patchValue({ reference: '000025714' });
+      component.confirmReimbursementPayment();
+      expect(expenseReportsService.registerReimbursementPayment).toHaveBeenCalledWith(
+        'r1',
+        jasmine.objectContaining({ operationNumber: '000025714' })
+      );
+    });
   });
 
   describe('openReimbursementModal', () => {
@@ -668,6 +682,41 @@ describe('TesoreriaComponent', () => {
       component.openReimbursementModal(report);
       expect(component.paymentForm.value.amount).toBe(30);
       expect(component.showReimbursementModal).toBeTrue();
+    });
+
+    // Las dos aperturas comparten `paymentForm`: la ficha lo deja en gris y el
+    // registro manual tiene que devolverlo escribible, incluso viniendo de ella.
+    it('opens as read-only card and as a writable manual form', () => {
+      component.initForms();
+      const report = makeReport({ settlement: { advanceTotal: 0, expenseTotal: 30, difference: -30, type: 'reembolso' } });
+
+      component.openReimbursementModal(report);
+      expect(component.reimbursementManual).toBeFalse();
+      expect(component.paymentForm.disabled).toBeTrue();
+
+      component.openManualReimbursementModal(report);
+      expect(component.reimbursementManual).toBeTrue();
+      expect(component.paymentForm.enabled).toBeTrue();
+      expect(component.paymentForm.value.amount).toBe(30);
+
+      component.openReimbursementModal(report);
+      expect(component.paymentForm.disabled).toBeTrue();
+    });
+  });
+
+  describe('canRegisterReimbursement', () => {
+    it('requires treasury permissions', () => {
+      userState.canApproveL2.and.returnValue(false);
+      expect(component.canRegisterReimbursement(makeReport())).toBeFalse();
+      userState.canApproveL2.and.returnValue(true);
+      expect(component.canRegisterReimbursement(makeReport())).toBeTrue();
+    });
+
+    // El backend rechaza el segundo registro; el boton solo confundiria.
+    it('hides the button once the reimbursement was paid', () => {
+      userState.canApproveL2.and.returnValue(true);
+      const paid = makeReport({ reimbursementPaymentInfo: { reference: '000025714' } } as any);
+      expect(component.canRegisterReimbursement(paid)).toBeFalse();
     });
   });
 
