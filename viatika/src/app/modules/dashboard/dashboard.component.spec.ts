@@ -221,6 +221,25 @@ describe('DashboardComponent', () => {
     expect(tramos.filter((t) => t.vencido).length).toBe(3);
   });
 
+  // Con indexAxis 'y' hay que fijar axis 'y' o Chart.js mide la cercania en x,
+  // que en una barra horizontal es el largo y no la fila. Antes del arreglo, 7
+  // de 8 filas mostraban el tooltip de la misma categoria.
+  it('los gráficos de barra horizontal resuelven el hover por el eje y', () => {
+    montar();
+    expect(component.interaccionBarraHorizontal.axis).toBe('y');
+    expect(component.interaccionBarraHorizontal.mode).toBe('index');
+  });
+
+  // Al partir la fila en dos columnas el total de cada categoria dejo de estar
+  // a la vista, asi que el pie tiene que sumar exactamente las dos columnas.
+  it('el pie de categorías suma las dos columnas', () => {
+    montar();
+    const t = component.totalCategorias();
+    const filas = component.categoryRows();
+    expect(t.cerrado).toBe(filas.reduce((s, c) => s + c.cerrado, 0));
+    expect(t.enProceso).toBe(filas.reduce((s, c) => s + c.enProceso, 0));
+  });
+
   it('marca vencido lo que pasa del plazo para rendir', () => {
     montar();
     expect(component.isVencido(40)).toBe(true);

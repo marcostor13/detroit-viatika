@@ -183,42 +183,39 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private renderIntentos = 0;
 
   /**
-   * Paleta del dashboard: un solo tono azul-petroleo, del gris claro al oscuro.
+   * Paleta tomada de detroit.pe. El sitio es grafito y blanco con rojo ladrillo
+   * de acento: `#8F2D25`, `#983128`, `#94342C`, `#A10000`. Ese ladrillo es mucho
+   * mas terroso que el `#D31212` de la aplicacion, que era el que se leia como
+   * alarma.
    *
-   * Siete de los ocho graficos son monocromaticos porque lo que codifican es
-   * magnitud o avance, que es justo para lo que sirve una rampa de un tono. El
-   * unico que no puede serlo es la evolucion mensual: ahi las cuatro series son
-   * cosas distintas, no grados de la misma. Un solo tono en cuatro pasos mide
-   * dE 13-14 entre pasos vecinos contra un piso de 15, o sea que ni con vision
-   * de color completa se distinguen; por eso ese grafico usa dos tonos y no uno,
-   * emparejados de a dos (los azules son la solicitud y su rendicion; los
-   * verdes, los otros dos canales. El segundo par paso por bronce y por violeta
-   * antes de quedar en verde: el paso oscuro de un dorado es marron y ensucia,
-   * y el violeta desentonaba. El verde es el unico que ademas del piso de
-   * separacion clava el contraste, asi que ninguna serie queda dependiendo de
-   * la regla de alivio.
+   * El grafito del sitio no puede ser color de serie: un gris puro tiene croma
+   * cero y el metodo lo rechaza porque "se lee gris", y como rampa su tono es
+   * erratico (115 grados de dispersion medidos). Asi que el grafito se queda en
+   * el texto y los bordes, y el ladrillo es el que pinta.
    *
-   * Todas las escalas estan validadas con el script de la guia de visualizacion
-   * contra el blanco de las tarjetas: banda de luminosidad, piso de croma,
-   * separacion para protanopia/deuteranopia/tritanopia, piso de vision normal y
-   * contraste >= 3:1. No tocar un hex suelto sin volver a correrla.
+   * Todas las escalas validadas con el script de la guia de visualizacion
+   * contra el blanco de las tarjetas. No tocar un hex suelto sin volver a
+   * correrla: el orden de las series es parte de lo que la hace segura.
    */
 
-  /** Rampa base. Todo lo monocromatico del tablero sale de aqui. */
+  /** Rampa base, familia ladrillo del sitio. */
   readonly rampa = {
-    claro: '#7FB3D5',
-    medio: '#4A93C2',
-    oscuro: '#005E92',
+    claro: '#CE9A93',
+    medio: '#B0655C',
+    oscuro: '#8F2D25',
   };
 
-  /** Las cuatro vias por las que se mueve el dinero, en la serie mensual. */
+  /**
+   * Las cuatro vias por las que se mueve el dinero. El ladrillo va a la
+   * solicitud y su rendicion, que son la serie principal; el azul a los otros
+   * dos canales, porque el grafito del sitio no llega al piso de croma y una
+   * sola familia no sostiene cuatro series legibles.
+   */
   readonly seriesColors = {
-    solicitudes: '#005E92',
-    // Mismo tono que su solicitud: son la misma plata en dos momentos y lo que
-    // se lee es la distancia entre las dos barras.
-    rendicionSolicitud: '#4A93C2',
-    directas: '#0F6338',
-    cajaChica: '#479E6D',
+    solicitudes: '#8F2D25',
+    rendicionSolicitud: '#C0625A',
+    directas: '#005E92',
+    cajaChica: '#4A93C2',
   };
 
   /**
@@ -227,15 +224,30 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * esta en camino".
    */
   readonly estadoColors = {
-    cerrado: '#005E92',
-    enProceso: '#7FB3D5',
+    cerrado: '#8F2D25',
+    enProceso: '#CE9A93',
   };
 
   /** Escala del mapa, de menor a mayor gasto. */
-  readonly mapaColors = ['#7FB3D5', '#4A93C2', '#005E92'];
+  readonly mapaColors = ['#CE9A93', '#B0655C', '#8F2D25'];
 
   /** Barras de una sola serie: el titulo ya dice que son, no hace falta leyenda. */
-  readonly serieUnica = '#4A93C2';
+  readonly serieUnica = '#B0655C';
+
+  /**
+   * Interaccion de los graficos de barra horizontal. `axis: 'y'` es obligatorio
+   * con `indexAxis: 'y'`: sin el, Chart.js busca el elemento mas cercano
+   * midiendo en x, que en una barra horizontal es el largo de la barra y no la
+   * fila, y el tooltip sale de otra categoria. Medido antes del arreglo: 7 de 8
+   * filas mostraban siempre la misma.
+   *
+   * Vive aqui y no repetido en cada grafico para que no se copie mal.
+   */
+  readonly interaccionBarraHorizontal = {
+    mode: 'index' as const,
+    intersect: false,
+    axis: 'y' as const,
+  };
 
   private readonly expenseTypeLabels: Record<string, string> = {
     factura: 'Factura',
@@ -564,7 +576,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         animation: this.baseAnimation(),
-        interaction: { mode: 'index', intersect: false },
+        interaction: this.interaccionBarraHorizontal,
         plugins: {
           legend: { position: 'top', labels: { boxWidth: 12 } },
           tooltip: {
@@ -656,6 +668,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         animation: this.baseAnimation(),
+        interaction: this.interaccionBarraHorizontal,
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -768,6 +781,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         animation: this.baseAnimation(),
+        interaction: this.interaccionBarraHorizontal,
         onHover: (event: any, elements: any[]) => {
           event.native.target.style.cursor = elements?.length
             ? 'pointer'
@@ -883,7 +897,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         <div style="font-family:sans-serif;min-width:170px">
           <div style="font-weight:700;font-size:14px;color:#21262B;margin-bottom:6px">${p.place}</div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087;margin-bottom:2px">
-            <span>Gastado</span><strong style="color:#005E92">${this.formatCurrency(p.amount)}</strong>
+            <span>Gastado</span><strong style="color:#8F2D25">${this.formatCurrency(p.amount)}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087">
             <span>Solicitado</span><strong style="color:#21262B">${this.formatCurrency(p.solicitado)}</strong>
@@ -956,6 +970,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Categorías con su porcentaje, para la lista que acompaña al gráfico. */
   categoryRows(): INamedAmount[] {
     return this.data()?.topCategories ?? [];
+  }
+
+  /**
+   * Suma de las categorías listadas. Al partir la fila en dos columnas el total
+   * de cada categoría dejo de estar a la vista, asi que al menos el del periodo
+   * queda al pie. Es el total del top mostrado, no el de todas las categorias.
+   */
+  totalCategorias(): { cerrado: number; enProceso: number } {
+    return this.categoryRows().reduce(
+      (acc, c) => ({
+        cerrado: acc.cerrado + c.cerrado,
+        enProceso: acc.enProceso + c.enProceso,
+      }),
+      { cerrado: 0, enProceso: 0 }
+    );
   }
 
   /**
