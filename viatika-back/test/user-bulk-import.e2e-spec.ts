@@ -326,6 +326,30 @@ describe('Carga masiva de colaboradores (e2e)', () => {
     expect(fila.permisos_aprobadorN2).toBe(APROBADOR_2)
   })
 
+  it('cambiar el nombre o el cargo en el Excel actualiza al colaborador', async () => {
+    const { headers, filas } = await descargarExcel()
+    const fila = filas.find(f => f.email === EXISTENTE)!
+    const dniPrevio = (await userModel.findOne({ email: EXISTENTE }).lean())
+      ?.dni
+    fila.nombre = 'Nombre Cambiado Desde Excel'
+    fila.cargo = 'Jefe de Prueba'
+    const buffer = construirExcel(headers, filas)
+
+    const plan = await importar(buffer, true)
+    expect(filaDe(plan, EXISTENTE).accion).toBe('actualizar')
+    expect(filaDe(plan, EXISTENTE).detalle).toContain(
+      'Nombre Cambiado Desde Excel'
+    )
+
+    const res = await importar(buffer, false)
+    expect(res.updated).toBe(1)
+    const actualizado = await userModel.findOne({ email: EXISTENTE }).lean()
+    expect(actualizado!.name).toBe('Nombre Cambiado Desde Excel')
+    expect(actualizado!.cargo).toBe('Jefe de Prueba')
+    // La celda de DNI viene vacía: no se toca lo que ya tenía.
+    expect(actualizado!.dni).toBe(dniPrevio)
+  })
+
   it('rechaza la fila cuyo aprobador no existe en la empresa', async () => {
     const { headers, filas } = await descargarExcel()
     filas.push({

@@ -599,9 +599,9 @@ describe('UserService', () => {
       expect(existing.save).toHaveBeenCalled()
     })
 
-    it('marca sin cambios al colaborador existente cuya fila no trae columnas de permisos', async () => {
+    it('marca sin cambios la fila que ya coincide con lo que el colaborador tiene', async () => {
       const existing = {
-        toObject: () => ({ permissions: {} }),
+        toObject: () => ({ name: 'Ya Existe', permissions: {} }),
         set: jest.fn(),
         save: jest.fn(),
       }
@@ -616,6 +616,59 @@ describe('UserService', () => {
       expect(result.updated).toBe(0)
       expect(result.rows[0].accion).toBe('sin-cambios')
       expect(existing.set).not.toHaveBeenCalled()
+    })
+
+    it('actualiza los datos del colaborador y deja intacto lo que la fila no trae', async () => {
+      const existing = {
+        toObject: () => ({
+          name: 'Nombre Viejo',
+          dni: '11111111',
+          bankAccount: { bankName: 'BCP', accountNumber: '123' },
+          permissions: {},
+        }),
+        set: jest.fn(),
+        save: jest.fn().mockResolvedValue(undefined),
+      }
+      stubUserLookups(existing)
+
+      const result = await service.bulkImportUsers(
+        [
+          {
+            nombre: 'Nombre Nuevo',
+            email: 'ya.existe@empresa.com',
+            cci: '00212345678901234567',
+          },
+        ],
+        clientId
+      )
+
+      expect(result.updated).toBe(1)
+      expect(result.rows[0].detalle).toContain('Nombre Viejo → Nombre Nuevo')
+      expect(existing.set).toHaveBeenCalledWith('name', 'Nombre Nuevo')
+      // El CCI se mezcla en la cuenta: no borra banco ni número.
+      expect(existing.set).toHaveBeenCalledWith('bankAccount', {
+        bankName: 'BCP',
+        accountNumber: '123',
+        cci: '00212345678901234567',
+      })
+      // El DNI no venía en la fila: no se toca.
+      expect(existing.set).not.toHaveBeenCalledWith(
+        'dni',
+        expect.anything()
+      )
+    })
+
+    it('rechaza la fila cuyo rol no existe en vez de dejarlo en Colaborador', async () => {
+      stubUserLookups(null)
+
+      const result = await service.bulkImportUsers(
+        [{ nombre: 'Nuevo', email: 'nuevo@empresa.com', rol: 'Jefazo' }],
+        clientId
+      )
+
+      expect(result.created).toBe(0)
+      expect(result.errors[0].reason).toContain('Jefazo')
+      expect(mockUserModel.create).not.toHaveBeenCalled()
     })
 
     it('con dryRun devuelve el plan sin escribir nada', async () => {

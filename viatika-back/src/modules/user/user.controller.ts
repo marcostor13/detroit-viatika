@@ -498,7 +498,7 @@ export class UserController {
     instrSheet.getRow(1).font = { bold: true }
     const instrucciones: [string, string, string][] = [
       ['nombre', 'Sí', 'Nombre completo del colaborador.'],
-      ['email', 'Sí', 'Único por empresa. Es la llave: si ya existe, la fila actualiza sus permisos en vez de crear a nadie.'],
+      ['email', 'Sí', 'Único por empresa. Es la llave: si ya existe, la fila lo actualiza en vez de crear a nadie. El email en sí no se puede cambiar desde aquí.'],
       ['dni', 'No', 'Número de documento.'],
       ['tipoDocumento', 'No', 'R=RUC, L=DNI, P=Pasaporte, E=C.Ext., M=C.Mil. Por defecto: L (DNI).'],
       ['codigoEmpleado', 'No', 'Código del colaborador en planilla.'],
@@ -545,7 +545,10 @@ export class UserController {
       'El archivo baja con los colaboradores que ya existen. Al subirlo, las filas cuyo email ya está en la empresa ACTUALIZAN sus permisos y las filas nuevas CREAN al colaborador.',
     ])
     instrSheet.addRow([
-      'De un colaborador que ya existe solo se aplican las columnas permisos_*: nombre, DNI, banco y rol se editan desde su ficha.',
+      'De un colaborador que ya existe se actualiza todo lo que traiga la fila: datos, cuenta bancaria, rol y permisos.',
+    ])
+    instrSheet.addRow([
+      'Una celda vacía NO borra el dato: significa "no lo toques". Para vaciar un campo, hazlo desde la ficha del colaborador.',
     ])
     instrSheet.addRow([
       'Antes de guardar nada se muestra en pantalla qué se crea y qué se modifica, para aceptarlo.',

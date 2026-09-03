@@ -1585,12 +1585,13 @@ export class UserService {
    * Carga masiva de colaboradores desde Excel — mismo patrón que la de órdenes
    * de trabajo: la plantilla se descarga con los colaboradores que ya existen,
    * se edita y se vuelve a subir. Una fila cuyo email ya está en la empresa
-   * ACTUALIZA sus permisos (centros de costo y aprobadores) en vez de fallar
-   * por duplicada; las filas nuevas crean al colaborador. El email es la llave.
+   * lo ACTUALIZA en vez de fallar por duplicada; las filas nuevas crean al
+   * colaborador. El email es la llave.
    *
-   * De un colaborador que ya existe solo se tocan las columnas `permisos_*`:
-   * nombre, DNI, banco y rol se siguen editando desde su ficha, para que una
-   * recarga del archivo no pise datos corregidos a mano.
+   * La actualización alcanza a todo lo que trae el archivo — datos, cuenta
+   * bancaria, rol y permisos — con una regla: una celda vacía significa "no
+   * toques ese dato", nunca "bórralo", para que una fila incompleta no vacíe
+   * medio perfil.
    *
    * Con `opts.dryRun` no escribe nada: devuelve el mismo resultado (contadores
    * y el plan fila por fila) para que el usuario vea qué se va a crear y qué se
@@ -1651,6 +1652,38 @@ export class UserService {
       const id = role ? ((role as any)._id as Types.ObjectId) : null
       roleCache.set(roleName, id)
       return id
+    }
+
+    /** 'ahorros' | 'corriente' de la celda, o undefined si no vale. */
+    const tipoDeCuenta = (valor?: string) => {
+      const v = (valor || '').toLowerCase()
+      return v === 'corriente' || v === 'ahorros' ? v : undefined
+    }
+    /** Tipo de documento válido de la celda ('R'|'L'|'P'|'E'|'M'). */
+    const tipoDeDocumento = (valor?: string) => {
+      const v = (valor || '').toUpperCase()
+      return ['R', 'L', 'P', 'E', 'M'].includes(v)
+        ? (v as 'R' | 'L' | 'P' | 'E' | 'M')
+        : undefined
+    }
+    /**
+     * Nombre de rol canónico de la celda. `null` = la celda trae algo que no
+     * es un rol del sistema; `undefined` = celda vacía ('no lo toques').
+     */
+    const nombreDeRol = (valor?: string) => {
+      if (!valor) return undefined
+      return (
+        allowedRoles.find(r => r.toLowerCase() === valor.toLowerCase()) ??
+        null
+      )
+    }
+
+    // Nombres de rol por id: solo para el "Rol: antes → después" del plan.
+    const roleNameById = new Map<string, string>()
+    const cargarNombresDeRol = async () => {
+      if (roleNameById.size) return
+      const roles = (await this.roleService.findAll()) as any[]
+      for (const r of roles ?? []) roleNameById.set(String(r._id), r.name)
     }
 
     // Cache de usuarios por email: lo usan los aprobadores N1/N2 de las
@@ -1826,6 +1859,87 @@ export class UserService {
       return combinados
     }
 
+    /**
+     * Qué le cambia la fila a los DATOS de un colaborador que ya existe
+     * (todo lo que no son permisos, el rol incluido). Una celda vacía
+     * significa "no toques ese dato", nunca "bórralo": así una fila pegada
+     * de otro archivo no vacía medio perfil.
+     */
+    const describirCambiosDatos = async (
+      actual: UserDocument,
+      row: Record<string, string>
+    ): Promise<{
+      cambios: Record<string, unknown>
+      detalles: string[]
+      error: string | null
+    }> => {
+      const doc = actual.toObject() as Record<string, any>
+      const cambios: Record<string, unknown> = {}
+      const detalles: string[] = []
+
+      const simples: [string, string, string | undefined][] = [
+        ['name', 'Nombre', row.name],
+        ['dni', 'DNI', row.dni],
+        ['documentType', 'Tipo de documento', tipoDeDocumento(row.documentType)],
+        ['employeeCode', 'Código de empleado', row.employeeCode],
+        ['subcuenta14', 'Subcuenta 14', row.subcuenta14],
+        ['area', 'Área', row.area],
+        ['cargo', 'Cargo', row.cargo],
+        ['phone', 'Teléfono', row.phone],
+        ['address', 'Dirección', row.address],
+      ]
+      for (const [campo, etiqueta, valor] of simples) {
+        if (!valor || String(doc[campo] ?? '') === valor) continue
+        cambios[campo] = valor
+        detalles.push(`${etiqueta}: ${doc[campo] || '—'} → ${valor}`)
+      }
+
+      // La cuenta bancaria se mezcla campo a campo: traer solo el CCI no
+      // debe borrar el banco ni el número de cuenta.
+      const banco: Record<string, any> = doc.bankAccount ?? {}
+      const nuevoBanco = { ...banco }
+      const subcampos: [string, string, string | undefined][] = [
+        ['bankName', 'Banco', row.bankName],
+        ['accountNumber', 'N° de cuenta', row.accountNumber],
+        ['cci', 'CCI', row.cci],
+        ['accountType', 'Tipo de cuenta', tipoDeCuenta(row.accountType)],
+      ]
+      for (const [campo, etiqueta, valor] of subcampos) {
+        if (!valor || String(banco[campo] ?? '') === valor) continue
+        nuevoBanco[campo] = valor
+        detalles.push(`${etiqueta}: ${banco[campo] || '—'} → ${valor}`)
+        cambios.bankAccount = nuevoBanco
+      }
+
+      const roleName = nombreDeRol(row.role)
+      if (roleName === null) {
+        return {
+          cambios: {},
+          detalles: [],
+          error: `El rol "${row.role}" no existe`,
+        }
+      }
+      if (roleName) {
+        const roleId = await resolveRole(roleName)
+        if (!roleId) {
+          return {
+            cambios: {},
+            detalles: [],
+            error: `El rol "${roleName}" no existe`,
+          }
+        }
+        if (String(doc.roleId) !== String(roleId)) {
+          await cargarNombresDeRol()
+          cambios.roleId = roleId
+          detalles.push(
+            `Rol: ${roleNameById.get(String(doc.roleId)) || '—'} → ${roleName}`
+          )
+        }
+      }
+
+      return { cambios, detalles, error: null }
+    }
+
     /** Etiquetas de una lista de centros de costo, para el detalle del plan. */
     const etiquetasProyectos = async (ids: unknown[]): Promise<string> => {
       const labels: string[] = []
@@ -1927,26 +2041,37 @@ export class UserService {
             ((exists.toObject() as Record<string, any>).permissions as
               | Record<string, any>
               | undefined) ?? {}
-          const detalles = permissionOverrides
-            ? await describirCambios(actuales, permissionOverrides)
-            : []
-          if (!permissionOverrides || !detalles.length) {
+          const datos = await describirCambiosDatos(exists, row)
+          if (datos.error) {
+            fallo(rowNumber, email, datos.error)
+            continue
+          }
+          const detalles = [
+            ...datos.detalles,
+            ...(permissionOverrides
+              ? await describirCambios(actuales, permissionOverrides)
+              : []),
+          ]
+          if (!detalles.length) {
             result.unchanged++
             result.rows.push({
               row: rowNumber,
               email,
               accion: 'sin-cambios',
-              detalle: permissionOverrides
-                ? 'Ya tiene estos mismos permisos'
-                : 'Ya existe y la fila no trae columnas de permisos',
+              detalle: 'Ya está igual que en el archivo',
             })
             continue
           }
           if (!dryRun) {
-            exists.set(
-              'permissions',
-              combinarPermisos(actuales, permissionOverrides)
-            )
+            if (permissionOverrides) {
+              exists.set(
+                'permissions',
+                combinarPermisos(actuales, permissionOverrides)
+              )
+            }
+            for (const [campo, valor] of Object.entries(datos.cambios)) {
+              exists.set(campo, valor)
+            }
             await exists.save()
           }
           result.updated++
@@ -1959,22 +2084,18 @@ export class UserService {
           continue
         }
 
-        const roleName =
-          allowedRoles.find(
-            r => r.toLowerCase() === (row.role || '').toLowerCase()
-          ) || 'Colaborador'
+        const roleName = nombreDeRol(row.role) ?? 'Colaborador'
+        if (nombreDeRol(row.role) === null) {
+          fallo(rowNumber, email, `El rol "${row.role}" no existe`)
+          continue
+        }
         const roleId = await resolveRole(roleName)
         if (!roleId) {
           fallo(rowNumber, email, `El rol "${roleName}" no existe`)
           continue
         }
 
-        const accountType =
-          row.accountType?.toLowerCase() === 'corriente'
-            ? 'corriente'
-            : row.accountType?.toLowerCase() === 'ahorros'
-              ? 'ahorros'
-              : undefined
+        const accountType = tipoDeCuenta(row.accountType)
         const bankAccount =
           row.bankName || row.accountNumber || row.cci
             ? {
@@ -1985,12 +2106,7 @@ export class UserService {
               }
             : undefined
 
-        const allowedDocTypes = ['R', 'L', 'P', 'E', 'M']
-        const documentType = allowedDocTypes.includes(
-          (row.documentType || '').toUpperCase()
-        )
-          ? (row.documentType.toUpperCase() as 'R' | 'L' | 'P' | 'E' | 'M')
-          : undefined
+        const documentType = tipoDeDocumento(row.documentType)
 
         const name = row.name || email
         if (!dryRun) {
