@@ -5,6 +5,7 @@ import { Types } from 'mongoose'
 import * as bcrypt from 'bcryptjs'
 import { UserService } from './user.service'
 import { User } from './schemas/user.schema'
+import { Project } from '../project/entities/project.entity'
 import { RoleService } from '../role/role.service'
 
 jest.mock('bcryptjs')
@@ -49,6 +50,11 @@ const mockUserModel = {
   findByIdAndDelete: jest.fn(),
 }
 
+/** Solo lectura: la carga masiva resuelve centros de costo por código/nombre. */
+const mockProjectModel = {
+  findOne: jest.fn(),
+}
+
 const mockRoleService = {
   getAdminRoles: jest.fn(),
 }
@@ -62,6 +68,7 @@ describe('UserService', () => {
       providers: [
         UserService,
         { provide: getModelToken(User.name), useValue: mockUserModel },
+        { provide: getModelToken(Project.name), useValue: mockProjectModel },
         { provide: RoleService, useValue: mockRoleService },
       ],
     }).compile()
@@ -529,6 +536,173 @@ describe('UserService', () => {
       })
       const result = await service.findAdminsByClient(clientId)
       expect(result).toHaveLength(1)
+    })
+  })
+
+  // Columnas de permisos del Excel de carga masiva: centros de costo y
+  // aprobadores propios. Es lo único de `permissions` que se carga por Excel.
+  describe('bulkImportUsers (columnas de permisos)', () => {
+    const projectId = new Types.ObjectId()
+    const approverId = new Types.ObjectId()
+
+    /** findOne del modelo User: distingue el colaborador del aprobador. */
+    const stubUserLookups = (existing: any) => {
+      mockUserModel.findOne.mockImplementation((query: any) => {
+        if (query.email === 'jefe@empresa.com') {
+          return makeSelectChain({ _id: approverId })
+        }
+        if (query.email === 'ya.existe@empresa.com') {
+          return { exec: jest.fn().mockResolvedValue(existing) }
+        }
+        return makeSelectChain(null)
+      })
+    }
+
+    it('actualiza los permisos de un colaborador que ya existe en vez de omitirlo', async () => {
+      const existing = {
+        toObject: () => ({
+          permissions: { modules: ['mis-rendiciones'], projectIds: [] },
+        }),
+        set: jest.fn(),
+        save: jest.fn().mockResolvedValue(undefined),
+      }
+      stubUserLookups(existing)
+      mockProjectModel.findOne.mockReturnValue(
+        makeSelectChain({ _id: projectId })
+      )
+
+      const result = await service.bulkImportUsers(
+        [
+          {
+            nombre: 'Ya Existe',
+            email: 'ya.existe@empresa.com',
+            permisos_centrosDeCosto: 'CC-001',
+            permisos_centroDeCostoPrincipal: 'CC-001',
+            permisos_aprobadorN1: 'jefe@empresa.com',
+          },
+        ],
+        clientId
+      )
+
+      expect(result.created).toBe(0)
+      expect(result.updated).toBe(1)
+      expect(result.unchanged).toBe(0)
+      expect(result.errors).toEqual([])
+      expect(result.rows[0].accion).toBe('actualizar')
+      expect(mockUserModel.create).not.toHaveBeenCalled()
+      expect(existing.set).toHaveBeenCalledWith('permissions', {
+        modules: ['mis-rendiciones'],
+        projectIds: [projectId.toString()],
+        primaryProjectId: projectId.toString(),
+        approverLevels: [{ level: 1, userIds: [approverId] }],
+      })
+      expect(existing.save).toHaveBeenCalled()
+    })
+
+    it('marca sin cambios al colaborador existente cuya fila no trae columnas de permisos', async () => {
+      const existing = {
+        toObject: () => ({ permissions: {} }),
+        set: jest.fn(),
+        save: jest.fn(),
+      }
+      stubUserLookups(existing)
+
+      const result = await service.bulkImportUsers(
+        [{ nombre: 'Ya Existe', email: 'ya.existe@empresa.com' }],
+        clientId
+      )
+
+      expect(result.unchanged).toBe(1)
+      expect(result.updated).toBe(0)
+      expect(result.rows[0].accion).toBe('sin-cambios')
+      expect(existing.set).not.toHaveBeenCalled()
+    })
+
+    it('con dryRun devuelve el plan sin escribir nada', async () => {
+      const existing = {
+        toObject: () => ({ permissions: { projectIds: [] } }),
+        set: jest.fn(),
+        save: jest.fn(),
+      }
+      stubUserLookups(existing)
+      mockProjectModel.findOne.mockReturnValue(
+        makeSelectChain({ _id: projectId, code: 'CC-001' })
+      )
+
+      const result = await service.bulkImportUsers(
+        [
+          {
+            nombre: 'Ya Existe',
+            email: 'ya.existe@empresa.com',
+            permisos_centrosDeCosto: 'CC-001',
+          },
+        ],
+        clientId,
+        { dryRun: true }
+      )
+
+      expect(result.dryRun).toBe(true)
+      expect(result.updated).toBe(1)
+      expect(result.rows[0].detalle).toContain('CC-001')
+      expect(existing.set).not.toHaveBeenCalled()
+      expect(existing.save).not.toHaveBeenCalled()
+      expect(mockUserModel.create).not.toHaveBeenCalled()
+    })
+
+    it('conserva los niveles de aprobador que el Excel no sabe expresar', async () => {
+      const nivel3 = new Types.ObjectId()
+      const existing = {
+        toObject: () => ({
+          permissions: {
+            projectIds: [],
+            approverLevels: [{ level: 3, userIds: [nivel3] }],
+          },
+        }),
+        set: jest.fn(),
+        save: jest.fn().mockResolvedValue(undefined),
+      }
+      stubUserLookups(existing)
+
+      await service.bulkImportUsers(
+        [
+          {
+            email: 'ya.existe@empresa.com',
+            permisos_aprobadorN1: 'jefe@empresa.com',
+          },
+        ],
+        clientId
+      )
+
+      // El archivo solo trae N1 y N2: el N3 que ya tenía sigue ahí.
+      expect(existing.set).toHaveBeenCalledWith('permissions', {
+        projectIds: [],
+        approverLevels: [
+          { level: 1, userIds: [approverId] },
+          { level: 3, userIds: [nivel3] },
+        ],
+      })
+    })
+
+    it('reporta un error de fila si el centro de costo no existe', async () => {
+      stubUserLookups(null)
+      mockProjectModel.findOne.mockReturnValue(makeSelectChain(null))
+
+      const result = await service.bulkImportUsers(
+        [
+          {
+            nombre: 'Nuevo',
+            email: 'nuevo@empresa.com',
+            permisos_centrosDeCosto: 'NO-EXISTE',
+          },
+        ],
+        clientId
+      )
+
+      expect(result.created).toBe(0)
+      expect(result.errors).toHaveLength(1)
+      expect(result.errors[0].reason).toContain('NO-EXISTE')
+      expect(result.rows[0].accion).toBe('error')
+      expect(mockUserModel.create).not.toHaveBeenCalled()
     })
   })
 })

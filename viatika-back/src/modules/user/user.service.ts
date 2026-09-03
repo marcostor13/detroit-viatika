@@ -13,6 +13,7 @@ import { RoleDocument } from '../role/entities/role.entity'
 import * as bcrypt from 'bcryptjs'
 import { CreateUserDto } from './dto/create-user.dto'
 import { ApproverLevel } from '../../common/types/approver-level'
+import { Project, ProjectDocument } from '../project/entities/project.entity'
 import {
   Suplencia,
   aFechaLocal,
@@ -33,6 +34,45 @@ export interface IUserPermissions {
   modules: string[]
   canApproveL1: boolean
   canApproveL2: boolean
+}
+
+/**
+ * Campos de `permissions` que puede traer una fila del Excel de carga
+ * masiva: solo centros de costo y aprobadores propios. El resto de permisos
+ * (módulos, categorías…) se sigue asignando por rol o desde la pantalla de
+ * permisos del colaborador.
+ */
+export interface BulkPermissionOverrides {
+  projectIds?: string[]
+  primaryProjectId?: string
+  approverLevels?: ApproverLevel[]
+}
+
+/** Lo que le pasa a una fila del Excel en la carga masiva de colaboradores. */
+export interface IUserBulkRowPlan {
+  /** Fila del Excel (1 = encabezado). */
+  row: number
+  email: string
+  accion: 'crear' | 'actualizar' | 'sin-cambios' | 'error'
+  /** Qué se crea o qué cambia, en texto legible. */
+  detalle?: string
+  /** Por qué falló la fila. */
+  reason?: string
+}
+
+export interface IUserBulkImportResult {
+  created: number
+  /** Colaboradores que ya existían y a los que el archivo les cambia permisos. */
+  updated: number
+  /** Colaboradores que ya existían y a los que el archivo no les cambia nada. */
+  unchanged: number
+  errors: { row: number; reason: string }[]
+  /** Fila por fila: con `dryRun` es lo que PASARÍA; sin él, lo que pasó. */
+  rows: IUserBulkRowPlan[]
+  /** Contraseñas temporales de los creados. Vacío en `dryRun`. */
+  credentials: { name: string; email: string; temporaryPassword: string }[]
+  /** true = solo previsualización, no se escribió nada en la base. */
+  dryRun: boolean
 }
 
 export interface IUserResponse {
@@ -83,6 +123,9 @@ export interface IUserResponse {
 export class UserService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    // Solo lectura: resuelve los centros de costo por código/nombre en la
+    // carga masiva de usuarios (columnas de permisos).
+    @InjectModel(Project.name) private projectModel: Model<ProjectDocument>,
     private readonly roleService: RoleService
   ) {}
 
@@ -1298,11 +1341,6 @@ export class UserService {
     role: 'role',
     rol: 'role',
     perfil: 'role',
-    coordinatoremail: 'coordinatorEmail',
-    'email coordinador': 'coordinatorEmail',
-    emailcoordinador: 'coordinatorEmail',
-    'correo coordinador': 'coordinatorEmail',
-    coordinador: 'coordinatorEmail',
     bankname: 'bankName',
     banco: 'bankName',
     'nombre banco': 'bankName',
@@ -1317,6 +1355,35 @@ export class UserService {
     'tipo cuenta': 'accountType',
     'tipo de cuenta': 'accountType',
     tipocuenta: 'accountType',
+    // --- Permisos. Se prefijan con "permisos_" en la plantilla para dejar
+    // claro que NO son datos del colaborador sino su configuración de
+    // permisos: centros de costo asignados y aprobadores propios.
+    permisos_centrosdecosto: 'permProjects',
+    'permisos centros de costo': 'permProjects',
+    'centros de costo': 'permProjects',
+    'centro de costo': 'permProjects',
+    permisos_centrodecostoprincipal: 'permPrimaryProject',
+    'permisos centro de costo principal': 'permPrimaryProject',
+    'centro de costo principal': 'permPrimaryProject',
+    permisos_aprobadorn1: 'permApproversN1',
+    'permisos aprobador n1': 'permApproversN1',
+    'aprobador n1': 'permApproversN1',
+    'aprobador nivel 1': 'permApproversN1',
+    permisos_aprobadorn2: 'permApproversN2',
+    'permisos aprobador n2': 'permApproversN2',
+    'aprobador n2': 'permApproversN2',
+    'aprobador nivel 2': 'permApproversN2',
+  }
+
+  /** Separadores admitidos en las columnas de lista del Excel. */
+  private static readonly BULK_LIST_SEPARATOR = /[,;]/
+
+  /** Trocea una celda de lista ("A, B; C") en valores limpios. */
+  private splitBulkList(value: string): string[] {
+    return value
+      .split(UserService.BULK_LIST_SEPARATOR)
+      .map(v => v.trim())
+      .filter(Boolean)
   }
 
   private mapBulkRow(raw: Record<string, any>): Record<string, string> {
@@ -1385,33 +1452,184 @@ export class UserService {
     }
   }
 
-  async bulkImportUsers(
-    rawRows: Array<Record<string, any>>,
-    clientId: string
-  ): Promise<{
-    created: number
-    skipped: string[]
-    errors: string[]
-    credentials: { name: string; email: string; temporaryPassword: string }[]
-  }> {
-    let created = 0
-    const skipped: string[] = []
-    const errors: string[] = []
-    const credentials: {
-      name: string
-      email: string
-      temporaryPassword: string
-    }[] = []
+  /** Encabezados de la hoja "Usuarios" de la plantilla de carga masiva. */
+  static readonly BULK_TEMPLATE_HEADERS = [
+    'nombre',
+    'email',
+    'dni',
+    'tipoDocumento',
+    'codigoEmpleado',
+    'subcuenta14',
+    'area',
+    'cargo',
+    'telefono',
+    'direccion',
+    'rol',
+    'banco',
+    'numeroCuenta',
+    'cci',
+    'tipoCuenta',
+    'permisos_centrosDeCosto',
+    'permisos_centroDeCostoPrincipal',
+    'permisos_aprobadorN1',
+    'permisos_aprobadorN2',
+  ]
 
-    if (!clientId) {
-      return {
-        created,
-        skipped,
-        errors: ['No se pudo determinar la empresa destino'],
-        credentials,
+  /** Ancho de cada columna de la hoja "Colaboradores", en el mismo orden. */
+  static readonly BULK_TEMPLATE_WIDTHS = [
+    26, 30, 12, 14, 16, 14, 18, 20, 14, 28, 14, 12, 22, 24, 12, 28, 26, 30,
+    30,
+  ]
+
+  /**
+   * Filas de la plantilla de carga masiva con los colaboradores que la
+   * empresa YA tiene, en el mismo orden de columnas que espera el
+   * importador. Sirve para editar en bloque: se descarga, se cambian las
+   * columnas `permisos_*` y se vuelve a subir. Los centros de costo salen
+   * por código y los aprobadores por email, que es lo que el importador
+   * sabe resolver de vuelta.
+   */
+  async buildBulkTemplateData(clientId: string): Promise<{
+    rows: string[][]
+    costCenters: { code: string; name: string }[]
+  }> {
+    if (!clientId) return { rows: [], costCenters: [] }
+    const clientObjectId = new Types.ObjectId(clientId)
+    const users = await this.userModel
+      .find({ clientId: clientObjectId })
+      .populate('roleId', 'name')
+      .sort({ name: 1 })
+      .exec()
+
+    // Catálogo de la hoja de ayuda: lo que se puede poner en las columnas
+    // de centro de costo, con el mismo código que resuelve el importador.
+    const catalogo = await this.projectModel
+      .find({ clientId: clientObjectId, isActive: { $ne: false } })
+      .select('code name')
+      .sort({ code: 1 })
+      .exec()
+    const costCenters = catalogo.map(p => ({
+      code: p.code ?? '',
+      name: p.name ?? '',
+    }))
+    if (!users.length) return { rows: [], costCenters }
+
+    // Una sola consulta por catálogo para no resolver id por id.
+    const projectIds = new Set<string>()
+    const relatedUserIds = new Set<string>()
+    for (const u of users) {
+      for (const p of u.permissions?.projectIds ?? []) projectIds.add(String(p))
+      if (u.permissions?.primaryProjectId) {
+        projectIds.add(String(u.permissions.primaryProjectId))
+      }
+      for (const level of u.permissions?.approverLevels ?? []) {
+        for (const id of level.userIds ?? []) relatedUserIds.add(String(id))
       }
     }
+    const toObjectIds = (ids: Set<string>) =>
+      [...ids].filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id))
+
+    const projects = projectIds.size
+      ? await this.projectModel
+          .find({ _id: { $in: toObjectIds(projectIds) } })
+          .select('code name')
+          .exec()
+      : []
+    const projectLabel = new Map(
+      projects.map(p => [String(p._id), p.code || p.name])
+    )
+    const related = relatedUserIds.size
+      ? await this.userModel
+          .find({ _id: { $in: toObjectIds(relatedUserIds) } })
+          .select('email')
+          .exec()
+      : []
+    const emailById = new Map(related.map(u => [String(u._id), u.email]))
+
+    const labelOf = (id?: string) => (id && projectLabel.get(String(id))) || ''
+    const approversOf = (u: UserDocument, level: number) =>
+      (u.permissions?.approverLevels ?? [])
+        .find(l => l.level === level)
+        ?.userIds?.map(id => emailById.get(String(id)) ?? "")
+        .filter(Boolean)
+        .join(', ') ?? ''
+
+    const rows = users.map(u => [
+      u.name ?? '',
+      u.email ?? '',
+      u.dni ?? '',
+      u.documentType ?? '',
+      u.employeeCode ?? '',
+      u.subcuenta14 ?? '',
+      u.area ?? '',
+      u.cargo ?? '',
+      u.phone ?? '',
+      u.address ?? '',
+      ((u.roleId as unknown as { name?: string })?.name) ?? '',
+      u.bankAccount?.bankName ?? '',
+      u.bankAccount?.accountNumber ?? '',
+      u.bankAccount?.cci ?? '',
+      u.bankAccount?.accountType ?? '',
+      (u.permissions?.projectIds ?? [])
+        .map(id => labelOf(String(id)))
+        .filter(Boolean)
+        .join(', '),
+      labelOf(u.permissions?.primaryProjectId),
+      approversOf(u, 1),
+      approversOf(u, 2),
+    ])
+    return { rows, costCenters }
+  }
+
+  /**
+   * Carga masiva de colaboradores desde Excel — mismo patrón que la de órdenes
+   * de trabajo: la plantilla se descarga con los colaboradores que ya existen,
+   * se edita y se vuelve a subir. Una fila cuyo email ya está en la empresa
+   * ACTUALIZA sus permisos (centros de costo y aprobadores) en vez de fallar
+   * por duplicada; las filas nuevas crean al colaborador. El email es la llave.
+   *
+   * De un colaborador que ya existe solo se tocan las columnas `permisos_*`:
+   * nombre, DNI, banco y rol se siguen editando desde su ficha, para que una
+   * recarga del archivo no pise datos corregidos a mano.
+   *
+   * Con `opts.dryRun` no escribe nada: devuelve el mismo resultado (contadores
+   * y el plan fila por fila) para que el usuario vea qué se va a crear y qué se
+   * va a modificar ANTES de aceptar la carga.
+   */
+  async bulkImportUsers(
+    rawRows: Array<Record<string, any>>,
+    clientId: string,
+    opts: { dryRun?: boolean } = {}
+  ): Promise<IUserBulkImportResult> {
+    const dryRun = opts.dryRun === true
+    const result: IUserBulkImportResult = {
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      errors: [],
+      rows: [],
+      credentials: [],
+      dryRun,
+    }
+
+    const fallo = (row: number, email: string, reason: string) => {
+      result.errors.push({ row, reason })
+      result.rows.push({ row, email, accion: 'error', reason })
+    }
+
+    if (!clientId) {
+      result.errors.push({
+        row: 0,
+        reason: 'No se pudo determinar la empresa destino',
+      })
+      return result
+    }
     const clientObjectId = new Types.ObjectId(clientId)
+
+    // Etiquetas legibles para el plan de la previsualización: el usuario ve
+    // códigos de centro de costo y emails, no ObjectIds.
+    const projectLabelById = new Map<string, string>()
+    const emailById = new Map<string, string>()
 
     const allowedRoles = [
       'Colaborador',
@@ -1435,21 +1653,245 @@ export class UserService {
       return id
     }
 
-    const coordinatorCache = new Map<string, Types.ObjectId | null>()
-    const resolveCoordinator = async (
+    // Cache de usuarios por email: lo usan los aprobadores N1/N2 de las
+    // columnas de permisos.
+    const userByEmailCache = new Map<string, Types.ObjectId | null>()
+    const resolveUserByEmail = async (
       email: string
     ): Promise<Types.ObjectId | null> => {
       const key = email.toLowerCase()
-      if (coordinatorCache.has(key)) return coordinatorCache.get(key)!
+      if (userByEmailCache.has(key)) return userByEmailCache.get(key)!
       const u = await this.userModel
         .findOne({ email: key, clientId: clientObjectId })
         .select('_id')
         .exec()
       const id = u ? u._id : null
-      coordinatorCache.set(key, id)
+      userByEmailCache.set(key, id)
+      if (id) emailById.set(String(id), key)
       return id
     }
 
+    const labelProject = async (id?: string | null): Promise<string> => {
+      if (!id) return ''
+      const key = String(id)
+      const cached = projectLabelById.get(key)
+      if (cached !== undefined) return cached
+      const p = Types.ObjectId.isValid(key)
+        ? await this.projectModel
+            .findById(key)
+            .select('code name')
+            .exec()
+        : null
+      const label = p ? p.code || p.name || key : key
+      projectLabelById.set(key, label)
+      return label
+    }
+    const labelUser = async (id?: string | null): Promise<string> => {
+      if (!id) return ''
+      const key = String(id)
+      const cached = emailById.get(key)
+      if (cached !== undefined) return cached
+      const u = Types.ObjectId.isValid(key)
+        ? await this.userModel.findById(key).select('email').exec()
+        : null
+      const label = u?.email || key
+      emailById.set(key, label)
+      return label
+    }
+
+    // Centros de costo por código o por nombre: el Excel del cliente usa
+    // indistintamente uno u otro. Se cachean por texto normalizado.
+    const projectCache = new Map<string, string | null>()
+    const resolveProject = async (token: string): Promise<string | null> => {
+      const key = token.trim().toLowerCase()
+      if (!key) return null
+      if (projectCache.has(key)) return projectCache.get(key)!
+      const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const p = await this.projectModel
+        .findOne({
+          clientId: clientObjectId,
+          $or: [
+            { code: { $regex: `^${escaped}$`, $options: 'i' } },
+            { name: { $regex: `^${escaped}$`, $options: 'i' } },
+          ],
+        })
+        .select('code name')
+        .exec()
+      const id = p ? String(p._id) : null
+      projectCache.set(key, id)
+      if (p && id) projectLabelById.set(id, p.code || p.name || key)
+      return id
+    }
+
+    /**
+     * Traduce las columnas de permisos de la fila (centros de costo y
+     * aprobadores N1/N2) al bloque que persiste `permissions`. Devuelve
+     * `overrides: null` cuando la fila no trae ninguna de esas columnas, para
+     * distinguir "no lo toques" de "déjalo vacío". Un centro de costo o un
+     * email de aprobador inexistente es un ERROR de fila explícito: nunca se
+     * descarta en silencio, igual que en la carga masiva de centros de costo.
+     */
+    const buildPermissionOverrides = async (
+      row: Record<string, string>
+    ): Promise<{
+      overrides: BulkPermissionOverrides | null
+      error: string | null
+    }> => {
+      const raw = {
+        projects: row.permProjects || '',
+        primary: row.permPrimaryProject || '',
+        n1: row.permApproversN1 || '',
+        n2: row.permApproversN2 || '',
+      }
+      if (!raw.projects && !raw.primary && !raw.n1 && !raw.n2) {
+        return { overrides: null, error: null }
+      }
+
+      const overrides: BulkPermissionOverrides = {}
+      const projectIds: string[] = []
+      for (const token of this.splitBulkList(raw.projects)) {
+        const id = await resolveProject(token)
+        if (!id) {
+          return {
+            overrides: null,
+            error: `Centro de costo "${token}" no encontrado en esta empresa`,
+          }
+        }
+        if (!projectIds.includes(id)) projectIds.push(id)
+      }
+
+      if (raw.primary) {
+        const primaryId = await resolveProject(raw.primary)
+        if (!primaryId) {
+          return {
+            overrides: null,
+            error: `Centro de costo principal "${raw.primary}" no encontrado en esta empresa`,
+          }
+        }
+        // El principal siempre forma parte de los asignados: el schema pide
+        // que primaryProjectId esté contenido en projectIds.
+        if (!projectIds.includes(primaryId)) projectIds.push(primaryId)
+        overrides.primaryProjectId = primaryId
+      }
+      if (raw.projects || raw.primary) overrides.projectIds = projectIds
+
+      const approverLevels: ApproverLevel[] = []
+      const levels: [number, string][] = [
+        [1, raw.n1],
+        [2, raw.n2],
+      ]
+      for (const [level, value] of levels) {
+        if (!value) continue
+        const userIds: Types.ObjectId[] = []
+        for (const approverEmail of this.splitBulkList(value)) {
+          const id = await resolveUserByEmail(approverEmail)
+          if (!id) {
+            return {
+              overrides: null,
+              error: `Aprobador N${level} "${approverEmail}" no encontrado en esta empresa`,
+            }
+          }
+          if (!userIds.some(u => u.equals(id))) userIds.push(id)
+        }
+        if (userIds.length) approverLevels.push({ level, userIds })
+      }
+      // Un nivel sin aprobadores no se persiste (regla 1.6). Si ambas
+      // columnas vienen presentes pero vacías, se limpian los niveles
+      // propios y la cadena vuelve a la del centro de costo principal.
+      if (raw.n1 || raw.n2) overrides.approverLevels = approverLevels
+
+      return { overrides, error: null }
+    }
+
+    /**
+     * Bloque de permisos definitivo para un colaborador que ya existe. El
+     * archivo solo tiene columnas N1 y N2, así que los niveles superiores
+     * que ya tuviera configurados se conservan: una carga masiva no puede
+     * borrar en silencio lo que no sabe expresar.
+     */
+    const combinarPermisos = (
+      actuales: Record<string, any>,
+      overrides: BulkPermissionOverrides
+    ): Record<string, any> => {
+      const combinados: Record<string, any> = { ...actuales, ...overrides }
+      if (overrides.approverLevels) {
+        const superiores = (actuales.approverLevels ?? []).filter(
+          (l: ApproverLevel) => l.level > 2
+        )
+        combinados.approverLevels = [
+          ...overrides.approverLevels,
+          ...superiores,
+        ].sort((a, b) => a.level - b.level)
+      }
+      return combinados
+    }
+
+    /** Etiquetas de una lista de centros de costo, para el detalle del plan. */
+    const etiquetasProyectos = async (ids: unknown[]): Promise<string> => {
+      const labels: string[] = []
+      for (const id of ids ?? []) {
+        const label = await labelProject(String(id))
+        if (label) labels.push(label)
+      }
+      return labels.join(', ')
+    }
+    const nivel = (levels: ApproverLevel[] | undefined, level: number) =>
+      (levels ?? []).find(l => l.level === level)?.userIds ?? []
+    const etiquetasAprobadores = async (ids: unknown[]): Promise<string> => {
+      const labels: string[] = []
+      for (const id of ids ?? []) {
+        const label = await labelUser(String(id))
+        if (label) labels.push(label)
+      }
+      return labels.join(', ')
+    }
+    const mismosIds = (a: unknown[] = [], b: unknown[] = []) => {
+      const norm = (list: unknown[]) => list.map(String).sort().join('|')
+      return norm(a) === norm(b)
+    }
+
+    /**
+     * Qué le cambia el archivo a un colaborador que ya existe. Lista vacía =
+     * la fila no le cambia nada, y entonces cuenta como "sin cambios".
+     */
+    const describirCambios = async (
+      actuales: Record<string, any>,
+      overrides: BulkPermissionOverrides
+    ): Promise<string[]> => {
+      const detalles: string[] = []
+      if (
+        overrides.projectIds &&
+        !mismosIds(actuales.projectIds ?? [], overrides.projectIds)
+      ) {
+        const antes = await etiquetasProyectos(actuales.projectIds ?? [])
+        const despues = await etiquetasProyectos(overrides.projectIds)
+        detalles.push(`Centros de costo: ${antes || '—'} → ${despues || '—'}`)
+      }
+      if (
+        overrides.primaryProjectId &&
+        String(actuales.primaryProjectId ?? '') !==
+          String(overrides.primaryProjectId)
+      ) {
+        const antes = await labelProject(actuales.primaryProjectId)
+        const despues = await labelProject(overrides.primaryProjectId)
+        detalles.push(`Principal: ${antes || '—'} → ${despues || '—'}`)
+      }
+      if (overrides.approverLevels) {
+        for (const level of [1, 2]) {
+          const antesIds = nivel(actuales.approverLevels, level)
+          const despuesIds = nivel(overrides.approverLevels, level)
+          if (mismosIds(antesIds, despuesIds)) continue
+          const antes = await etiquetasAprobadores(antesIds)
+          const despues = await etiquetasAprobadores(despuesIds)
+          detalles.push(
+            `Aprobadores N${level}: ${antes || '—'} → ${despues || '—'}`
+          )
+        }
+      }
+      return detalles
+    }
+
+    const seenEmails = new Set<string>()
     let rowNumber = 1
     for (const raw of rawRows) {
       rowNumber++
@@ -1457,18 +1899,63 @@ export class UserService {
       const email = (row.email || '').toLowerCase()
       try {
         if (!email) {
-          errors.push(`Fila ${rowNumber}: sin email`)
+          fallo(rowNumber, '', 'La fila no trae email')
           continue
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-          errors.push(`Fila ${rowNumber} (${email}): email inválido`)
+          fallo(rowNumber, email, 'Email inválido')
           continue
         }
+        if (seenEmails.has(email)) {
+          fallo(rowNumber, email, 'Email repetido en este mismo archivo')
+          continue
+        }
+
+        const { overrides: permissionOverrides, error: permissionError } =
+          await buildPermissionOverrides(row)
+        if (permissionError) {
+          fallo(rowNumber, email, permissionError)
+          continue
+        }
+
         const exists = await this.userModel
           .findOne({ email, clientId: clientObjectId })
           .exec()
         if (exists) {
-          skipped.push(email)
+          seenEmails.add(email)
+          const actuales =
+            ((exists.toObject() as Record<string, any>).permissions as
+              | Record<string, any>
+              | undefined) ?? {}
+          const detalles = permissionOverrides
+            ? await describirCambios(actuales, permissionOverrides)
+            : []
+          if (!permissionOverrides || !detalles.length) {
+            result.unchanged++
+            result.rows.push({
+              row: rowNumber,
+              email,
+              accion: 'sin-cambios',
+              detalle: permissionOverrides
+                ? 'Ya tiene estos mismos permisos'
+                : 'Ya existe y la fila no trae columnas de permisos',
+            })
+            continue
+          }
+          if (!dryRun) {
+            exists.set(
+              'permissions',
+              combinarPermisos(actuales, permissionOverrides)
+            )
+            await exists.save()
+          }
+          result.updated++
+          result.rows.push({
+            row: rowNumber,
+            email,
+            accion: 'actualizar',
+            detalle: detalles.join(' · '),
+          })
           continue
         }
 
@@ -1478,22 +1965,8 @@ export class UserService {
           ) || 'Colaborador'
         const roleId = await resolveRole(roleName)
         if (!roleId) {
-          errors.push(
-            `Fila ${rowNumber} (${email}): rol "${roleName}" no existe`
-          )
+          fallo(rowNumber, email, `El rol "${roleName}" no existe`)
           continue
-        }
-
-        let coordinatorId: Types.ObjectId | undefined
-        if (row.coordinatorEmail) {
-          const coordId = await resolveCoordinator(row.coordinatorEmail)
-          if (!coordId) {
-            errors.push(
-              `Fila ${rowNumber} (${email}): coordinador "${row.coordinatorEmail}" no encontrado en la empresa`
-            )
-            continue
-          }
-          coordinatorId = coordId
         }
 
         const accountType =
@@ -1519,42 +1992,56 @@ export class UserService {
           ? (row.documentType.toUpperCase() as 'R' | 'L' | 'P' | 'E' | 'M')
           : undefined
 
-        const temporaryPassword =
-          Math.random().toString(36).slice(-8) +
-          Math.random().toString(36).slice(-4).toUpperCase()
-        const hashed = await bcrypt.hash(temporaryPassword, 10)
-
         const name = row.name || email
-        await this.userModel.create({
-          name,
-          email,
-          password: hashed,
-          roleId,
-          clientId: clientObjectId,
-          mustChangePassword: true,
-          permissions: this.defaultPermissionsForRole(roleName),
-          ...(coordinatorId
-            ? { coordinatorId, approverIds: [coordinatorId] }
-            : {}),
-          ...(row.dni ? { dni: row.dni } : {}),
-          ...(documentType ? { documentType } : {}),
-          ...(row.subcuenta14 ? { subcuenta14: row.subcuenta14 } : {}),
-          ...(row.employeeCode ? { employeeCode: row.employeeCode } : {}),
-          ...(row.area ? { area: row.area } : {}),
-          ...(row.cargo ? { cargo: row.cargo } : {}),
-          ...(row.address ? { address: row.address } : {}),
-          ...(row.phone ? { phone: row.phone } : {}),
-          ...(bankAccount ? { bankAccount } : {}),
-        })
-        credentials.push({ name, email, temporaryPassword })
-        created++
-      } catch (e: any) {
-        errors.push(
-          `Fila ${rowNumber} (${email || 'sin email'}): ${e?.message || 'error desconocido'}`
+        if (!dryRun) {
+          const temporaryPassword =
+            Math.random().toString(36).slice(-8) +
+            Math.random().toString(36).slice(-4).toUpperCase()
+          const hashed = await bcrypt.hash(temporaryPassword, 10)
+          await this.userModel.create({
+            name,
+            email,
+            password: hashed,
+            roleId,
+            clientId: clientObjectId,
+            mustChangePassword: true,
+            permissions: {
+              ...this.defaultPermissionsForRole(roleName),
+              ...(permissionOverrides ?? {}),
+            },
+            ...(row.dni ? { dni: row.dni } : {}),
+            ...(documentType ? { documentType } : {}),
+            ...(row.subcuenta14 ? { subcuenta14: row.subcuenta14 } : {}),
+            ...(row.employeeCode ? { employeeCode: row.employeeCode } : {}),
+            ...(row.area ? { area: row.area } : {}),
+            ...(row.cargo ? { cargo: row.cargo } : {}),
+            ...(row.address ? { address: row.address } : {}),
+            ...(row.phone ? { phone: row.phone } : {}),
+            ...(bankAccount ? { bankAccount } : {}),
+          })
+          result.credentials.push({ name, email, temporaryPassword })
+        }
+        seenEmails.add(email)
+        result.created++
+        const centros = await etiquetasProyectos(
+          permissionOverrides?.projectIds ?? []
         )
+        result.rows.push({
+          row: rowNumber,
+          email,
+          accion: 'crear',
+          detalle: [
+            `Rol: ${roleName}`,
+            centros ? `Centros de costo: ${centros}` : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        })
+      } catch (e: any) {
+        fallo(rowNumber, email, e?.message || 'Error desconocido')
       }
     }
-    return { created, skipped, errors, credentials }
+    return result
   }
 
   async findAdminsByClient(clientId: string): Promise<UserDocument[]> {

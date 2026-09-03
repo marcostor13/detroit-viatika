@@ -13,7 +13,7 @@
     </button>
     <div>
       <h1 class="text-2xl font-bold text-secondary">Carga masiva de Colaboradores</h1>
-      <p class="text-sm text-tertiary mt-0.5">Importa usuarios desde un archivo Excel</p>
+      <p class="text-sm text-tertiary mt-0.5">Descarga el Excel con los colaboradores actuales, edítalo y vuelve a subirlo</p>
     </div>
   </div>
 
@@ -24,9 +24,13 @@
     <div class="flex flex-col gap-3">
       <div class="flex items-center gap-2">
         <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
-        <h3 class="text-sm font-semibold text-secondary">Descarga la plantilla</h3>
+        <h3 class="text-sm font-semibold text-secondary">Descarga el Excel</h3>
       </div>
       <div class="text-xs text-tertiary pl-8 flex flex-col gap-1.5">
+        <p>
+          El archivo baja con los <span class="font-medium text-secondary">colaboradores que ya existen</span> y sus permisos
+          actuales. Edita las filas que quieras y agrega al final las de los colaboradores nuevos.
+        </p>
         <p>
           Columnas obligatorias:
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">nombre</span>,
@@ -41,28 +45,40 @@
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">telefono</span>,
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">direccion</span>,
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">rol</span>,
-          <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">emailCoordinador</span>,
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">banco</span>,
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">numeroCuenta</span>,
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">cci</span>,
           <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">tipoCuenta</span>
         </p>
         <p>
-          El <span class="font-medium text-secondary">rol</span> admite: Colaborador, Coordinador, Contabilidad, Tesoreria o Administrador (por defecto Colaborador).
-          La contraseña se genera automáticamente; podrás descargarla al finalizar.
+          Columnas de <span class="font-medium text-secondary">permisos</span>:
+          <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">permisos_centrosDeCosto</span>,
+          <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">permisos_centroDeCostoPrincipal</span>,
+          <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">permisos_aprobadorN1</span>,
+          <span class="font-mono bg-background px-1.5 py-0.5 rounded text-secondary">permisos_aprobadorN2</span>
+        </p>
+        <p>
+          Los centros de costo van por <span class="font-medium text-secondary">código o nombre</span> y los aprobadores por
+          <span class="font-medium text-secondary">email</span>; varios en la misma celda separados por coma. El resto de permisos
+          (módulos y categorías) se sigue asignando por rol.
+        </p>
+        <p>
+          De un colaborador que <span class="font-medium text-secondary">ya existe</span> solo se aplican las columnas
+          <span class="font-mono text-secondary">permisos_*</span>: su nombre, DNI, banco y rol se editan desde su ficha.
+          En los nuevos, la contraseña se genera automáticamente y podrás descargarla al finalizar.
         </p>
       </div>
       <div class="pl-8">
-        <button
-          type="button"
-          (click)="downloadTemplate()"
-          class="inline-flex items-center gap-2 px-4 py-2 text-sm rounded-xl border border-tertiary/30 text-secondary hover:bg-background transition-colors"
+        <app-button
+          variant="secondary"
+          size="md"
+          label="Descargar Excel"
+          loadingLabel="Preparando..."
+          [loading]="downloadingTemplate()"
+          (clicked)="downloadTemplate()"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-          </svg>
-          Descargar plantilla
-        </button>
+          <app-icon name="download" size="sm" />
+        </app-button>
       </div>
     </div>
 
@@ -72,60 +88,60 @@
     <div class="flex flex-col gap-3">
       <div class="flex items-center gap-2">
         <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
-        <h3 class="text-sm font-semibold text-secondary">Sube el archivo completado</h3>
+        <h3 class="text-sm font-semibold text-secondary">Sube el archivo editado</h3>
       </div>
-      <div class="pl-8">
+      <div class="pl-8 flex flex-col gap-2">
+        <p class="text-xs text-tertiary">
+          Al elegir el archivo se muestra primero un resumen de lo que hará. Nada se guarda hasta que lo aceptes.
+        </p>
         <input
           type="file"
           accept=".xlsx,.xls"
           (change)="onFileChange($event)"
           class="block w-full text-sm text-tertiary file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
         />
-        @if (file) {
-          <p class="text-xs text-tertiary mt-2">Archivo seleccionado: <span class="font-medium text-secondary">{{ file.name }}</span></p>
+        @if (file()) {
+          <div class="flex items-center gap-3 flex-wrap">
+            <p class="text-xs text-tertiary">
+              Archivo seleccionado: <span class="font-medium text-secondary">{{ file()!.name }}</span>
+            </p>
+            @if (!importPreview()) {
+              <app-button
+                variant="secondary"
+                size="sm"
+                label="Revisar de nuevo"
+                loadingLabel="Revisando..."
+                [loading]="previewing()"
+                (clicked)="previewImport()"
+              />
+            }
+          </div>
         }
       </div>
     </div>
 
-    <div class="border-t border-tertiary/10"></div>
-
-    <!-- Step 3 -->
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-2">
-        <span class="w-6 h-6 rounded-full bg-primary text-white text-xs font-bold flex items-center justify-center shrink-0">3</span>
-        <h3 class="text-sm font-semibold text-secondary">Ejecuta la importación</h3>
-      </div>
-      <div class="pl-8">
-        <app-button
-          [label]="loading ? 'Importando...' : 'Importar colaboradores'"
-          variant="primary"
-          size="md"
-          [disabled]="!file || loading"
-          (clicked)="import()"
-        />
-      </div>
-    </div>
-
-    <!-- Result -->
-    @if (result) {
+    <!-- Resultado de la carga real -->
+    @if (result(); as res) {
       <div class="rounded-xl bg-background border border-tertiary/20 p-4 flex flex-col gap-1.5">
         <p class="text-sm font-semibold text-secondary">Resultado de la importación</p>
-        <p class="text-sm text-green-700">Creados: <span class="font-bold">{{ result.created }}</span></p>
-        @if (result.skipped.length) {
-          <p class="text-sm text-amber-700">Omitidos (ya existen): {{ result.skipped.join(', ') }}</p>
-        }
-        @if (result.errors.length) {
+        <p class="text-sm text-secondary">
+          {{ res.created }} creado(s) · {{ res.updated }} con permisos actualizados
+          @if (res.unchanged) {
+            · {{ res.unchanged }} sin cambios
+          }
+        </p>
+        @if (res.errors.length) {
           <div class="text-sm text-red-700">
-            <p class="font-medium">Errores:</p>
-            <ul class="list-disc list-inside mt-1 space-y-0.5">
-              @for (err of result.errors; track $index) {
-                <li class="text-xs">{{ err }}</li>
+            <p class="font-medium">{{ res.errors.length }} fila(s) con error:</p>
+            <ul class="list-disc list-inside mt-1 space-y-0.5 max-h-32 overflow-y-auto">
+              @for (err of res.errors; track $index) {
+                <li class="text-xs">Fila {{ err.row }}: {{ err.reason }}</li>
               }
             </ul>
           </div>
         }
 
-        @if (result.credentials.length) {
+        @if (res.credentials.length) {
           <div class="mt-2 flex flex-col gap-2">
             <div class="flex items-center justify-between">
               <p class="text-sm font-medium text-secondary">Credenciales generadas</p>
@@ -151,7 +167,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  @for (cred of result.credentials; track cred.email) {
+                  @for (cred of res.credentials; track cred.email) {
                     <tr class="border-t border-tertiary/10">
                       <td class="px-3 py-1.5 text-secondary">{{ cred.name }}</td>
                       <td class="px-3 py-1.5 text-secondary">{{ cred.email }}</td>
@@ -164,7 +180,7 @@
           </div>
         }
 
-        @if (result.created > 0 && !result.errors.length) {
+        @if (!res.errors.length) {
           <button type="button" (click)="back()" class="mt-2 text-sm text-primary font-medium hover:underline w-fit">
             Volver al listado
           </button>
@@ -173,5 +189,124 @@
     }
 
   </div>
+
+  <!-- Revisión de la carga masiva: nada se ha guardado hasta aceptar. -->
+  <app-modal
+    [open]="importPreview() !== null"
+    title="Revisar la carga masiva"
+    size="xl"
+    (closed)="cancelImport()"
+  >
+    @if (importPreview(); as plan) {
+      <p class="text-sm text-tertiary mb-4">
+        Todavía no se ha guardado nada. Esto es lo que hará el archivo:
+      </p>
+
+      <!-- Los contadores son del archivo completo y además filtran la tabla. -->
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        @for (chip of chipsAccion; track chip.accion) {
+          <button
+            type="button"
+            class="rounded-full transition focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+            [class.ring-2]="filtroAccion() === chip.accion"
+            [class.ring-primary]="filtroAccion() === chip.accion"
+            [class.opacity-60]="filtroAccion() !== null && filtroAccion() !== chip.accion"
+            [disabled]="!conteoAccion(chip.accion)"
+            [attr.aria-pressed]="filtroAccion() === chip.accion"
+            (click)="toggleFiltroAccion(chip.accion)"
+          >
+            <app-badge [variant]="accionVariant(chip.accion)" [dot]="true">
+              {{ conteoAccion(chip.accion) }} {{ chip.label }}
+            </app-badge>
+          </button>
+        }
+        @if (hayFiltroActivo()) {
+          <button
+            type="button"
+            class="text-xs text-tertiary hover:text-primary underline ml-1"
+            (click)="limpiarFiltrosPreview()"
+          >
+            Limpiar filtros
+          </button>
+        }
+      </div>
+
+      <div class="relative mb-3">
+        <app-icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
+        <input
+          type="text"
+          [ngModel]="busquedaPreview()"
+          (ngModelChange)="busquedaPreview.set($event)"
+          placeholder="Buscar por n.º de fila, email, detalle o motivo del error..."
+          class="w-full pl-9 pr-3 py-2 border border-tertiary/30 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+        />
+      </div>
+
+      @if (plan.errors.length) {
+        <div class="bg-error/10 border border-error/20 rounded-lg p-3 mb-4">
+          <p class="text-xs text-error-ink">
+            Las filas con error no se cargan; el resto del archivo sí. Corrígelas en el Excel
+            y vuelve a subirlo si las necesitas.
+          </p>
+        </div>
+      }
+
+      @if (filasVisibles().length) {
+        <div class="max-h-[45vh] overflow-y-auto border border-tertiary/20 rounded-lg">
+          <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="sticky top-0 bg-quaternary border-b border-tertiary/20">
+              <tr class="text-left text-xs text-tertiary">
+                <th class="px-3 py-2 font-medium w-16">Fila</th>
+                <th class="px-3 py-2 font-medium w-32">Acción</th>
+                <th class="px-3 py-2 font-medium">Colaborador</th>
+                <th class="px-3 py-2 font-medium">Detalle</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (fila of filasVisibles(); track fila.row) {
+                <tr class="border-b border-tertiary/10 last:border-0">
+                  <td class="px-3 py-2 text-tertiary">{{ fila.row }}</td>
+                  <td class="px-3 py-2">
+                    <app-badge [variant]="accionVariant(fila.accion)" size="sm">
+                      {{ accionLabel(fila.accion) }}
+                    </app-badge>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-secondary">{{ fila.email || '—' }}</td>
+                  <td class="px-3 py-2" [class.text-error]="fila.accion === 'error'">
+                    {{ fila.reason || fila.detalle || '—' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          </div>
+        </div>
+        <p class="text-xs text-tertiary mt-2">
+          Mostrando {{ filasVisibles().length }} de {{ plan.rows.length }} fila(s).
+          @if (filasOcultas()) {
+            Hay {{ filasOcultas() }} más que coinciden: filtra o busca para acotarlas.
+          }
+        </p>
+      } @else if (hayFiltroActivo()) {
+        <p class="text-sm text-tertiary">Ninguna fila coincide con el filtro.</p>
+      } @else {
+        <p class="text-sm text-tertiary">El archivo no tiene filas para procesar.</p>
+      }
+
+      <div class="flex justify-end gap-2 mt-6">
+        <app-button variant="secondary" label="Cancelar" size="md" (clicked)="cancelImport()" />
+        <app-button
+          variant="primary"
+          size="md"
+          label="Confirmar carga"
+          loadingLabel="Cargando..."
+          [loading]="importing()"
+          [disabled]="!puedeConfirmarImport"
+          (clicked)="confirmImport()"
+        />
+      </div>
+    }
+  </app-modal>
 
 </div>

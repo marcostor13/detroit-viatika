@@ -17,6 +17,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
+import * as ExcelJS from 'exceljs'
 import { UserService } from './user.service'
 import { AuthGuard } from '@nestjs/passport'
 import { RolesGuard } from '../auth/guards/roles.guard'
@@ -384,9 +385,15 @@ export class UserController {
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD)
   @Post('bulk-import')
   @UseInterceptors(FileInterceptor('file'))
+  /**
+   * Sube el Excel de colaboradores. Con `dryRun` (lo que manda el front al
+   * elegir el archivo) no escribe nada: devuelve el plan — qué se crea, qué
+   * permisos se modifican y qué filas fallan — para que el usuario lo acepte
+   * antes de la carga real. Mismo patrón que órdenes de trabajo.
+   */
   async bulkImport(
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: { clientId: string },
+    @Body() body: { clientId: string; dryRun?: string | boolean },
     @Request() req: any
   ) {
     if (!file) throw new Error('No se recibió archivo')
@@ -401,95 +408,168 @@ export class UserController {
       role === ROLES.SUPER_ADMIN
         ? body.clientId || req.user?.clientId
         : req.user?.clientId
-    const result = await this.userService.bulkImportUsers(rows, clientId)
-    this.auditLogService.log({
-      userId: req.user._id || req.user.sub,
-      userName: req.user.name || req.user.email,
-      action: 'bulk_import_users',
-      module: 'usuarios',
-      details: `Creados: ${result.created}, Omitidos: ${result.skipped.length}, Errores: ${result.errors.length}`,
-      clientId,
+    // El multipart llega como texto, así que 'true' vale tanto como true.
+    const dryRun = body.dryRun === true || body.dryRun === 'true'
+    const result = await this.userService.bulkImportUsers(rows, clientId, {
+      dryRun,
     })
+    // Una previsualización no cambió nada: no hay nada que auditar.
+    if (!dryRun) {
+      this.auditLogService.log({
+        userId: req.user._id || req.user.sub,
+        userName: req.user.name || req.user.email,
+        action: 'bulk_import_users',
+        module: 'usuarios',
+        details: `Creados: ${result.created}, Actualizados: ${result.updated}, Sin cambios: ${result.unchanged}, Errores: ${result.errors.length}`,
+        clientId,
+      })
+    }
     return result
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CONTABILIDAD)
   @Get('bulk-import/template')
+  /**
+   * Excel de carga masiva de colaboradores, con el mismo formato que el de
+   * órdenes de trabajo: encabezado destacado, anchos de columna, una hoja de
+   * instrucciones y el catálogo de centros de costo a mano.
+   *
+   * Baja con los colaboradores que la empresa YA tiene y sus permisos actuales,
+   * para editarlo y volver a subirlo. Solo cuando todavía no hay ninguno se
+   * entrega la fila de ejemplo.
+   */
   async downloadTemplate(@Request() req: any) {
-    const xlsx = await import('xlsx')
-    const ws = xlsx.utils.aoa_to_sheet([
+    const { rows, costCenters } = await this.userService.buildBulkTemplateData(
+      req.user?.clientId
+    )
+    const exampleRow = [
+      'Juan Pérez',
+      'juan@empresa.com',
+      '12345678',
+      'L',
+      'EMP-001',
+      '',
+      'Operaciones',
+      'Analista',
+      '999888777',
+      'Av. Siempre Viva 123',
+      'Colaborador',
+      'BCP',
+      '1912345678901',
+      '00219112345678901234',
+      'ahorros',
+      costCenters[0]?.code || 'CC-001',
+      costCenters[0]?.code || 'CC-001',
+      'jefe@empresa.com',
+      'gerente@empresa.com',
+    ]
+
+    const workbook = new ExcelJS.Workbook()
+    workbook.creator = 'Viatika'
+
+    const sheet = workbook.addWorksheet('Colaboradores')
+    sheet.addRow(UserService.BULK_TEMPLATE_HEADERS)
+    const headerRow = sheet.getRow(1)
+    headerRow.eachCell(cell => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E3A5F' },
+      }
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 }
+      cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    })
+    headerRow.height = 22
+    sheet.columns = UserService.BULK_TEMPLATE_HEADERS.map((key, i) => ({
+      key,
+      width: UserService.BULK_TEMPLATE_WIDTHS[i] ?? 20,
+    }))
+    // La cabecera se queda fija al desplazarse: son 20 columnas.
+    sheet.views = [{ state: 'frozen', xSplit: 2, ySplit: 1 }]
+
+    for (const fila of rows.length ? rows : [exampleRow]) sheet.addRow(fila)
+    if (!rows.length) {
+      sheet.getRow(2).font = { italic: true, color: { argb: 'FF888888' } }
+    }
+
+    const instrSheet = workbook.addWorksheet('Instrucciones')
+    instrSheet.addRow(['Campo', 'Requerido', 'Descripción'])
+    instrSheet.getRow(1).font = { bold: true }
+    const instrucciones: [string, string, string][] = [
+      ['nombre', 'Sí', 'Nombre completo del colaborador.'],
+      ['email', 'Sí', 'Único por empresa. Es la llave: si ya existe, la fila actualiza sus permisos en vez de crear a nadie.'],
+      ['dni', 'No', 'Número de documento.'],
+      ['tipoDocumento', 'No', 'R=RUC, L=DNI, P=Pasaporte, E=C.Ext., M=C.Mil. Por defecto: L (DNI).'],
+      ['codigoEmpleado', 'No', 'Código del colaborador en planilla.'],
+      ['subcuenta14', 'No', 'Subcuenta contable 14 (asientos Contanet). Si va vacía, se usa el DNI.'],
+      ['area', 'No', 'Área organizacional.'],
+      ['cargo', 'No', 'Cargo del colaborador.'],
+      ['telefono', 'No', 'Teléfono de contacto.'],
+      ['direccion', 'No', 'Dirección del colaborador.'],
+      ['rol', 'No', 'Colaborador, Coordinador, Contabilidad, Tesoreria o Administrador. Por defecto: Colaborador.'],
+      ['banco', 'No', 'Banco de la cuenta de abono.'],
+      ['numeroCuenta', 'No', 'Número de cuenta del banco.'],
+      ['cci', 'No', 'Código de cuenta interbancario.'],
+      ['tipoCuenta', 'No', 'ahorros o corriente.'],
       [
-        'nombre',
-        'email',
-        'dni',
-        'tipoDocumento',
-        'codigoEmpleado',
-        'subcuenta14',
-        'area',
-        'cargo',
-        'telefono',
-        'direccion',
-        'rol',
-        'emailCoordinador',
-        'banco',
-        'numeroCuenta',
-        'cci',
-        'tipoCuenta',
+        'permisos_centrosDeCosto',
+        'No',
+        'Centros de costo asignados: código o nombre, varios separados por coma ("123, 223, 423"). Ver la hoja "Centros de Costo Disponibles".',
       ],
       [
-        'Juan Pérez',
-        'juan@empresa.com',
-        '12345678',
-        'L',
-        'EMP-001',
-        '',
-        'Operaciones',
-        'Analista',
-        '999888777',
-        'Av. Siempre Viva 123',
-        'Colaborador',
-        'jefe@empresa.com',
-        'BCP',
-        '1912345678901',
-        '00219112345678901234',
-        'ahorros',
+        'permisos_centroDeCostoPrincipal',
+        'No',
+        'Cuál de ellos es el principal. Si no está en la lista anterior se agrega solo. Vacío = se usa el primero.',
       ],
+      [
+        'permisos_aprobadorN1',
+        'No',
+        'Aprobadores propios de Nivel 1: email(s) de usuarios ya existentes, separados por coma. Sustituyen a los del centro de costo principal.',
+      ],
+      [
+        'permisos_aprobadorN2',
+        'No',
+        'Aprobadores propios de Nivel 2, mismo formato que N1. Las dos columnas vacías = se usan los aprobadores del centro de costo.',
+      ],
+    ]
+    for (const fila of instrucciones) instrSheet.addRow(fila)
+    instrSheet.columns = [
+      { key: 'Campo', width: 32 },
+      { key: 'Requerido', width: 12 },
+      { key: 'Descripción', width: 90 },
+    ]
+    instrSheet.addRow([])
+    instrSheet.addRow(['Cómo funciona la carga:']).font = { bold: true }
+    instrSheet.addRow([
+      'El archivo baja con los colaboradores que ya existen. Al subirlo, las filas cuyo email ya está en la empresa ACTUALIZAN sus permisos y las filas nuevas CREAN al colaborador.',
     ])
-    const help = xlsx.utils.aoa_to_sheet([
-      ['Campo', 'Detalle'],
-      ['nombre', 'Obligatorio'],
-      ['email', 'Obligatorio. Único por empresa'],
-      [
-        'tipoDocumento',
-        'R=RUC, L=DNI, P=Pasaporte, E=C.Ext., M=C.Mil. Por defecto: L (DNI)',
-      ],
-      [
-        'subcuenta14',
-        'Subcuenta contable 14 del colaborador (asientos Contanet). Si vacío, se usa el DNI',
-      ],
-      [
-        'rol',
-        'Colaborador, Coordinador, Contabilidad o Administrador. Por defecto: Colaborador',
-      ],
-      [
-        'emailCoordinador',
-        'Email de un usuario ya existente que aprobará sus solicitudes de fondos (opcional)',
-      ],
-      ['tipoCuenta', 'ahorros o corriente'],
-      [
-        'Contraseña',
-        'Se genera automáticamente. Se mostrará al finalizar la importación',
-      ],
-      ['Permisos', 'Se asignan automáticamente según el rol'],
+    instrSheet.addRow([
+      'De un colaborador que ya existe solo se aplican las columnas permisos_*: nombre, DNI, banco y rol se editan desde su ficha.',
     ])
-    const wb = xlsx.utils.book_new()
-    xlsx.utils.book_append_sheet(wb, ws, 'Usuarios')
-    xlsx.utils.book_append_sheet(wb, help, 'Instrucciones')
-    const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    instrSheet.addRow([
+      'Antes de guardar nada se muestra en pantalla qué se crea y qué se modifica, para aceptarlo.',
+    ])
+    instrSheet.addRow([
+      'Si una fila falla (centro de costo o aprobador inexistente, email repetido), solo se reporta esa fila; el resto del archivo se procesa igual.',
+    ])
+    instrSheet.addRow([
+      'La contraseña de los colaboradores nuevos se genera automáticamente y se descarga al terminar la carga.',
+    ])
+
+    const codesSheet = workbook.addWorksheet('Centros de Costo Disponibles')
+    codesSheet.addRow(['Código', 'Nombre'])
+    codesSheet.getRow(1).font = { bold: true }
+    for (const cc of costCenters) codesSheet.addRow([cc.code, cc.name])
+    codesSheet.columns = [
+      { key: 'Código', width: 20 },
+      { key: 'Nombre', width: 42 },
+    ]
+
+    const buffer = await workbook.xlsx.writeBuffer()
     return {
-      file: buffer.toString('base64'),
-      filename: 'plantilla_usuarios.xlsx',
+      file: Buffer.from(buffer).toString('base64'),
+      filename: 'colaboradores.xlsx',
     }
   }
 
