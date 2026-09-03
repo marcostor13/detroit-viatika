@@ -19,6 +19,7 @@ import {
   IDashboardResponse,
   IDashboardKpis,
   ILocationPoint,
+  INamedAmount,
 } from './services/dashboard.service';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { AdminUsersService } from '../admin-users/services/admin-users.service';
@@ -91,6 +92,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('otChart') otChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('collaboratorChart')
   collaboratorChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('typeChart') typeChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('locationChart')
   locationChartRef!: ElementRef<HTMLCanvasElement>;
 
@@ -175,67 +177,42 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private markersByPlace: Record<string, any> = {};
   private tweenHandles: Record<string, number> = {};
 
+  /**
+   * Paleta del dashboard. El primary de Detroit es rojo y llenaba los graficos
+   * de alarma donde no habia ninguna; el cliente pidio quitarlo y bajar el
+   * ruido de color. Queda una escala azul-pizarra con dos acentos apagados,
+   * legible en proyector y sin que ninguna barra grite mas que las demas.
+   */
   readonly palette = [
-    '#D31212',
-    '#3B82F6',
-    '#05CD99',
-    '#FFB547',
-    '#8B5CF6',
-    '#EC4899',
-    '#14B8A6',
-    '#9B1B22',
-    '#F59E0B',
-    '#6366F1',
+    '#1F3B5C',
+    '#3E7CA6',
+    '#4E8C7D',
+    '#7C93AC',
+    '#A98B4E',
+    '#5F6E7E',
+    '#6E96B8',
+    '#8AA79B',
   ];
 
-  /** Un color por serie de la evolución mensual. */
+  /** Las cuatro vias por las que se mueve el dinero, en la serie mensual. */
   readonly seriesColors = {
-    solicitudes: '#3B82F6',
-    directas: '#D31212',
-    cajaChica: '#05CD99',
+    solicitudes: '#1F3B5C',
+    rendicionSolicitud: '#3E7CA6',
+    directas: '#4E8C7D',
+    cajaChica: '#A98B4E',
   };
 
-  private readonly statusColorMap: Record<string, string> = {
-    approved: '#05CD99',
-    sunat_valid: '#05CD99',
-    paid: '#3B82F6',
-    settled: '#14B8A6',
-    pending: '#FFB547',
-    pending_l1: '#FFB547',
-    pending_l2: '#F59E0B',
-    rejected: '#D31212',
-    returned: '#8B5CF6',
-    cancelled: '#9CA3AF',
-    draft: '#CBD5E1',
-    solicited: '#6366F1',
-    open: '#94A3B8',
-    submitted: '#3B82F6',
-    pending_accounting: '#F59E0B',
-    pending_contabilidad: '#F59E0B',
-    viatico_approved: '#05CD99',
-    reimbursed: '#10B981',
-    closed: '#0EA5E9',
+  /**
+   * Corte cerrado / en proceso de los cuatro rankings. El tono solido lee como
+   * "esto ya no se mueve" y el claro como "todavia esta en camino".
+   */
+  readonly estadoColors = {
+    cerrado: '#1F3B5C',
+    enProceso: '#9BB3C9',
   };
 
-  private readonly reportStatusLabels: Record<string, string> = {
-    solicited: 'Solicitada',
-    open: 'Registrando gastos',
-    submitted: 'Enviada',
-    pending_accounting: 'Pend. contabilidad',
-    pending_contabilidad: 'Pend. contabilidad',
-    pending_l1: 'Pend. Nivel 1',
-    pending_l2: 'Pend. Nivel 2',
-    viatico_approved: 'Aprobada',
-    approved: 'Aprobada',
-    partially_paid: 'Pago parcial',
-    paid: 'Pagada',
-    settled: 'Liquidada',
-    returned: 'Devuelta',
-    rejected: 'Rechazada',
-    reimbursed: 'Reembolsada',
-    closed: 'Cerrada',
-    cancelled: 'Cancelada',
-  };
+  /** Escala del mapa, de menor a mayor gasto. */
+  readonly mapaColors = ['#9BB3C9', '#4E7FA6', '#1F3B5C'];
 
   private readonly expenseTypeLabels: Record<string, string> = {
     factura: 'Factura',
@@ -407,6 +384,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.renderProjectChart();
     this.renderOtChart();
     this.renderCollaboratorChart();
+    this.renderTypeChart();
     this.renderLocationChart();
     this.tryRenderMap();
   }
@@ -427,6 +405,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * de caja chica. Son las tres vías por las que sale dinero y el cliente las
    * quiere comparables mes a mes.
    */
+  /**
+   * Cuatro barras por mes. Solicitado y rendido van al lado porque la distancia
+   * entre los dos es lo que falta sustentar; directa y caja chica completan las
+   * otras dos vias por las que sale plata.
+   */
   private renderMonthlyChart() {
     const ref = this.monthlyChartRef?.nativeElement;
     if (!ref) return;
@@ -435,12 +418,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     const labels = series.map((s) => this.formatMonthLabel(s.month));
     const dataset = (
       label: string,
-      key: 'solicitudes' | 'directas' | 'cajaChica'
+      key: 'solicitudes' | 'rendicionSolicitud' | 'directas' | 'cajaChica'
     ) => ({
       label,
       data: series.map((s) => s[key]),
       backgroundColor: this.seriesColors[key],
-      borderRadius: 6,
+      borderRadius: 4,
     });
 
     this.charts['monthly'] = new Chart(ref, {
@@ -448,8 +431,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       data: {
         labels,
         datasets: [
-          dataset('Solicitudes de fondos', 'solicitudes'),
-          dataset('Rendiciones directas', 'directas'),
+          dataset('Solicitud de fondos', 'solicitudes'),
+          dataset('Rendición de solicitud', 'rendicionSolicitud'),
+          dataset('Rendición directa', 'directas'),
           dataset('Caja chica', 'cajaChica'),
         ],
       },
@@ -459,11 +443,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         animation: this.baseAnimation(),
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'top' },
+          legend: { position: 'top', labels: { boxWidth: 12 } },
           tooltip: {
             callbacks: {
               label: (ctx: any) =>
-                `${ctx.dataset.label}: ${this.formatCurrency(ctx.parsed.y)}`,
+                ctx.dataset.label + ': ' + this.formatCurrency(ctx.parsed.y),
             },
           },
         },
@@ -480,77 +464,41 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Sin leyenda de Chart.js: el cliente no le veía valor a poder ocultar
-   * categorías y sí quería el monto y el porcentaje a la vista, que van en la
-   * lista del costado (`categoryRows`).
+   * Ranking horizontal partido en cerrado / en proceso. Es el formato que pidio
+   * el cliente para categorias, OT, centros de costo y colaboradores: de un
+   * vistazo se ve cuanto de cada fila ya esta liquidado y cuanto sigue abierto.
+   *
+   * Las barras van apiladas porque lo que interesa comparar entre filas es el
+   * total, y el corte se lee dentro de cada barra.
    */
-  private renderCategoryChart() {
-    const ref = this.categoryChartRef?.nativeElement;
-    if (!ref) return;
-    this.destroyChart('category');
-    const rows = this.data()!.topCategories;
-    this.charts['category'] = new Chart(ref, {
-      type: 'doughnut',
-      data: {
-        labels: rows.map((r) => r.name),
-        datasets: [
-          {
-            data: rows.map((r) => r.amount),
-            backgroundColor: this.palette.slice(0, rows.length),
-            borderWidth: 2,
-            borderColor: '#fff',
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '62%',
-        animation: { ...this.baseAnimation(), animateRotate: true },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx: any) =>
-                `${ctx.label}: ${this.formatCurrency(ctx.parsed)} · ${this.formatPct(
-                  rows[ctx.dataIndex]?.pct ?? 0
-                )}`,
-            },
-          },
-        },
-      },
-    });
-  }
-
-  /** Barra horizontal reutilizable para los tres rankings. */
   private renderRankingChart(
     key: string,
     ref: HTMLCanvasElement | undefined,
-    rows: { name: string; amount: number; count: number }[],
-    opts: {
-      color?: string;
-      /** Qué cuenta `count` en el tooltip: comprobantes, viáticos, etc. */
-      unidad?: string;
-      onClick?: (index: number) => void;
-    } = {}
+    rows: INamedAmount[],
+    unidad = 'comprobantes'
   ) {
-    const { color, unidad = 'comprobantes', onClick } = opts;
     if (!ref) return;
     this.destroyChart(key);
+    if (!rows.length) return;
+
     this.charts[key] = new Chart(ref, {
       type: 'bar',
       data: {
         labels: rows.map((r) =>
-          r.name.length > 22 ? r.name.slice(0, 22) + '…' : r.name
+          r.name.length > 24 ? r.name.slice(0, 24) + '…' : r.name
         ),
         datasets: [
           {
-            label: 'Gasto',
-            data: rows.map((r) => r.amount),
-            backgroundColor: color
-              ? color
-              : rows.map((_, i) => this.palette[i % this.palette.length]),
-            borderRadius: 6,
+            label: 'Cerrado',
+            data: rows.map((r) => r.cerrado),
+            backgroundColor: this.estadoColors.cerrado,
+            borderRadius: 3,
+          },
+          {
+            label: 'En proceso',
+            data: rows.map((r) => r.enProceso),
+            backgroundColor: this.estadoColors.enProceso,
+            borderRadius: 3,
           },
         ],
       },
@@ -559,40 +507,47 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         animation: this.baseAnimation(),
-        onHover: onClick
-          ? (event: any, elements: any[]) => {
-              event.native.target.style.cursor = elements?.length
-                ? 'pointer'
-                : 'default';
-            }
-          : undefined,
-        onClick: onClick
-          ? (_event: any, elements: any[]) => {
-              const idx = elements?.[0]?.index;
-              if (idx != null) onClick(idx);
-            }
-          : undefined,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: { position: 'top', labels: { boxWidth: 12 } },
           tooltip: {
             callbacks: {
               label: (ctx: any) =>
-                `${this.formatCurrency(ctx.parsed.x)} · ${
-                  rows[ctx.dataIndex]?.count ?? 0
-                } ${unidad}`,
+                ctx.dataset.label + ': ' + this.formatCurrency(ctx.parsed.x),
+              footer: (items: any[]) => {
+                const fila = rows[items[0]?.dataIndex];
+                if (!fila) return '';
+                return (
+                  'Total ' +
+                  this.formatCurrency(fila.amount) +
+                  ' · ' +
+                  fila.count +
+                  ' ' +
+                  unidad
+                );
+              },
             },
           },
         },
         scales: {
           x: {
+            stacked: true,
             beginAtZero: true,
             ticks: { callback: (v: any) => this.formatCompact(v) },
             grid: { color: 'rgba(0,0,0,0.05)' },
           },
-          y: { grid: { display: false } },
+          y: { stacked: true, grid: { display: false } },
         },
       },
     });
+  }
+
+  private renderCategoryChart() {
+    this.renderRankingChart(
+      'category',
+      this.categoryChartRef?.nativeElement,
+      this.data()!.topCategories
+    );
   }
 
   private renderProjectChart() {
@@ -615,21 +570,118 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.renderRankingChart(
       'collaborator',
       this.collaboratorChartRef?.nativeElement,
-      this.data()!.topCollaborators,
-      { color: '#3B82F6' }
+      this.data()!.topCollaborators
     );
   }
 
+  /** Gasto por tipo de comprobante. Era una lista de numeros; ahora es grafico. */
+  private renderTypeChart() {
+    const ref = this.typeChartRef?.nativeElement;
+    if (!ref) return;
+    this.destroyChart('type');
+    const rows = this.data()!.expenseByType;
+    if (!rows.length) return;
+
+    this.charts['type'] = new Chart(ref, {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) => this.expenseTypeLabel(r.type)),
+        datasets: [
+          {
+            label: 'Gasto',
+            data: rows.map((r) => r.amount),
+            backgroundColor: this.palette[1],
+            borderRadius: 4,
+          },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: this.baseAnimation(),
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) =>
+                this.formatCurrency(ctx.parsed.x) +
+                ' · ' +
+                (rows[ctx.dataIndex]?.count ?? 0) +
+                ' comprobantes',
+            },
+          },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { callback: (v: any) => this.formatCompact(v) },
+            grid: { color: 'rgba(0,0,0,0.05)' },
+          },
+          y: { grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  /** Los destinos no llevan el corte por estado: solo monto gastado. */
   private renderLocationChart() {
+    const ref = this.locationChartRef?.nativeElement;
+    if (!ref) return;
+    this.destroyChart('location');
     const rows = (this.data()?.topLocations ?? []).slice(0, 8);
     if (!rows.length) return;
-    this.renderRankingChart(
-      'location',
-      this.locationChartRef?.nativeElement,
-      rows.map((r) => ({ name: r.place, amount: r.amount, count: r.count })),
-      { unidad: 'viáticos', onClick: (idx) => this.focusLocation(rows[idx].place) }
-    );
+
+    this.charts['location'] = new Chart(ref, {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) => r.place),
+        datasets: [
+          {
+            label: 'Gastado',
+            data: rows.map((r) => r.amount),
+            backgroundColor: this.palette[1],
+            borderRadius: 4,
+          },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: this.baseAnimation(),
+        onHover: (event: any, elements: any[]) => {
+          event.native.target.style.cursor = elements?.length
+            ? 'pointer'
+            : 'default';
+        },
+        onClick: (_event: any, elements: any[]) => {
+          const idx = elements?.[0]?.index;
+          if (idx != null && rows[idx]) this.focusLocation(rows[idx].place);
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) =>
+                this.formatCurrency(ctx.parsed.x) +
+                ' · solicitado ' +
+                this.formatCurrency(rows[ctx.dataIndex]?.solicitado ?? 0),
+            },
+          },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { callback: (v: any) => this.formatCompact(v) },
+            grid: { color: 'rgba(0,0,0,0.05)' },
+          },
+          y: { grid: { display: false } },
+        },
+      },
+    });
   }
+
 
   // ─── Leaflet map ─────────────────────────────────────────────────────────
 
@@ -713,7 +765,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         <div style="font-family:sans-serif;min-width:170px">
           <div style="font-weight:700;font-size:14px;color:#21262B;margin-bottom:6px">${p.place}</div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087;margin-bottom:2px">
-            <span>Gastado</span><strong style="color:#D31212">${this.formatCurrency(p.amount)}</strong>
+            <span>Gastado</span><strong style="color:#1F3B5C">${this.formatCurrency(p.amount)}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087">
             <span>Solicitado</span><strong style="color:#21262B">${this.formatCurrency(p.solicitado)}</strong>
@@ -760,7 +812,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     const ratio = amount / maxAmount;
     const size = Math.round(24 + ratio * 18);
     const color =
-      ratio > 0.66 ? '#D31212' : ratio > 0.33 ? '#F59E0B' : '#3B82F6';
+      ratio > 0.66
+        ? this.mapaColors[2]
+        : ratio > 0.33
+          ? this.mapaColors[1]
+          : this.mapaColors[0];
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${Math.round(size * 1.3)}" viewBox="0 0 40 52">
       <path d="M20 1C11.16 1 4 8.16 4 17C4 28.5 20 51 20 51S36 28.5 36 17C36 8.16 28.84 1 20 1Z"
@@ -779,12 +835,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // ─── Helpers de plantilla ─────────────────────────────────────────────────
 
-  /** Filas de la leyenda de categorías: color, monto y porcentaje a la vista. */
-  categoryRows() {
-    return (this.data()?.topCategories ?? []).map((r, i) => ({
-      ...r,
-      color: this.palette[i % this.palette.length],
-    }));
+  /** Categorías con su porcentaje, para la lista que acompaña al gráfico. */
+  categoryRows(): INamedAmount[] {
+    return this.data()?.topCategories ?? [];
   }
 
   /**
@@ -826,35 +879,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     );
   }
 
-  reportStatusLabel(status: string): string {
-    return this.reportStatusLabels[status] || status;
-  }
-
-  /**
-   * Rendiciones por estado, sumando los estados que comparten etiqueta:
-   * `pending_accounting` y `pending_contabilidad` son el mismo paso, igual que
-   * `approved` y `viatico_approved`, y salían como filas repetidas.
-   */
-  reportStatusRows() {
-    const porEtiqueta = new Map<string, { status: string; label: string; count: number }>();
-    for (const r of this.data()?.reportByStatus ?? []) {
-      const label = this.reportStatusLabel(r.status);
-      const cur = porEtiqueta.get(label);
-      if (cur) {
-        cur.count += r.count;
-      } else {
-        porEtiqueta.set(label, { status: r.status, label, count: r.count });
-      }
-    }
-    return Array.from(porEtiqueta.values()).sort((a, b) => b.count - a.count);
-  }
-
   expenseTypeLabel(type: string): string {
     return this.expenseTypeLabels[type] || type;
-  }
-
-  statusColor(status: string): string {
-    return this.statusColorMap[status] || '#9CA3AF';
   }
 
   /** true si el anticipo ya pasó el plazo pactado para rendir. */
