@@ -176,6 +176,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   /** Marcadores del mapa indexados por departamento, para enfocarlos desde el chart. */
   private markersByPlace: Record<string, any> = {};
   private tweenHandles: Record<string, number> = {};
+  /** rAF del repintado pendiente. Ver `tryRenderCharts`. */
+  private renderHandle = 0;
+  /** Frames esperados a que el contenedor tenga tamaño. */
+  private renderIntentos = 0;
 
   /**
    * Paleta del dashboard: un solo tono azul-petroleo, del gris claro al oscuro.
@@ -251,6 +255,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    cancelAnimationFrame(this.renderHandle);
     Object.values(this.tweenHandles).forEach((h) => cancelAnimationFrame(h));
     Object.values(this.charts).forEach((c) => c?.destroy?.());
     if (this.mapInstance) {
@@ -388,6 +393,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     document.body.appendChild(script);
   }
 
+  /**
+   * Pide un repintado. Se agenda en el siguiente frame y se cancela el anterior:
+   * a este metodo lo llaman cuatro caminos distintos (el AfterViewInit, la
+   * respuesta del API y las cargas de Chart.js y Leaflet) y dos pasadas encimadas
+   * sobre el mismo canvas lo dejan a medio dibujar.
+   */
   private tryRenderCharts() {
     if (
       !this.chartLibraryLoaded ||
@@ -397,6 +408,25 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     ) {
       return;
     }
+    cancelAnimationFrame(this.renderHandle);
+    this.renderHandle = requestAnimationFrame(() => this.renderCharts());
+  }
+
+  private renderCharts() {
+    // Un canvas cuyo contenedor todavia mide cero se dibuja vacio y no se
+    // recupera solo: es lo que pasa al abrir el dashboard en una pestaña que
+    // esta en segundo plano, donde el layout no se resuelve hasta que la pestaña
+    // se muestra. Se espera a que el contenedor tenga tamaño antes de crear
+    // nada, con un tope para no quedarse girando si la tarjeta nunca se muestra.
+    const host = this.monthlyChartRef?.nativeElement?.parentElement;
+    if (host && (host.clientWidth === 0 || host.clientHeight === 0)) {
+      if (this.renderIntentos++ < 120) {
+        this.renderHandle = requestAnimationFrame(() => this.renderCharts());
+      }
+      return;
+    }
+    this.renderIntentos = 0;
+
     this.renderMonthlyChart();
     this.renderCategoryChart();
     this.renderProjectChart();
