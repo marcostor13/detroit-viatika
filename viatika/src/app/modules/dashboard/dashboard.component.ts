@@ -178,41 +178,42 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private tweenHandles: Record<string, number> = {};
 
   /**
-   * Paleta del dashboard. El primary de Detroit es rojo y llenaba los graficos
-   * de alarma donde no habia ninguna; el cliente pidio quitarlo y bajar el
-   * ruido de color. Queda una escala azul-pizarra con dos acentos apagados,
-   * legible en proyector y sin que ninguna barra grite mas que las demas.
+   * Paleta del dashboard, derivada de Okabe-Ito (la referencia estandar para
+   * daltonismo) tomando pasos oscuros y dejando fuera el bermellon: el cliente
+   * pidio nada de rojo porque en un tablero se lee como alarma.
+   *
+   * Validada con el script de la guia de visualizacion contra el fondo blanco
+   * de las tarjetas: banda de luminosidad, piso de croma, separacion CVD
+   * (protan/deutan/tritan), piso de vision normal y contraste >= 3:1, todo en
+   * verde. No tocar un hex suelto sin volver a correrla: el orden de las
+   * series es parte de lo que la hace segura.
    */
-  readonly palette = [
-    '#1F3B5C',
-    '#3E7CA6',
-    '#4E8C7D',
-    '#7C93AC',
-    '#A98B4E',
-    '#5F6E7E',
-    '#6E96B8',
-    '#8AA79B',
-  ];
 
   /** Las cuatro vias por las que se mueve el dinero, en la serie mensual. */
   readonly seriesColors = {
-    solicitudes: '#1F3B5C',
-    rendicionSolicitud: '#3E7CA6',
-    directas: '#4E8C7D',
-    cajaChica: '#A98B4E',
+    solicitudes: '#005E92',
+    // El azul claro emparenta la rendicion con su solicitud: son la misma plata
+    // en dos momentos, y la distancia entre ambas barras es lo que se lee.
+    rendicionSolicitud: '#3F8FBF',
+    directas: '#00795C',
+    cajaChica: '#B57C00',
   };
 
   /**
-   * Corte cerrado / en proceso de los cuatro rankings. El tono solido lee como
-   * "esto ya no se mueve" y el claro como "todavia esta en camino".
+   * Corte cerrado / en proceso de los cuatro rankings. Es una escala ordinal de
+   * un solo tono, no dos categorias: el oscuro lee como "esto ya no se mueve" y
+   * el claro como "todavia esta en camino".
    */
   readonly estadoColors = {
-    cerrado: '#1F3B5C',
-    enProceso: '#9BB3C9',
+    cerrado: '#005E92',
+    enProceso: '#7FB3D5',
   };
 
-  /** Escala del mapa, de menor a mayor gasto. */
-  readonly mapaColors = ['#9BB3C9', '#4E7FA6', '#1F3B5C'];
+  /** Escala del mapa, de menor a mayor gasto. Mismo tono, tres pasos. */
+  readonly mapaColors = ['#7FB3D5', '#3F8FBF', '#005E92'];
+
+  /** Barras de una sola serie: el titulo ya dice que son, no hace falta leyenda. */
+  readonly serieUnica = '#3F8FBF';
 
   private readonly expenseTypeLabels: Record<string, string> = {
     factura: 'Factura',
@@ -493,12 +494,18 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             data: rows.map((r) => r.cerrado),
             backgroundColor: this.estadoColors.cerrado,
             borderRadius: 3,
+            // Filo del color de la tarjeta: separa los dos tramos de la barra
+            // para que no se lean como un bloque continuo.
+            borderColor: '#ffffff',
+            borderWidth: 2,
           },
           {
             label: 'En proceso',
             data: rows.map((r) => r.enProceso),
             backgroundColor: this.estadoColors.enProceso,
             borderRadius: 3,
+            borderColor: '#ffffff',
+            borderWidth: 2,
           },
         ],
       },
@@ -590,7 +597,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             label: 'Gasto',
             data: rows.map((r) => r.amount),
-            backgroundColor: this.palette[1],
+            backgroundColor: this.serieUnica,
             borderRadius: 4,
           },
         ],
@@ -640,7 +647,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           {
             label: 'Gastado',
             data: rows.map((r) => r.amount),
-            backgroundColor: this.palette[1],
+            backgroundColor: this.serieUnica,
             borderRadius: 4,
           },
         ],
@@ -765,7 +772,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         <div style="font-family:sans-serif;min-width:170px">
           <div style="font-weight:700;font-size:14px;color:#21262B;margin-bottom:6px">${p.place}</div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087;margin-bottom:2px">
-            <span>Gastado</span><strong style="color:#1F3B5C">${this.formatCurrency(p.amount)}</strong>
+            <span>Gastado</span><strong style="color:#005E92">${this.formatCurrency(p.amount)}</strong>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087">
             <span>Solicitado</span><strong style="color:#21262B">${this.formatCurrency(p.solicitado)}</strong>
