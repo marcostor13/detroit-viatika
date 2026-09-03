@@ -30,6 +30,12 @@ const RESPUESTA: IDashboardResponse = {
     porRendirVencidoCount: 1,
   },
   diasParaRendir: 20,
+  porRendirBuckets: [
+    { label: 'Al día (≤ 20 d)', amount: 1500, count: 1, vencido: false },
+    { label: '21–40 d', amount: 500, count: 1, vencido: true },
+    { label: '41–60 d', amount: 0, count: 0, vencido: true },
+    { label: '+ 60 d', amount: 0, count: 0, vencido: true },
+  ],
   monthlySeries: [
     {
       month: '2026-07',
@@ -203,6 +209,16 @@ describe('DashboardComponent', () => {
     ]) {
       expect(fila.cerrado + fila.enProceso).toBe(fila.amount);
     }
+  });
+
+  // El grafico de antiguedad y el KPI salen del mismo conjunto: si no cuadran,
+  // uno de los dos esta mirando una lista truncada.
+  it('los tramos de antigüedad suman lo mismo que el KPI', () => {
+    montar();
+    const tramos = component.data()?.porRendirBuckets ?? [];
+    const suma = tramos.reduce((s, t) => s + t.amount, 0);
+    expect(suma).toBe(component.kpis().porRendirAmount);
+    expect(tramos.filter((t) => t.vencido).length).toBe(3);
   });
 
   it('marca vencido lo que pasa del plazo para rendir', () => {

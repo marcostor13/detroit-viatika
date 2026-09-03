@@ -93,6 +93,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('collaboratorChart')
   collaboratorChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('typeChart') typeChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('agingChart') agingChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('locationChart')
   locationChartRef!: ElementRef<HTMLCanvasElement>;
 
@@ -433,6 +434,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.renderOtChart();
     this.renderCollaboratorChart();
     this.renderTypeChart();
+    this.renderAgingChart();
     this.renderLocationChart();
     this.tryRenderMap();
   }
@@ -673,6 +675,68 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             grid: { color: 'rgba(0,0,0,0.05)' },
           },
           y: { grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  /**
+   * Antiguedad de lo entregado sin rendir. Es la lectura que la lista de al lado
+   * no da: cuanto de la deuda es reciente y cuanto lleva meses sin sustentar.
+   *
+   * Los tramos estan ordenados, asi que el color es una rampa de un solo tono:
+   * cuanto mas oscuro, mas viejo. No es una escala de categorias.
+   */
+  private renderAgingChart() {
+    const ref = this.agingChartRef?.nativeElement;
+    if (!ref) return;
+    this.destroyChart('aging');
+    const rows = this.data()?.porRendirBuckets ?? [];
+    if (!rows.length || rows.every((r) => r.amount === 0)) return;
+
+    const escala = [
+      this.rampa.claro,
+      '#6BA6CB',
+      this.rampa.medio,
+      this.rampa.oscuro,
+    ];
+
+    this.charts['aging'] = new Chart(ref, {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) => r.label),
+        datasets: [
+          {
+            label: 'Sin rendir',
+            data: rows.map((r) => r.amount),
+            backgroundColor: rows.map((_, i) => escala[i] ?? this.rampa.oscuro),
+            borderRadius: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: this.baseAnimation(),
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) =>
+                this.formatCurrency(ctx.parsed.y) +
+                ' · ' +
+                (rows[ctx.dataIndex]?.count ?? 0) +
+                ' anticipos',
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { callback: (v: any) => this.formatCompact(v) },
+            grid: { color: 'rgba(0,0,0,0.05)' },
+          },
+          x: { grid: { display: false } },
         },
       },
     });

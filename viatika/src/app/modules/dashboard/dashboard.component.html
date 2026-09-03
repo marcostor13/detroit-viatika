@@ -282,7 +282,10 @@
           <h2 class="text-base font-semibold text-secondary">Anticipos entregados sin rendir</h2>
           <span class="text-xs text-tertiary">al día de hoy · resaltado: más de {{ data()?.diasParaRendir }} días</span>
         </div>
-        <div class="space-y-2 max-h-80 overflow-y-auto">
+        <div class="h-40 mb-4">
+          <canvas #agingChart></canvas>
+        </div>
+        <div class="space-y-2 max-h-64 overflow-y-auto">
           @for (r of data()?.pendientes?.porRendir; track r.reportId) {
             <div class="flex items-center gap-3 py-1 border-b border-divider last:border-0">
               <div class="flex-1 min-w-0">

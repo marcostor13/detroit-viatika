@@ -90,6 +90,15 @@ export interface IPendienteRow {
   status?: string;
 }
 
+/** Tramo de antigüedad de lo entregado sin rendir. */
+export interface IAgingBucket {
+  label: string;
+  amount: number;
+  count: number;
+  /** true si el tramo ya pasó el plazo pactado para rendir. */
+  vencido: boolean;
+}
+
 export interface IDashboardResponse {
   range: { dateFrom: string; dateTo: string };
   currency: string;
@@ -97,6 +106,7 @@ export interface IDashboardResponse {
   scope: { restricted: boolean; projectIds: string[] };
   kpis: IDashboardKpis;
   diasParaRendir: number;
+  porRendirBuckets: IAgingBucket[];
   monthlySeries: IMonthlyPoint[];
   topCategories: INamedAmount[];
   topOrdenesTrabajo: INamedAmount[];

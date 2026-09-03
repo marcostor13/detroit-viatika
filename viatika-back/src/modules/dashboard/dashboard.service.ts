@@ -199,6 +199,7 @@ export class DashboardService {
       },
       /** Días a partir de los cuales una rendición pendiente se marca atrasada. */
       diasParaRendir: DIAS_PARA_RENDIR,
+      porRendirBuckets: this.agruparPorAntiguedad(porRendir),
       monthlySeries,
       topCategories: this.withPct(topCategories, totalGasto),
       topOrdenesTrabajo,
@@ -1134,7 +1135,6 @@ export class DashboardService {
           viaticoPaidAmount: { $gt: 0 },
         },
       },
-      { $limit: 100 },
       ...this.lookupUserName(),
       {
         $project: {
@@ -1164,6 +1164,38 @@ export class DashboardService {
     return rows
       .map(r => ({ ...r, dias: this.diasDesde(r.desde) }))
       .sort((a, b) => b.dias - a.dias)
+  }
+
+  /**
+   * Reparte lo entregado sin rendir en tramos de antiguedad, en multiplos del
+   * plazo pactado. Es la lectura que la lista no da: cuanto de la deuda es
+   * reciente y cuanto lleva meses sin sustentar.
+   */
+  private agruparPorAntiguedad(
+    filas: { dias: number; amount: number }[]
+  ): { label: string; amount: number; count: number; vencido: boolean }[] {
+    const n = DIAS_PARA_RENDIR
+    const tramos = [
+      { label: `Al día (≤ ${n} d)`, hasta: n, vencido: false },
+      { label: `${n + 1}–${n * 2} d`, hasta: n * 2, vencido: true },
+      { label: `${n * 2 + 1}–${n * 3} d`, hasta: n * 3, vencido: true },
+      { label: `+ ${n * 3} d`, hasta: Infinity, vencido: true },
+    ]
+    return tramos.map(t => ({
+      label: t.label,
+      vencido: t.vencido,
+      amount: 0,
+      count: 0,
+    })).map((acc, i) => {
+      const desde = i === 0 ? -Infinity : tramos[i - 1].hasta
+      for (const f of filas) {
+        if (f.dias > desde && f.dias <= tramos[i].hasta) {
+          acc.amount += f.amount
+          acc.count += 1
+        }
+      }
+      return acc
+    })
   }
 
   /** Etapas de `$lookup` que resuelven `userId` al nombre del colaborador. */
