@@ -203,15 +203,31 @@
           <canvas #categoryChart></canvas>
         </div>
         <div class="space-y-2 lg:col-span-2">
+          <!-- Encabezado de la tabla: sin esto las tres cifras de cada fila no
+               se distinguen entre si. -->
+          <div class="flex items-center gap-2 pb-1 border-b border-divider">
+            <span class="text-xs font-medium text-tertiary uppercase tracking-wide flex-1">Categoría</span>
+            <span class="text-xs font-medium text-tertiary uppercase tracking-wide w-24 text-right">Cerrado</span>
+            <span class="text-xs font-medium text-tertiary uppercase tracking-wide w-24 text-right">En proceso</span>
+            <span class="text-xs font-medium text-tertiary uppercase tracking-wide w-12 text-right">%</span>
+          </div>
           @for (c of categoryRows(); track c.categoryId) {
             <div class="flex items-center gap-2 border-b border-divider last:border-0 pb-1">
               <span class="text-sm text-secondary flex-1 truncate" [title]="c.name">{{ c.name }}</span>
-              <span class="text-sm font-semibold text-secondary">{{ formatCurrency(c.amount) }}</span>
+              <span class="text-sm font-semibold text-ink-900 w-24 text-right">{{ formatCurrency(c.cerrado) }}</span>
+              <span class="text-sm text-secondary w-24 text-right">{{ formatCurrency(c.enProceso) }}</span>
               <span class="text-xs text-tertiary w-12 text-right">{{ formatPct(c.pct ?? 0) }}</span>
             </div>
           } @empty {
             <p class="text-sm text-tertiary">Sin gastos en el periodo.</p>
           }
+          <!-- El total de cada fila deja de estar a la vista, asi que se suma abajo. -->
+          <div class="flex items-center gap-2 pt-1">
+            <span class="text-xs text-tertiary flex-1">Total del periodo</span>
+            <span class="text-sm font-semibold text-ink-900 w-24 text-right">{{ formatCurrency(totalCategorias().cerrado) }}</span>
+            <span class="text-sm font-semibold text-secondary w-24 text-right">{{ formatCurrency(totalCategorias().enProceso) }}</span>
+            <span class="w-12"></span>
+          </div>
         </div>
       </div>
     </app-card>
