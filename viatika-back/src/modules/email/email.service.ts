@@ -257,7 +257,7 @@ export class EmailService {
   /**
    * Resuelve el logo a mostrar en correos:
    *  - Si `clientId` es válido y la empresa tiene logo configurado, lo usa.
-   *  - Si no, recurre al logo global (`APP_LOGO_URL` / `/logo.svg`).
+   *  - Si no, recurre al logo global (`APP_LOGO_URL` o el de Detroit).
    * Cache en memoria por 60s para no golpear la BD por cada correo.
    */
   async resolveLogoUrl(
