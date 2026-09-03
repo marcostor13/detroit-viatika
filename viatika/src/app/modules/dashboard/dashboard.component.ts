@@ -518,8 +518,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
    * el cliente para categorias, OT, centros de costo y colaboradores: de un
    * vistazo se ve cuanto de cada fila ya esta liquidado y cuanto sigue abierto.
    *
-   * Las barras van apiladas porque lo que interesa comparar entre filas es el
-   * total, y el corte se lee dentro de cada barra.
+   * Las dos barras van una al lado de la otra, no apiladas: apiladas se comparan
+   * bien los totales pero cuesta medir el tramo de arriba, porque no arranca de
+   * cero. Separadas, cada mitad se lee contra el mismo eje. El total sigue
+   * disponible en el tooltip.
    */
   private renderRankingChart(
     key: string,
@@ -543,10 +545,9 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             data: rows.map((r) => r.cerrado),
             backgroundColor: this.estadoColors.cerrado,
             borderRadius: 3,
-            // Filo del color de la tarjeta: separa los dos tramos de la barra
-            // para que no se lean como un bloque continuo.
+            // Filo del color de la tarjeta: despega las dos barras vecinas.
             borderColor: '#ffffff',
-            borderWidth: 2,
+            borderWidth: 1,
           },
           {
             label: 'En proceso',
@@ -554,7 +555,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             backgroundColor: this.estadoColors.enProceso,
             borderRadius: 3,
             borderColor: '#ffffff',
-            borderWidth: 2,
+            borderWidth: 1,
           },
         ],
       },
@@ -587,12 +588,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         },
         scales: {
           x: {
-            stacked: true,
             beginAtZero: true,
             ticks: { callback: (v: any) => this.formatCompact(v) },
             grid: { color: 'rgba(0,0,0,0.05)' },
           },
-          y: { stacked: true, grid: { display: false } },
+          y: { grid: { display: false } },
         },
       },
     });
