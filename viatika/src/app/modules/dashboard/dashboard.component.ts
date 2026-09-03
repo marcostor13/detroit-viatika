@@ -178,42 +178,55 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   private tweenHandles: Record<string, number> = {};
 
   /**
-   * Paleta del dashboard, derivada de Okabe-Ito (la referencia estandar para
-   * daltonismo) tomando pasos oscuros y dejando fuera el bermellon: el cliente
-   * pidio nada de rojo porque en un tablero se lee como alarma.
+   * Paleta del dashboard: un solo tono azul-petroleo, del gris claro al oscuro.
    *
-   * Validada con el script de la guia de visualizacion contra el fondo blanco
-   * de las tarjetas: banda de luminosidad, piso de croma, separacion CVD
-   * (protan/deutan/tritan), piso de vision normal y contraste >= 3:1, todo en
-   * verde. No tocar un hex suelto sin volver a correrla: el orden de las
-   * series es parte de lo que la hace segura.
+   * Siete de los ocho graficos son monocromaticos porque lo que codifican es
+   * magnitud o avance, que es justo para lo que sirve una rampa de un tono. El
+   * unico que no puede serlo es la evolucion mensual: ahi las cuatro series son
+   * cosas distintas, no grados de la misma. Un solo tono en cuatro pasos mide
+   * dE 13-14 entre pasos vecinos contra un piso de 15, o sea que ni con vision
+   * de color completa se distinguen; por eso ese grafico usa dos tonos y no uno,
+   * emparejados de a dos (los azules son la solicitud y su rendicion; los
+   * bronces, los otros dos canales).
+   *
+   * Todas las escalas estan validadas con el script de la guia de visualizacion
+   * contra el blanco de las tarjetas: banda de luminosidad, piso de croma,
+   * separacion para protanopia/deuteranopia/tritanopia, piso de vision normal y
+   * contraste >= 3:1. No tocar un hex suelto sin volver a correrla.
    */
+
+  /** Rampa base. Todo lo monocromatico del tablero sale de aqui. */
+  readonly rampa = {
+    claro: '#7FB3D5',
+    medio: '#4A93C2',
+    oscuro: '#005E92',
+  };
 
   /** Las cuatro vias por las que se mueve el dinero, en la serie mensual. */
   readonly seriesColors = {
     solicitudes: '#005E92',
-    // El azul claro emparenta la rendicion con su solicitud: son la misma plata
-    // en dos momentos, y la distancia entre ambas barras es lo que se lee.
-    rendicionSolicitud: '#3F8FBF',
-    directas: '#00795C',
-    cajaChica: '#B57C00',
+    // Mismo tono que su solicitud: son la misma plata en dos momentos y lo que
+    // se lee es la distancia entre las dos barras.
+    rendicionSolicitud: '#4A93C2',
+    directas: '#805400',
+    cajaChica: '#B88E22',
   };
 
   /**
-   * Corte cerrado / en proceso de los cuatro rankings. Es una escala ordinal de
-   * un solo tono, no dos categorias: el oscuro lee como "esto ya no se mueve" y
-   * el claro como "todavia esta en camino".
+   * Corte cerrado / en proceso de los cuatro rankings. Escala ordinal de un solo
+   * tono: el oscuro lee como "esto ya no se mueve" y el claro como "todavia
+   * esta en camino".
    */
   readonly estadoColors = {
     cerrado: '#005E92',
     enProceso: '#7FB3D5',
   };
 
-  /** Escala del mapa, de menor a mayor gasto. Mismo tono, tres pasos. */
-  readonly mapaColors = ['#7FB3D5', '#3F8FBF', '#005E92'];
+  /** Escala del mapa, de menor a mayor gasto. */
+  readonly mapaColors = ['#7FB3D5', '#4A93C2', '#005E92'];
 
   /** Barras de una sola serie: el titulo ya dice que son, no hace falta leyenda. */
-  readonly serieUnica = '#3F8FBF';
+  readonly serieUnica = '#4A93C2';
 
   private readonly expenseTypeLabels: Record<string, string> = {
     factura: 'Factura',
