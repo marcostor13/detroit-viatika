@@ -38,6 +38,24 @@ const ROLES_SIN_LIMITE: string[] = [
 /** Estados de devolución que siguen abiertos. */
 const ESTADOS_DEVOLUCION_PENDIENTE = ['pending', 'proof_uploaded']
 
+/**
+ * Rendiciones que ya no van a convertirse en gasto: quedan fuera de los dos
+ * lados del corte (ni cerrado ni en proceso).
+ */
+const ESTADOS_RENDICION_MUERTA = ['rejected', 'cancelled']
+
+/**
+ * Estado del gasto para el corte "cerrado / en proceso" que pidió el cliente.
+ * Cerrado es el `closed` que deja `ExpenseReportService.close()`, el único que
+ * bloquea toda edición posterior; el resto del camino es proceso.
+ */
+type EstadoGasto = 'cerrado' | 'enProceso'
+
+/** Expresión Mongo que clasifica un gasto según el estado de su rendición. */
+const ESTADO_GASTO_EXPR = {
+  $cond: [{ $eq: ['$rep0.status', 'closed'] }, 'cerrado', 'enProceso'],
+}
+
 interface ResolvedRange {
   from: Date
   to: Date
@@ -66,7 +84,20 @@ interface DashboardScope {
   restricted: boolean
 }
 
-type MonthBucket = 'solicitudes' | 'directas' | 'cajaChica'
+type MonthBucket = 'rendicionSolicitud' | 'directas' | 'cajaChica'
+
+/** Una fila de cualquiera de los cuatro rankings, partida por estado. */
+export interface RankingRow {
+  name: string
+  cerrado: number
+  enProceso: number
+  amount: number
+  count: number
+  categoryId?: string
+  ordenTrabajoId?: string
+  projectId?: string
+  userId?: string
+}
 
 @Injectable()
 export class DashboardService {
@@ -103,7 +134,6 @@ export class DashboardService {
       topOrdenesTrabajo,
       monthlySeries,
       solicitudAgg,
-      reportByStatus,
       destinos,
       departments,
       devoluciones,
@@ -124,7 +154,6 @@ export class DashboardService {
       this.aggregateTopOrdenesTrabajo(clientOid, query, scope, range),
       this.aggregateMonthlySeries(clientOid, query, scope, range),
       this.aggregateSolicitudTotals(clientOid, query, scope, range),
-      this.aggregateReportByStatus(clientOid, query, scope, range),
       this.aggregateDestinos(clientOid, query, scope, range),
       this.listDepartments(clientOid),
       this.listDevolucionesPendientes(clientOid, query, scope),
@@ -170,6 +199,7 @@ export class DashboardService {
       },
       /** Días a partir de los cuales una rendición pendiente se marca atrasada. */
       diasParaRendir: DIAS_PARA_RENDIR,
+      porRendirBuckets: this.agruparPorAntiguedad(porRendir),
       monthlySeries,
       topCategories: this.withPct(topCategories, totalGasto),
       topOrdenesTrabajo,
@@ -178,7 +208,6 @@ export class DashboardService {
       topLocations: destinos,
       departments,
       pendientes: { devoluciones, porRendir },
-      reportByStatus,
       expenseByType,
     }
   }
@@ -451,30 +480,6 @@ export class DashboardService {
     return match
   }
 
-  /** Match para rendiciones (todo reporte que no sea caja chica). */
-  private reportMatch(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    scope: DashboardScope,
-    from: Date,
-    to: Date
-  ): Record<string, any> {
-    const effectiveDate = { $ifNull: ['$createdAt', { $toDate: '$_id' }] }
-    const match: Record<string, any> = {
-      clientId,
-      isCajaChica: { $ne: true },
-      // Las solicitudes (type='viatico') SÍ cuentan como rendiciones: es lo que
-      // hace la página /rendiciones. Solo se excluye la caja chica.
-      $expr: {
-        $and: [{ $gte: [effectiveDate, from] }, { $lte: [effectiveDate, to] }],
-      },
-    }
-    if (scope.projectIds) match.projectId = { $in: scope.projectIds }
-    this.applyUserMatch(match, query, scope)
-    if (scope.reportIds) match._id = { $in: scope.reportIds }
-    return match
-  }
-
   /** Aplica a `userId` (reportes) el colaborador resuelto para la consulta. */
   private applyUserMatch(
     match: Record<string, any>,
@@ -563,216 +568,221 @@ export class DashboardService {
     ])
   }
 
-  private async aggregateTopCategories(
+  /**
+   * Ranking de gastos por una dimension (categoria, OT, centro de costo,
+   * colaborador) partido en cerrado / en proceso, que es como el cliente quiere
+   * leer los cuatro graficos: cuanto de lo que se ve ya esta liquidado y cuanto
+   * sigue en camino.
+   *
+   * El estado vive en la rendicion, no en el comprobante, de ahi el `$lookup`.
+   * Las rendiciones rechazadas y anuladas se descartan: no son ninguno de los
+   * dos lados del corte.
+   */
+  private async aggregateRankingPorEstado(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
     scope: DashboardScope,
-    range: ResolvedRange
-  ) {
-    return this.expenseModel.aggregate([
-      {
-        $match: this.expenseMatch(
-          clientId,
-          query,
-          scope,
-          range.from,
-          range.to
-        ),
-      },
+    range: ResolvedRange,
+    opts: {
+      /** Campo por el que se agrupa, ej. '$categoryId'. */
+      groupBy: string
+      /** Coleccion y campo del nombre legible. */
+      lookup?: { from: string; nameField: string }
+      /** Nombre cuando el lookup no encuentra nada. */
+      fallbackName: string
+      /** Clave con la que viaja el id en la respuesta. */
+      idKey: 'categoryId' | 'ordenTrabajoId' | 'projectId' | 'userId'
+      limit: number
+      /** El campo agrupado es string y hay que convertirlo para el lookup. */
+      idEsString?: boolean
+      /** Condiciones extra sobre el comprobante. */
+      matchExtra?: Record<string, any>
+    }
+  ): Promise<RankingRow[]> {
+    const match = {
+      ...this.expenseMatch(clientId, query, scope, range.from, range.to),
+      ...(opts.matchExtra ?? {}),
+    }
+
+    const filas: {
+      id: any
+      estado: EstadoGasto
+      amount: number
+      count: number
+      name?: string
+    }[] = await this.expenseModel.aggregate([
+      { $match: match },
+      ...this.lookupRendicion(),
       {
         $group: {
-          _id: '$categoryId',
+          _id: { id: opts.groupBy, estado: ESTADO_GASTO_EXPR },
           amount: { $sum: this.amountExpr },
           count: { $sum: 1 },
         },
       },
-      { $sort: { amount: -1 } },
-      { $limit: 8 },
       {
-        $lookup: {
-          from: 'categories',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'cat',
+        $addFields: {
+          idParaLookup: opts.idEsString
+            ? {
+                $convert: {
+                  input: '$_id.id',
+                  to: 'objectId',
+                  onError: null,
+                  onNull: null,
+                },
+              }
+            : '$_id.id',
         },
       },
+      ...(opts.lookup
+        ? [
+            {
+              $lookup: {
+                from: opts.lookup.from,
+                localField: 'idParaLookup',
+                foreignField: '_id',
+                as: 'ref',
+              },
+            },
+          ]
+        : []),
       {
         $project: {
           _id: 0,
-          categoryId: '$_id',
-          name: {
-            $ifNull: [{ $arrayElemAt: ['$cat.name', 0] }, 'Sin categoría'],
-          },
+          id: '$_id.id',
+          estado: '$_id.estado',
           amount: 1,
           count: 1,
+          name: opts.lookup
+            ? { $arrayElemAt: [`$ref.${opts.lookup.nameField}`, 0] }
+            : null,
         },
       },
     ])
+
+    // Las dos mitades de una misma dimension llegan como filas separadas.
+    const porId = new Map<string, RankingRow>()
+    for (const f of filas) {
+      const clave = String(f.id ?? '')
+      const cur =
+        porId.get(clave) ??
+        ({
+          name: f.name || opts.fallbackName,
+          cerrado: 0,
+          enProceso: 0,
+          amount: 0,
+          count: 0,
+          [opts.idKey]: clave || undefined,
+        } as RankingRow)
+      if (f.name) cur.name = f.name
+      cur[f.estado] += f.amount
+      cur.amount += f.amount
+      cur.count += f.count
+      porId.set(clave, cur)
+    }
+
+    return Array.from(porId.values())
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, opts.limit)
   }
 
-  private async aggregateTopProjects(
+  /** Trae la rendicion de cada comprobante y descarta las muertas. */
+  private lookupRendicion() {
+    return [
+      {
+        $lookup: {
+          from: 'expensereports',
+          localField: 'expenseReportId',
+          foreignField: '_id',
+          as: 'rep',
+        },
+      },
+      { $addFields: { rep0: { $arrayElemAt: ['$rep', 0] } } },
+      {
+        $match: {
+          'rep0.status': { $nin: ESTADOS_RENDICION_MUERTA },
+        },
+      },
+    ]
+  }
+
+  private aggregateTopCategories(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
     scope: DashboardScope,
     range: ResolvedRange
   ) {
-    return this.expenseModel.aggregate([
-      {
-        $match: this.expenseMatch(
-          clientId,
-          query,
-          scope,
-          range.from,
-          range.to
-        ),
-      },
-      {
-        $group: {
-          _id: '$proyectId',
-          amount: { $sum: this.amountExpr },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { amount: -1 } },
-      { $limit: 8 },
-      {
-        $lookup: {
-          from: 'projects',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'proj',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          projectId: '$_id',
-          name: {
-            $ifNull: [
-              { $arrayElemAt: ['$proj.name', 0] },
-              'Sin centro de costo',
-            ],
-          },
-          amount: 1,
-          count: 1,
-        },
-      },
-    ])
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$categoryId',
+      lookup: { from: 'categories', nameField: 'name' },
+      fallbackName: 'Sin categoría',
+      idKey: 'categoryId',
+      limit: 8,
+    })
+  }
+
+  private aggregateTopProjects(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ) {
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$proyectId',
+      lookup: { from: 'projects', nameField: 'name' },
+      fallbackName: 'Sin centro de costo',
+      idKey: 'projectId',
+      limit: 8,
+    })
   }
 
   /**
-   * Top de órdenes de trabajo por gasto. Los comprobantes sin OT quedan fuera:
-   * el gráfico compara OT entre sí y un bloque "sin OT" se comería el ranking.
+   * Los comprobantes sin OT quedan fuera: el grafico compara OT entre si y un
+   * bloque "sin OT" se comeria el ranking.
    */
-  private async aggregateTopOrdenesTrabajo(
+  private aggregateTopOrdenesTrabajo(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
     scope: DashboardScope,
     range: ResolvedRange
   ) {
-    const match = this.expenseMatch(clientId, query, scope, range.from, range.to)
-    // `match` ya puede traer la OT filtrada; el guard solo aplica cuando no la hay.
-    if (!match.ordenTrabajoId) match.ordenTrabajoId = { $nin: [null, undefined] }
-    return this.expenseModel.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: '$ordenTrabajoId',
-          amount: { $sum: this.amountExpr },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { amount: -1 } },
-      { $limit: 8 },
-      {
-        $lookup: {
-          from: 'ordentrabajos',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'ot',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          ordenTrabajoId: '$_id',
-          name: {
-            $ifNull: [{ $arrayElemAt: ['$ot.nombre', 0] }, 'OT eliminada'],
-          },
-          amount: 1,
-          count: 1,
-        },
-      },
-    ])
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$ordenTrabajoId',
+      lookup: { from: 'ordentrabajos', nameField: 'nombre' },
+      fallbackName: 'OT eliminada',
+      idKey: 'ordenTrabajoId',
+      limit: 8,
+      matchExtra: { ordenTrabajoId: { $nin: [null, undefined] } },
+    })
   }
 
-  private async aggregateTopCollaborators(
+  private aggregateTopCollaborators(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
     scope: DashboardScope,
     range: ResolvedRange
   ) {
-    return this.expenseModel.aggregate([
-      {
-        $match: this.expenseMatch(
-          clientId,
-          query,
-          scope,
-          range.from,
-          range.to
-        ),
-      },
-      {
-        $group: {
-          _id: '$createdBy',
-          amount: { $sum: this.amountExpr },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { amount: -1 } },
-      { $limit: 10 },
-      {
-        $addFields: {
-          userOid: {
-            $convert: {
-              input: '$_id',
-              to: 'objectId',
-              onError: null,
-              onNull: null,
-            },
-          },
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userOid',
-          foreignField: '_id',
-          as: 'usr',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          userId: '$_id',
-          name: {
-            $ifNull: [{ $arrayElemAt: ['$usr.name', 0] }, 'Sin asignar'],
-          },
-          amount: 1,
-          count: 1,
-        },
-      },
-    ])
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$createdBy',
+      lookup: { from: 'users', nameField: 'name' },
+      fallbackName: 'Sin asignar',
+      idKey: 'userId',
+      limit: 10,
+      idEsString: true,
+    })
   }
+
 
   // ─── Serie mensual ────────────────────────────────────────────────────────
 
   /**
-   * Las tres barras que pidió el cliente para cada mes: lo solicitado en fondos,
-   * lo gastado en rendiciones directas y el consumo de caja chica (el consumo,
-   * no el saldo de la bolsa). Se mantienen separadas a propósito: mezclar
-   * anticipo y gasto en una sola serie era lo que hacía ilegible el gráfico
-   * anterior.
+   * Las cuatro barras de cada mes: lo solicitado en fondos, lo que el
+   * colaborador termino gastando contra esa solicitud, lo gastado en rendicion
+   * directa y el consumo de caja chica (el consumo, no el saldo de la bolsa).
+   *
+   * Solicitado y rendido van separados porque son cosas distintas: el primero
+   * es la plata que salio por adelantado y el segundo lo que se sustento. La
+   * distancia entre las dos barras es justo lo que falta rendir del mes.
    */
   private async aggregateMonthlySeries(
     clientId: Types.ObjectId,
@@ -780,18 +790,30 @@ export class DashboardService {
     scope: DashboardScope,
     range: ResolvedRange
   ): Promise<
-    { month: string; solicitudes: number; directas: number; cajaChica: number }[]
+    {
+      month: string
+      solicitudes: number
+      rendicionSolicitud: number
+      directas: number
+      cajaChica: number
+    }[]
   > {
     const [solicitudes, porTipo] = await Promise.all([
       this.reportModel.aggregate([
         {
-          $match: this.solicitudMatch(
-            clientId,
-            query,
-            scope,
-            range.from,
-            range.to
-          ),
+          $match: {
+            ...this.solicitudMatch(
+              clientId,
+              query,
+              scope,
+              range.from,
+              range.to
+            ),
+            // Una solicitud rechazada nunca se pago ni se va a rendir: en un
+            // grafico que compara solicitado contra rendido, dejarla dentro
+            // abre una brecha que no existe.
+            status: { $nin: ESTADOS_RENDICION_MUERTA },
+          },
         },
         {
           $group: {
@@ -811,20 +833,29 @@ export class DashboardService {
 
     const meses = new Map<
       string,
-      { month: string; solicitudes: number; directas: number; cajaChica: number }
+      {
+        month: string
+        solicitudes: number
+        rendicionSolicitud: number
+        directas: number
+        cajaChica: number
+      }
     >()
     const bucket = (month: string) => {
       if (!meses.has(month)) {
-        meses.set(month, { month, solicitudes: 0, directas: 0, cajaChica: 0 })
+        meses.set(month, {
+          month,
+          solicitudes: 0,
+          rendicionSolicitud: 0,
+          directas: 0,
+          cajaChica: 0,
+        })
       }
       return meses.get(month)!
     }
 
     for (const s of solicitudes) bucket(s.month).solicitudes += s.amount
-    for (const t of porTipo) {
-      if (t.bucket === 'directas') bucket(t.month).directas += t.amount
-      if (t.bucket === 'cajaChica') bucket(t.month).cajaChica += t.amount
-    }
+    for (const t of porTipo) bucket(t.month)[t.bucket] += t.amount
 
     return Array.from(meses.values()).sort((a, b) =>
       a.month.localeCompare(b.month)
@@ -851,19 +882,7 @@ export class DashboardService {
           range.to
         ),
       },
-      {
-        $lookup: {
-          from: 'expensereports',
-          localField: 'expenseReportId',
-          foreignField: '_id',
-          as: 'rep',
-        },
-      },
-      {
-        $addFields: {
-          rep0: { $arrayElemAt: ['$rep', 0] },
-        },
-      },
+      ...this.lookupRendicion(),
       {
         $addFields: {
           bucket: {
@@ -874,7 +893,7 @@ export class DashboardService {
                 $cond: [
                   { $eq: ['$rep0.isDirecta', true] },
                   'directas',
-                  'solicitudes',
+                  'rendicionSolicitud',
                 ],
               },
             ],
@@ -928,28 +947,6 @@ export class DashboardService {
       },
     ])
     return { amount: res[0]?.amount ?? 0, count: res[0]?.count ?? 0 }
-  }
-
-  private async aggregateReportByStatus(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    scope: DashboardScope,
-    range: ResolvedRange
-  ): Promise<{ status: string; count: number; budget: number }[]> {
-    return this.reportModel.aggregate([
-      {
-        $match: this.reportMatch(clientId, query, scope, range.from, range.to),
-      },
-      {
-        $group: {
-          _id: { $ifNull: ['$status', 'open'] },
-          count: { $sum: 1 },
-          budget: { $sum: { $ifNull: ['$budget', 0] } },
-        },
-      },
-      { $project: { _id: 0, status: '$_id', count: 1, budget: 1 } },
-      { $sort: { count: -1 } },
-    ])
   }
 
   // ─── Destinos ─────────────────────────────────────────────────────────────
@@ -1138,7 +1135,6 @@ export class DashboardService {
           viaticoPaidAmount: { $gt: 0 },
         },
       },
-      { $limit: 100 },
       ...this.lookupUserName(),
       {
         $project: {
@@ -1168,6 +1164,38 @@ export class DashboardService {
     return rows
       .map(r => ({ ...r, dias: this.diasDesde(r.desde) }))
       .sort((a, b) => b.dias - a.dias)
+  }
+
+  /**
+   * Reparte lo entregado sin rendir en tramos de antiguedad, en multiplos del
+   * plazo pactado. Es la lectura que la lista no da: cuanto de la deuda es
+   * reciente y cuanto lleva meses sin sustentar.
+   */
+  private agruparPorAntiguedad(
+    filas: { dias: number; amount: number }[]
+  ): { label: string; amount: number; count: number; vencido: boolean }[] {
+    const n = DIAS_PARA_RENDIR
+    const tramos = [
+      { label: `Al día (≤ ${n} d)`, hasta: n, vencido: false },
+      { label: `${n + 1}–${n * 2} d`, hasta: n * 2, vencido: true },
+      { label: `${n * 2 + 1}–${n * 3} d`, hasta: n * 3, vencido: true },
+      { label: `+ ${n * 3} d`, hasta: Infinity, vencido: true },
+    ]
+    return tramos.map(t => ({
+      label: t.label,
+      vencido: t.vencido,
+      amount: 0,
+      count: 0,
+    })).map((acc, i) => {
+      const desde = i === 0 ? -Infinity : tramos[i - 1].hasta
+      for (const f of filas) {
+        if (f.dias > desde && f.dias <= tramos[i].hasta) {
+          acc.amount += f.amount
+          acc.count += 1
+        }
+      }
+      return acc
+    })
   }
 
   /** Etapas de `$lookup` que resuelven `userId` al nombre del colaborador. */

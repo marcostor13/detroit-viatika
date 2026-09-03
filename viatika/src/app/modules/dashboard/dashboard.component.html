@@ -3,7 +3,7 @@
   <div class="flex flex-col gap-4">
     <div class="flex items-center justify-between flex-wrap gap-3">
       <div>
-        <h1 class="text-2xl font-bold text-primary">Dashboard</h1>
+        <h1 class="text-2xl font-bold text-secondary">Dashboard</h1>
         <p class="text-sm text-secondary">
           Gastos, solicitudes de fondos y pendientes de rendir
         </p>
@@ -11,10 +11,10 @@
       <div class="flex items-center gap-2">
         <!-- En movil el propio app-filter-panel ya ofrece "Limpiar", de ahi el hidden. -->
         @if (activeFilterCount() > 0) {
-          <app-button label="Limpiar filtros" variant="secondary"
+          <app-button label="Limpiar filtros" variant="neutral" size="sm"
             class="hidden md:inline-flex" (clicked)="clearFilters()" />
         }
-        <app-button label="Actualizar" variant="primary" (clicked)="loadDashboard()" />
+        <app-button label="Actualizar" variant="neutral" (clicked)="loadDashboard()" />
       </div>
     </div>
 
@@ -25,13 +25,13 @@
         <app-form-field #fDesde label="Desde">
           <input type="date" [id]="fDesde.fieldId" [ngModel]="filterDateFrom()"
             (ngModelChange)="filterDateFrom.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-info/30" />
         </app-form-field>
 
         <app-form-field #fHasta label="Hasta">
           <input type="date" [id]="fHasta.fieldId" [ngModel]="filterDateTo()"
             (ngModelChange)="filterDateTo.set($event); onFilterChange()"
-            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            class="w-full border border-divider rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-info/30" />
         </app-form-field>
 
         <app-form-field label="Centro de costo">
@@ -104,7 +104,7 @@
 
   @if (loading()) {
     <div class="flex items-center justify-center py-24">
-      <div class="w-10 h-10 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      <div class="w-10 h-10 border-4 border-ink-100 border-t-info rounded-full animate-spin"></div>
     </div>
   } @else {
     <!-- KPIs -->
@@ -113,18 +113,18 @@
       <app-card padding="sm">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Gasto total</span>
-          <span class="w-9 h-9 rounded-lg bg-primary/10 text-primary grid place-items-center">
+          <span class="w-9 h-9 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
             <app-icon name="dollar-sign" size="sm" />
           </span>
         </div>
         <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().totalGasto) }}</p>
-        <div class="mt-1 flex items-center gap-1 text-xs">
+        <div class="mt-1 flex items-center gap-1 text-xs text-tertiary">
           @if (kpis().totalGastoDeltaPct >= 0) {
-            <span class="text-success-ink font-medium">▲ {{ formatPct(kpis().totalGastoDeltaPct) }}</span>
+            <span class="font-medium text-ink-700">▲ {{ formatPct(kpis().totalGastoDeltaPct) }}</span>
           } @else {
-            <span class="text-error-ink font-medium">▼ {{ formatPct(-kpis().totalGastoDeltaPct) }}</span>
+            <span class="font-medium text-ink-700">▼ {{ formatPct(-kpis().totalGastoDeltaPct) }}</span>
           }
-          <span class="text-tertiary">vs periodo anterior</span>
+          <span>vs periodo anterior</span>
         </div>
       </app-card>
 
@@ -132,7 +132,7 @@
       <app-card padding="sm">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Anticipos solicitados</span>
-          <span class="w-9 h-9 rounded-lg bg-info/10 text-info grid place-items-center">
+          <span class="w-9 h-9 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
             <app-icon name="credit-card" size="sm" />
           </span>
         </div>
@@ -144,7 +144,7 @@
       <app-card padding="sm">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Devoluciones pendientes</span>
-          <span class="w-9 h-9 rounded-lg bg-warning/10 text-warning-ink grid place-items-center">
+          <span class="w-9 h-9 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
             <app-icon name="arrow-left" size="sm" />
           </span>
         </div>
@@ -158,14 +158,14 @@
       <app-card padding="sm">
         <div class="flex items-center justify-between">
           <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Entregado sin rendir</span>
-          <span class="w-9 h-9 rounded-lg bg-error/10 text-error-ink grid place-items-center">
+          <span class="w-9 h-9 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
             <app-icon name="clock" size="sm" />
           </span>
         </div>
         <p class="mt-3 text-xl sm:text-2xl font-bold text-secondary">{{ formatCurrency(animated().porRendirAmount) }}</p>
         <p class="mt-1 text-xs text-tertiary">
           {{ formatInt(animated().porRendirCount) }} anticipos ·
-          <span [class]="kpis().porRendirVencidoCount > 0 ? 'text-error-ink font-medium' : 'text-tertiary'">
+          <span [class]="kpis().porRendirVencidoCount > 0 ? 'text-warning-ink font-medium' : 'text-tertiary'">
             {{ formatInt(animated().porRendirVencidoCount) }} con más de {{ data()?.diasParaRendir }} días
           </span>
         </p>
@@ -179,64 +179,78 @@
       </app-card>
     }
 
-    <!-- Evolución mensual -->
+    <!-- Evolución de gastos mensuales -->
     <app-card [hover]="false">
       <div class="flex items-baseline justify-between flex-wrap gap-2 mb-4">
-        <h2 class="text-base font-semibold text-secondary">Evolución mensual</h2>
-        <p class="text-xs text-tertiary">Solicitado, gastado en rendición directa y consumido de caja chica</p>
+        <h2 class="text-base font-semibold text-secondary">Evolución de gastos mensuales</h2>
+        <p class="text-xs text-tertiary">
+          La distancia entre lo solicitado y lo rendido es lo que falta sustentar del mes
+        </p>
       </div>
       <div class="h-72">
         <canvas #monthlyChart></canvas>
       </div>
     </app-card>
 
-    <!-- Categorías + Órdenes de trabajo -->
+    <!-- Gasto por categoría: gráfico partido + montos y porcentaje al costado -->
+    <app-card [hover]="false">
+      <div class="flex items-baseline justify-between flex-wrap gap-2 mb-4">
+        <h2 class="text-base font-semibold text-secondary">Gasto por categoría</h2>
+        <p class="text-xs text-tertiary">Cerrado = rendición liquidada; en proceso = todavía en camino</p>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div class="h-96 lg:col-span-3">
+          <canvas #categoryChart></canvas>
+        </div>
+        <div class="space-y-2 lg:col-span-2">
+          @for (c of categoryRows(); track c.categoryId) {
+            <div class="flex items-center gap-2 border-b border-divider last:border-0 pb-1">
+              <span class="text-sm text-secondary flex-1 truncate" [title]="c.name">{{ c.name }}</span>
+              <span class="text-sm font-semibold text-secondary">{{ formatCurrency(c.amount) }}</span>
+              <span class="text-xs text-tertiary w-12 text-right">{{ formatPct(c.pct ?? 0) }}</span>
+            </div>
+          } @empty {
+            <p class="text-sm text-tertiary">Sin gastos en el periodo.</p>
+          }
+        </div>
+      </div>
+    </app-card>
+
+    <!-- Órdenes de trabajo + Centros de costo -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <app-card [hover]="false">
-        <h2 class="text-base font-semibold text-secondary mb-4">Gasto por categoría</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-5 gap-4 items-center">
-          <div class="h-56 sm:col-span-2">
-            <canvas #categoryChart></canvas>
-          </div>
-          <div class="space-y-2 sm:col-span-3">
-            @for (c of categoryRows(); track c.categoryId) {
-              <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" [style.background-color]="c.color"></span>
-                <span class="text-sm text-secondary flex-1 truncate" [title]="c.name">{{ c.name }}</span>
-                <span class="text-sm font-semibold text-secondary">{{ formatCurrency(c.amount) }}</span>
-                <span class="text-xs text-tertiary w-12 text-right">{{ formatPct(c.pct ?? 0) }}</span>
-              </div>
-            } @empty {
-              <p class="text-sm text-tertiary">Sin gastos en el periodo.</p>
-            }
-          </div>
-        </div>
-      </app-card>
-
-      <app-card [hover]="false">
         <h2 class="text-base font-semibold text-secondary mb-4">Top órdenes de trabajo</h2>
-        <div class="h-72">
+        <div class="h-96">
           <canvas #otChart></canvas>
         </div>
         @if ((data()?.topOrdenesTrabajo?.length ?? 0) === 0) {
           <p class="text-sm text-tertiary">Ningún comprobante del periodo tiene orden de trabajo.</p>
         }
       </app-card>
-    </div>
-
-    <!-- Centros de costo + Colaboradores -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <app-card [hover]="false">
         <h2 class="text-base font-semibold text-secondary mb-4">Top centros de costo</h2>
-        <div class="h-80">
+        <div class="h-96">
           <canvas #projectChart></canvas>
         </div>
       </app-card>
+    </div>
+
+    <!-- Colaboradores + Tipo de comprobante -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <app-card [hover]="false">
         <h2 class="text-base font-semibold text-secondary mb-4">Top colaboradores por consumo</h2>
-        <div class="h-80">
+        <div class="h-96">
           <canvas #collaboratorChart></canvas>
         </div>
+      </app-card>
+      <app-card [hover]="false">
+        <h2 class="text-base font-semibold text-secondary mb-4">Gasto por tipo de comprobante</h2>
+        <div class="h-64">
+          <canvas #typeChart></canvas>
+        </div>
+        @if ((data()?.expenseByType?.length ?? 0) === 0) {
+          <p class="text-sm text-tertiary">Sin gastos en el periodo.</p>
+        }
       </app-card>
     </div>
 
@@ -255,7 +269,7 @@
                 <p class="text-xs text-tertiary truncate">{{ r.codigo || r.place || 'Sin código' }}</p>
               </div>
               <span class="text-xs text-tertiary w-16 text-right">{{ r.dias }} días</span>
-              <span class="text-sm font-semibold text-primary w-24 text-right">{{ formatCurrency(r.amount) }}</span>
+              <span class="text-sm font-semibold text-ink-900 w-24 text-right">{{ formatCurrency(r.amount) }}</span>
             </div>
           } @empty {
             <p class="text-sm text-tertiary">Nadie tiene saldos por devolver.</p>
@@ -266,9 +280,12 @@
       <app-card [hover]="false">
         <div class="flex items-baseline justify-between gap-2 mb-4">
           <h2 class="text-base font-semibold text-secondary">Anticipos entregados sin rendir</h2>
-          <span class="text-xs text-tertiary">al día de hoy · rojo: más de {{ data()?.diasParaRendir }} días</span>
+          <span class="text-xs text-tertiary">al día de hoy · resaltado: más de {{ data()?.diasParaRendir }} días</span>
         </div>
-        <div class="space-y-2 max-h-80 overflow-y-auto">
+        <div class="h-40 mb-4">
+          <canvas #agingChart></canvas>
+        </div>
+        <div class="space-y-2 max-h-64 overflow-y-auto">
           @for (r of data()?.pendientes?.porRendir; track r.reportId) {
             <div class="flex items-center gap-3 py-1 border-b border-divider last:border-0">
               <div class="flex-1 min-w-0">
@@ -276,46 +293,13 @@
                 <p class="text-xs text-tertiary truncate">{{ r.codigo || r.place || 'Sin código' }}</p>
               </div>
               <span class="text-xs w-16 text-right"
-                [class]="isVencido(r.dias) ? 'text-error-ink font-semibold' : 'text-tertiary'">
+                [class]="isVencido(r.dias) ? 'text-warning-ink font-semibold' : 'text-tertiary'">
                 {{ r.dias }} días
               </span>
-              <span class="text-sm font-semibold text-primary w-24 text-right">{{ formatCurrency(r.amount) }}</span>
+              <span class="text-sm font-semibold text-ink-900 w-24 text-right">{{ formatCurrency(r.amount) }}</span>
             </div>
           } @empty {
             <p class="text-sm text-tertiary">No hay anticipos entregados sin rendir.</p>
-          }
-        </div>
-      </app-card>
-    </div>
-
-    <!-- Estado de rendiciones + tipos de comprobante -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <app-card [hover]="false">
-        <h2 class="text-base font-semibold text-secondary mb-4">Rendiciones por estado</h2>
-        <div class="space-y-2">
-          @for (r of reportStatusRows(); track r.label) {
-            <div class="flex items-center gap-3">
-              <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="statusColor(r.status)"></span>
-              <span class="text-sm text-secondary flex-1">{{ r.label }}</span>
-              <span class="text-sm font-semibold text-secondary">{{ formatInt(r.count) }}</span>
-            </div>
-          } @empty {
-            <p class="text-sm text-tertiary">Sin rendiciones en el periodo.</p>
-          }
-        </div>
-      </app-card>
-
-      <app-card [hover]="false">
-        <h2 class="text-base font-semibold text-secondary mb-4">Gasto por tipo de comprobante</h2>
-        <div class="space-y-2">
-          @for (t of data()?.expenseByType; track t.type) {
-            <div class="flex items-center gap-3">
-              <span class="text-sm text-secondary flex-1">{{ expenseTypeLabel(t.type) }}</span>
-              <span class="text-xs text-tertiary">{{ formatInt(t.count) }}</span>
-              <span class="text-sm font-semibold text-secondary w-28 text-right">{{ formatCurrency(t.amount) }}</span>
-            </div>
-          } @empty {
-            <p class="text-sm text-tertiary">Sin gastos en el periodo.</p>
           }
         </div>
       </app-card>
@@ -325,7 +309,7 @@
     @if ((data()?.topLocations?.length ?? 0) > 0) {
       <div class="flex items-center gap-3 pt-2">
         <div class="flex items-center gap-2">
-          <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary grid place-items-center">
+          <span class="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
             <app-icon name="map-pin" size="sm" />
           </span>
           <h2 class="text-lg font-bold text-secondary">Gastos por destino</h2>
@@ -340,7 +324,7 @@
         <app-card padding="sm">
           <div class="flex items-center justify-between mb-3">
             <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Departamentos</span>
-            <span class="w-8 h-8 rounded-lg bg-info/10 text-info grid place-items-center">
+            <span class="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
               <app-icon name="briefcase" size="sm" />
             </span>
           </div>
@@ -351,7 +335,7 @@
         <app-card padding="sm">
           <div class="flex items-center justify-between mb-3">
             <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Destino principal</span>
-            <span class="w-8 h-8 rounded-lg bg-primary/10 text-primary grid place-items-center">
+            <span class="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
               <app-icon name="star" size="sm" />
             </span>
           </div>
@@ -362,7 +346,7 @@
         <app-card padding="sm">
           <div class="flex items-center justify-between mb-3">
             <span class="text-xs font-medium text-tertiary uppercase tracking-wide">Promedio por destino</span>
-            <span class="w-8 h-8 rounded-lg bg-warning/10 text-warning-ink grid place-items-center">
+            <span class="w-8 h-8 rounded-lg bg-ink-100 text-ink-700 grid place-items-center">
               <app-icon name="landmark" size="sm" />
             </span>
           </div>
@@ -385,9 +369,9 @@
           <div class="p-4 pb-2 flex items-center justify-between">
             <h2 class="text-base font-semibold text-secondary">Mapa</h2>
             <div class="flex items-center gap-2 text-xs text-tertiary">
-              <span class="w-2.5 h-2.5 rounded-full bg-info inline-block"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-warning inline-block"></span>
-              <span class="w-2.5 h-2.5 rounded-full bg-primary inline-block"></span>
+              @for (c of mapaColors; track c) {
+                <span class="w-2.5 h-2.5 rounded-full inline-block" [style.background-color]="c"></span>
+              }
               <span>menor a mayor</span>
             </div>
           </div>

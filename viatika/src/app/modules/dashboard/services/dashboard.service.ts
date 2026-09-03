@@ -13,22 +13,24 @@ export interface IDashboardFilters {
   department?: string;
 }
 
-export interface IReportStatus {
-  status: string;
-  count: number;
-  budget: number;
-}
-
 export interface ITypeAmount {
   type: string;
   amount: number;
   count: number;
 }
 
+/**
+ * Fila de un ranking, partida según el estado de la rendición a la que
+ * pertenece cada comprobante. `amount` es la suma de las dos mitades.
+ */
 export interface INamedAmount {
   name: string;
   amount: number;
   count: number;
+  /** Gasto de rendiciones ya cerradas, que no admiten más cambios. */
+  cerrado: number;
+  /** Gasto de rendiciones todavía en camino. */
+  enProceso: number;
   /** Porcentaje sobre el gasto total del periodo (solo en categorías). */
   pct?: number;
   categoryId?: string;
@@ -37,10 +39,13 @@ export interface INamedAmount {
   userId?: string;
 }
 
-/** Un mes con las tres vías por las que sale dinero. */
+/** Un mes con las cuatro vías por las que se mueve el dinero. */
 export interface IMonthlyPoint {
   month: string;
+  /** Lo pedido por adelantado en solicitudes de fondos. */
   solicitudes: number;
+  /** Lo que el colaborador terminó sustentando contra esas solicitudes. */
+  rendicionSolicitud: number;
   directas: number;
   cajaChica: number;
 }
@@ -85,6 +90,15 @@ export interface IPendienteRow {
   status?: string;
 }
 
+/** Tramo de antigüedad de lo entregado sin rendir. */
+export interface IAgingBucket {
+  label: string;
+  amount: number;
+  count: number;
+  /** true si el tramo ya pasó el plazo pactado para rendir. */
+  vencido: boolean;
+}
+
 export interface IDashboardResponse {
   range: { dateFrom: string; dateTo: string };
   currency: string;
@@ -92,6 +106,7 @@ export interface IDashboardResponse {
   scope: { restricted: boolean; projectIds: string[] };
   kpis: IDashboardKpis;
   diasParaRendir: number;
+  porRendirBuckets: IAgingBucket[];
   monthlySeries: IMonthlyPoint[];
   topCategories: INamedAmount[];
   topOrdenesTrabajo: INamedAmount[];
@@ -103,7 +118,6 @@ export interface IDashboardResponse {
     devoluciones: IPendienteRow[];
     porRendir: IPendienteRow[];
   };
-  reportByStatus: IReportStatus[];
   expenseByType: ITypeAmount[];
 }
 
