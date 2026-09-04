@@ -231,6 +231,7 @@ export class RendicionCajaChicaDetalleComponent implements OnInit {
       planilla_movilidad: 'Plan. Movilidad',
       recibo_caja: 'Recibo de Caja',
       otros_gastos: 'Otros Gastos',
+      cancelacion: 'Cancelación',
     };
     return map[type] ?? type ?? '-';
   }

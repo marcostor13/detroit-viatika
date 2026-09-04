@@ -179,6 +179,25 @@ describe('ExpenseReportService — importes de liquidación en moneda base', () 
       expect(settlement.expenseTotalReporte).toBe(100)
     })
 
+    /**
+     * Viático cancelado: el colaborador rinde una cancelación (comprobante en
+     * 0) porque el viaje no ocurrió. El dinero ya está en su cuenta, así que
+     * tiene que devolverlo entero.
+     */
+    it('un viático que solo rinde una cancelación se devuelve completo', async () => {
+      const { settlement, close } = await liquidar(
+        { ...viatico, viaticoMoneda: 'PEN', viaticoPaidAmount: 500, tipoCambio: 1 },
+        [{ status: 'approved', expenseType: 'cancelacion', total: 0, moneda: 'PEN', montoBase: 0, montoReporte: 0 }]
+      )
+
+      expect(settlement.expenseTotal).toBe(0)
+      expect(settlement.type).toBe('devolucion')
+      expect(settlement.difference).toBe(500)
+      expect(settlement.differenceReporte).toBe(500)
+      // No se cierra sola: falta que Tesorería asiente la devolución.
+      expect(close).not.toHaveBeenCalled()
+    })
+
     it('cierra solo el viático que queda equilibrado', async () => {
       const { settlement, close } = await liquidar(
         { ...viatico, viaticoPaidAmount: 100 },

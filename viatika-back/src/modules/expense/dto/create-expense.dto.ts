@@ -107,6 +107,7 @@ export class CreateExpenseDto {
     'planilla_movilidad',
     'otros_gastos',
     'recibo_caja',
+    'cancelacion',
   ])
   @IsOptional()
   expenseType?: ExpenseType
@@ -158,6 +159,11 @@ export class CreateExpenseDto {
   @IsString()
   @IsOptional()
   rucEmisor?: string
+
+  /** Motivo de la cancelación. Es el único texto que lleva ese tipo de gasto. */
+  @IsString()
+  @IsOptional()
+  motivo?: string
 
   // --- Desglose contable (asientos Contanet) ---
   @IsNumber()

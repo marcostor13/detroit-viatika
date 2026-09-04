@@ -544,6 +544,58 @@ describe('pago de Tesorería en la solicitud de fondos', () => {
 });
 
 /**
+ * Viático cancelado. Con el anticipo YA depositado, la liquidación manda al
+ * colaborador a devolver el dinero y esa rama ya existía. El caso nuevo es el
+ * viático que se cancela SIN que Tesorería haya pagado: no hay reembolso ni
+ * devolución, y el único hito que queda es el cierre.
+ */
+describe('solicitud de fondos cancelada', () => {
+  const labels = (r: any) => buildReportFlowSteps(r).map(s => s.label);
+  const paso = (r: any, label: string) => buildReportFlowSteps(r).find(s => s.label === label);
+
+  const viaticoRendido = (extra: any = {}) => ({
+    _id: 'v-cancel',
+    type: 'viatico',
+    status: 'approved',
+    createdAt: '2026-09-01T00:00:00.000Z',
+    contabilidadApprovedAt: '2026-09-04T00:00:00.000Z',
+    viaticoRequiredLevels: 1,
+    viaticoApprovalLevel: 1,
+    viaticoApproverChain: [
+      { level: 2, approved: true, approvedAt: '2026-09-02T00:00:00.000Z', approverIds: [{ _id: 'u1', name: 'ANA' }] },
+    ],
+    expenseIds: [{ status: 'approved', expenseType: 'cancelacion', total: 0 }],
+    ...extra,
+  });
+
+  it('con el anticipo pagado manda a devolver el dinero', () => {
+    // Es lo que persiste la liquidación al aprobar (advanceTotal - 0).
+    const r = viaticoRendido({
+      viaticoPaidAmount: 500,
+      settlement: { type: 'devolucion', difference: 500 },
+    });
+    expect(labels(r)).toContain('Devolución del colaborador');
+    expect(labels(r)).toContain('Cierre de Tesorería');
+    expect(labels(r)).not.toContain('Reembolso de Tesorería');
+  });
+
+  it('sin anticipo pagado solo queda el cierre', () => {
+    const r = viaticoRendido({ viaticoPaidAmount: 0 });
+    expect(paso(r, 'Cierre de Tesorería')?.state).toBe('active');
+    expect(labels(r)).not.toContain('Devolución del colaborador');
+    expect(labels(r)).not.toContain('Reembolso de Tesorería');
+  });
+
+  // Un viático que ya entró en fase de rendición usa la línea de tiempo de dos
+  // fases, que es otro constructor: tiene que decir lo mismo.
+  it('lo mismo en la vista de dos fases, mientras la rendición está en curso', () => {
+    const r = viaticoRendido({ status: 'submitted', viaticoPaidAmount: 0 });
+    expect(labels(r)).toContain('Cierre de Tesorería');
+    expect(labels(r)).not.toContain('Finalizada');
+  });
+});
+
+/**
  * VD-133: la cadena es consecutiva. Antes todos los pasos pendientes se pintaban
  * activos a la vez, coherente con la aprobación en paralelo de entonces.
  */
@@ -742,6 +794,71 @@ describe('rendición directa del colaborador', () => {
   it('una directa CON depósito no lo anuncia: su desenlace no se sabe hasta liquidar', () => {
     // Puede terminar en reembolso, en devolución o equilibrada.
     const r: any = { ...directaEnAprobacion(), directaDeposit: { amount: 500 } };
+    expect(labels(r)).not.toContain('Reembolso de Tesorería');
+  });
+
+  /**
+   * Cancelación: el colaborador deja constancia de que la rendición no se va a
+   * ejecutar y el comprobante va en 0. No hay nada que reembolsarle, así que la
+   * cronología no puede anunciar un pago de Tesorería que nunca va a ocurrir.
+   */
+  it('una directa cuyos comprobantes suman 0 no pasa por Tesorería', () => {
+    const r: any = {
+      ...directaEnAprobacion(),
+      status: 'approved',
+      contabilidadApprovedAt: '2026-08-20T00:00:00.000Z',
+      expenseIds: [{ status: 'approved', expenseType: 'cancelacion', total: 0 }],
+    };
+    expect(labels(r)).not.toContain('Reembolso de Tesorería');
+    // El desenlace pasa a ser el cierre, que es el único hito que queda.
+    expect(labels(r)).toContain('Cierre de Tesorería');
+  });
+
+  it('anuncia el cierre de Tesorería, que es lo único que queda', () => {
+    const r: any = {
+      ...directaEnAprobacion(),
+      status: 'approved',
+      contabilidadApprovedAt: '2026-08-20T00:00:00.000Z',
+      expenseIds: [{ status: 'approved', expenseType: 'cancelacion', total: 0 }],
+    };
+    const p = paso(r, 'Cierre de Tesorería');
+    expect(p?.state).toBe('active');
+    expect(p?.description).toContain('Pendiente de cierre por Tesorería');
+    // El "Aprobada" genérico sobra: lo reemplaza el paso del cierre, igual que
+    // en el flujo con reembolso.
+    expect(labels(r)).not.toContain('Aprobada');
+  });
+
+  it('da el cierre por hecho una vez cerrada', () => {
+    const r: any = {
+      ...directaEnAprobacion(),
+      status: 'closed',
+      contabilidadApprovedAt: '2026-08-20T00:00:00.000Z',
+      closureRecord: { closedAt: '2026-08-21T00:00:00.000Z' },
+      expenseIds: [{ status: 'approved', expenseType: 'cancelacion', total: 0 }],
+    };
+    expect(paso(r, 'Cerrado por Tesorería')?.state).toBe('completed');
+  });
+
+  it('con un comprobante en 0 y otro con monto sí espera el reembolso', () => {
+    const r: any = {
+      ...directaEnAprobacion(),
+      expenseIds: [
+        { status: 'approved', expenseType: 'cancelacion', total: 0 },
+        { status: 'approved', total: 120 },
+      ],
+    };
+    expect(labels(r)).toContain('Reembolso de Tesorería');
+  });
+
+  it('un comprobante rechazado no cuenta para el saldo', () => {
+    const r: any = {
+      ...directaEnAprobacion(),
+      expenseIds: [
+        { status: 'approved', expenseType: 'cancelacion', total: 0 },
+        { status: 'rejected', total: 900 },
+      ],
+    };
     expect(labels(r)).not.toContain('Reembolso de Tesorería');
   });
 
