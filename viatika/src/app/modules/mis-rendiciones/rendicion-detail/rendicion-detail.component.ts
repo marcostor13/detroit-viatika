@@ -1249,6 +1249,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (type === 'planilla_movilidad') return 'Planilla Movilidad';
     if (type === 'otros_gastos') return 'Otros Gastos';
     if (type === 'recibo_caja') return 'Recibo de Caja';
+    if (type === 'cancelacion') return 'Cancelación';
     return 'Factura';
   }
 
@@ -1257,6 +1258,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     const type = expense?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
     if (type === 'recibo_caja') return 'H';
+    if (type === 'cancelacion') return 'CN';
     if (type === 'otros_gastos') {
       const sub = expense?.subTipo ?? this.getExpenseDataObject(expense)['subTipo'];
       if (sub === 'AL') return 'AL';
@@ -1282,6 +1284,7 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (code === 'PM') return 'bg-yellow-100 text-yellow-800';
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'H')  return 'bg-green-100 text-green-800';
+    if (code === 'CN') return 'bg-rose-100 text-rose-700';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
     if (code === 'DJ' || code === 'DJE' || code === 'AL') return 'bg-amber-100 text-amber-800';
     if (code === 'TK') return 'bg-teal-100 text-teal-700';
@@ -1402,6 +1405,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     if (type === 'otros_gastos') {
       return expense?.description || 'DJ firmada';
     }
+    // El motivo es el único texto de una cancelación; va en `description`.
+    if (type === 'cancelacion') {
+      return expense?.description || 'Cancelación';
+    }
     if (type === 'recibo_caja') {
       try {
         const data = typeof expense?.data === 'string' ? JSON.parse(expense.data) : expense?.data || {};
@@ -1456,6 +1463,10 @@ export class RendicionDetailComponent implements OnInit, OnDestroy {
     }
     if (type === 'otros_gastos') {
       return expense?.description || 'DJ firmada';
+    }
+    // El motivo es el único texto de una cancelación; va en `description`.
+    if (type === 'cancelacion') {
+      return expense?.description || 'Cancelación';
     }
     if (type === 'recibo_caja') {
       try {

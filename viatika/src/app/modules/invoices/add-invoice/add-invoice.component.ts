@@ -163,6 +163,27 @@ export default class AddInvoiceComponent implements OnInit {
   expenseType = signal<ExpenseType>('factura');
   /** Sub-tipo para otros_gastos: TK | BV | RC | DJ | OT */
   otrosSubTipo = signal<string>('AL');
+  /**
+   * Cancelación: la rendición no se va a ejecutar. Solo se declara la fecha y el
+   * motivo; va siempre en 0 y sin centro de costo, categoría ni adjunto.
+   *
+   * No es un tipo de gasto propio en la pantalla: se elige como un tipo de
+   * documento más dentro de "Otros" (decisión del cliente). Internamente sí
+   * conserva su `expenseType`, que es lo que distingue al comprobante en el
+   * backend, los reportes y la rendición.
+   */
+  isCancelacion(): boolean {
+    return this.expenseType() === 'cancelacion';
+  }
+
+  /**
+   * ¿La pantalla está en "Otros"? Abarca la cancelación, que se elige desde su
+   * mismo selector de tipo de documento aunque se guarde con otro tipo.
+   */
+  esOtrosUI(): boolean {
+    return this.expenseType() === 'otros_gastos' || this.isCancelacion();
+  }
+
   /** Sub-tipos que llevan documento físico con RUC/serie/correlativo. */
   otrosSubTipoMuestraDocumento = computed(() =>
     ['TK', 'BV', 'RC'].includes(this.otrosSubTipo())
@@ -173,7 +194,9 @@ export default class AddInvoiceComponent implements OnInit {
    * nacional se conserva por retrocompatibilidad de gastos ya creados.
    */
   otrosSubTipoRequiereDeclaracion = computed(() =>
-    ['AL', 'DJ', 'DJE'].includes(this.otrosSubTipo())
+    // La cancelación queda fuera: no hay ningún gasto que declarar bajo
+    // juramento, así que tampoco lleva firma ni checkbox.
+    !this.isCancelacion() && ['AL', 'DJ', 'DJE'].includes(this.otrosSubTipo())
   );
 
   /**
@@ -198,6 +221,13 @@ export default class AddInvoiceComponent implements OnInit {
       opciones.push({ code: 'EXT', label: 'Viaje en el extranjero', hint: 'declaración jurada o documentos' });
     }
     opciones.push({ code: 'OT', label: 'Otros' });
+    // La rendición no se ejecutó. Va al final porque no es un comprobante de
+    // gasto: es la constancia de que no hubo ninguno.
+    opciones.push({
+      code: 'CAN',
+      label: 'Cancelación de servicio / proyecto',
+      hint: 'sin monto ni comprobante',
+    });
     return opciones;
   }
 
@@ -220,6 +250,10 @@ export default class AddInvoiceComponent implements OnInit {
    * extranjero" (EXT) se marca con cualquiera de sus dos sub-tipos.
    */
   subTipoBotonActivo(code: string): boolean {
+    // En cancelación manda el tipo de gasto, no el sub-tipo: así ningún otro
+    // botón queda marcado por lo que hubiera elegido antes.
+    if (this.isCancelacion()) return code === 'CAN';
+    if (code === 'CAN') return false;
     if (code === 'EXT') return this.esViajeExtranjero();
     return this.otrosSubTipo() === code;
   }
@@ -735,6 +769,19 @@ export default class AddInvoiceComponent implements OnInit {
             // `loadInvoice` no pasa por `syncTopValidators`: el sub-tipo recién
             // se conoce aquí, así que la fecha se marca obligatoria ahora.
             this.syncFechaGastoValidator();
+          } else if (type === 'cancelacion') {
+            // El selector de tipo de documento se sigue mostrando: es desde
+            // donde se eligió, y marca cuál es.
+            this.otrosSubTipo.set('CAN');
+            this.form.patchValue({
+              ...baseValues,
+              cancelacionFecha: fecha,
+              cancelacionMotivo:
+                dataObj.motivo || (res as any).description || '',
+            });
+            // El bloque superior no se muestra, pero sus validadores siguen
+            // puestos desde el arranque del formulario: hay que soltarlos.
+            this.syncTopValidators();
           } else if (type === 'recibo_caja') {
             this.form.patchValue({
               ...baseValues,
@@ -1192,6 +1239,8 @@ export default class AddInvoiceComponent implements OnInit {
    * Gastos movida a su propio bloque el contenedor quedaría vacío.
    */
   get showTopBlock(): boolean {
+    // La cancelación no imputa nada: no lleva centro de costo, OT ni categoría.
+    if (this.isCancelacion()) return false;
     if (!this.isDirectaContext()) return true;
     return this.showTopCategorySelect || this.showMovilidadCategoryBlock;
   }
@@ -1207,6 +1256,8 @@ export default class AddInvoiceComponent implements OnInit {
         return false;
       case 'otros_gastos':
         return this.otrosSubTipo() !== 'AL' && !this.isDj();
+      case 'cancelacion':
+        return false;
       default:
         return true;
     }
@@ -1224,6 +1275,8 @@ export default class AddInvoiceComponent implements OnInit {
    * llegaba vacío.
    */
   get showFirmaBlock(): boolean {
+    // La cancelación no entrega dinero a nadie: no hay comprobante que firmar.
+    if (this.isCancelacion()) return false;
     if (!this.isCajaChicaReport()) return false;
     if (this.id) return true;
     return !!this.selectedFile || !this.comprobanteRequiereAdjunto;
@@ -1441,6 +1494,9 @@ export default class AddInvoiceComponent implements OnInit {
       djMovilidadCategoryId: [''],
       djAlimentacionRows: this.fb.array([]),
       djMovilidadRows: this.fb.array([]),
+      // Cancelación: los dos únicos campos del tipo (el monto siempre es 0).
+      cancelacionFecha: [''],
+      cancelacionMotivo: [''],
       // Recibo de caja
       receiptRazonSocial: [''],
       receiptRuc: [''],
@@ -1525,6 +1581,17 @@ export default class AddInvoiceComponent implements OnInit {
    * respeta la opción elegida, para que volver a tocar el botón no la pise.
    */
   selectOtrosSubTipo(code: string): void {
+    // La cancelación se elige como un tipo de documento más, pero por dentro es
+    // otro tipo de gasto: se cambia al entrar y se deshace al elegir cualquier
+    // otro, para que el formulario vuelva a ser el de Otros Gastos.
+    if (code === 'CAN') {
+      this.setExpenseType('cancelacion');
+      this.otrosSubTipo.set('CAN');
+      return;
+    }
+    if (this.isCancelacion()) {
+      this.setExpenseType('otros_gastos');
+    }
     if (code === 'EXT') {
       if (this.esViajeExtranjero()) return;
       this.otrosSubTipo.set('DJE');
@@ -1723,6 +1790,19 @@ export default class AddInvoiceComponent implements OnInit {
    * y dejan de ser obligatorios; en el resto de casos son requeridos.
    */
   private syncTopValidators(): void {
+    // La cancelación no pasa por el bloque superior: sin centro de costo ni
+    // categoría que exigir, dejarlos requeridos la volvía imposible de guardar.
+    if (this.isCancelacion()) {
+      for (const nombre of ['proyectId', 'categoryId']) {
+        const ctrl = this.form.get(nombre);
+        if (ctrl && !ctrl.disabled) {
+          ctrl.setValidators([]);
+          ctrl.updateValueAndValidity({ emitEvent: false });
+        }
+      }
+      this.syncFechaGastoValidator();
+      return;
+    }
     // Centro de costo: opcional solo en planilla directa (vive en la rendición).
     // Requerido en el resto de casos, caja chica incluida — ahí se precarga con
     // el de la caja (ver `prefillCentroCostoCajaChica`) y el responsable puede
@@ -2165,6 +2245,7 @@ export default class AddInvoiceComponent implements OnInit {
     // Al editar no se re-exige: el comprobante ya se guardó con la suya.
     const firmaOk =
       !this.isCajaChicaReport() ||
+      this.isCancelacion() ||
       !!this.id ||
       !!(this.form.get('firmaUrl')?.value || '').toString().trim();
     if (!firmaOk) return false;
@@ -2238,6 +2319,11 @@ export default class AddInvoiceComponent implements OnInit {
           rucOk
         );
       }
+      case 'cancelacion':
+        return (
+          !!(this.form.get('cancelacionFecha')?.value || '').toString().trim() &&
+          !!(this.form.get('cancelacionMotivo')?.value || '').toString().trim()
+        );
       case 'recibo_caja':
         return (
           proyectOk &&
@@ -2305,6 +2391,45 @@ export default class AddInvoiceComponent implements OnInit {
         this.notificationService.show('Error al subir el archivo: ' + err.message, 'error');
       },
     });
+  }
+
+  /**
+   * Cancelación: solo fecha y motivo. El monto no se envía — lo fija el backend
+   * en 0 — y no hay archivo que subir, así que se guarda de una.
+   */
+  saveCancelacion() {
+    const fecha = (this.form.get('cancelacionFecha')?.value || '').toString().trim();
+    const motivo = (this.form.get('cancelacionMotivo')?.value || '').toString().trim();
+    if (!fecha || !motivo) {
+      this.notificationService.show(
+        'Completa la fecha y el motivo de la cancelación',
+        'error'
+      );
+      return;
+    }
+
+    this.isLoading.set(true);
+    this.invoiceService
+      .createCancelacion({
+        expenseReportId: this.rendicionId || undefined,
+        fechaEmision: fecha,
+        motivo,
+      })
+      .subscribe({
+        next: (res) => {
+          this.isLoading.set(false);
+          this.notificationService.show('Cancelación registrada correctamente', 'success');
+          this.notifyExpenseWarnings(res);
+          this.navigateAfterExpenseSave();
+        },
+        error: (error) => {
+          this.isLoading.set(false);
+          this.notificationService.show(
+            'Error al registrar la cancelación: ' + (error.error?.message || error.message),
+            'error'
+          );
+        },
+      });
   }
 
   saveMobilitySheet() {
@@ -2747,6 +2872,9 @@ export default class AddInvoiceComponent implements OnInit {
       case 'recibo_caja':
         this.saveCashReceipt();
         break;
+      case 'cancelacion':
+        this.saveCancelacion();
+        break;
       default:
         if (!this.selectedFile) {
           this.notificationService.show('Debes seleccionar un archivo de factura', 'error');
@@ -2839,6 +2967,25 @@ export default class AddInvoiceComponent implements OnInit {
       };
       payload.data = JSON.stringify(dataObj);
       if (fechaBackend) payload.fechaEmision = fechaBackend;
+    } else if (type === 'cancelacion') {
+      const motivo = (formValue.cancelacionMotivo || '').toString().trim();
+      const fecha = (formValue.cancelacionFecha || '').toString().trim();
+      payload.description = motivo;
+      // Sigue siendo un gasto sin importe: corregir la fecha o el motivo no lo
+      // convierte en uno cobrable.
+      payload.total = 0;
+      payload.data = JSON.stringify({
+        ...previousData,
+        type: 'cancelacion',
+        motivo,
+        fechaCancelacion: this.formatDateForBackend(fecha),
+      });
+      payload.fechaEmision = fecha;
+      // No tiene centro de costo ni categoría que mandar; enviarlos vacíos
+      // haría fallar el casteo a ObjectId del backend.
+      delete payload.proyectId;
+      delete payload.categoryId;
+      delete payload.ordenTrabajoId;
     } else if (type === 'recibo_caja') {
       const dataObj = {
         ...previousData,
@@ -3310,6 +3457,7 @@ export default class AddInvoiceComponent implements OnInit {
       case 'planilla_movilidad': return 'Guardar Planilla';
       case 'otros_gastos': return 'Guardar Gasto';
       case 'recibo_caja': return 'Guardar Recibo de Caja';
+      case 'cancelacion': return 'Guardar Cancelación';
       default: return 'Subir factura';
     }
   }

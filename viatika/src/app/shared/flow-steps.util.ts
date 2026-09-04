@@ -374,6 +374,31 @@ function viaticoEnteredRendicion(r: any): boolean {
  * navega a la rendición completa: antes de que el colaborador empiece a rendir,
  * esa vista está vacía (S/ 0.00, sin comprobantes) y no aporta nada a nadie.
  */
+/**
+ * ¿Los comprobantes de la rendición suman cero?
+ *
+ * Es el caso de la cancelación: se deja constancia de que el gasto no ocurrió,
+ * el comprobante va en 0 y la rendición no deja saldo a favor de nadie, así que
+ * no tiene por qué pasar por Tesorería a cobrar ni a devolver.
+ *
+ * Solo se concluye eso cuando TODOS los comprobantes traen su importe. Las
+ * listas que los devuelven sin monto (o solo sus ids) no permiten afirmar que
+ * la rendición esté en cero: ahí se mantiene el comportamiento de siempre.
+ */
+function comprobantesSinSaldo(r: any): boolean {
+  const montos: unknown[] = (Array.isArray(r?.expenseIds) ? r.expenseIds : [])
+    .filter((e: any) => e && typeof e === 'object')
+    .filter((e: any) => String(e.status ?? '').toLowerCase() !== 'rejected')
+    .map((e: any) => e.montoReporte ?? e.total);
+  const importesConocidos =
+    montos.length > 0 &&
+    montos.every(m => m !== null && m !== undefined && Number.isFinite(Number(m)));
+  return (
+    importesConocidos &&
+    Math.abs(montos.reduce((suma: number, m) => suma + Number(m), 0)) < 0.01
+  );
+}
+
 export function isSolicitudPhase(r: any): boolean {
   if (!r) return false;
   if (r.type === 'viatico') return !viaticoEnteredRendicion(r);
@@ -435,13 +460,15 @@ export function buildReportFlowSteps(
     r.settlement?.type === 'devolucion' ||
     !!r.returnVoucher ||
     status === 'returned';
+  const sinSaldoQueLiquidar = comprobantesSinSaldo(r);
   // Sin `terminal`: en caja chica el desenlace se conoce desde que se abre la
   // rendición. Lo rendido sale del fondo del responsable, no hay depósito
   // previo contra el cual compensarlo, así que el saldo siempre queda a su
   // favor y lo repone Tesorería. Anunciarlo recién al aprobarse dejaba la línea
   // de tiempo terminando en "Finalizada", sin decir que después venían el
   // reembolso y el cierre.
-  const cajaChicaReposicion = isCajaChica && !enDevolucion;
+  const cajaChicaReposicion =
+    isCajaChica && !enDevolucion && !sinSaldoQueLiquidar;
   // Misma razón que la caja chica, y sin `terminal` por lo mismo: en una
   // directa del colaborador todo lo rendido salió de su bolsillo, no hay
   // depósito previo contra el cual compensarlo, así que el saldo siempre queda
@@ -450,7 +477,8 @@ export function buildReportFlowSteps(
   // la línea de tiempo terminaba en "Finalizada" como si después no faltara
   // nada. Una directa CON depósito sí queda fuera: ahí el desenlace puede ser
   // reembolso, devolución o quedar equilibrada, y no se sabe hasta liquidar.
-  const directaSinDeposito = collaboratorDirecta && !enDevolucion;
+  const directaSinDeposito =
+    collaboratorDirecta && !enDevolucion && !sinSaldoQueLiquidar;
   const expectsReembolso =
     reembolsoDone ||
     r.settlement?.type === 'reembolso' ||
@@ -464,6 +492,14 @@ export function buildReportFlowSteps(
     !!r.returnVoucher || r.returnRecord?.status === 'validated' || status === 'returned' || status === 'closed';
   const expectsDevolucion =
     !expectsReembolso && (r.settlement?.type === 'devolucion' || !!r.returnVoucher || status === 'returned');
+  /**
+   * No hay dinero que mover en ningún sentido (la rendición se canceló y sus
+   * comprobantes suman 0), así que el único hito que queda es el cierre de
+   * Tesorería. Sin esto la cronología terminaba en "Aprobada" sin decir que
+   * todavía faltaba cerrarla, que es justo lo que hay que saber.
+   */
+  const soloFaltaCierre =
+    sinSaldoQueLiquidar && !expectsReembolso && !expectsDevolucion;
 
   /**
    * La directa ya salio de las manos del colaborador: dejo el estado `open` al
@@ -572,6 +608,8 @@ export function buildReportFlowSteps(
     } else if (expectsDevolucion && !devolucionDone) {
       activeIndex = reembolsoIdx;
     } else if (expectsDevolucion && devolucionDone) {
+      activeIndex = closeIdx;
+    } else if (soloFaltaCierre) {
       activeIndex = closeIdx;
     }
   }
@@ -795,7 +833,7 @@ export function buildReportFlowSteps(
       state: 'active',
       description: 'Pendiente de depósito por Tesorería',
     });
-  } else if (!rejected && !expectsReembolso && !expectsDevolucion && !closed) {
+  } else if (!rejected && !expectsReembolso && !expectsDevolucion && !closed && !soloFaltaCierre) {
     const finalState = stateFor(finalIdx);
     const label =
       finalState === 'completed' ? (FINAL_LABELS[status] ?? 'Finalizada') :
@@ -840,8 +878,10 @@ export function buildReportFlowSteps(
   }
 
   // closeIdx — Cierre por Tesorería (paso final del flujo). Se muestra cuando la
-  // rendición ya está cerrada o cuando el flujo avanza hacia el cierre (reembolso/devolución).
-  if (!rejected && (closed || expectsReembolso || expectsDevolucion)) {
+  // rendición ya está cerrada o cuando el flujo avanza hacia el cierre: por
+  // reembolso, por devolución, o porque no hay nada que liquidar y el cierre es
+  // lo único que queda.
+  if (!rejected && (closed || expectsReembolso || expectsDevolucion || soloFaltaCierre)) {
     const closeState = stateFor(closeIdx);
     steps.push({
       label: closeState === 'completed' ? 'Cerrado por Tesorería' : 'Cierre de Tesorería',
@@ -937,6 +977,19 @@ function buildViaticoTwoPhaseSteps(
     !!r.returnVoucher || r.returnRecord?.status === 'validated' || status === 'returned' || status === 'closed';
   const expectsDevolucion =
     !expectsReembolso && (r.settlement?.type === 'devolucion' || !!r.returnVoucher || status === 'returned');
+  /**
+   * Viático cancelado sin dinero de por medio: los comprobantes suman 0 y
+   * Tesorería tampoco llegó a pagar el anticipo (se cubrió con saldo, o el
+   * viaje se canceló antes del depósito). No hay reembolso ni devolución, así
+   * que el único hito que queda es el cierre. Un viático YA PAGADO no entra
+   * aquí: ahí el dinero está en manos del colaborador y la liquidación lo
+   * manda a devolverlo.
+   */
+  const soloFaltaCierre =
+    comprobantesSinSaldo(r) &&
+    Number(r.viaticoPaidAmount ?? 0) <= 0 &&
+    !expectsReembolso &&
+    !expectsDevolucion;
 
   const COORD_IDX = 1;
   const CONTA_IDX = 2;
@@ -968,6 +1021,7 @@ function buildViaticoTwoPhaseSteps(
       else if (expectsReembolso && reembolsoDone) activeIndex = CLOSE_IDX;
       else if (expectsDevolucion && !devolucionDone) activeIndex = SETTLE_IDX;
       else if (expectsDevolucion && devolucionDone) activeIndex = CLOSE_IDX;
+      else if (soloFaltaCierre && terminal) activeIndex = CLOSE_IDX;
     }
   }
 
@@ -1065,7 +1119,7 @@ function buildViaticoTwoPhaseSteps(
     group: 'rendicion',
   });
 
-  if (!rejected && !expectsReembolso && !expectsDevolucion && !closed) {
+  if (!rejected && !expectsReembolso && !expectsDevolucion && !closed && !soloFaltaCierre) {
     const finalState = stateFor(FINAL_IDX);
     steps.push({
       label:
@@ -1102,7 +1156,7 @@ function buildViaticoTwoPhaseSteps(
     });
   }
 
-  if (!rejected && (closed || expectsReembolso || expectsDevolucion)) {
+  if (!rejected && (closed || expectsReembolso || expectsDevolucion || soloFaltaCierre)) {
     const closeState = stateFor(CLOSE_IDX);
     steps.push({
       label: closeState === 'completed' ? 'Cerrado por Tesorería' : 'Cierre de Tesorería',

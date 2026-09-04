@@ -5,7 +5,12 @@ export type ExpenseType =
   | 'factura'
   | 'planilla_movilidad'
   | 'otros_gastos'
-  | 'recibo_caja';
+  | 'recibo_caja'
+  /**
+   * Constancia de un gasto que no llegó a ocurrir (viaje suspendido, servicio
+   * anulado): solo fecha y motivo, siempre en 0 y sin comprobante.
+   */
+  | 'cancelacion';
 
 export interface IMobilityRowCoords {
   lat: number;
@@ -112,6 +117,17 @@ export interface ICreateCashReceiptPayload {
   data: string;
   fechaEmision: string;
   imageUrl: string;
+}
+
+/**
+ * Cancelación. No lleva centro de costo, categoría ni adjunto: el gasto no
+ * ocurrió, así que no hay nada que imputar. El monto lo fuerza el backend a 0.
+ */
+export interface ICreateCancelacionPayload {
+  expenseReportId?: string;
+  /** Fecha de cancelación; viaja como `fechaEmision` del gasto. */
+  fechaEmision: string;
+  motivo: string;
 }
 
 export interface IInvoice {
