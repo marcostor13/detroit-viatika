@@ -10,6 +10,7 @@ import {
   ICreateDeclaracionJuradaPayload,
   IDeclaracionJuradaResponse,
   ICreateCashReceiptPayload,
+  ICreateCancelacionPayload,
 } from '../interfaces/invoices.interface';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -233,6 +234,10 @@ export class InvoicesService {
 
   createCashReceipt(payload: ICreateCashReceiptPayload): Observable<IInvoiceResponse> {
     return this.http.post<IInvoiceResponse>(`${this.url}/cash-receipt`, payload);
+  }
+
+  createCancelacion(payload: ICreateCancelacionPayload): Observable<IInvoiceResponse> {
+    return this.http.post<IInvoiceResponse>(`${this.url}/cancelacion`, payload);
   }
 
   // Métodos para validación SUNAT

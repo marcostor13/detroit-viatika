@@ -28,6 +28,12 @@ export type ExpenseType =
   | 'planilla_movilidad'
   | 'otros_gastos'
   | 'recibo_caja'
+  /**
+   * Cancelación: el colaborador deja constancia de un gasto que no llegó a
+   * ocurrir (viaje suspendido, servicio anulado). No lleva comprobante ni
+   * importe — se registra siempre en 0 — solo la fecha y el motivo.
+   */
+  | 'cancelacion'
 
 export interface MobilityRowCoords {
   lat: number
@@ -116,7 +122,8 @@ export interface ExpenseDocument extends Document {
   ordenTrabajoId?: Types.ObjectId
   total: number
   description: string
-  categoryId: Types.ObjectId
+  /** Ausente solo en la cancelación; ver el @Prop correspondiente. */
+  categoryId?: Types.ObjectId
   file?: string
   /**
    * Adjuntos de respaldo del comprobante, en el orden en que se cargaron.
@@ -247,8 +254,13 @@ export class Expense {
   @Prop()
   description: string
 
-  @Prop({ required: true, type: Types.ObjectId, ref: 'Category' })
-  categoryId: Types.ObjectId
+  /**
+   * Categoría del gasto. Opcional SOLO por la cancelación, que no imputa nada
+   * (va en 0) y por eso se registra sin centro de costo ni categoría; el resto
+   * de tipos la sigue exigiendo en el servicio, cada uno en su `create*`.
+   */
+  @Prop({ required: false, type: Types.ObjectId, ref: 'Category' })
+  categoryId?: Types.ObjectId
 
   @Prop({ required: false })
   file?: string
@@ -345,6 +357,7 @@ export class Expense {
       'planilla_movilidad',
       'otros_gastos',
       'recibo_caja',
+      'cancelacion',
     ],
   })
   expenseType?: ExpenseType

@@ -2596,6 +2596,126 @@ export class ExpenseService {
   }
 
   /**
+   * Cancelación: constancia dentro de la rendición de un gasto que no llegó a
+   * ocurrir (viaje suspendido, servicio anulado). Solo lleva fecha y motivo.
+   *
+   * No pide adjunto, centro de costo ni categoría porque no hay nada que
+   * imputar, y el importe se fuerza a 0 acá — no se confía en lo que mande el
+   * formulario. Al ir en 0 tampoco corresponde evaluar plazo de rendición,
+   * límite de categoría ni tope por comprobante; la conversión de moneda sí se
+   * congela, para que el gasto quede con la misma forma que todos los demás.
+   */
+  /**
+   * Centro de costo con el que se imputa una cancelación: el de la rendición.
+   * En la caja chica la rendición no lleva uno propio, así que se usa el del
+   * responsable — el mismo criterio que el resto de sus comprobantes.
+   */
+  private async resolveCentroCostoCancelacion(
+    body: CreateExpenseDto
+  ): Promise<Types.ObjectId | undefined> {
+    const reportId = String(body.expenseReportId ?? '')
+    if (!reportId) return undefined
+    const heredado = await this.expenseReportService.findCentroCosto(reportId)
+    if (heredado) return heredado
+    return this.expenseReportService.resolveCentroCostoCajaChica(reportId)
+  }
+
+  async createCancelacionExpense(body: CreateExpenseDto): Promise<Expense> {
+    if (!body.clientId) {
+      throw new HttpException('clientId es requerido', HttpStatus.BAD_REQUEST)
+    }
+    // Caja chica finalizada: no se permiten más gastos.
+    await this.expenseReportService.assertReportNotLockedByCajaChica(
+      body.expenseReportId
+    )
+    await this.expenseReportService.assertPuedeCargarEnCajaChica(
+      body.expenseReportId,
+      body.userId
+    )
+
+    const motivo = (body.motivo || '').trim()
+    if (!motivo) {
+      throw new HttpException(
+        'El motivo de la cancelación es obligatorio',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    if (!body.fechaEmision) {
+      throw new HttpException(
+        'La fecha de cancelación es obligatoria',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const fechaCancelacion = this.parseExpenseDate(body.fechaEmision)
+    if (!fechaCancelacion) {
+      throw new HttpException(
+        'La fecha de cancelación es inválida',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+    const today = new Date()
+    const todayUtc = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    )
+    if (fechaCancelacion.getTime() > todayUtc.getTime()) {
+      throw new HttpException(
+        'La fecha de cancelación no puede ser futura',
+        HttpStatus.BAD_REQUEST
+      )
+    }
+
+    const normalizedFecha = this.normalizeFechaEmisionValue(body.fechaEmision)
+    const fx = await this.freezeExpenseCurrency({
+      clientId: body.clientId,
+      total: 0,
+      fecha: normalizedFecha ?? body.fechaEmision,
+      expenseReportId: body.expenseReportId,
+    })
+
+    const expense = await this.expenseRepository.create({
+      // El colaborador no elige centro de costo en una cancelación, pero el
+      // gasto sí lo necesita: es lo que enruta la cadena de aprobadores
+      // (`buildExpenseChains` se salta todo comprobante sin centro de costo).
+      // Se hereda el de la rendición, que es el mismo que le tocaría.
+      proyectId: await this.resolveCentroCostoCancelacion(body),
+      clientId: body.clientId,
+      expenseReportId: body.expenseReportId
+        ? new Types.ObjectId(body.expenseReportId)
+        : undefined,
+      total: 0,
+      ...fx,
+      description: motivo,
+      expenseType: 'cancelacion',
+      status: 'pending',
+      createdBy: body.userId || 'system',
+      fechaEmision: normalizedFecha ?? body.fechaEmision,
+      comentario: body.comentario?.trim() || undefined,
+      data: JSON.stringify({
+        type: 'cancelacion',
+        motivo,
+        fechaCancelacion: normalizedFecha ?? body.fechaEmision,
+      }),
+    })
+
+    if (body.userId) {
+      await this.expenseReportService.buildChainForNewExpense(
+        (expense as any)._id.toString(),
+        body.userId,
+        body.clientId
+      )
+    }
+
+    if (body.expenseReportId) {
+      await this.expenseReportService.addExpenseToReport(
+        body.expenseReportId,
+        (expense as any)._id.toString()
+      )
+    }
+
+    return expense
+  }
+
+  /**
    * Castea un id (proyectId/categoryId) a ObjectId si viene como string hex de
    * 24 chars. Evita guardar la referencia como string, que rompe los $lookup /
    * match estrictos del backend (consola de rendiciones directas, dashboard,

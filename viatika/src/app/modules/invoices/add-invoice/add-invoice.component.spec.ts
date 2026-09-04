@@ -42,6 +42,7 @@ describe('AddInvoiceComponent', () => {
       'getClientUsers',
       'getRucInfo',
       'createCashReceipt',
+      'createCancelacion',
       'createMobilitySheet',
       'createOtherExpense',
       'createDeclaracionJurada',
@@ -60,6 +61,7 @@ describe('AddInvoiceComponent', () => {
     invoicesService.validateWithSunatData.and.returnValue(of({ status: 'ERROR_SUNAT' } as any));
     invoicesService.getSunatValidation.and.returnValue(of({} as any));
     invoicesService.createCashReceipt.and.returnValue(of({} as any));
+    invoicesService.createCancelacion.and.returnValue(of({} as any));
     invoicesService.createMobilitySheet.and.returnValue(of({} as any));
     invoicesService.createOtherExpense.and.returnValue(of({} as any));
     invoicesService.getRucInfo.and.returnValue(of({ razonSocial: null, fuente: '' }));
@@ -1022,6 +1024,110 @@ describe('AddInvoiceComponent', () => {
     });
   });
 
+  describe('cancelación', () => {
+    it('solo exige fecha y motivo: ni centro de costo, ni categoría, ni adjunto', () => {
+      const component = createComponent();
+      component.setExpenseType('cancelacion');
+      expect(component.isFormValid()).toBeFalse();
+
+      component.form.patchValue({
+        cancelacionFecha: '2026-09-01',
+        cancelacionMotivo: 'Viaje suspendido por el cliente',
+      });
+      // Sin proyectId, sin categoryId y sin archivo adjunto.
+      expect(component.form.get('proyectId')?.value).toBe('');
+      expect(component.form.get('categoryId')?.value).toBe('');
+      expect(component.selectedFile).toBeFalsy();
+      expect(component.isFormValid()).toBeTrue();
+    });
+
+    it('no muestra el bloque de centro de costo / OT / categoría', () => {
+      const component = createComponent();
+      component.setExpenseType('cancelacion');
+      expect(component.showTopBlock).toBeFalse();
+    });
+
+    it('envía solo fecha y motivo — el monto lo fija el backend en 0', () => {
+      invoicesService.createCancelacion.and.returnValue(of({ _id: 'e1' } as any));
+      const component = createComponent();
+      component.setExpenseType('cancelacion');
+      component.form.patchValue({
+        cancelacionFecha: '2026-09-01',
+        cancelacionMotivo: 'Viaje suspendido',
+      });
+      component.saveCancelacion();
+
+      const payload = invoicesService.createCancelacion.calls.mostRecent().args[0];
+      expect(payload.fechaEmision).toBe('2026-09-01');
+      expect(payload.motivo).toBe('Viaje suspendido');
+      expect((payload as any).total).toBeUndefined();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'Cancelación registrada correctamente',
+        'success'
+      );
+    });
+
+    it('avisa y no llama al backend cuando falta el motivo', () => {
+      const component = createComponent();
+      component.setExpenseType('cancelacion');
+      component.form.patchValue({ cancelacionFecha: '2026-09-01', cancelacionMotivo: '  ' });
+      component.saveCancelacion();
+
+      expect(invoicesService.createCancelacion).not.toHaveBeenCalled();
+      expect(notificationService.show).toHaveBeenCalledWith(
+        'Completa la fecha y el motivo de la cancelación',
+        'error'
+      );
+    });
+
+    // Decisión del cliente: no es un tipo de gasto aparte, es un tipo de
+    // documento más dentro de "Otros".
+    it('se ofrece como tipo de documento dentro de Otros, no en el selector de arriba', () => {
+      createComponent();
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).not.toContain('Cancelación');
+
+      fixture.componentInstance.setExpenseType('otros_gastos');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain('Cancelación de servicio / proyecto');
+    });
+
+    it('no lleva declaración jurada: no hay gasto que declarar', () => {
+      createComponent();
+      const fixture = TestBed.createComponent(AddInvoiceComponent);
+      const component = fixture.componentInstance;
+      fixture.detectChanges();
+
+      // Se entra desde AL, que sí la exige, para asegurar que al cambiar se va.
+      component.selectOtrosSubTipo('AL');
+      fixture.detectChanges();
+      expect(component.otrosSubTipoRequiereDeclaracion()).toBeTrue();
+
+      component.selectOtrosSubTipo('CAN');
+      fixture.detectChanges();
+      expect(component.otrosSubTipoRequiereDeclaracion()).toBeFalse();
+      expect(fixture.nativeElement.textContent).not.toContain('Declaro bajo juramento');
+      // Y ningún otro tipo de documento queda marcado.
+      expect(component.subTipoBotonActivo('AL')).toBeFalse();
+    });
+
+    it('elegirla cambia el tipo de gasto por dentro, y volver a otro sub-tipo lo deshace', () => {
+      const component = createComponent();
+      component.setExpenseType('otros_gastos');
+
+      component.selectOtrosSubTipo('CAN');
+      expect(component.expenseType()).toBe('cancelacion');
+      expect(component.subTipoBotonActivo('CAN')).toBeTrue();
+      // "Otros" sigue marcado arriba: la cancelación se eligió dentro de él.
+      expect(component.esOtrosUI()).toBeTrue();
+
+      component.selectOtrosSubTipo('BV');
+      expect(component.expenseType()).toBe('otros_gastos');
+      expect(component.subTipoBotonActivo('CAN')).toBeFalse();
+    });
+  });
+
   describe('saveOtherExpense', () => {
     it('requires proyectId/categoryId', () => {
       const component = createComponent();
@@ -1935,7 +2041,7 @@ describe('AddInvoiceComponent', () => {
       // Los otros tres siguen ahí: es un cuarto tipo, no un reemplazo.
       expect(texto).toContain('Factura');
       expect(texto).toContain('Planilla de Movilidad');
-      expect(texto).toContain('Otros Gastos');
+      expect(texto).toContain('Otros');
     });
   });
 

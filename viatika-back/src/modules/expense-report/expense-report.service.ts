@@ -1474,6 +1474,23 @@ export class ExpenseReportService implements OnModuleInit {
   }
 
   /**
+   * Centro de costo de la rendición. Los comprobantes que no lo piden en el
+   * formulario —hoy solo la cancelación— lo heredan de aquí: sin él,
+   * `buildExpenseChains` se los salta y el gasto queda sin aprobadores.
+   */
+  async findCentroCosto(reportId?: string): Promise<Types.ObjectId | undefined> {
+    if (!reportId || !Types.ObjectId.isValid(reportId)) return undefined
+    const report = await this.expenseReportModel
+      .findById(reportId)
+      .select('projectId')
+      .lean<{ projectId?: unknown }>()
+      .exec()
+    return report?.projectId
+      ? new Types.ObjectId(String(report.projectId))
+      : undefined
+  }
+
+  /**
    * True cuando la rendición no puede aportar una OT a sus gastos, porque no la
    * lleva. Los gastos de planilla de movilidad la heredan de la rendición y la
    * OT es opcional en ambos orígenes:

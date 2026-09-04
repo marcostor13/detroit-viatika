@@ -174,6 +174,7 @@ export class GastoDetalleComponent implements OnInit {
       planilla_movilidad: 'Planilla de Movilidad',
       otros_gastos: 'Otros Gastos',
       recibo_caja: 'Recibo de Caja',
+      cancelacion: 'Cancelación',
     };
     return m[String(exp['expenseType'] ?? '')] ?? 'Factura';
   }
@@ -182,6 +183,7 @@ export class GastoDetalleComponent implements OnInit {
     const type = exp['expenseType'];
     if (type === 'planilla_movilidad') return 'PM';
     if (type === 'recibo_caja') return 'H';
+    if (type === 'cancelacion') return 'CN';
     if (type === 'otros_gastos') {
       const sub = (exp['subTipo'] as string) ?? (this.getData(exp)['subTipo'] as string);
       if (sub === 'TK') return 'TK';
@@ -205,6 +207,7 @@ export class GastoDetalleComponent implements OnInit {
     if (code === 'PM') return 'bg-yellow-100 text-yellow-800';
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
+    if (code === 'CN') return 'bg-rose-100 text-rose-700';
     if (code === 'DJ' || code === 'DJE') return 'bg-amber-100 text-amber-800';
     if (code === 'TK') return 'bg-teal-100 text-teal-700';
     if (code === 'RC') return 'bg-indigo-100 text-indigo-700';
@@ -440,6 +443,8 @@ emissionDateText(exp: Record<string, unknown>): string {
       return first?.gestion || `${rows.length} filas`;
     }
     if (type === 'otros_gastos') return exp['description'] as string || 'DJ firmada';
+    // El motivo es el único texto de una cancelación; va en `description`.
+    if (type === 'cancelacion') return (exp['description'] as string) || 'Cancelación';
     const d = this.getData(exp);
     return String(d['concepto'] || '');
   }

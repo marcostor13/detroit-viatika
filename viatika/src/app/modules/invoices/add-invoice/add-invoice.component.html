@@ -4,11 +4,13 @@
       @if (expenseType() === 'planilla_movilidad') { Editar Planilla de Movilidad }
       @else if (expenseType() === 'otros_gastos') { Editar Gasto }
       @else if (expenseType() === 'recibo_caja') { Editar Recibo de Caja }
+      @else if (expenseType() === 'cancelacion') { Editar Cancelación }
       @else { Editar factura }
     }
     @else if (expenseType() === 'planilla_movilidad') { Nueva Planilla de Movilidad }
     @else if (expenseType() === 'otros_gastos') { Nuevo Gasto }
     @else if (expenseType() === 'recibo_caja') { Agregar Recibo de Caja }
+    @else if (expenseType() === 'cancelacion') { Registrar Cancelación }
     @else { Agregar Factura }
   </h1>
   <app-button
@@ -51,6 +53,16 @@
         <app-icon name="file-text" size="sm" />
         Factura
       </button>
+      <!-- Va pegado a Factura porque es la misma factura, en lote: no cambia el
+           formulario, lleva a la carga masiva. Nunca se pinta como seleccionado
+           porque es otra pantalla, no un estado de esta. -->
+      <button type="button"
+        (click)="irACargaMasiva()"
+        class="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors"
+      >
+        <app-icon name="upload" size="sm" />
+        Varias Facturas
+      </button>
       <button type="button"
         (click)="setExpenseType('planilla_movilidad')"
         [class]="expenseType() === 'planilla_movilidad'
@@ -60,24 +72,16 @@
         <app-icon name="car" size="sm" />
         Planilla de Movilidad
       </button>
+      <!-- "Otros" también queda marcado en una cancelación: se elige dentro de
+           él, como un tipo de documento más. -->
       <button type="button"
         (click)="setExpenseType('otros_gastos')"
-        [class]="expenseType() === 'otros_gastos'
+        [class]="esOtrosUI()
           ? 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-primary bg-primary/10 text-primary text-sm font-medium'
           : 'flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors'"
       >
         <app-icon name="clipboard-list" size="sm" />
-        Otros Gastos
-      </button>
-      <!-- Cuarto tipo: no cambia el formulario, lleva a la carga masiva. Nunca
-           se pinta como seleccionado porque es otra pantalla, no un estado de
-           esta. -->
-      <button type="button"
-        (click)="irACargaMasiva()"
-        class="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-white text-secondary text-sm font-medium hover:border-primary/50 transition-colors"
-      >
-        <app-icon name="upload" size="sm" />
-        Varias Facturas
+        Otros
       </button>
     </div>
     <p class="mt-3 text-xs text-tertiary">
@@ -878,8 +882,8 @@
   }
   }
 
-  <!-- ===== OTROS GASTOS ===== -->
-  @if(expenseType() === 'otros_gastos') {
+  <!-- ===== OTROS ===== -->
+  @if(esOtrosUI()) {
   <div class="bg-quaternary rounded-xl shadow-soft border border-gray-100 p-3 sm:p-6 space-y-5">
 
     <!-- Selector de sub-tipo (solo para otros_gastos) -->
@@ -906,6 +910,32 @@
         }
       </div>
     </div>
+
+    <!-- Cancelación: la rendición no se va a ejecutar. Solo fecha y motivo; no
+         lleva categoría, adjunto ni monto (se guarda en 0, lo fija el backend)
+         y por eso se queda fuera de todo lo que viene debajo. -->
+    @if (isCancelacion()) {
+    <p class="text-sm text-tertiary">
+      Deja constancia de que esta rendición se cancela. No necesita comprobante ni monto: se registra en 0 y la rendición se puede enviar.
+    </p>
+    <div class="flex flex-col gap-2 sm:max-w-xs">
+      <label for="cancelacionFecha" class="text-sm font-medium text-secondary">
+        Fecha de cancelación <span class="text-error">*</span>
+      </label>
+      <input id="cancelacionFecha" type="date" [max]="todayIso" formControlName="cancelacionFecha"
+        class="w-full h-[42px] px-4 rounded-lg border border-gray-200 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20" />
+    </div>
+    <div class="flex flex-col gap-2">
+      <label for="cancelacionMotivo" class="text-sm font-medium text-secondary">
+        Motivo <span class="text-error">*</span>
+      </label>
+      <textarea id="cancelacionMotivo" formControlName="cancelacionMotivo" rows="3"
+        placeholder="Explica por qué se canceló el servicio o proyecto"
+        class="w-full rounded-lg border border-gray-200 px-4 py-2 bg-background focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"></textarea>
+    </div>
+    }
+
+    @if (!isCancelacion()) {
 
     <!-- Segundo nivel de "Viaje en el extranjero": la Declaración Jurada de
          siempre, o un comprobante emitido fuera del Perú (Documentos). -->
@@ -1121,6 +1151,7 @@
       </ul>
       }
     </div>
+    }
     }
     }
   </div>

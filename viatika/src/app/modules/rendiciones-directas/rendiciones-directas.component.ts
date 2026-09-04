@@ -510,6 +510,7 @@ export class RendicionesDirectasComponent implements OnInit {
     const type = e?.expenseType;
     if (type === 'planilla_movilidad') return 'PM';
     if (type === 'recibo_caja') return 'H';
+    if (type === 'cancelacion') return 'CN';
     if (type === 'otros_gastos') {
       const sub = e?.subTipo ?? this.getData(e)['subTipo'];
       if (sub === 'TK') return 'TK';
@@ -534,6 +535,7 @@ export class RendicionesDirectasComponent implements OnInit {
     if (code === 'PM') return 'bg-yellow-100 text-yellow-800';
     if (code === 'CC') return 'bg-purple-100 text-purple-800';
     if (code === 'SC' || code === 'OT') return 'bg-gray-100 text-gray-600';
+    if (code === 'CN') return 'bg-rose-100 text-rose-700';
     if (code === 'DJ' || code === 'DJE') return 'bg-amber-100 text-amber-800';
     if (code === 'TK') return 'bg-teal-100 text-teal-700';
     if (code === 'RC') return 'bg-indigo-100 text-indigo-700';

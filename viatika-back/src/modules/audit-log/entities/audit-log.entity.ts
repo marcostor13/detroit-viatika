@@ -11,6 +11,7 @@ export type AuditAction =
   | 'delete_invoice'
   | 'create_mobility_sheet'
   | 'create_other_expense'
+  | 'create_cancelacion'
   | 'create_declaracion_jurada'
   | 'create_rendicion'
   | 'create_rendicion_directa_deposito'

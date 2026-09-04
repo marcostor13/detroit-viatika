@@ -295,6 +295,39 @@ export class ExpenseController {
     return result
   }
 
+  /**
+   * Cancelación: comprobante en 0 con la fecha y el motivo por los que el
+   * gasto no llegó a ocurrir. Mismos roles que el resto de la carga de gastos.
+   */
+  @Post('cancelacion')
+  @Roles(
+    ROLES.SUPER_ADMIN,
+    ROLES.ADMIN,
+    ROLES.COLABORADOR,
+    ROLES.CONTABILIDAD,
+    // VD-115: rendir es de todos. Donde puede el Colaborador puede Tesorería,
+    // que también carga sus propios gastos.
+    ROLES.TESORERIA
+  )
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  async createCancelacion(@Body() body: CreateExpenseDto, @Request() req) {
+    const clientId = body.clientId || req.user?.clientId
+    if (!clientId)
+      throw new Error('No se pudo obtener la empresa del usuario ni del body')
+    body.clientId = clientId
+    body.userId = req.user?.sub || req.user?._id || body.userId
+    const result = await this.expenseService.createCancelacionExpense(body)
+    this.auditLogService.log({
+      userId: req.user?._id || req.user?.sub,
+      userName: req.user?.name || req.user?.email || 'Usuario',
+      action: 'create_cancelacion',
+      module: 'facturas',
+      entityId: (result as any)?._id?.toString(),
+      clientId,
+    })
+    return result
+  }
+
   @Post('cash-receipt')
   @Roles(
     ROLES.SUPER_ADMIN,
