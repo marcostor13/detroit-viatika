@@ -10,6 +10,8 @@
  * cargados no tienen de dónde sacar el departamento.
  */
 
+import { UBIGEO_A_DEPARTAMENTO } from './peru-ubigeo.data'
+
 /** Los 24 departamentos + la Provincia Constitucional del Callao. */
 export const PERU_DEPARTAMENTOS = [
   'Amazonas',
@@ -43,6 +45,110 @@ export type PeruDepartamento = (typeof PERU_DEPARTAMENTOS)[number]
 
 /** Etiqueta de agrupación para los destinos que no resuelven a un departamento. */
 export const DEPARTAMENTO_DESCONOCIDO = 'Sin departamento'
+
+/**
+ * Etiqueta para los viajes fuera del Perú ("CANTON MICHIGAN - EEUU"). No son un
+ * destino mal escrito: sin esta etiqueta caían en "Sin departamento" junto a los
+ * errores de tipeo y parecían un problema de datos.
+ */
+export const DESTINO_EXTERIOR = 'Exterior'
+
+/**
+ * Marcas de que el destino está fuera del país. Solo países y ciudades que no
+ * chocan con ningún nombre peruano: los estados de EEUU quedan fuera a
+ * propósito porque varios coinciden con distritos nuestros (Florida está en
+ * Amazonas, La Paz en La Libertad).
+ */
+const EXTERIOR = [
+  'eeuu',
+  'ee uu',
+  'estados unidos',
+  'usa',
+  'alemania',
+  'argentina',
+  'australia',
+  'austria',
+  'belgica',
+  'bolivia',
+  'brasil',
+  'brazil',
+  'canada',
+  'chile',
+  'china',
+  'colombia',
+  'corea',
+  'costa rica',
+  'cuba',
+  'dinamarca',
+  'ecuador',
+  'egipto',
+  'el salvador',
+  'emiratos arabes',
+  'espana',
+  'filipinas',
+  'finlandia',
+  'francia',
+  'guatemala',
+  'holanda',
+  'honduras',
+  'india',
+  'indonesia',
+  'inglaterra',
+  'irlanda',
+  'israel',
+  'italia',
+  'japon',
+  'malasia',
+  'marruecos',
+  'mexico',
+  'nicaragua',
+  'noruega',
+  'nueva zelanda',
+  'paises bajos',
+  'panama',
+  'paraguay',
+  'polonia',
+  'portugal',
+  'reino unido',
+  'republica dominicana',
+  'rusia',
+  'singapur',
+  'sudafrica',
+  'suecia',
+  'suiza',
+  'tailandia',
+  'turquia',
+  'uruguay',
+  'venezuela',
+  'vietnam',
+  // Ciudades del exterior que suelen venir sin el país detrás.
+  'amsterdam',
+  'antofagasta',
+  'barcelona',
+  'bogota',
+  'buenos aires',
+  'calama',
+  'dallas',
+  'dubai',
+  'frankfurt',
+  'guayaquil',
+  'houston',
+  'iquique',
+  'londres',
+  'los angeles',
+  'madrid',
+  'miami',
+  'milan',
+  'montreal',
+  'new york',
+  'nueva york',
+  'paris',
+  'quito',
+  'rio de janeiro',
+  'roma',
+  'sao paulo',
+  'toronto',
+]
 
 /**
  * Ciudades, provincias y distritos → departamento. Solo hace falta lo que NO
@@ -249,6 +355,50 @@ const ALIAS: Record<string, PeruDepartamento> = {
   atalaya: 'Ucayali',
 }
 
+/**
+ * Campamentos mineros, plantas y puertos. No son distritos, así que no están en
+ * el padrón de ubigeo, pero son justamente a donde viaja la gente de Detroit:
+ * "Minas de Toquepala 23800, Perú" y "San Juan de Marcona" son los dos destinos
+ * que más veces se agruparon en "Sin departamento".
+ */
+const CAMPAMENTOS: Record<string, PeruDepartamento> = {
+  antamina: 'Áncash',
+  pierina: 'Áncash',
+  'las bambas': 'Apurímac',
+  'cerro verde': 'Arequipa',
+  matarani: 'Arequipa',
+  'tia maria': 'Arequipa',
+  'cerro corona': 'Cajamarca',
+  coimolache: 'Cajamarca',
+  'la granja': 'Cajamarca',
+  michiquillay: 'Cajamarca',
+  shahuindo: 'Cajamarca',
+  tantahuatay: 'Cajamarca',
+  yanacocha: 'Cajamarca',
+  antapaccay: 'Cusco',
+  camisea: 'Cusco',
+  constancia: 'Cusco',
+  tintaya: 'Cusco',
+  'cerro lindo': 'Ica',
+  marcona: 'Ica',
+  marcobre: 'Ica',
+  'mina justa': 'Ica',
+  'san juan de marcona': 'Ica',
+  shougang: 'Ica',
+  toromocho: 'Junín',
+  'alto chicama': 'La Libertad',
+  'lagunas norte': 'La Libertad',
+  cajamarquilla: 'Lima',
+  uchucchacua: 'Lima',
+  cuajone: 'Moquegua',
+  quellaveco: 'Moquegua',
+  atacocha: 'Pasco',
+  colquijirca: 'Pasco',
+  bayovar: 'Piura',
+  toquepala: 'Tacna',
+  pucamarca: 'Tacna',
+}
+
 /** Quita tildes, pasa a minúsculas y colapsa puntuación/espacios. */
 function normalize(value: string): string {
   return value
@@ -267,7 +417,11 @@ function normalize(value: string): string {
 const RUIDO =
   /\b(destino|ciudad|provincia|departamento|dpto|dep|region|distrito|peru|av|avenida|jr|jiron|calle|urb|urbanizacion|mz|lt|lote|km|carretera|hotel|hostal|oficina)\b/g
 
-/** Diccionario final: alias + cada departamento apuntándose a sí mismo. */
+/**
+ * Diccionario curado: departamentos, alias escritos a mano y campamentos. Es el
+ * único que se busca dentro de un texto suelto, así que aquí solo entran
+ * nombres que no se confunden con otra cosa.
+ */
 const LOOKUP: Record<string, PeruDepartamento> = (() => {
   const map: Record<string, PeruDepartamento> = {}
   for (const dep of PERU_DEPARTAMENTOS) map[normalize(dep)] = dep
@@ -280,11 +434,68 @@ const LOOKUP: Record<string, PeruDepartamento> = (() => {
     'lima region': 'Lima' as PeruDepartamento,
   })
   for (const [alias, dep] of Object.entries(ALIAS)) map[normalize(alias)] = dep
+  for (const [sitio, dep] of Object.entries(CAMPAMENTOS))
+    map[normalize(sitio)] = dep
   return map
 })()
 
 /** Claves de más larga a más corta: "san juan de miraflores" antes que "miraflores". */
 const LOOKUP_KEYS = Object.keys(LOOKUP).sort((a, b) => b.length - a.length)
+
+/**
+ * Las 1652 provincias y distritos del padrón, para el caso en que el segmento
+ * es exactamente el nombre del sitio. Solo se buscan DENTRO de un texto los que
+ * tienen dos palabras o más: un distrito de una sola palabra como "Progreso" o
+ * "Colonia" aparecería en cualquier dirección y mandaría el gasto a un
+ * departamento al azar.
+ */
+const UBIGEO = UBIGEO_A_DEPARTAMENTO as Record<string, PeruDepartamento>
+const UBIGEO_KEYS_COMPUESTAS = Object.keys(UBIGEO)
+  .filter(k => k.includes(' '))
+  .sort((a, b) => b.length - a.length)
+
+/** Busca cualquier nombre conocido contenido en el texto, con límite de palabra. */
+function buscarContenido(texto: string): PeruDepartamento | null {
+  for (const key of LOOKUP_KEYS) {
+    // Límite de palabra a ambos lados para no cazar "ate" dentro de "matecito".
+    if (new RegExp(`(^|\\s)${key}(\\s|$)`).test(texto)) return LOOKUP[key]
+  }
+  for (const key of UBIGEO_KEYS_COMPUESTAS) {
+    if (new RegExp(`(^|\\s)${key}(\\s|$)`).test(texto)) return UBIGEO[key]
+  }
+  return null
+}
+
+/**
+ * true si el destino MENCIONA un país o ciudad del exterior en cualquier parte.
+ * Es la lectura amplia: úsese solo cuando el texto no resolvió a ningún
+ * departamento, porque media Lima vive en avenidas con nombre de país.
+ */
+export function esDestinoExterior(place?: string | null): boolean {
+  if (!place) return false
+  const full = normalize(place)
+  return EXTERIOR.some(pais =>
+    new RegExp(`(^|\\s)${pais}(\\s|$)`).test(full)
+  )
+}
+
+/**
+ * Parte el destino en segmentos comparables: quita tildes, palabras de relleno
+ * y los códigos postales que Google Places pega al nombre del sitio ("San Juan
+ * de Marcona 11420").
+ */
+function segmentar(place: string): string[] {
+  return place
+    .split(',')
+    .map(s =>
+      normalize(s)
+        .replace(RUIDO, ' ')
+        .replace(/\b\d+\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    .filter(Boolean)
+}
 
 /**
  * Departamento del destino, o `null` si el texto no permite deducirlo.
@@ -299,35 +510,45 @@ export function resolveDepartamento(
 ): PeruDepartamento | null {
   if (!place) return null
 
-  const segments = place
-    .split(',')
-    .map(s =>
-      normalize(s)
-        .replace(RUIDO, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-    )
-    .filter(Boolean)
+  const segments = segmentar(place)
 
+  // Cada segmento se agota antes de pasar al siguiente para no perder la
+  // localidad del dato: en "San Juan, San Juan de Marcona" el segmento de la
+  // derecha resuelve a Ica, y mirar primero todos los exactos dejaría ganar al
+  // "San Juan" suelto de la izquierda.
   for (let i = segments.length - 1; i >= 0; i--) {
-    const hit = LOOKUP[segments[i]]
-    if (hit) return hit
-  }
-
-  // Sin coincidencia por segmento: se busca cualquier alias contenido en el
-  // texto completo ("Hotel Bolognesi Tacna", "Iquitos-Loreto").
-  const full = normalize(place)
-  for (const key of LOOKUP_KEYS) {
-    // Límite de palabra a ambos lados para no cazar "ate" dentro de "matecito".
-    if (new RegExp(`(^|\\s)${key}(\\s|$)`).test(full)) return LOOKUP[key]
+    const seg = segments[i]
+    const exacto = LOOKUP[seg] ?? UBIGEO[seg]
+    if (exacto) return exacto
+    const contenido = buscarContenido(seg)
+    if (contenido) return contenido
   }
 
   return null
 }
 
-/** Igual que `resolveDepartamento`, pero devuelve la etiqueta de agrupación. */
+/**
+ * Etiqueta de agrupación del destino: departamento, "Exterior" o "Sin
+ * departamento".
+ *
+ * El país solo gana cuando CIERRA el texto ("Córdoba, Argentina", que si no
+ * saldría Huancavelica). Al revés no se puede: media Lima vive en avenidas con
+ * nombre de país, y "Av. Brasil, Jesús María, Lima" tiene que seguir siendo
+ * Lima.
+ */
 export function departamentoLabel(place?: string | null): string {
-  return resolveDepartamento(place) ?? DEPARTAMENTO_DESCONOCIDO
+  if (cierraEnExterior(place)) return DESTINO_EXTERIOR
+  const dep = resolveDepartamento(place)
+  if (dep) return dep
+  return esDestinoExterior(place) ? DESTINO_EXTERIOR : DEPARTAMENTO_DESCONOCIDO
+}
+
+/** true si el último segmento del destino es un país o ciudad del exterior. */
+function cierraEnExterior(place?: string | null): boolean {
+  if (!place) return false
+  const segments = segmentar(place)
+  const ultimo = segments[segments.length - 1]
+  return !!ultimo && EXTERIOR.includes(ultimo)
 }
 
 /**
