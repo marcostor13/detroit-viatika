@@ -12,6 +12,7 @@ import { AccountingConfigService } from '../accounting-config/accounting-config.
 import { ROLES } from '../auth/enums/roles.enum'
 import {
   DEPARTAMENTO_DESCONOCIDO,
+  DESTINO_EXTERIOR,
   departamentoLabel,
   DEPARTAMENTO_COORDS,
 } from '../../common/peru-departments.util'
@@ -84,7 +85,7 @@ interface DashboardScope {
   restricted: boolean
 }
 
-type MonthBucket = 'rendicionSolicitud' | 'directas' | 'cajaChica'
+type MonthBucket = 'directas' | 'cajaChica'
 
 /** Una fila de cualquiera de los cuatro rankings, partida por estado. */
 export interface RankingRow {
@@ -434,10 +435,23 @@ export class DashboardService {
     from: Date,
     to: Date
   ): Record<string, any> {
-    const match: Record<string, any> = {
-      clientId,
+    return {
+      ...this.expenseMatchSinFecha(clientId, query, scope),
       createdAt: { $gte: from, $lte: to },
     }
+  }
+
+  /**
+   * Los mismos filtros pero sin acotar por la fecha del comprobante, para
+   * cuando el rango se aplica sobre el reporte al que pertenece y no sobre el
+   * comprobante en si.
+   */
+  private expenseMatchSinFecha(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope
+  ): Record<string, any> {
+    const match: Record<string, any> = { clientId }
     if (scope.projectIds) match.proyectId = { $in: scope.projectIds }
     const creador = this.resolveCollaborator(query, scope)
     if (creador === false) match.createdBy = { $in: [] }
@@ -780,9 +794,15 @@ export class DashboardService {
    * colaborador termino gastando contra esa solicitud, lo gastado en rendicion
    * directa y el consumo de caja chica (el consumo, no el saldo de la bolsa).
    *
-   * Solicitado y rendido van separados porque son cosas distintas: el primero
-   * es la plata que salio por adelantado y el segundo lo que se sustento. La
-   * distancia entre las dos barras es justo lo que falta rendir del mes.
+   * Las dos primeras barras se anclan al mes de la SOLICITUD, no al dia en que
+   * se subio cada comprobante: la gente viaja, vuelve y recien entonces carga
+   * sus gastos, casi siempre ya entrado el mes siguiente. Anclando al
+   * comprobante, agosto salia con S/ 20 mil solicitados y S/ 0 rendidos aunque
+   * la plata si estuviera sustentada, y la distancia entre las dos barras
+   * dejaba de significar lo que dice el subtitulo.
+   *
+   * Directa y caja chica no tienen contraparte que comparar, asi que siguen
+   * contando por la fecha de su propio comprobante.
    */
   private async aggregateMonthlySeries(
     clientId: Types.ObjectId,
@@ -798,8 +818,8 @@ export class DashboardService {
       cajaChica: number
     }[]
   > {
-    const [solicitudes, porTipo] = await Promise.all([
-      this.reportModel.aggregate([
+    const solicitudes: { _id: Types.ObjectId; month: string; amount: number }[] =
+      await this.reportModel.aggregate([
         {
           $match: {
             ...this.solicitudMatch(
@@ -813,21 +833,33 @@ export class DashboardService {
             // grafico que compara solicitado contra rendido, dejarla dentro
             // abre una brecha que no existe.
             status: { $nin: ESTADOS_RENDICION_MUERTA },
+            // La reposicion de caja chica tambien es un ExpenseReport
+            // type='viatico', pero no se rinde: su consumo ya es la cuarta
+            // barra. Contarla aqui inflaba "Solicitud de fondos" con plata que
+            // ninguna "Rendicion de solicitud" podia responder.
+            isSolicitudCajaChica: { $ne: true },
           },
         },
         {
-          $group: {
-            _id: {
+          $project: {
+            month: {
               $dateToString: {
                 format: '%Y-%m',
                 date: { $ifNull: ['$createdAt', { $toDate: '$_id' }] },
               },
             },
-            amount: { $sum: this.solicitudAmountExpr },
+            amount: this.solicitudAmountExpr,
           },
         },
-        { $project: { _id: 0, month: '$_id', amount: 1 } },
-      ]),
+      ])
+
+    const [gastoPorSolicitud, porTipo] = await Promise.all([
+      this.aggregateGastoDeSolicitudes(
+        clientId,
+        query,
+        scope,
+        solicitudes.map(s => s._id)
+      ),
       this.aggregateExpenseMonthlyByReportType(clientId, query, scope, range),
     ])
 
@@ -854,7 +886,11 @@ export class DashboardService {
       return meses.get(month)!
     }
 
-    for (const s of solicitudes) bucket(s.month).solicitudes += s.amount
+    for (const s of solicitudes) {
+      const mes = bucket(s.month)
+      mes.solicitudes += s.amount
+      mes.rendicionSolicitud += gastoPorSolicitud.get(s._id.toString()) ?? 0
+    }
     for (const t of porTipo) bucket(t.month)[t.bucket] += t.amount
 
     return Array.from(meses.values()).sort((a, b) =>
@@ -863,8 +899,40 @@ export class DashboardService {
   }
 
   /**
-   * Gasto mensual clasificado por el tipo del reporte al que pertenece cada
-   * comprobante. El tipo solo vive en el reporte, de ahí el `$lookup`.
+   * Cuanto se sustento contra cada solicitud, sin importar cuando se subio el
+   * comprobante. Devuelve un mapa reporte -> monto para que el llamador lo
+   * cuelgue del mes de la solicitud.
+   */
+  private async aggregateGastoDeSolicitudes(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    reportIds: Types.ObjectId[]
+  ): Promise<Map<string, number>> {
+    if (!reportIds.length) return new Map()
+    const rows: { _id: Types.ObjectId; amount: number }[] =
+      await this.expenseModel.aggregate([
+        {
+          $match: {
+            ...this.expenseMatchSinFecha(clientId, query, scope),
+            expenseReportId: { $in: reportIds },
+          },
+        },
+        {
+          $group: {
+            _id: '$expenseReportId',
+            amount: { $sum: this.amountExpr },
+          },
+        },
+      ])
+    return new Map(rows.map(r => [r._id.toString(), r.amount]))
+  }
+
+  /**
+   * Gasto mensual de rendicion directa y caja chica, por la fecha del propio
+   * comprobante. El tipo solo vive en el reporte, de ahi el `$lookup`; lo que
+   * pertenece a una solicitud queda fuera porque se cuenta en el mes de esa
+   * solicitud.
    */
   private async aggregateExpenseMonthlyByReportType(
     clientId: Types.ObjectId,
@@ -884,18 +952,17 @@ export class DashboardService {
       },
       ...this.lookupRendicion(),
       {
+        $match: {
+          $or: [{ 'rep0.isCajaChica': true }, { 'rep0.isDirecta': true }],
+        },
+      },
+      {
         $addFields: {
           bucket: {
             $cond: [
               { $eq: ['$rep0.isCajaChica', true] },
               'cajaChica',
-              {
-                $cond: [
-                  { $eq: ['$rep0.isDirecta', true] },
-                  'directas',
-                  'rendicionSolicitud',
-                ],
-              },
+              'directas',
             ],
           },
         },
@@ -1059,10 +1126,13 @@ export class DashboardService {
     })
     const deps = new Set<string>()
     for (const p of places as string[]) deps.add(departamentoLabel(p))
+    // "Exterior" y "Sin departamento" no son departamentos: van al final, en
+    // ese orden, para no partir la lista alfabética por la mitad.
+    const alFinal = [DESTINO_EXTERIOR, DEPARTAMENTO_DESCONOCIDO]
     return Array.from(deps).sort((a, b) => {
-      // "Sin departamento" siempre al final del selector.
-      if (a === DEPARTAMENTO_DESCONOCIDO) return 1
-      if (b === DEPARTAMENTO_DESCONOCIDO) return -1
+      const pa = alFinal.indexOf(a)
+      const pb = alFinal.indexOf(b)
+      if (pa !== -1 || pb !== -1) return pa - pb
       return a.localeCompare(b, 'es')
     })
   }

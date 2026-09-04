@@ -272,3 +272,106 @@ describe('DashboardService — cálculos de salida', () => {
     expect(svc.intersectIds([a], [b])).toEqual([])
   })
 })
+
+/**
+ * La serie mensual es el gráfico que el cliente usa para ver cuánto de lo que
+ * entregó ya está sustentado, así que importa contra qué mes se cuenta cada
+ * cosa. En producción, agosto salía con S/ 20 mil solicitados y S/ 0 rendidos
+ * porque los comprobantes de la única solicitud de agosto se subieron el 1 de
+ * septiembre.
+ */
+describe('DashboardService — serie mensual', () => {
+  const clientId = new Types.ObjectId()
+  const solicitudAgosto = new Types.ObjectId()
+  const range = {
+    from: new Date('2026-08-01'),
+    to: new Date('2026-09-30'),
+    prevFrom: new Date('2026-06-01'),
+    prevTo: new Date('2026-07-31'),
+  }
+
+  const montar = (opts: {
+    solicitudes?: any[]
+    gastoPorSolicitud?: any[]
+    porTipo?: any[]
+  }) => {
+    const svc = Object.create(DashboardService.prototype) as any
+    svc.reportModel = { aggregate: jest.fn(async () => opts.solicitudes ?? []) }
+    svc.expenseModel = {
+      aggregate: jest.fn(async (pipeline: any[]) => {
+        const group = pipeline.find(s => s.$group)
+        // El de gasto por solicitud agrupa por reporte; el de tipo, por mes.
+        return group?.$group?._id === '$expenseReportId'
+          ? (opts.gastoPorSolicitud ?? [])
+          : (opts.porTipo ?? [])
+      }),
+    }
+    return svc
+  }
+
+  it('cuenta la rendición en el mes de su solicitud, no en el del comprobante', async () => {
+    const svc = montar({
+      solicitudes: [{ _id: solicitudAgosto, month: '2026-08', amount: 700 }],
+      gastoPorSolicitud: [{ _id: solicitudAgosto, amount: 1013.5 }],
+      porTipo: [{ month: '2026-09', bucket: 'directas', amount: 500 }],
+    })
+    const series = await svc.aggregateMonthlySeries(clientId, {}, {}, range)
+
+    expect(series).toEqual([
+      {
+        month: '2026-08',
+        solicitudes: 700,
+        rendicionSolicitud: 1013.5,
+        directas: 0,
+        cajaChica: 0,
+      },
+      {
+        month: '2026-09',
+        solicitudes: 0,
+        rendicionSolicitud: 0,
+        directas: 500,
+        cajaChica: 0,
+      },
+    ])
+  })
+
+  // Si se acotara por la fecha del comprobante, el gasto del 1 de septiembre
+  // quedaría fuera al mirar agosto y la barra volvería a cero.
+  it('no acota el gasto de una solicitud por la fecha del comprobante', async () => {
+    const svc = montar({
+      solicitudes: [{ _id: solicitudAgosto, month: '2026-08', amount: 700 }],
+      gastoPorSolicitud: [{ _id: solicitudAgosto, amount: 1013.5 }],
+    })
+    await svc.aggregateMonthlySeries(clientId, {}, {}, range)
+
+    const pipeline = svc.expenseModel.aggregate.mock.calls
+      .map((c: any[]) => c[0])
+      .find((p: any[]) => p.find((s: any) => s.$group)?.$group?._id === '$expenseReportId')
+    expect(pipeline[0].$match.createdAt).toBeUndefined()
+    expect(pipeline[0].$match.expenseReportId).toEqual({
+      $in: [solicitudAgosto],
+    })
+  })
+
+  // La reposición de caja chica es un ExpenseReport type='viatico' pero no se
+  // rinde: contarla inflaba "Solicitud de fondos" con plata que ninguna
+  // "Rendición de solicitud" podía responder.
+  it('deja la reposición de caja chica fuera de la barra de solicitudes', async () => {
+    const svc = montar({ solicitudes: [] })
+    await svc.aggregateMonthlySeries(clientId, {}, {}, range)
+
+    const match = svc.reportModel.aggregate.mock.calls[0][0][0].$match
+    expect(match.isSolicitudCajaChica).toEqual({ $ne: true })
+    expect(match.type).toBe('viatico')
+  })
+
+  it('sin solicitudes no consulta el gasto de solicitudes', async () => {
+    const svc = montar({ solicitudes: [] })
+    await svc.aggregateMonthlySeries(clientId, {}, {}, range)
+
+    const porReporte = svc.expenseModel.aggregate.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any[]) => p.find((s: any) => s.$group)?.$group?._id === '$expenseReportId')
+    expect(porReporte).toEqual([])
+  })
+})
