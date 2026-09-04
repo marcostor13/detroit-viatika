@@ -1,4 +1,4 @@
-<div class="px-4 sm:px-5 py-4 sm:py-6" [ngClass]="collaboratorCanEdit ? 'pb-24 sm:pb-8' : 'pb-8'">
+<div class="px-4 sm:px-5 py-4 sm:py-6" [ngClass]="collaboratorCanEdit ? 'espacio-barra-fija sm:pb-8' : 'pb-8'">
   <!-- Suplencia por vacaciones (VD-124). Va aqui ademas de en la bandeja
        porque la cadena sigue nombrando al TITULAR: sin el aviso, el suplente
        lee "pendiente de aprobacion de <titular>" junto a un boton de aprobar
@@ -984,6 +984,11 @@
             <p><span class="text-tertiary">Monto detectado:</span> {{ currencySymbol }} {{ report.returnVoucher.scannedAmount | number:'1.2-2' }}</p>
           }
           <p><span class="text-tertiary">Enviado el:</span> {{ report.returnVoucher.uploadedAt | date:'dd/MM/yyyy HH:mm' }}</p>
+          <!-- Solo viene cuando lo asentó Tesorería: el depósito entró por fuera
+               de la app y hay que poder distinguirlo del que subió el dueño. -->
+          @if (report.returnVoucher.registeredBy) {
+            <p><span class="text-tertiary">Registrado por Tesorería:</span> {{ report.returnVoucher.registeredByName || 'Tesorería' }}</p>
+          }
         </div>
         @if (report.returnVoucher.url) {
         <a [href]="report.returnVoucher.url" target="_blank" rel="noopener noreferrer"
@@ -1661,6 +1666,7 @@
                 <tr class="border-t-0">
                   <td colspan="11" class="p-0">
                     <div class="bg-warning/10/40 border-b border-amber-100 px-6 py-3">
+                      <div class="overflow-x-auto">
                       <table class="w-full text-xs">
                         <thead class="text-left">
                           <tr class="text-tertiary">
@@ -1681,6 +1687,7 @@
                           }
                         </tbody>
                       </table>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -1746,7 +1753,7 @@
 
 <!-- Sticky bottom bar (mobile only) — colaborador con rendición editable -->
 @if (report && collaboratorCanEdit) {
-<div class="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-quaternary border-t border-divider shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 py-3 flex gap-3">
+<div class="fixed bottom-0 left-0 right-0 z-30 sm:hidden bg-quaternary border-t border-divider shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-4 pt-3 pb-area-segura flex gap-3">
   <button
     type="button"
     (click)="openAddExpenseModal()"
@@ -3061,6 +3068,13 @@
             Seleccionar archivo
           }
         </label>
+        <!-- Capacitor solo abre la camara si el input pide image/* junto con
+             capture, y el selector de arriba necesita aceptar PDF: por eso van
+             dos inputs separados. -->
+        <label class="flex items-center justify-center gap-2 cursor-pointer px-3 py-2 mt-2 border border-divider rounded-lg text-sm text-secondary hover:bg-background transition-colors">
+          <input type="file" accept="image/*" capture="environment" class="hidden" (change)="onReturnVoucherFileSelected($event)" />
+          Tomar foto
+        </label>
         @if (isScanningReturnVoucher()) {
           <p class="text-xs text-tertiary flex items-center gap-1.5 mt-1">
             <span class="inline-block w-3 h-3 border-2 border-tertiary border-t-transparent rounded-full animate-spin"></span>
@@ -3167,6 +3181,13 @@
           } @else {
             Seleccionar archivo
           }
+        </label>
+        <!-- Capacitor solo abre la camara si el input pide image/* junto con
+             capture, y el selector de arriba necesita aceptar PDF: por eso van
+             dos inputs separados. -->
+        <label class="flex items-center justify-center gap-2 cursor-pointer px-3 py-2 mt-2 border border-divider rounded-lg text-sm text-secondary hover:bg-background transition-colors">
+          <input type="file" accept="image/*" capture="environment" class="hidden" (change)="onAdminReembolsoFileSelected($event)" />
+          Tomar foto
         </label>
         @if (isScanningAdminReembolso()) {
           <p class="text-xs text-tertiary flex items-center gap-1.5 mt-1">

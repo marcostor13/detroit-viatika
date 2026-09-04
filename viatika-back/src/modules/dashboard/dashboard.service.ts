@@ -2,13 +2,59 @@ import { Injectable } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Expense, ExpenseDocument } from '../expense/entities/expense.entity'
-import { Advance, AdvanceDocument } from '../advance/entities/advance.entity'
 import {
   ExpenseReport,
   ExpenseReportDocument,
 } from '../expense-report/entities/expense-report.entity'
+import { User, UserDocument } from '../user/schemas/user.schema'
 import { DashboardQueryDto } from './dto/dashboard-query.dto'
 import { AccountingConfigService } from '../accounting-config/accounting-config.service'
+import { ROLES } from '../auth/enums/roles.enum'
+import {
+  DEPARTAMENTO_DESCONOCIDO,
+  departamentoLabel,
+  DEPARTAMENTO_COORDS,
+} from '../../common/peru-departments.util'
+import { ESTADOS_SOLICITUD_CERRADA } from '../../common/solicitud-estados.constants'
+
+/**
+ * Días desde que el colaborador recibe el dinero hasta que se le considera
+ * atrasado en rendir. Lo fijó el cliente en la revisión del dashboard.
+ */
+export const DIAS_PARA_RENDIR = 20
+
+/**
+ * Roles que ven la empresa completa. El resto (Colaborador y Coordinador) solo
+ * ve sus centros de costo asignados: es el pedido del cliente para que cada
+ * coordinador vea su gestión y no la de los demás.
+ */
+const ROLES_SIN_LIMITE: string[] = [
+  ROLES.SUPER_ADMIN,
+  ROLES.ADMIN,
+  ROLES.CONTABILIDAD,
+  ROLES.TESORERIA,
+]
+
+/** Estados de devolución que siguen abiertos. */
+const ESTADOS_DEVOLUCION_PENDIENTE = ['pending', 'proof_uploaded']
+
+/**
+ * Rendiciones que ya no van a convertirse en gasto: quedan fuera de los dos
+ * lados del corte (ni cerrado ni en proceso).
+ */
+const ESTADOS_RENDICION_MUERTA = ['rejected', 'cancelled']
+
+/**
+ * Estado del gasto para el corte "cerrado / en proceso" que pidió el cliente.
+ * Cerrado es el `closed` que deja `ExpenseReportService.close()`, el único que
+ * bloquea toda edición posterior; el resto del camino es proceso.
+ */
+type EstadoGasto = 'cerrado' | 'enProceso'
+
+/** Expresión Mongo que clasifica un gasto según el estado de su rendición. */
+const ESTADO_GASTO_EXPR = {
+  $cond: [{ $eq: ['$rep0.status', 'closed'] }, 'cerrado', 'enProceso'],
+}
 
 interface ResolvedRange {
   from: Date
@@ -17,77 +63,104 @@ interface ResolvedRange {
   prevTo: Date
 }
 
+/** Quién mira el dashboard. Define hasta dónde llega su vista. */
+export interface DashboardViewer {
+  userId: string
+  role: string
+}
+
+/**
+ * Recorte de la vista: qué centros de costo y qué reportes puede sumar esta
+ * consulta. `undefined` en un campo significa "sin recorte por ahí".
+ */
+interface DashboardScope {
+  /** Centros de costo permitidos (rol acotado) o el filtrado explícitamente. */
+  projectIds?: Types.ObjectId[]
+  /** Solo los registros propios: colaborador acotado sin centros de costo. */
+  ownerId?: Types.ObjectId
+  /** Reportes que pasan los filtros de OT y departamento. */
+  reportIds?: Types.ObjectId[]
+  /** true si la vista quedó limitada al alcance del usuario. */
+  restricted: boolean
+}
+
+type MonthBucket = 'rendicionSolicitud' | 'directas' | 'cajaChica'
+
+/** Una fila de cualquiera de los cuatro rankings, partida por estado. */
+export interface RankingRow {
+  name: string
+  cerrado: number
+  enProceso: number
+  amount: number
+  count: number
+  categoryId?: string
+  ordenTrabajoId?: string
+  projectId?: string
+  userId?: string
+}
+
 @Injectable()
 export class DashboardService {
   constructor(
     @InjectModel(Expense.name)
     private readonly expenseModel: Model<ExpenseDocument>,
-    @InjectModel(Advance.name)
-    private readonly advanceModel: Model<AdvanceDocument>,
     @InjectModel(ExpenseReport.name)
     private readonly reportModel: Model<ExpenseReportDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
     private readonly accountingConfigService: AccountingConfigService
   ) {}
 
-  async getDashboard(clientId: string, query: DashboardQueryDto) {
+  async getDashboard(
+    clientId: string,
+    query: DashboardQueryDto,
+    viewer: DashboardViewer
+  ) {
     const clientOid = new Types.ObjectId(clientId)
     const range = this.resolveRange(query.dateFrom, query.dateTo)
     // Los totales están consolidados en la moneda base de la empresa.
     const accountingConfig =
       await this.accountingConfigService.getEffective(clientId)
 
+    const scope = await this.resolveScope(clientOid, query, viewer)
+
     const [
       expenseAgg,
       expenseAggPrev,
-      expenseByStatus,
       expenseByType,
       topCategories,
       topProjects,
       topCollaborators,
-      expenseMonthly,
-      advanceAgg,
-      advanceByStatus,
-      advanceMonthly,
-      pendingReturns,
-      reportByStatus,
-      topLocations,
-      // Viáticos: en Detroit las solicitudes/anticipos no viven en `advances` sino
-      // como ExpenseReport con type='viatico'. Se agregan aquí y se combinan con los
-      // advances (legacy) para que los KPI de anticipos reflejen la data real.
-      viaticoAgg,
-      viaticoByStatus,
-      viaticoMonthly,
-      viaticoReturns,
-      topViaticoLocations,
+      topOrdenesTrabajo,
+      monthlySeries,
+      solicitudAgg,
+      destinos,
+      departments,
+      devoluciones,
+      porRendir,
     ] = await Promise.all([
-      this.aggregateExpenseTotals(clientOid, query, range.from, range.to),
+      this.aggregateExpenseTotals(clientOid, query, scope, range.from, range.to),
       this.aggregateExpenseTotals(
         clientOid,
         query,
+        scope,
         range.prevFrom,
         range.prevTo
       ),
-      this.aggregateExpenseByStatus(clientOid, query, range),
-      this.aggregateExpenseByType(clientOid, query, range),
-      this.aggregateTopCategories(clientOid, query, range),
-      this.aggregateTopProjects(clientOid, query, range),
-      this.aggregateTopCollaborators(clientOid, query, range),
-      this.aggregateExpenseMonthly(clientOid, query, range),
-      this.aggregateAdvanceTotals(clientOid, query, range),
-      this.aggregateAdvanceByStatus(clientOid, query, range),
-      this.aggregateAdvanceMonthly(clientOid, query, range),
-      this.aggregatePendingReturns(clientOid, query, range),
-      this.aggregateReportByStatus(clientOid, query, range),
-      this.aggregateTopLocations(clientOid, query, range),
-      this.aggregateViaticoTotals(clientOid, query, range.from, range.to),
-      this.aggregateViaticoByStatus(clientOid, query, range),
-      this.aggregateViaticoMonthly(clientOid, query, range),
-      this.aggregateViaticoPendingReturns(clientOid, query, range),
-      this.aggregateTopViaticoLocations(clientOid, query, range),
+      this.aggregateExpenseByType(clientOid, query, scope, range),
+      this.aggregateTopCategories(clientOid, query, scope, range),
+      this.aggregateTopProjects(clientOid, query, scope, range),
+      this.aggregateTopCollaborators(clientOid, query, scope, range),
+      this.aggregateTopOrdenesTrabajo(clientOid, query, scope, range),
+      this.aggregateMonthlySeries(clientOid, query, scope, range),
+      this.aggregateSolicitudTotals(clientOid, query, scope, range),
+      this.aggregateDestinos(clientOid, query, scope, range),
+      this.listDepartments(clientOid),
+      this.listDevolucionesPendientes(clientOid, query, scope),
+      this.listPendientesPorRendir(clientOid, query, scope),
     ])
 
     const totalGasto = expenseAgg.amount
-    const gastoCount = expenseAgg.count
     const totalGastoPrev = expenseAggPrev.amount
     const deltaPct =
       totalGastoPrev > 0
@@ -96,110 +169,9 @@ export class DashboardService {
           ? 100
           : 0
 
-    const statusMap = (
-      rows: { status: string; amount: number; count: number }[]
-    ) =>
-      rows.reduce<Record<string, { amount: number; count: number }>>(
-        (acc, r) => {
-          acc[r.status] = { amount: r.amount, count: r.count }
-          return acc
-        },
-        {}
-      )
-
-    // Combina filas {status, amount, count} sumando los duplicados (advances legacy
-    // + viáticos comparten claves de estado como 'pending_l1', 'paid', etc.).
-    const mergeStatusRows = (
-      rows: { status: string; amount: number; count: number }[]
-    ): { status: string; amount: number; count: number }[] => {
-      const m: Record<string, { status: string; amount: number; count: number }> =
-        {}
-      for (const r of rows) {
-        if (!m[r.status]) m[r.status] = { status: r.status, amount: 0, count: 0 }
-        m[r.status].amount += r.amount
-        m[r.status].count += r.count
-      }
-      return Object.values(m).sort((a, b) => b.amount - a.amount)
-    }
-
-    const anticipoByStatus = mergeStatusRows([
-      ...advanceByStatus,
-      ...viaticoByStatus,
-    ])
-
-    const eStatus = statusMap(expenseByStatus)
-    const aStatus = statusMap(anticipoByStatus)
-
-    const sumStatuses = (
-      map: Record<string, { amount: number; count: number }>,
-      keys: string[]
-    ) =>
-      keys.reduce(
-        (acc, k) => {
-          acc.amount += map[k]?.amount ?? 0
-          acc.count += map[k]?.count ?? 0
-          return acc
-        },
-        { amount: 0, count: 0 }
-      )
-
-    const gastoApproved = sumStatuses(eStatus, ['approved', 'sunat_valid'])
-    const gastoRejected = sumStatuses(eStatus, ['rejected', 'sunat_error'])
-    const gastoPending = sumStatuses(eStatus, [
-      'pending',
-      'sunat_valid_not_ours',
-      'sunat_not_found',
-    ])
-    const decidedCount = gastoApproved.count + gastoRejected.count
-    const tasaAprobacionGastos =
-      decidedCount > 0 ? (gastoApproved.count / decidedCount) * 100 : 0
-
-    const anticipoSolicitado = advanceAgg.amount + viaticoAgg.amount
-    const anticipoSolicitadoCount = advanceAgg.count + viaticoAgg.count
-    const anticipoAprobado = sumStatuses(aStatus, [
-      'approved',
-      'viatico_approved',
-      'partially_paid',
-      'paid',
-      'settled',
-    ])
-    const anticipoPagado = sumStatuses(aStatus, [
-      'partially_paid',
-      'paid',
-      'settled',
-    ])
-    const anticipoPendienteAprob = sumStatuses(aStatus, [
-      'pending_l1',
-      'pending_l2',
-      'pending_contabilidad',
-    ])
-    const devolucionesPendientes = {
-      amount: pendingReturns.amount + viaticoReturns.amount,
-      count: pendingReturns.count + viaticoReturns.count,
-    }
-
-    const reportStatusMap = reportByStatus.reduce<Record<string, number>>(
-      (acc, r) => {
-        acc[r.status] = r.count
-        return acc
-      },
-      {}
-    )
-    const rendicionesTotal = reportByStatus.reduce((s, r) => s + r.count, 0)
-    // Detroit renombró los estados: 'submitted'/'pending_accounting' → además de
-    // 'pending_contabilidad' y la cadena por centro de costo ('pending_l1'/'pending_l2').
-    // 'open' = registrando gastos (en curso, no pendiente de aprobación).
-    const rendicionesPendientes =
-      (reportStatusMap['submitted'] ?? 0) +
-      (reportStatusMap['pending_accounting'] ?? 0) +
-      (reportStatusMap['pending_contabilidad'] ?? 0) +
-      (reportStatusMap['pending_l1'] ?? 0) +
-      (reportStatusMap['pending_l2'] ?? 0)
-    const rendicionesAprobadas =
-      (reportStatusMap['approved'] ?? 0) +
-      (reportStatusMap['reimbursed'] ?? 0) +
-      (reportStatusMap['closed'] ?? 0) +
-      (reportStatusMap['settled'] ?? 0)
+    const sum = (rows: { amount: number }[]) =>
+      rows.reduce((acc, r) => acc + r.amount, 0)
+    const vencidos = porRendir.filter(r => r.dias > DIAS_PARA_RENDIR)
 
     return {
       range: {
@@ -207,90 +179,167 @@ export class DashboardService {
         dateTo: range.to.toISOString(),
       },
       currency: accountingConfig.monedaBase || 'PEN',
+      scope: {
+        restricted: scope.restricted,
+        projectIds: (scope.projectIds ?? []).map(id => id.toString()),
+      },
       kpis: {
         totalGasto,
-        gastoCount,
-        ticketPromedio: gastoCount > 0 ? totalGasto / gastoCount : 0,
+        gastoCount: expenseAgg.count,
         totalGastoPrev,
         totalGastoDeltaPct: deltaPct,
-        gastoApprovedAmount: gastoApproved.amount,
-        gastoPendingAmount: gastoPending.amount,
-        gastoPendingCount: gastoPending.count,
-        gastoRejectedAmount: gastoRejected.amount,
-        tasaAprobacionGastos,
-        anticipoSolicitado,
-        anticipoSolicitadoCount,
-        anticipoAprobadoAmount: anticipoAprobado.amount,
-        anticipoPagadoAmount: anticipoPagado.amount,
-        anticipoPendienteAprobAmount: anticipoPendienteAprob.amount,
-        anticipoPendienteAprobCount: anticipoPendienteAprob.count,
-        devolucionesPendientesAmount: devolucionesPendientes.amount,
-        devolucionesPendientesCount: devolucionesPendientes.count,
-        rendicionesTotal,
-        rendicionesPendientes,
-        rendicionesAprobadas,
+        anticipoSolicitado: solicitudAgg.amount,
+        anticipoSolicitadoCount: solicitudAgg.count,
+        devolucionesPendientesAmount: sum(devoluciones),
+        devolucionesPendientesCount: devoluciones.length,
+        porRendirAmount: sum(porRendir),
+        porRendirCount: porRendir.length,
+        porRendirVencidoAmount: sum(vencidos),
+        porRendirVencidoCount: vencidos.length,
       },
-      expenseByStatus,
-      expenseByType,
-      advanceByStatus: anticipoByStatus,
-      reportByStatus,
-      topCategories,
+      /** Días a partir de los cuales una rendición pendiente se marca atrasada. */
+      diasParaRendir: DIAS_PARA_RENDIR,
+      porRendirBuckets: this.agruparPorAntiguedad(porRendir),
+      monthlySeries,
+      topCategories: this.withPct(topCategories, totalGasto),
+      topOrdenesTrabajo,
       topProjects,
       topCollaborators,
-      topLocations: this.mergeLocations([
-        ...topLocations,
-        ...topViaticoLocations,
-      ]),
-      monthlySeries: this.mergeMonthly(
-        expenseMonthly,
-        this.mergeMonthlyAmounts([...advanceMonthly, ...viaticoMonthly])
-      ),
+      topLocations: destinos,
+      departments,
+      pendientes: { devoluciones, porRendir },
+      expenseByType,
     }
   }
 
-  /** Suma montos mensuales por mes (para fusionar series de advances + viáticos). */
-  private mergeMonthlyAmounts(
-    rows: { month: string; amount: number }[]
-  ): { month: string; amount: number }[] {
-    const m = new Map<string, number>()
-    for (const r of rows) m.set(r.month, (m.get(r.month) ?? 0) + r.amount)
-    return Array.from(m, ([month, amount]) => ({ month, amount })).sort((a, b) =>
-      a.month.localeCompare(b.month)
-    )
-  }
+  // ─── Alcance de la vista ──────────────────────────────────────────────────
 
-  /** Fusiona ubicaciones (advances + viáticos) por destino, sumando conteo y monto. */
-  private mergeLocations(
-    rows: {
-      place: string
-      count: number
-      amount: number
-      lat?: number
-      lng?: number
-    }[]
-  ) {
-    const m = new Map<
-      string,
-      { place: string; count: number; amount: number; lat?: number; lng?: number }
-    >()
-    for (const r of rows) {
-      const key = (r.place ?? '').toLowerCase().trim()
-      const cur = m.get(key)
-      if (cur) {
-        cur.count += r.count
-        cur.amount += r.amount
-        cur.lat = cur.lat ?? r.lat
-        cur.lng = cur.lng ?? r.lng
+  /**
+   * Traduce rol, permisos y filtros a los recortes que aplican todas las
+   * agregaciones. Los filtros que no se pueden expresar sobre el propio
+   * documento (OT y departamento del destino) se resuelven aquí a una lista de
+   * reportes, que es lo que después cruzan gastos y solicitudes.
+   */
+  private async resolveScope(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    viewer: DashboardViewer
+  ): Promise<DashboardScope> {
+    const scope: DashboardScope = { restricted: false }
+
+    if (!ROLES_SIN_LIMITE.includes(viewer.role)) {
+      const user = await this.userModel
+        .findById(viewer.userId)
+        .select('permissions.projectIds')
+        .lean<{ permissions?: { projectIds?: string[] } }>()
+        .exec()
+      const asignados = (user?.permissions?.projectIds ?? [])
+        .filter(id => Types.ObjectId.isValid(id))
+        .map(id => new Types.ObjectId(id))
+
+      scope.restricted = true
+      if (asignados.length) {
+        scope.projectIds = asignados
       } else {
-        m.set(key, { ...r })
+        // Sin centros de costo asignados no hay nada que "supervisar": se le
+        // muestra solo lo suyo en vez de abrirle la empresa entera.
+        scope.ownerId = new Types.ObjectId(viewer.userId)
       }
     }
-    return Array.from(m.values())
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 20)
+
+    // El filtro explícito de centro de costo se interseca con lo permitido.
+    if (query.projectId && Types.ObjectId.isValid(query.projectId)) {
+      const pedido = new Types.ObjectId(query.projectId)
+      const permitido =
+        !scope.projectIds ||
+        scope.projectIds.some(id => id.equals(pedido))
+      scope.projectIds = permitido ? [pedido] : []
+    }
+
+    const porOt = await this.reportIdsByOrdenTrabajo(clientId, query)
+    const porDepartamento = await this.reportIdsByDepartamento(clientId, query)
+    scope.reportIds = this.intersectIds(porOt, porDepartamento)
+
+    return scope
   }
 
-  // ─── Helpers ────────────────────────────────────────────────────────────
+  /** Intersección de dos listas opcionales de ids (undefined = sin filtro). */
+  private intersectIds(
+    a?: Types.ObjectId[],
+    b?: Types.ObjectId[]
+  ): Types.ObjectId[] | undefined {
+    if (!a) return b
+    if (!b) return a
+    const set = new Set(b.map(id => id.toString()))
+    return a.filter(id => set.has(id.toString()))
+  }
+
+  /**
+   * Reportes alcanzados por el filtro de OT. Se aceptan tanto los que llevan la
+   * OT en el propio reporte (solicitud o rendición directa) como aquellos cuyos
+   * comprobantes la llevan: la OT se elige a veces al crear el reporte y otras
+   * en cada gasto.
+   */
+  private async reportIdsByOrdenTrabajo(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto
+  ): Promise<Types.ObjectId[] | undefined> {
+    if (!query.ordenTrabajoId || !Types.ObjectId.isValid(query.ordenTrabajoId)) {
+      return undefined
+    }
+    const otId = new Types.ObjectId(query.ordenTrabajoId)
+
+    const [porReporte, porGasto] = await Promise.all([
+      this.reportModel
+        .find({
+          clientId,
+          $or: [
+            { viaticoOrdenTrabajoId: otId },
+            { directaOrdenTrabajoId: otId },
+          ],
+        })
+        .select('_id')
+        .lean<{ _id: Types.ObjectId }[]>()
+        .exec(),
+      this.expenseModel
+        .find({ clientId, ordenTrabajoId: otId })
+        .select('expenseReportId')
+        .lean<{ expenseReportId?: Types.ObjectId }[]>()
+        .exec(),
+    ])
+
+    const ids = new Map<string, Types.ObjectId>()
+    for (const r of porReporte) ids.set(r._id.toString(), r._id)
+    for (const e of porGasto) {
+      if (e.expenseReportId) ids.set(e.expenseReportId.toString(), e.expenseReportId)
+    }
+    return Array.from(ids.values())
+  }
+
+  /**
+   * Reportes cuyo destino cae en el departamento pedido. El departamento no
+   * está persistido: se deduce del texto de `viaticoPlace` (ver
+   * `peru-departments.util`), así que la resolución se hace en Node sobre los
+   * destinos de la empresa, que son pocos.
+   */
+  private async reportIdsByDepartamento(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto
+  ): Promise<Types.ObjectId[] | undefined> {
+    if (!query.department) return undefined
+
+    const rows = await this.reportModel
+      .find({ clientId, viaticoPlace: { $exists: true, $nin: [null, ''] } })
+      .select('_id viaticoPlace')
+      .lean<{ _id: Types.ObjectId; viaticoPlace?: string }[]>()
+      .exec()
+
+    return rows
+      .filter(r => departamentoLabel(r.viaticoPlace) === query.department)
+      .map(r => r._id)
+  }
+
+  // ─── Helpers de rango ─────────────────────────────────────────────────────
 
   private resolveRange(dateFrom?: string, dateTo?: string): ResolvedRange {
     // Los filtros llegan como 'YYYY-MM-DD'. `new Date('YYYY-MM-DD')` los interpreta
@@ -356,10 +405,32 @@ export class DashboardService {
     )
   }
 
+  // ─── Matches ──────────────────────────────────────────────────────────────
+
+  /**
+   * Resuelve a qué colaborador se acota la consulta combinando el recorte del
+   * rol con el filtro elegido. `null` = sin acotar; `false` = no debe devolver
+   * nada (pidió los datos de otro estando acotado a los suyos).
+   *
+   * Sin esta combinación, poner `collaboratorId` en la URL pisaba el recorte y
+   * un colaborador veía los gastos de cualquier otro.
+   */
+  private resolveCollaborator(
+    query: DashboardQueryDto,
+    scope: DashboardScope
+  ): string | null | false {
+    const propio = scope.ownerId?.toString()
+    const pedido = query.collaboratorId || null
+    if (!propio) return pedido
+    if (!pedido || pedido === propio) return propio
+    return false
+  }
+
   /** Match base para gastos (Expense) en el rango/filtros. */
   private expenseMatch(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
+    scope: DashboardScope,
     from: Date,
     to: Date
   ): Record<string, any> {
@@ -367,82 +438,60 @@ export class DashboardService {
       clientId,
       createdAt: { $gte: from, $lte: to },
     }
-    if (query.projectId) match.proyectId = new Types.ObjectId(query.projectId)
-    if (query.categoryId)
+    if (scope.projectIds) match.proyectId = { $in: scope.projectIds }
+    const creador = this.resolveCollaborator(query, scope)
+    if (creador === false) match.createdBy = { $in: [] }
+    else if (creador) match.createdBy = creador
+    if (query.categoryId && Types.ObjectId.isValid(query.categoryId))
       match.categoryId = new Types.ObjectId(query.categoryId)
-    if (query.collaboratorId) match.createdBy = query.collaboratorId
-    return match
-  }
-
-  private advanceMatch(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    from: Date,
-    to: Date
-  ): Record<string, any> {
-    const match: Record<string, any> = {
-      clientId,
-      createdAt: { $gte: from, $lte: to },
-    }
-    if (query.projectId) match.projectId = new Types.ObjectId(query.projectId)
-    if (query.collaboratorId)
-      match.userId = new Types.ObjectId(query.collaboratorId)
-    if (query.categoryId)
-      match['lines.categoryId'] = new Types.ObjectId(query.categoryId)
-    return match
-  }
-
-  private reportMatch(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    from: Date,
-    to: Date
-  ): Record<string, any> {
-    // Rendiciones antiguas no tienen `createdAt` (el campo timestamps se agregó
-    // después). Para no excluirlas, se usa la fecha embebida en el _id como
-    // respaldo cuando `createdAt` falta.
-    const effectiveDate = { $ifNull: ['$createdAt', { $toDate: '$_id' }] }
-    const match: Record<string, any> = {
-      clientId,
-      isCajaChica: { $ne: true },
-      // Los viáticos (type='viatico') SÍ cuentan como rendiciones: es lo que hace
-      // la página /rendiciones. El anticipo (monto S/) y la rendición (documento)
-      // son métricas distintas, por eso un viático aporta a ambas. Solo se excluye
-      // la caja chica.
-      $expr: {
-        $and: [{ $gte: [effectiveDate, from] }, { $lte: [effectiveDate, to] }],
-      },
-    }
-    if (query.projectId) match.projectId = new Types.ObjectId(query.projectId)
-    if (query.collaboratorId)
-      match.userId = new Types.ObjectId(query.collaboratorId)
+    // La OT sí vive en el comprobante: se filtra directo, más preciso que por reporte.
+    if (query.ordenTrabajoId && Types.ObjectId.isValid(query.ordenTrabajoId))
+      match.ordenTrabajoId = new Types.ObjectId(query.ordenTrabajoId)
+    // El departamento solo se conoce a nivel de reporte.
+    if (query.department) match.expenseReportId = { $in: scope.reportIds ?? [] }
     return match
   }
 
   /**
-   * Match para viáticos-solicitud (ExpenseReport con type='viatico'), que en Detroit
-   * son la fuente real de los anticipos (la colección `advances` quedó en desuso).
+   * Match para solicitudes de fondos (ExpenseReport con type='viatico'), que en
+   * Detroit son la fuente de los anticipos: la colección `advances` quedó sin uso.
    */
-  private viaticoMatch(
+  private solicitudMatch(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
-    from: Date,
-    to: Date
+    scope: DashboardScope,
+    from?: Date,
+    to?: Date
   ): Record<string, any> {
-    const effectiveDate = { $ifNull: ['$createdAt', { $toDate: '$_id' }] }
-    const match: Record<string, any> = {
-      clientId,
-      type: 'viatico',
-      $expr: {
+    const match: Record<string, any> = { clientId, type: 'viatico' }
+    if (from && to) {
+      // Las solicitudes antiguas no tienen `createdAt` (los timestamps se
+      // agregaron después): se cae a la fecha embebida en el _id.
+      const effectiveDate = { $ifNull: ['$createdAt', { $toDate: '$_id' }] }
+      match.$expr = {
         $and: [{ $gte: [effectiveDate, from] }, { $lte: [effectiveDate, to] }],
-      },
+      }
     }
-    if (query.projectId) match.projectId = new Types.ObjectId(query.projectId)
-    if (query.collaboratorId)
-      match.userId = new Types.ObjectId(query.collaboratorId)
-    if (query.categoryId)
+    if (scope.projectIds) match.projectId = { $in: scope.projectIds }
+    this.applyUserMatch(match, query, scope)
+    if (query.categoryId && Types.ObjectId.isValid(query.categoryId))
       match['viaticoLines.categoryId'] = new Types.ObjectId(query.categoryId)
+    if (scope.reportIds) match._id = { $in: scope.reportIds }
     return match
+  }
+
+  /** Aplica a `userId` (reportes) el colaborador resuelto para la consulta. */
+  private applyUserMatch(
+    match: Record<string, any>,
+    query: DashboardQueryDto,
+    scope: DashboardScope
+  ) {
+    const usuario = this.resolveCollaborator(query, scope)
+    if (usuario === false || (usuario && !Types.ObjectId.isValid(usuario))) {
+      match.userId = { $in: [] }
+    } else if (usuario) {
+      match.userId = new Types.ObjectId(usuario)
+    }
   }
 
   /**
@@ -461,16 +510,25 @@ export class DashboardService {
     },
   }
 
-  // ─── Expense aggregations ─────────────────────────────────────────────────
+  /** Monto solicitado de un viático, llevado a moneda base con el TC congelado. */
+  private readonly solicitudAmountExpr = {
+    $multiply: [
+      { $ifNull: ['$viaticoAmount', 0] },
+      { $ifNull: ['$tipoCambio', 1] },
+    ],
+  }
+
+  // ─── Gastos ───────────────────────────────────────────────────────────────
 
   private async aggregateExpenseTotals(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
+    scope: DashboardScope,
     from: Date,
     to: Date
   ): Promise<{ amount: number; count: number }> {
     const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, from, to) },
+      { $match: this.expenseMatch(clientId, query, scope, from, to) },
       {
         $group: {
           _id: null,
@@ -482,33 +540,22 @@ export class DashboardService {
     return { amount: res[0]?.amount ?? 0, count: res[0]?.count ?? 0 }
   }
 
-  private async aggregateExpenseByStatus(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ status: string; amount: number; count: number }[]> {
-    const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: { $ifNull: ['$status', 'pending'] },
-          amount: { $sum: this.amountExpr },
-          count: { $sum: 1 },
-        },
-      },
-      { $project: { _id: 0, status: '$_id', amount: 1, count: 1 } },
-      { $sort: { amount: -1 } },
-    ])
-    return res
-  }
-
   private async aggregateExpenseByType(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
+    scope: DashboardScope,
     range: ResolvedRange
   ): Promise<{ type: string; amount: number; count: number }[]> {
-    const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, range.from, range.to) },
+    return this.expenseModel.aggregate([
+      {
+        $match: this.expenseMatch(
+          clientId,
+          query,
+          scope,
+          range.from,
+          range.to
+        ),
+      },
       {
         $group: {
           _id: { $ifNull: ['$expenseType', 'factura'] },
@@ -519,182 +566,382 @@ export class DashboardService {
       { $project: { _id: 0, type: '$_id', amount: 1, count: 1 } },
       { $sort: { amount: -1 } },
     ])
-    return res
   }
 
-  private async aggregateTopCategories(
+  /**
+   * Ranking de gastos por una dimension (categoria, OT, centro de costo,
+   * colaborador) partido en cerrado / en proceso, que es como el cliente quiere
+   * leer los cuatro graficos: cuanto de lo que se ve ya esta liquidado y cuanto
+   * sigue en camino.
+   *
+   * El estado vive en la rendicion, no en el comprobante, de ahi el `$lookup`.
+   * Las rendiciones rechazadas y anuladas se descartan: no son ninguno de los
+   * dos lados del corte.
+   */
+  private async aggregateRankingPorEstado(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
-    range: ResolvedRange
-  ) {
-    const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, range.from, range.to) },
+    scope: DashboardScope,
+    range: ResolvedRange,
+    opts: {
+      /** Campo por el que se agrupa, ej. '$categoryId'. */
+      groupBy: string
+      /** Coleccion y campo del nombre legible. */
+      lookup?: { from: string; nameField: string }
+      /** Nombre cuando el lookup no encuentra nada. */
+      fallbackName: string
+      /** Clave con la que viaja el id en la respuesta. */
+      idKey: 'categoryId' | 'ordenTrabajoId' | 'projectId' | 'userId'
+      limit: number
+      /** El campo agrupado es string y hay que convertirlo para el lookup. */
+      idEsString?: boolean
+      /** Condiciones extra sobre el comprobante. */
+      matchExtra?: Record<string, any>
+    }
+  ): Promise<RankingRow[]> {
+    const match = {
+      ...this.expenseMatch(clientId, query, scope, range.from, range.to),
+      ...(opts.matchExtra ?? {}),
+    }
+
+    const filas: {
+      id: any
+      estado: EstadoGasto
+      amount: number
+      count: number
+      name?: string
+    }[] = await this.expenseModel.aggregate([
+      { $match: match },
+      ...this.lookupRendicion(),
       {
         $group: {
-          _id: '$categoryId',
+          _id: { id: opts.groupBy, estado: ESTADO_GASTO_EXPR },
           amount: { $sum: this.amountExpr },
           count: { $sum: 1 },
         },
       },
-      { $sort: { amount: -1 } },
-      { $limit: 8 },
-      {
-        $lookup: {
-          from: 'categories',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'cat',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          categoryId: '$_id',
-          name: {
-            $ifNull: [{ $arrayElemAt: ['$cat.name', 0] }, 'Sin categoría'],
-          },
-          amount: 1,
-          count: 1,
-        },
-      },
-    ])
-    return res
-  }
-
-  private async aggregateTopProjects(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ) {
-    const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: '$proyectId',
-          amount: { $sum: this.amountExpr },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { amount: -1 } },
-      { $limit: 8 },
-      {
-        $lookup: {
-          from: 'projects',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'proj',
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          projectId: '$_id',
-          name: {
-            $ifNull: [
-              { $arrayElemAt: ['$proj.name', 0] },
-              'Sin centro de costo',
-            ],
-          },
-          amount: 1,
-          count: 1,
-        },
-      },
-    ])
-    return res
-  }
-
-  private async aggregateTopCollaborators(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ) {
-    const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: '$createdBy',
-          amount: { $sum: this.amountExpr },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { amount: -1 } },
-      { $limit: 10 },
       {
         $addFields: {
-          userOid: {
-            $convert: {
-              input: '$_id',
-              to: 'objectId',
-              onError: null,
-              onNull: null,
+          idParaLookup: opts.idEsString
+            ? {
+                $convert: {
+                  input: '$_id.id',
+                  to: 'objectId',
+                  onError: null,
+                  onNull: null,
+                },
+              }
+            : '$_id.id',
+        },
+      },
+      ...(opts.lookup
+        ? [
+            {
+              $lookup: {
+                from: opts.lookup.from,
+                localField: 'idParaLookup',
+                foreignField: '_id',
+                as: 'ref',
+              },
             },
+          ]
+        : []),
+      {
+        $project: {
+          _id: 0,
+          id: '$_id.id',
+          estado: '$_id.estado',
+          amount: 1,
+          count: 1,
+          name: opts.lookup
+            ? { $arrayElemAt: [`$ref.${opts.lookup.nameField}`, 0] }
+            : null,
+        },
+      },
+    ])
+
+    // Las dos mitades de una misma dimension llegan como filas separadas.
+    const porId = new Map<string, RankingRow>()
+    for (const f of filas) {
+      const clave = String(f.id ?? '')
+      const cur =
+        porId.get(clave) ??
+        ({
+          name: f.name || opts.fallbackName,
+          cerrado: 0,
+          enProceso: 0,
+          amount: 0,
+          count: 0,
+          [opts.idKey]: clave || undefined,
+        } as RankingRow)
+      if (f.name) cur.name = f.name
+      cur[f.estado] += f.amount
+      cur.amount += f.amount
+      cur.count += f.count
+      porId.set(clave, cur)
+    }
+
+    return Array.from(porId.values())
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, opts.limit)
+  }
+
+  /** Trae la rendicion de cada comprobante y descarta las muertas. */
+  private lookupRendicion() {
+    return [
+      {
+        $lookup: {
+          from: 'expensereports',
+          localField: 'expenseReportId',
+          foreignField: '_id',
+          as: 'rep',
+        },
+      },
+      { $addFields: { rep0: { $arrayElemAt: ['$rep', 0] } } },
+      {
+        $match: {
+          'rep0.status': { $nin: ESTADOS_RENDICION_MUERTA },
+        },
+      },
+    ]
+  }
+
+  private aggregateTopCategories(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ) {
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$categoryId',
+      lookup: { from: 'categories', nameField: 'name' },
+      fallbackName: 'Sin categoría',
+      idKey: 'categoryId',
+      limit: 8,
+    })
+  }
+
+  private aggregateTopProjects(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ) {
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$proyectId',
+      lookup: { from: 'projects', nameField: 'name' },
+      fallbackName: 'Sin centro de costo',
+      idKey: 'projectId',
+      limit: 8,
+    })
+  }
+
+  /**
+   * Los comprobantes sin OT quedan fuera: el grafico compara OT entre si y un
+   * bloque "sin OT" se comeria el ranking.
+   */
+  private aggregateTopOrdenesTrabajo(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ) {
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$ordenTrabajoId',
+      lookup: { from: 'ordentrabajos', nameField: 'nombre' },
+      fallbackName: 'OT eliminada',
+      idKey: 'ordenTrabajoId',
+      limit: 8,
+      matchExtra: { ordenTrabajoId: { $nin: [null, undefined] } },
+    })
+  }
+
+  private aggregateTopCollaborators(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ) {
+    return this.aggregateRankingPorEstado(clientId, query, scope, range, {
+      groupBy: '$createdBy',
+      lookup: { from: 'users', nameField: 'name' },
+      fallbackName: 'Sin asignar',
+      idKey: 'userId',
+      limit: 10,
+      idEsString: true,
+    })
+  }
+
+
+  // ─── Serie mensual ────────────────────────────────────────────────────────
+
+  /**
+   * Las cuatro barras de cada mes: lo solicitado en fondos, lo que el
+   * colaborador termino gastando contra esa solicitud, lo gastado en rendicion
+   * directa y el consumo de caja chica (el consumo, no el saldo de la bolsa).
+   *
+   * Solicitado y rendido van separados porque son cosas distintas: el primero
+   * es la plata que salio por adelantado y el segundo lo que se sustento. La
+   * distancia entre las dos barras es justo lo que falta rendir del mes.
+   */
+  private async aggregateMonthlySeries(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ): Promise<
+    {
+      month: string
+      solicitudes: number
+      rendicionSolicitud: number
+      directas: number
+      cajaChica: number
+    }[]
+  > {
+    const [solicitudes, porTipo] = await Promise.all([
+      this.reportModel.aggregate([
+        {
+          $match: {
+            ...this.solicitudMatch(
+              clientId,
+              query,
+              scope,
+              range.from,
+              range.to
+            ),
+            // Una solicitud rechazada nunca se pago ni se va a rendir: en un
+            // grafico que compara solicitado contra rendido, dejarla dentro
+            // abre una brecha que no existe.
+            status: { $nin: ESTADOS_RENDICION_MUERTA },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: '%Y-%m',
+                date: { $ifNull: ['$createdAt', { $toDate: '$_id' }] },
+              },
+            },
+            amount: { $sum: this.solicitudAmountExpr },
+          },
+        },
+        { $project: { _id: 0, month: '$_id', amount: 1 } },
+      ]),
+      this.aggregateExpenseMonthlyByReportType(clientId, query, scope, range),
+    ])
+
+    const meses = new Map<
+      string,
+      {
+        month: string
+        solicitudes: number
+        rendicionSolicitud: number
+        directas: number
+        cajaChica: number
+      }
+    >()
+    const bucket = (month: string) => {
+      if (!meses.has(month)) {
+        meses.set(month, {
+          month,
+          solicitudes: 0,
+          rendicionSolicitud: 0,
+          directas: 0,
+          cajaChica: 0,
+        })
+      }
+      return meses.get(month)!
+    }
+
+    for (const s of solicitudes) bucket(s.month).solicitudes += s.amount
+    for (const t of porTipo) bucket(t.month)[t.bucket] += t.amount
+
+    return Array.from(meses.values()).sort((a, b) =>
+      a.month.localeCompare(b.month)
+    )
+  }
+
+  /**
+   * Gasto mensual clasificado por el tipo del reporte al que pertenece cada
+   * comprobante. El tipo solo vive en el reporte, de ahí el `$lookup`.
+   */
+  private async aggregateExpenseMonthlyByReportType(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope,
+    range: ResolvedRange
+  ): Promise<{ month: string; bucket: MonthBucket; amount: number }[]> {
+    return this.expenseModel.aggregate([
+      {
+        $match: this.expenseMatch(
+          clientId,
+          query,
+          scope,
+          range.from,
+          range.to
+        ),
+      },
+      ...this.lookupRendicion(),
+      {
+        $addFields: {
+          bucket: {
+            $cond: [
+              { $eq: ['$rep0.isCajaChica', true] },
+              'cajaChica',
+              {
+                $cond: [
+                  { $eq: ['$rep0.isDirecta', true] },
+                  'directas',
+                  'rendicionSolicitud',
+                ],
+              },
+            ],
           },
         },
       },
       {
-        $lookup: {
-          from: 'users',
-          localField: 'userOid',
-          foreignField: '_id',
-          as: 'usr',
+        $group: {
+          _id: {
+            month: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+            bucket: '$bucket',
+          },
+          amount: { $sum: this.amountExpr },
         },
       },
       {
         $project: {
           _id: 0,
-          userId: '$_id',
-          name: {
-            $ifNull: [{ $arrayElemAt: ['$usr.name', 0] }, 'Sin asignar'],
-          },
+          month: '$_id.month',
+          bucket: '$_id.bucket',
           amount: 1,
-          count: 1,
         },
       },
     ])
-    return res
   }
 
-  private async aggregateExpenseMonthly(
+  // ─── Solicitudes de fondos ────────────────────────────────────────────────
+
+  private async aggregateSolicitudTotals(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ month: string; amount: number }[]> {
-    const res = await this.expenseModel.aggregate([
-      { $match: this.expenseMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m', date: '$createdAt' },
-          },
-          amount: { $sum: this.amountExpr },
-        },
-      },
-      { $project: { _id: 0, month: '$_id', amount: 1 } },
-      { $sort: { month: 1 } },
-    ])
-    return res
-  }
-
-  // ─── Advance aggregations ─────────────────────────────────────────────────
-
-  private async aggregateAdvanceTotals(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
+    scope: DashboardScope,
     range: ResolvedRange
   ): Promise<{ amount: number; count: number }> {
-    const res = await this.advanceModel.aggregate([
-      { $match: this.advanceMatch(clientId, query, range.from, range.to) },
+    const res = await this.reportModel.aggregate([
+      {
+        $match: this.solicitudMatch(
+          clientId,
+          query,
+          scope,
+          range.from,
+          range.to
+        ),
+      },
       {
         $group: {
           _id: null,
-          amount: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ['$amount', 0] },
-                { $ifNull: ['$tipoCambio', 1] },
-              ],
-            },
-          },
+          amount: { $sum: this.solicitudAmountExpr },
           count: { $sum: 1 },
         },
       },
@@ -702,307 +949,297 @@ export class DashboardService {
     return { amount: res[0]?.amount ?? 0, count: res[0]?.count ?? 0 }
   }
 
-  private async aggregateAdvanceByStatus(
+  // ─── Destinos ─────────────────────────────────────────────────────────────
+
+  /**
+   * Gasto por departamento de destino. El destino solo existe en la solicitud
+   * de fondos (`viaticoPlace`): las rendiciones directas y la caja chica no
+   * registran a dónde se viajó, así que no entran aquí.
+   *
+   * Se devuelven las dos lecturas del destino porque el cliente las usa
+   * distinto: `amount` es lo efectivamente gastado (comprobantes) y
+   * `solicitado` lo que se pidió por adelantado.
+   */
+  private async aggregateDestinos(
     clientId: Types.ObjectId,
     query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ status: string; amount: number; count: number }[]> {
-    const res = await this.advanceModel.aggregate([
-      { $match: this.advanceMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: { $ifNull: ['$status', 'pending_l1'] },
-          // Monto desembolsado real: usa paidAmount cuando existe (pagos parciales),
-          // sino el monto solicitado.
-          amount: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ['$paidAmount', { $ifNull: ['$amount', 0] }] },
-                { $ifNull: ['$tipoCambio', 1] },
-              ],
-            },
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $project: { _id: 0, status: '$_id', amount: 1, count: 1 } },
-      { $sort: { amount: -1 } },
-    ])
-    return res
-  }
-
-  private async aggregateAdvanceMonthly(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ month: string; amount: number }[]> {
-    const res = await this.advanceModel.aggregate([
-      { $match: this.advanceMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
-          amount: { $sum: { $ifNull: ['$amount', 0] } },
-        },
-      },
-      { $project: { _id: 0, month: '$_id', amount: 1 } },
-      { $sort: { month: 1 } },
-    ])
-    return res
-  }
-
-  private async aggregatePendingReturns(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ amount: number; count: number }> {
-    const match = this.advanceMatch(clientId, query, range.from, range.to)
-    match['returnRecord.status'] = { $in: ['pending', 'proof_uploaded'] }
-    const res = await this.advanceModel.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: null,
-          amount: { $sum: { $ifNull: ['$returnRecord.amountDue', 0] } },
-          count: { $sum: 1 },
-        },
-      },
-    ])
-    return { amount: res[0]?.amount ?? 0, count: res[0]?.count ?? 0 }
-  }
-
-  // ─── Viático aggregations (ExpenseReport type='viatico') ──────────────────
-
-  /** Total solicitado en viáticos (monto pedido) y nº de solicitudes. */
-  private async aggregateViaticoTotals(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    from: Date,
-    to: Date
-  ): Promise<{ amount: number; count: number }> {
-    const res = await this.reportModel.aggregate([
-      { $match: this.viaticoMatch(clientId, query, from, to) },
-      {
-        $group: {
-          _id: null,
-          amount: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ['$viaticoAmount', 0] },
-                { $ifNull: ['$tipoCambio', 1] },
-              ],
-            },
-          },
-          count: { $sum: 1 },
-        },
-      },
-    ])
-    return { amount: res[0]?.amount ?? 0, count: res[0]?.count ?? 0 }
-  }
-
-  private async aggregateViaticoByStatus(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ status: string; amount: number; count: number }[]> {
-    const res = await this.reportModel.aggregate([
-      { $match: this.viaticoMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: { $ifNull: ['$status', 'pending_l1'] },
-          // Monto desembolsado real: viaticoPaidAmount cuando existe (pagos
-          // parciales), si no el monto solicitado. Llevado a moneda base con el
-          // TC congelado, igual que el resto de agregados: sin eso un viático en
-          // dólares entraba al gráfico como si fueran soles.
-          amount: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ['$viaticoPaidAmount', { $ifNull: ['$viaticoAmount', 0] }] },
-                { $ifNull: ['$tipoCambio', 1] },
-              ],
-            },
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $project: { _id: 0, status: '$_id', amount: 1, count: 1 } },
-      { $sort: { amount: -1 } },
-    ])
-    return res
-  }
-
-  private async aggregateViaticoMonthly(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ month: string; amount: number }[]> {
-    const res = await this.reportModel.aggregate([
-      { $match: this.viaticoMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: {
-            $dateToString: {
-              format: '%Y-%m',
-              date: { $ifNull: ['$createdAt', { $toDate: '$_id' }] },
-            },
-          },
-          amount: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ['$viaticoAmount', 0] },
-                { $ifNull: ['$tipoCambio', 1] },
-              ],
-            },
-          },
-        },
-      },
-      { $project: { _id: 0, month: '$_id', amount: 1 } },
-      { $sort: { month: 1 } },
-    ])
-    return res
-  }
-
-  private async aggregateViaticoPendingReturns(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ amount: number; count: number }> {
-    const match = this.viaticoMatch(clientId, query, range.from, range.to)
-    match['viaticoReturnRecord.status'] = { $in: ['pending', 'proof_uploaded'] }
-    const res = await this.reportModel.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: null,
-          amount: { $sum: { $ifNull: ['$viaticoReturnRecord.amountDue', 0] } },
-          count: { $sum: 1 },
-        },
-      },
-    ])
-    return { amount: res[0]?.amount ?? 0, count: res[0]?.count ?? 0 }
-  }
-
-  private async aggregateTopViaticoLocations(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<
-    { place: string; count: number; amount: number; lat?: number; lng?: number }[]
-  > {
-    const baseMatch = this.viaticoMatch(clientId, query, range.from, range.to)
-    const match = {
-      ...baseMatch,
-      viaticoPlace: { $exists: true, $nin: [null, ''] },
-    }
-    const res = await this.reportModel.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: { $toLower: { $trim: { input: '$viaticoPlace' } } },
-          place: { $first: '$viaticoPlace' },
-          count: { $sum: 1 },
-          amount: {
-            $sum: {
-              $multiply: [
-                { $ifNull: ['$viaticoAmount', 0] },
-                { $ifNull: ['$tipoCambio', 1] },
-              ],
-            },
-          },
-          lat: { $first: '$viaticoLat' },
-          lng: { $first: '$viaticoLng' },
-        },
-      },
-      { $sort: { amount: -1 } },
-      { $limit: 20 },
-      { $project: { _id: 0, place: 1, count: 1, amount: 1, lat: 1, lng: 1 } },
-    ])
-    return res
-  }
-
-  // ─── Expense report aggregations ──────────────────────────────────────────
-
-  private async aggregateReportByStatus(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
-    range: ResolvedRange
-  ): Promise<{ status: string; count: number; budget: number }[]> {
-    const res = await this.reportModel.aggregate([
-      { $match: this.reportMatch(clientId, query, range.from, range.to) },
-      {
-        $group: {
-          _id: { $ifNull: ['$status', 'open'] },
-          count: { $sum: 1 },
-          budget: { $sum: { $ifNull: ['$budget', 0] } },
-        },
-      },
-      { $project: { _id: 0, status: '$_id', count: 1, budget: 1 } },
-      { $sort: { count: -1 } },
-    ])
-    return res
-  }
-
-  // ─── Location aggregations ────────────────────────────────────────────────
-
-  private async aggregateTopLocations(
-    clientId: Types.ObjectId,
-    query: DashboardQueryDto,
+    scope: DashboardScope,
     range: ResolvedRange
   ): Promise<
     {
       place: string
       count: number
       amount: number
+      solicitado: number
+      /** false para el agrupado "Sin departamento", que no es un destino real. */
+      identificado: boolean
       lat?: number
       lng?: number
     }[]
   > {
-    const baseMatch = this.advanceMatch(clientId, query, range.from, range.to)
-    const match = { ...baseMatch, place: { $exists: true, $nin: [null, ''] } }
-    const res = await this.advanceModel.aggregate([
-      { $match: match },
+    const match = this.solicitudMatch(
+      clientId,
+      query,
+      scope,
+      range.from,
+      range.to
+    )
+    const rows: {
+      place?: string
+      solicitado: number
+      gasto: number
+      count: number
+    }[] = await this.reportModel.aggregate([
+      { $match: { ...match, viaticoPlace: { $exists: true, $nin: [null, ''] } } },
       {
-        $group: {
-          _id: { $toLower: { $trim: { input: '$place' } } },
-          place: { $first: '$place' },
-          count: { $sum: 1 },
-          amount: { $sum: { $ifNull: ['$amount', 0] } },
-          lat: { $first: '$lat' },
-          lng: { $first: '$lng' },
+        $lookup: {
+          from: 'expenses',
+          localField: '_id',
+          foreignField: 'expenseReportId',
+          as: 'gastos',
         },
       },
-      { $sort: { amount: -1 } },
-      { $limit: 20 },
       {
         $project: {
           _id: 0,
-          place: 1,
-          count: 1,
-          amount: 1,
-          lat: 1,
-          lng: 1,
+          place: '$viaticoPlace',
+          solicitado: this.solicitudAmountExpr,
+          gasto: {
+            $sum: {
+              $map: {
+                input: '$gastos',
+                as: 'g',
+                in: {
+                  $convert: {
+                    input: { $ifNull: ['$$g.montoBase', '$$g.total'] },
+                    to: 'double',
+                    onError: 0,
+                    onNull: 0,
+                  },
+                },
+              },
+            },
+          },
         },
       },
     ])
-    return res
+
+    const porDepartamento = new Map<
+      string,
+      { place: string; count: number; amount: number; solicitado: number }
+    >()
+    for (const row of rows) {
+      const dep = departamentoLabel(row.place)
+      const cur = porDepartamento.get(dep) ?? {
+        place: dep,
+        count: 0,
+        amount: 0,
+        solicitado: 0,
+      }
+      cur.count += 1
+      cur.amount += row.gasto ?? 0
+      cur.solicitado += row.solicitado ?? 0
+      porDepartamento.set(dep, cur)
+    }
+
+    return Array.from(porDepartamento.values())
+      .map(d => ({
+        ...d,
+        identificado: d.place !== DEPARTAMENTO_DESCONOCIDO,
+        ...(DEPARTAMENTO_COORDS[d.place] ?? {}),
+      }))
+      .sort((a, b) => b.amount - a.amount || b.solicitado - a.solicitado)
   }
 
-  // ─── Series merge ─────────────────────────────────────────────────────────
+  /** Departamentos con al menos un destino registrado, para el selector del filtro. */
+  private async listDepartments(clientId: Types.ObjectId): Promise<string[]> {
+    const places = await this.reportModel.distinct('viaticoPlace', {
+      clientId,
+      viaticoPlace: { $exists: true, $nin: [null, ''] },
+    })
+    const deps = new Set<string>()
+    for (const p of places as string[]) deps.add(departamentoLabel(p))
+    return Array.from(deps).sort((a, b) => {
+      // "Sin departamento" siempre al final del selector.
+      if (a === DEPARTAMENTO_DESCONOCIDO) return 1
+      if (b === DEPARTAMENTO_DESCONOCIDO) return -1
+      return a.localeCompare(b, 'es')
+    })
+  }
 
-  private mergeMonthly(
-    gasto: { month: string; amount: number }[],
-    anticipo: { month: string; amount: number }[]
-  ): { month: string; gasto: number; anticipo: number }[] {
-    const map = new Map<string, { gasto: number; anticipo: number }>()
-    gasto.forEach(g => {
-      map.set(g.month, { gasto: g.amount, anticipo: 0 })
+  // ─── Pendientes (estado a hoy, sin recortar por el rango) ─────────────────
+
+  /**
+   * Quién debe devolver saldo. No se acota al rango de fechas a propósito: una
+   * devolución pendiente lo sigue estando aunque su solicitud sea de hace
+   * meses, y el cliente pidió justamente ver quién tiene deuda abierta.
+   */
+  private async listDevolucionesPendientes(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope
+  ) {
+    const match = this.solicitudMatch(clientId, query, scope)
+    const rows = await this.reportModel.aggregate([
+      {
+        $match: {
+          ...match,
+          'viaticoReturnRecord.status': { $in: ESTADOS_DEVOLUCION_PENDIENTE },
+        },
+      },
+      { $sort: { 'viaticoReturnRecord.dueDate': 1 } },
+      { $limit: 50 },
+      ...this.lookupUserName(),
+      {
+        $project: {
+          _id: 0,
+          reportId: { $toString: '$_id' },
+          codigo: { $ifNull: ['$codigo', ''] },
+          place: { $ifNull: ['$viaticoPlace', ''] },
+          userName: 1,
+          amount: { $ifNull: ['$viaticoReturnRecord.amountDue', 0] },
+          desde: {
+            $ifNull: [
+              '$viaticoReturnRecord.dueDate',
+              { $ifNull: ['$createdAt', { $toDate: '$_id' }] },
+            ],
+          },
+        },
+      },
+    ])
+    return rows.map(r => ({ ...r, dias: this.diasDesde(r.desde) }))
+  }
+
+  /**
+   * Solicitudes con dinero YA entregado que todavía no cierran: es lo que el
+   * colaborador tiene en la mano y aún no sustenta. Los estados que cuentan
+   * como cerrada son los mismos del tope de solicitudes abiertas (VD-139), para
+   * que el dashboard no diga "0 pendientes" mientras el sistema le bloquea la
+   * siguiente solicitud.
+   *
+   * Las solicitudes aprobadas pero no pagadas quedan fuera: ahí no hay nada que
+   * rendir todavía, el pendiente es de Tesorería.
+   */
+  private async listPendientesPorRendir(
+    clientId: Types.ObjectId,
+    query: DashboardQueryDto,
+    scope: DashboardScope
+  ) {
+    const match = this.solicitudMatch(clientId, query, scope)
+    const rows = await this.reportModel.aggregate([
+      {
+        $match: {
+          ...match,
+          status: { $nin: ESTADOS_SOLICITUD_CERRADA },
+          isSolicitudCajaChica: { $ne: true },
+          viaticoPaidAmount: { $gt: 0 },
+        },
+      },
+      ...this.lookupUserName(),
+      {
+        $project: {
+          _id: 0,
+          reportId: { $toString: '$_id' },
+          codigo: { $ifNull: ['$codigo', ''] },
+          place: { $ifNull: ['$viaticoPlace', ''] },
+          status: { $ifNull: ['$status', 'pending_l1'] },
+          userName: 1,
+          amount: {
+            $multiply: [
+              { $ifNull: ['$viaticoPaidAmount', 0] },
+              { $ifNull: ['$tipoCambio', 1] },
+            ],
+          },
+          // El plazo corre desde que el colaborador recibe el dinero; si el pago
+          // se registró sin fecha, desde que pidió.
+          desde: {
+            $ifNull: [
+              { $min: '$viaticoPayments.transferDate' },
+              { $ifNull: ['$createdAt', { $toDate: '$_id' }] },
+            ],
+          },
+        },
+      },
+    ])
+    return rows
+      .map(r => ({ ...r, dias: this.diasDesde(r.desde) }))
+      .sort((a, b) => b.dias - a.dias)
+  }
+
+  /**
+   * Reparte lo entregado sin rendir en tramos de antiguedad, en multiplos del
+   * plazo pactado. Es la lectura que la lista no da: cuanto de la deuda es
+   * reciente y cuanto lleva meses sin sustentar.
+   */
+  private agruparPorAntiguedad(
+    filas: { dias: number; amount: number }[]
+  ): { label: string; amount: number; count: number; vencido: boolean }[] {
+    const n = DIAS_PARA_RENDIR
+    const tramos = [
+      { label: `Al día (≤ ${n} d)`, hasta: n, vencido: false },
+      { label: `${n + 1}–${n * 2} d`, hasta: n * 2, vencido: true },
+      { label: `${n * 2 + 1}–${n * 3} d`, hasta: n * 3, vencido: true },
+      { label: `+ ${n * 3} d`, hasta: Infinity, vencido: true },
+    ]
+    return tramos.map(t => ({
+      label: t.label,
+      vencido: t.vencido,
+      amount: 0,
+      count: 0,
+    })).map((acc, i) => {
+      const desde = i === 0 ? -Infinity : tramos[i - 1].hasta
+      for (const f of filas) {
+        if (f.dias > desde && f.dias <= tramos[i].hasta) {
+          acc.amount += f.amount
+          acc.count += 1
+        }
+      }
+      return acc
     })
-    anticipo.forEach(a => {
-      const cur = map.get(a.month) ?? { gasto: 0, anticipo: 0 }
-      cur.anticipo = a.amount
-      map.set(a.month, cur)
-    })
-    return Array.from(map.entries())
-      .map(([month, v]) => ({ month, gasto: v.gasto, anticipo: v.anticipo }))
-      .sort((a, b) => a.month.localeCompare(b.month))
+  }
+
+  /** Etapas de `$lookup` que resuelven `userId` al nombre del colaborador. */
+  private lookupUserName() {
+    return [
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'usr',
+        },
+      },
+      {
+        $addFields: {
+          userName: {
+            $ifNull: [{ $arrayElemAt: ['$usr.name', 0] }, 'Sin asignar'],
+          },
+        },
+      },
+    ]
+  }
+
+  private diasDesde(fecha?: Date | string | null): number {
+    if (!fecha) return 0
+    const d = new Date(fecha)
+    if (isNaN(d.getTime())) return 0
+    return Math.max(
+      0,
+      Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24))
+    )
+  }
+
+  // ─── Salida ───────────────────────────────────────────────────────────────
+
+  /**
+   * Agrega el porcentaje sobre el gasto total. El denominador es el total del
+   * periodo, no la suma del top: así los porcentajes del gráfico no suman 100
+   * cuando hay categorías fuera del top, que es lo correcto.
+   */
+  private withPct<T extends { amount: number }>(rows: T[], total: number) {
+    return rows.map(r => ({
+      ...r,
+      pct: total > 0 ? (r.amount / total) * 100 : 0,
+    }))
   }
 }

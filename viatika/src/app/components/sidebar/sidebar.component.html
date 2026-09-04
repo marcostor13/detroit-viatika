@@ -4,9 +4,7 @@
     <!-- Logo Section -->
     <div class="p-6 border-b border-tertiary/20">
       <div class="flex items-center justify-center">
-        @if (companyConfig?.logo) {
-          <img [src]="companyConfig!.logo" alt="Logo" width="110" class="max-h-16 object-contain" />
-        }
+        <img [src]="companyConfig?.logo || '/logo_header.png'" alt="Logo" class="max-h-16 max-w-[150px] object-contain" />
       </div>
     </div>
 
@@ -287,12 +285,10 @@
       <!-- Mobile Header -->
       <div class="p-6 border-b border-tertiary/20">
         <div class="flex items-center justify-between">
-          <div class="flex items-center justify-center flex-1">
-            @if (companyConfig?.logo) {
-              <img [src]="companyConfig!.logo" alt="Logo" width="110" class="max-h-16 object-contain" />
-            } @else {
-              <span class="text-sm font-semibold text-secondary truncate">{{ companyConfig?.name || '' }}</span>
-            }
+          <div class="flex items-center justify-center flex-1 min-w-0">
+            <!-- Si la empresa no tiene logo cargado se usa el de la app, igual
+                 que en el login, en vez de dejar la cabecera con solo texto. -->
+            <img [src]="companyConfig?.logo || '/logo_header.png'" alt="Logo" class="max-h-14 max-w-[150px] object-contain" />
           </div>
           <button
             (click)="toggleSidebar()"

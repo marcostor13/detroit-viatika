@@ -28,6 +28,7 @@ import { ProjectSelectComponent } from '../../../design-system/project-select/pr
 import { WorkerSelectComponent, WorkerOption } from '../../../design-system/worker-select/worker-select.component';
 import { SuplenciaService } from '../../../services/suplencia.service';
 import { ListFiltersService } from '../../../services/list-filters.service';
+import { FilterPanelComponent } from '../../../design-system/filter-panel/filter-panel.component';
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
   // Rendición normal
@@ -104,7 +105,7 @@ export type UnifiedRendicionItem = {
 @Component({
   selector: 'app-rendiciones-admin',
   standalone: true,
-  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent, SuplenciaBannerComponent],
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterModule, ProjectSelectComponent, WorkerSelectComponent, FlowTimelineComponent, SuplenciaBannerComponent, FilterPanelComponent],
   templateUrl: './rendiciones-admin.component.html',
 })
 export class RendicionesAdminComponent implements OnInit {
@@ -565,7 +566,25 @@ export class RendicionesAdminComponent implements OnInit {
   }
 
   get hasActiveFilters(): boolean {
-    return !!(this.filterUserId || this.filterProjectId || this.filterStatus || this.filterKind || this.filterDateFrom || this.filterDateTo);
+    return this.activeFilterCount > 0;
+  }
+
+  /** Cuantos filtros hay puestos. En movil el panel va plegado y este numero es
+   *  lo unico que delata que la lista viene acotada. */
+  get activeFilterCount(): number {
+    return [
+      this.filterUserId,
+      this.filterProjectId,
+      this.filterStatus,
+      this.filterKind,
+      this.filterDateFrom,
+      this.filterDateTo,
+    ].filter(Boolean).length;
+  }
+
+  /** Documentos de la lista que esperan la aprobacion de quien mira. */
+  get pendingActionCount(): number {
+    return this.filteredItems.filter(i => i.canApproveNow).length;
   }
 
   goToDetail(item: UnifiedRendicionItem): void {

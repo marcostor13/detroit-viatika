@@ -146,3 +146,44 @@ select:not([multiple]) {
   background-size: 1.125rem 1.125rem;
   padding-right: 2rem;
 }
+
+/* Con el teclado abierto, el navegador desplaza el campo enfocado justo contra
+   el borde visible. Este margen le deja aire arriba y abajo. */
+input,
+select,
+textarea {
+  scroll-margin-top: 5rem;
+  scroll-margin-bottom: 6rem;
+}
+
+/* Un <select> nativo se ensancha hasta el ancho de su opción más larga, así que
+   con listas como los centros de costo se sale de la tarjeta que lo contiene.
+   Esto lo acota sin cambiar nada más. */
+select {
+  max-width: 100%;
+}
+
+/* Barra de acciones fija: hay equipos donde la app dibuja por debajo de la barra
+   de navegacion del sistema y los botones quedan tapados. Se suma el area segura
+   que reporte el sistema; donde no hay solapamiento vale 0 y no cambia nada.
+   Capacitor inyecta --safe-area-inset-bottom en Android 15+ o WebView 140+; en
+   el resto se usa env() del propio WebView. */
+.pb-area-segura {
+  padding-bottom: calc(0.75rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+.espacio-barra-fija {
+  padding-bottom: calc(6rem + var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
+}
+
+/* Barra que desplaza en horizontal (pestañas en movil): la barra de scroll del
+   navegador robaba alto y aparecia bajo las etiquetas. El desplazamiento sigue
+   funcionando con el dedo y con rueda. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

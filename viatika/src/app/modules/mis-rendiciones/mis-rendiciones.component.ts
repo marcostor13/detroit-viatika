@@ -35,6 +35,7 @@ import { ModalComponent } from '../../design-system/modal/modal.component';
 import { ButtonComponent } from '../../design-system/button/button.component';
 import { IconComponent } from '../../design-system/icon/icon.component';
 import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
+import { FilterPanelComponent } from '../../design-system/filter-panel/filter-panel.component';
 import { AdvanceService } from '../../services/advance.service';
 import {
   IAdvance,
@@ -74,7 +75,7 @@ type UnifiedViaticoItem = {
 @Component({
   selector: 'app-mis-rendiciones',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, CreateRendicionModalComponent, DataTableComponent, ColumnDirective, ModalComponent, ButtonComponent, IconComponent, EmptyStateComponent, FlowTimelineComponent],
+  imports: [CommonModule, FormsModule, RouterModule, CreateRendicionModalComponent, DataTableComponent, ColumnDirective, ModalComponent, ButtonComponent, IconComponent, EmptyStateComponent, FlowTimelineComponent, FilterPanelComponent],
   templateUrl: './mis-rendiciones.component.html',
   styleUrls: ['./mis-rendiciones.component.scss']
 })
@@ -1594,6 +1595,34 @@ export class MisRendicionesComponent implements OnInit {
     if (from) reports = reports.filter(r => new Date(r.createdAt) >= new Date(from));
     if (to) reports = reports.filter(r => new Date(r.createdAt) <= new Date(to + 'T23:59:59'));
     return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  /**
+   * Cuantos filtros hay puestos en cada pestana. En movil el panel va plegado y
+   * este numero es lo unico que delata que la lista viene acotada.
+   */
+  get viaticosFilterCount(): number {
+    return [
+      this.viaticosStatusFilter(),
+      this.viaticosProjectFilter(),
+      this.viaticosOtFilter(),
+      this.viaticosDateFrom(),
+      this.viaticosDateTo(),
+    ].filter(Boolean).length;
+  }
+
+  get directasFilterCount(): number {
+    return [
+      this.directasStatusFilter(),
+      this.directasProjectFilter(),
+      this.directasOtFilter(),
+      this.directasDateFrom(),
+      this.directasDateTo(),
+    ].filter(Boolean).length;
+  }
+
+  get cajaFilterCount(): number {
+    return [this.cajaDateFrom(), this.cajaDateTo()].filter(Boolean).length;
   }
 
   clearViaticosFilters(): void {

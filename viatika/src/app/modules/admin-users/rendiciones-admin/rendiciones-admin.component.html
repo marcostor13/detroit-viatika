@@ -1,18 +1,18 @@
-<div class="w-full p-5 lg:p-8">
+<div class="w-full p-4 md:p-5 lg:p-8">
 
   <!-- Aviso de suplencia por vacaciones (VD-124): esta bandeja puede incluir
        documentos del titular al que el usuario está cubriendo. -->
   <app-suplencia-banner />
 
-  <!-- Header -->
-  <div class="flex items-center justify-between gap-4 mb-6">
-    <div class="flex items-center gap-3">
-      <h1 class="text-2xl font-bold text-secondary">{{ mode === 'caja-chica' ? 'Caja Chica' : 'Rendiciones' }}</h1>
-    </div>
+  <!-- Header. En movil el titulo va junto al plegable de filtros: la pantalla
+       ya viene rotulada por la pestaña de arriba y el aprobador necesita ver la
+       lista sin bajar. -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3 md:mb-6">
+    <h1 class="text-lg md:text-2xl font-bold text-secondary">{{ mode === 'caja-chica' ? 'Caja Chica' : 'Rendiciones' }}</h1>
     @if (hasActiveFilters) {
     <button
       (click)="clearFilters()"
-      class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-tertiary border border-tertiary/30 rounded-xl hover:bg-background hover:text-secondary transition-colors"
+      class="hidden md:inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-tertiary border border-tertiary/30 rounded-xl hover:bg-background hover:text-secondary transition-colors"
     >
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -23,7 +23,7 @@
   </div>
 
   <!-- Filters -->
-  <div class="bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-5 mb-6">
+  <app-filter-panel class="mb-4 md:mb-6" [activeCount]="activeFilterCount" (cleared)="clearFilters()">
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
 
       <!-- Usuario -->
@@ -117,7 +117,7 @@
       </div>
 
     </div>
-  </div>
+  </app-filter-panel>
 
   <!-- Loading -->
   @if (isLoading) {
@@ -126,8 +126,14 @@
   </div>
   } @else {
 
-  <!-- Summary -->
-  <p class="text-sm text-tertiary mb-3">
+  <!-- Summary. En movil se antepone cuantos esperan la accion de quien mira:
+       es lo que el aprobador viene a buscar y antes quedaba a varias pantallas
+       de scroll. -->
+  <p class="text-xs md:text-sm text-tertiary mb-2 md:mb-3">
+    @if (pendingActionCount > 0) {
+    <span class="font-semibold text-primary">{{ pendingActionCount }} por aprobar</span>
+    <span class="text-tertiary/60"> · </span>
+    }
     {{ filteredItems.length }} registro{{ filteredItems.length !== 1 ? 's' : '' }}
     @if (hasActiveFilters) { <span class="text-primary font-medium">(filtrados)</span> }
   </p>
@@ -343,11 +349,11 @@
                 >
                   {{ item.userName }}
                 </button>
-                <div class="flex items-center gap-1.5 mt-0.5">
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap shrink-0" [class]="item.kindColor">
+                <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold max-w-full" [class]="item.kindColor">
                     {{ item.kindLabel }}
                   </span>
-                  <p class="text-xs text-secondary truncate font-medium" [title]="item.title">{{ item.title }}</p>
+                  <p class="text-xs text-secondary truncate font-medium min-w-0" [title]="item.title">{{ item.title }}</p>
                 </div>
                 <p class="text-xs text-tertiary mt-0.5 truncate">
                   {{ item.projectName }}
@@ -499,6 +505,7 @@
 
         <!-- Desktop: tabla completa (hay espacio para todas las columnas) -->
         <div class="hidden md:block rounded-xl border border-tertiary/15 overflow-hidden">
+          <div class="overflow-x-auto">
           <table class="min-w-full text-xs">
             <thead class="bg-background">
               <tr>
@@ -524,6 +531,7 @@
               }
             </tbody>
           </table>
+          </div>
         </div>
       </div>
       }
@@ -558,7 +566,7 @@
         </div>
       </div>
       }
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
         <button (click)="showApproveModal.set(false)"
           class="flex-1 h-10 border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
           Cancelar
@@ -698,6 +706,7 @@
 
         <!-- Desktop: tabla completa -->
         <div class="hidden md:block rounded-xl border border-tertiary/15 overflow-hidden">
+          <div class="overflow-x-auto">
           <table class="min-w-full text-xs">
             <thead class="bg-background">
               <tr>
@@ -723,6 +732,7 @@
               }
             </tbody>
           </table>
+          </div>
         </div>
       </div>
       }
@@ -900,7 +910,7 @@
       }
     }
 
-    <div class="flex gap-3">
+    <div class="flex flex-wrap gap-3">
       <button (click)="cancelDelete()"
         class="flex-1 h-[42px] border border-tertiary/30 rounded-xl text-sm text-secondary hover:bg-background transition-colors">
         Cancelar

@@ -19,47 +19,69 @@ import {
   IDashboardResponse,
   IDashboardKpis,
   ILocationPoint,
+  INamedAmount,
 } from './services/dashboard.service';
 import { InvoicesService } from '../invoices/services/invoices.service';
 import { AdminUsersService } from '../admin-users/services/admin-users.service';
+import { OrdenTrabajoService } from '../../services/orden-trabajo.service';
 import { IProject } from '../invoices/interfaces/project.interface';
 import { ICategory } from '../invoices/interfaces/category.interface';
+import {
+  IOrdenTrabajo,
+  otCentroCostoLabel,
+} from '../../interfaces/orden-trabajo.interface';
 import { IUserResponse } from '../../interfaces/user.interface';
 import { NotificationService } from '../../services/notification.service';
-import { GoogleMapsLoaderService } from '../../services/google-maps-loader.service';
+import { ButtonComponent } from '../../design-system/button/button.component';
+import { CardComponent } from '../../design-system/card/card.component';
+import { FilterPanelComponent } from '../../design-system/filter-panel/filter-panel.component';
+import { FormFieldComponent } from '../../design-system/form-field/form-field.component';
+import { IconComponent } from '../../design-system/icon/icon.component';
+import { EmptyStateComponent } from '../../design-system/empty-state/empty-state.component';
+import { ProjectSelectComponent } from '../../design-system/project-select/project-select.component';
+import {
+  SearchSelectComponent,
+  SearchSelectOption,
+} from '../../design-system/search-select/search-select.component';
+import {
+  WorkerSelectComponent,
+  WorkerOption,
+} from '../../design-system/worker-select/worker-select.component';
 
 declare var Chart: any;
 declare var L: any;
-declare var google: any;
 
 const EMPTY_KPIS: IDashboardKpis = {
   totalGasto: 0,
   gastoCount: 0,
-  ticketPromedio: 0,
   totalGastoPrev: 0,
   totalGastoDeltaPct: 0,
-  gastoApprovedAmount: 0,
-  gastoPendingAmount: 0,
-  gastoPendingCount: 0,
-  gastoRejectedAmount: 0,
-  tasaAprobacionGastos: 0,
   anticipoSolicitado: 0,
   anticipoSolicitadoCount: 0,
-  anticipoAprobadoAmount: 0,
-  anticipoPagadoAmount: 0,
-  anticipoPendienteAprobAmount: 0,
-  anticipoPendienteAprobCount: 0,
   devolucionesPendientesAmount: 0,
   devolucionesPendientesCount: 0,
-  rendicionesTotal: 0,
-  rendicionesPendientes: 0,
-  rendicionesAprobadas: 0,
+  porRendirAmount: 0,
+  porRendirCount: 0,
+  porRendirVencidoAmount: 0,
+  porRendirVencidoCount: 0,
 };
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ButtonComponent,
+    CardComponent,
+    FilterPanelComponent,
+    FormFieldComponent,
+    IconComponent,
+    EmptyStateComponent,
+    ProjectSelectComponent,
+    SearchSelectComponent,
+    WorkerSelectComponent,
+  ],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',
 })
@@ -67,18 +89,19 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('monthlyChart') monthlyChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('categoryChart') categoryChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('projectChart') projectChartRef!: ElementRef<HTMLCanvasElement>;
-  @ViewChild('statusChart') statusChartRef!: ElementRef<HTMLCanvasElement>;
-  @ViewChild('advanceChart') advanceChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('otChart') otChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('collaboratorChart')
   collaboratorChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('typeChart') typeChartRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('agingChart') agingChartRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('locationChart')
   locationChartRef!: ElementRef<HTMLCanvasElement>;
 
   private dashboardService = inject(DashboardService);
   private invoicesService = inject(InvoicesService);
   private adminUsersService = inject(AdminUsersService);
+  private ordenTrabajoService = inject(OrdenTrabajoService);
   private notificationService = inject(NotificationService);
-  private mapsLoader = inject(GoogleMapsLoaderService);
   private cdr = inject(ChangeDetectorRef);
 
   loading = signal(true);
@@ -89,13 +112,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
 
   projects: IProject[] = [];
   categories: ICategory[] = [];
-  collaborators: { id: string; name: string }[] = [];
+  collaborators: WorkerOption[] = [];
+  ordenesTrabajo: IOrdenTrabajo[] = [];
 
   filterDateFrom = signal(this.defaultStartDate());
   filterDateTo = signal(this.defaultEndDate());
   filterProject = signal('');
   filterCategory = signal('');
   filterCollaborator = signal('');
+  filterOrdenTrabajo = signal('');
+  filterDepartment = signal('');
 
   activeFilterCount = computed(
     () =>
@@ -103,156 +129,124 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         this.filterProject(),
         this.filterCategory(),
         this.filterCollaborator(),
+        this.filterOrdenTrabajo(),
+        this.filterDepartment(),
       ].filter((v) => !!v).length
   );
+
+  /** Departamentos con destinos registrados; el backend los devuelve ordenados. */
+  departments = computed(() => this.data()?.departments ?? []);
+
+  /**
+   * Opciones de los selectores con buscador. Las listas de Detroit son largas
+   * (~53 categorias, cientos de OT) y un select nativo obliga a recorrerlas a
+   * ojo, de ahi `app-search-select` en vez de `<select>`.
+   */
+  get ordenTrabajoOptions(): SearchSelectOption[] {
+    return this.ordenesTrabajo.map((o) => ({
+      value: o._id as string,
+      label: o.nombre,
+      subLabel: otCentroCostoLabel(o),
+    }));
+  }
+
+  get categoryOptions(): SearchSelectOption[] {
+    return this.categories
+      .filter((c) => !!c._id)
+      .map((c) => ({
+        value: c._id as string,
+        label: c.name,
+        subLabel: c.cuenta,
+      }));
+  }
+
+  get departmentOptions(): SearchSelectOption[] {
+    return this.departments().map((d) => ({ value: d, label: d }));
+  }
+
+  /**
+   * Ajuste del disparador de los selectores para que iguale la altura de los
+   * campos de fecha de la misma rejilla; por defecto vienen mas altos.
+   */
+  readonly selectTrigger = '!rounded-lg !border-divider !px-3 !py-2';
 
   private chartLibraryLoaded = false;
   private leafletLoaded = false;
   private charts: Record<string, any> = {};
   private mapInstance: any = null;
-  /** Marcadores del mapa indexados por nombre de destino, para enfocarlos desde la lista/chart. */
+  /** Marcadores del mapa indexados por departamento, para enfocarlos desde el chart. */
   private markersByPlace: Record<string, any> = {};
-  /** Caché de geocodificación (place -> [lat, lng]) para no repetir llamadas a Google. */
-  private geocodeCache: Record<string, [number, number] | null> = {};
-  private geocoder: any = null;
-  /** Token incremental: invalida marcadores geocodificados de un render anterior. */
-  private mapRenderToken = 0;
   private tweenHandles: Record<string, number> = {};
+  /** rAF del repintado pendiente. Ver `tryRenderCharts`. */
+  private renderHandle = 0;
+  /** Frames esperados a que el contenedor tenga tamaño. */
+  private renderIntentos = 0;
 
-  // Coordinates for Peruvian departments/cities used as fallback
-  private readonly peruCityCoords: Record<string, [number, number]> = {
-    'lima': [-12.0464, -77.0428],
-    'arequipa': [-16.409, -71.5375],
-    'cusco': [-13.532, -71.9675],
-    'cuzco': [-13.532, -71.9675],
-    'trujillo': [-8.112, -79.0288],
-    'chiclayo': [-6.7714, -79.8409],
-    'piura': [-5.1945, -80.6328],
-    'iquitos': [-3.7491, -73.2538],
-    'huancayo': [-12.0651, -75.2049],
-    'puno': [-15.8402, -70.0219],
-    'tacna': [-18.0146, -70.2536],
-    'ica': [-14.0674, -75.7286],
-    'pucallpa': [-8.3791, -74.5539],
-    'ayacucho': [-13.1588, -74.2236],
-    'juliaca': [-15.4997, -70.133],
-    'cajamarca': [-7.1639, -78.5003],
-    'huaraz': [-9.527, -77.5278],
-    'tarapoto': [-6.4853, -76.3607],
-    'moquegua': [-17.1939, -70.9355],
-    'tumbes': [-3.5669, -80.4515],
-    'moyobamba': [-6.034, -76.9724],
-    'cerro de pasco': [-10.6882, -76.2588],
-    'pasco': [-10.6882, -76.2588],
-    'huanuco': [-9.9306, -76.2401],
-    'huánuco': [-9.9306, -76.2401],
-    'abancay': [-13.6354, -72.8814],
-    'puerto maldonado': [-12.5931, -69.1891],
-    'chimbote': [-9.0746, -78.5936],
-    'sullana': [-4.9048, -80.6855],
-    'ilo': [-17.6394, -71.3369],
-    'nazca': [-14.8296, -74.9436],
-    'nasc': [-14.8296, -74.9436],
-    'andahuaylas': [-13.6569, -73.3808],
-    'huancavelica': [-12.7842, -74.9731],
-    'amazonas': [-6.2299, -77.8697],
-    'chachapoyas': [-6.2299, -77.8697],
-    'loreto': [-3.7491, -73.2538],
-    'madre de dios': [-12.5931, -69.1891],
-    'san martin': [-6.4853, -76.3607],
-    'san martín': [-6.4853, -76.3607],
-    'ucayali': [-8.3791, -74.5539],
-    'apurimac': [-13.6354, -72.8814],
-    'apurímac': [-13.6354, -72.8814],
-    'miraflores': [-12.1219, -77.0295],
-    'san isidro': [-12.0974, -77.0365],
-    'barranco': [-12.1531, -77.0216],
-    'surco': [-12.1484, -76.9898],
-    'callao': [-12.0565, -77.1181],
-    'ate': [-12.0186, -76.9246],
-    'villa el salvador': [-12.2138, -76.9313],
+  /**
+   * Paleta tomada de detroit.pe. El sitio es grafito y blanco con rojo ladrillo
+   * de acento: `#8F2D25`, `#983128`, `#94342C`, `#A10000`. Ese ladrillo es mucho
+   * mas terroso que el `#D31212` de la aplicacion, que era el que se leia como
+   * alarma.
+   *
+   * El grafito del sitio no puede ser color de serie: un gris puro tiene croma
+   * cero y el metodo lo rechaza porque "se lee gris", y como rampa su tono es
+   * erratico (115 grados de dispersion medidos). Asi que el grafito se queda en
+   * el texto y los bordes, y el ladrillo es el que pinta.
+   *
+   * Todas las escalas validadas con el script de la guia de visualizacion
+   * contra el blanco de las tarjetas. No tocar un hex suelto sin volver a
+   * correrla: el orden de las series es parte de lo que la hace segura.
+   */
+
+  /** Rampa base, familia ladrillo del sitio. */
+  readonly rampa = {
+    claro: '#CE9A93',
+    medio: '#B0655C',
+    oscuro: '#8F2D25',
   };
 
-  readonly palette = [
-    '#D31212',
-    '#3B82F6',
-    '#05CD99',
-    '#FFB547',
-    '#8B5CF6',
-    '#EC4899',
-    '#14B8A6',
-    '#9B1B22',
-    '#F59E0B',
-    '#6366F1',
-  ];
-
-  private readonly statusColorMap: Record<string, string> = {
-    approved: '#05CD99',
-    sunat_valid: '#05CD99',
-    paid: '#3B82F6',
-    settled: '#14B8A6',
-    pending: '#FFB547',
-    pending_l1: '#FFB547',
-    pending_l2: '#F59E0B',
-    sunat_valid_not_ours: '#FCD34D',
-    sunat_not_found: '#9CA3AF',
-    rejected: '#D31212',
-    sunat_error: '#D31212',
-    returned: '#8B5CF6',
-    cancelled: '#9CA3AF',
-    draft: '#CBD5E1',
-    // Estados de rendición (expense-report)
-    solicited: '#6366F1',
-    open: '#94A3B8',
-    submitted: '#3B82F6',
-    pending_accounting: '#F59E0B',
-    reimbursed: '#10B981',
-    closed: '#0EA5E9',
+  /**
+   * Las cuatro vias por las que se mueve el dinero. El ladrillo va a la
+   * solicitud y su rendicion, que son la serie principal; el azul a los otros
+   * dos canales, porque el grafito del sitio no llega al piso de croma y una
+   * sola familia no sostiene cuatro series legibles.
+   */
+  readonly seriesColors = {
+    solicitudes: '#8F2D25',
+    rendicionSolicitud: '#C0625A',
+    directas: '#005E92',
+    cajaChica: '#4A93C2',
   };
 
-  private readonly expenseStatusLabels: Record<string, string> = {
-    pending: 'Pendiente',
-    approved: 'Aprobado',
-    rejected: 'Rechazado',
-    sunat_valid: 'Válida SUNAT',
-    sunat_valid_not_ours: 'Válida externa',
-    sunat_not_found: 'No encontrada',
-    sunat_error: 'Error SUNAT',
+  /**
+   * Corte cerrado / en proceso de los cuatro rankings. Escala ordinal de un solo
+   * tono: el oscuro lee como "esto ya no se mueve" y el claro como "todavia
+   * esta en camino".
+   */
+  readonly estadoColors = {
+    cerrado: '#8F2D25',
+    enProceso: '#CE9A93',
   };
 
-  private readonly advanceStatusLabels: Record<string, string> = {
-    draft: 'Borrador',
-    pending_l1: 'Pend. Nivel 1',
-    pending_l2: 'Pend. Nivel 2',
-    pending_contabilidad: 'Pend. Contabilidad',
-    approved: 'Aprobado',
-    viatico_approved: 'Aprobado',
-    partially_paid: 'Pago parcial',
-    paid: 'Pagado',
-    settled: 'Liquidado',
-    rejected: 'Rechazado',
-    returned: 'Devuelto',
-    cancelled: 'Cancelado',
-  };
+  /** Escala del mapa, de menor a mayor gasto. */
+  readonly mapaColors = ['#CE9A93', '#B0655C', '#8F2D25'];
 
-  private readonly reportStatusLabels: Record<string, string> = {
-    solicited: 'Solicitada',
-    open: 'Registrando gastos',
-    submitted: 'Enviada',
-    pending_accounting: 'Pend. contabilidad',
-    pending_contabilidad: 'Pend. contabilidad',
-    pending_l1: 'Pend. Nivel 1',
-    pending_l2: 'Pend. Nivel 2',
-    viatico_approved: 'Aprobada',
-    approved: 'Aprobada',
-    partially_paid: 'Pago parcial',
-    paid: 'Pagada',
-    settled: 'Liquidada',
-    returned: 'Devuelta',
-    rejected: 'Rechazada',
-    reimbursed: 'Reembolsada',
-    closed: 'Cerrada',
-    cancelled: 'Cancelada',
+  /** Barras de una sola serie: el titulo ya dice que son, no hace falta leyenda. */
+  readonly serieUnica = '#B0655C';
+
+  /**
+   * Interaccion de los graficos de barra horizontal. `axis: 'y'` es obligatorio
+   * con `indexAxis: 'y'`: sin el, Chart.js busca el elemento mas cercano
+   * midiendo en x, que en una barra horizontal es el largo de la barra y no la
+   * fila, y el tooltip sale de otra categoria. Medido antes del arreglo: 7 de 8
+   * filas mostraban siempre la misma.
+   *
+   * Vive aqui y no repetido en cada grafico para que no se copie mal.
+   */
+  readonly interaccionBarraHorizontal = {
+    mode: 'index' as const,
+    intersect: false,
+    axis: 'y' as const,
   };
 
   private readonly expenseTypeLabels: Record<string, string> = {
@@ -274,6 +268,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    cancelAnimationFrame(this.renderHandle);
     Object.values(this.tweenHandles).forEach((h) => cancelAnimationFrame(h));
     Object.values(this.charts).forEach((c) => c?.destroy?.());
     if (this.mapInstance) {
@@ -289,12 +284,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       this.invoicesService.getProjects().pipe(catchError(() => of([]))),
       this.invoicesService.getCategories().pipe(catchError(() => of([]))),
       this.adminUsersService.getUsers().pipe(catchError(() => of([]))),
-    ]).subscribe(([projects, categories, users]) => {
+      this.ordenTrabajoService.getAll().pipe(catchError(() => of([]))),
+    ]).subscribe(([projects, categories, users, ordenes]) => {
       this.projects = (projects as IProject[]) || [];
       this.categories = (categories as ICategory[]) || [];
       this.collaborators = ((users as IUserResponse[]) || [])
-        .map((u) => ({ id: u._id || '', name: u.name || u.email || 'Sin nombre' }))
-        .filter((u) => !!u.id);
+        .filter((u) => !!u._id)
+        .map((u) => ({
+          _id: u._id as string,
+          name: u.name || u.email || 'Sin nombre',
+          email: u.email,
+          dni: u.dni,
+        }));
+      this.ordenesTrabajo = ((ordenes as IOrdenTrabajo[]) || []).filter(
+        (o) => !!o._id
+      );
     });
   }
 
@@ -307,6 +311,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         projectId: this.filterProject(),
         categoryId: this.filterCategory(),
         collaboratorId: this.filterCollaborator(),
+        ordenTrabajoId: this.filterOrdenTrabajo(),
+        department: this.filterDepartment(),
       })
       .subscribe({
         next: (res) => {
@@ -316,7 +322,7 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           this.animateKpis(res.kpis);
           this.cdr.detectChanges();
           this.tryRenderCharts();
-          // Map needs a tick for the DOM element to exist
+          // El mapa necesita un tick para que exista su contenedor en el DOM.
           setTimeout(() => this.tryRenderMap(), 50);
         },
         error: (err) => {
@@ -337,6 +343,8 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     this.filterProject.set('');
     this.filterCategory.set('');
     this.filterCollaborator.set('');
+    this.filterOrdenTrabajo.set('');
+    this.filterDepartment.set('');
     this.filterDateFrom.set(this.defaultStartDate());
     this.filterDateTo.set(this.defaultEndDate());
     this.loadDashboard();
@@ -398,6 +406,12 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     document.body.appendChild(script);
   }
 
+  /**
+   * Pide un repintado. Se agenda en el siguiente frame y se cancela el anterior:
+   * a este metodo lo llaman cuatro caminos distintos (el AfterViewInit, la
+   * respuesta del API y las cargas de Chart.js y Leaflet) y dos pasadas encimadas
+   * sobre el mismo canvas lo dejan a medio dibujar.
+   */
   private tryRenderCharts() {
     if (
       !this.chartLibraryLoaded ||
@@ -407,12 +421,32 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     ) {
       return;
     }
+    cancelAnimationFrame(this.renderHandle);
+    this.renderHandle = requestAnimationFrame(() => this.renderCharts());
+  }
+
+  private renderCharts() {
+    // Un canvas cuyo contenedor todavia mide cero se dibuja vacio y no se
+    // recupera solo: es lo que pasa al abrir el dashboard en una pestaña que
+    // esta en segundo plano, donde el layout no se resuelve hasta que la pestaña
+    // se muestra. Se espera a que el contenedor tenga tamaño antes de crear
+    // nada, con un tope para no quedarse girando si la tarjeta nunca se muestra.
+    const host = this.monthlyChartRef?.nativeElement?.parentElement;
+    if (host && (host.clientWidth === 0 || host.clientHeight === 0)) {
+      if (this.renderIntentos++ < 120) {
+        this.renderHandle = requestAnimationFrame(() => this.renderCharts());
+      }
+      return;
+    }
+    this.renderIntentos = 0;
+
     this.renderMonthlyChart();
     this.renderCategoryChart();
     this.renderProjectChart();
-    this.renderStatusChart();
-    this.renderAdvanceChart();
+    this.renderOtChart();
     this.renderCollaboratorChart();
+    this.renderTypeChart();
+    this.renderAgingChart();
     this.renderLocationChart();
     this.tryRenderMap();
   }
@@ -428,37 +462,41 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  /**
+   * Tres barras por mes: solicitado, gastado en rendición directa y consumido
+   * de caja chica. Son las tres vías por las que sale dinero y el cliente las
+   * quiere comparables mes a mes.
+   */
+  /**
+   * Cuatro barras por mes. Solicitado y rendido van al lado porque la distancia
+   * entre los dos es lo que falta sustentar; directa y caja chica completan las
+   * otras dos vias por las que sale plata.
+   */
   private renderMonthlyChart() {
     const ref = this.monthlyChartRef?.nativeElement;
     if (!ref) return;
     this.destroyChart('monthly');
     const series = this.data()!.monthlySeries;
     const labels = series.map((s) => this.formatMonthLabel(s.month));
+    const dataset = (
+      label: string,
+      key: 'solicitudes' | 'rendicionSolicitud' | 'directas' | 'cajaChica'
+    ) => ({
+      label,
+      data: series.map((s) => s[key]),
+      backgroundColor: this.seriesColors[key],
+      borderRadius: 4,
+    });
 
     this.charts['monthly'] = new Chart(ref, {
       type: 'bar',
       data: {
         labels,
         datasets: [
-          {
-            label: 'Gasto',
-            data: series.map((s) => s.gasto),
-            backgroundColor: 'rgba(211, 18, 18, 0.85)',
-            borderRadius: 6,
-            order: 2,
-          },
-          {
-            label: 'Anticipos',
-            type: 'line',
-            data: series.map((s) => s.anticipo),
-            borderColor: '#3B82F6',
-            backgroundColor: 'rgba(59, 130, 246, 0.15)',
-            fill: true,
-            tension: 0.4,
-            pointRadius: 3,
-            pointBackgroundColor: '#3B82F6',
-            order: 1,
-          },
+          dataset('Solicitud de fondos', 'solicitudes'),
+          dataset('Rendición de solicitud', 'rendicionSolicitud'),
+          dataset('Rendición directa', 'directas'),
+          dataset('Caja chica', 'cajaChica'),
         ],
       },
       options: {
@@ -467,11 +505,11 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         animation: this.baseAnimation(),
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'top' },
+          legend: { position: 'top', labels: { boxWidth: 12 } },
           tooltip: {
             callbacks: {
               label: (ctx: any) =>
-                `${ctx.dataset.label}: ${this.formatCurrency(ctx.parsed.y)}`,
+                ctx.dataset.label + ': ' + this.formatCurrency(ctx.parsed.y),
             },
           },
         },
@@ -482,64 +520,146 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
             grid: { color: 'rgba(0,0,0,0.05)' },
           },
           x: { grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  /**
+   * Ranking horizontal partido en cerrado / en proceso. Es el formato que pidio
+   * el cliente para categorias, OT, centros de costo y colaboradores: de un
+   * vistazo se ve cuanto de cada fila ya esta liquidado y cuanto sigue abierto.
+   *
+   * Las dos barras van una al lado de la otra, no apiladas: apiladas se comparan
+   * bien los totales pero cuesta medir el tramo de arriba, porque no arranca de
+   * cero. Separadas, cada mitad se lee contra el mismo eje. El total sigue
+   * disponible en el tooltip.
+   */
+  private renderRankingChart(
+    key: string,
+    ref: HTMLCanvasElement | undefined,
+    rows: INamedAmount[],
+    unidad = 'comprobantes'
+  ) {
+    if (!ref) return;
+    this.destroyChart(key);
+    if (!rows.length) return;
+
+    this.charts[key] = new Chart(ref, {
+      type: 'bar',
+      data: {
+        labels: rows.map((r) =>
+          r.name.length > 24 ? r.name.slice(0, 24) + '…' : r.name
+        ),
+        datasets: [
+          {
+            label: 'Cerrado',
+            data: rows.map((r) => r.cerrado),
+            backgroundColor: this.estadoColors.cerrado,
+            borderRadius: 3,
+            // Filo del color de la tarjeta: despega las dos barras vecinas.
+            borderColor: '#ffffff',
+            borderWidth: 1,
+          },
+          {
+            label: 'En proceso',
+            data: rows.map((r) => r.enProceso),
+            backgroundColor: this.estadoColors.enProceso,
+            borderRadius: 3,
+            borderColor: '#ffffff',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: this.baseAnimation(),
+        interaction: this.interaccionBarraHorizontal,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12 } },
+          tooltip: {
+            callbacks: {
+              label: (ctx: any) =>
+                ctx.dataset.label + ': ' + this.formatCurrency(ctx.parsed.x),
+              footer: (items: any[]) => {
+                const fila = rows[items[0]?.dataIndex];
+                if (!fila) return '';
+                return (
+                  'Total ' +
+                  this.formatCurrency(fila.amount) +
+                  ' · ' +
+                  fila.count +
+                  ' ' +
+                  unidad
+                );
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { callback: (v: any) => this.formatCompact(v) },
+            grid: { color: 'rgba(0,0,0,0.05)' },
+          },
+          y: { grid: { display: false } },
         },
       },
     });
   }
 
   private renderCategoryChart() {
-    const ref = this.categoryChartRef?.nativeElement;
-    if (!ref) return;
-    this.destroyChart('category');
-    const rows = this.data()!.topCategories;
-    this.charts['category'] = new Chart(ref, {
-      type: 'doughnut',
-      data: {
-        labels: rows.map((r) => r.name),
-        datasets: [
-          {
-            data: rows.map((r) => r.amount),
-            backgroundColor: this.palette.slice(0, rows.length),
-            borderWidth: 2,
-            borderColor: '#fff',
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '62%',
-        animation: { ...this.baseAnimation(), animateRotate: true },
-        plugins: {
-          legend: { position: 'right', labels: { boxWidth: 12 } },
-          tooltip: {
-            callbacks: {
-              label: (ctx: any) =>
-                `${ctx.label}: ${this.formatCurrency(ctx.parsed)}`,
-            },
-          },
-        },
-      },
-    });
+    this.renderRankingChart(
+      'category',
+      this.categoryChartRef?.nativeElement,
+      this.data()!.topCategories
+    );
   }
 
   private renderProjectChart() {
-    const ref = this.projectChartRef?.nativeElement;
+    this.renderRankingChart(
+      'project',
+      this.projectChartRef?.nativeElement,
+      this.data()!.topProjects
+    );
+  }
+
+  private renderOtChart() {
+    this.renderRankingChart(
+      'ot',
+      this.otChartRef?.nativeElement,
+      this.data()!.topOrdenesTrabajo
+    );
+  }
+
+  private renderCollaboratorChart() {
+    this.renderRankingChart(
+      'collaborator',
+      this.collaboratorChartRef?.nativeElement,
+      this.data()!.topCollaborators
+    );
+  }
+
+  /** Gasto por tipo de comprobante. Era una lista de numeros; ahora es grafico. */
+  private renderTypeChart() {
+    const ref = this.typeChartRef?.nativeElement;
     if (!ref) return;
-    this.destroyChart('project');
-    const rows = this.data()!.topProjects;
-    this.charts['project'] = new Chart(ref, {
+    this.destroyChart('type');
+    const rows = this.data()!.expenseByType;
+    if (!rows.length) return;
+
+    this.charts['type'] = new Chart(ref, {
       type: 'bar',
       data: {
-        labels: rows.map((r) => r.name),
+        labels: rows.map((r) => this.expenseTypeLabel(r.type)),
         datasets: [
           {
             label: 'Gasto',
             data: rows.map((r) => r.amount),
-            backgroundColor: rows.map(
-              (_, i) => this.palette[i % this.palette.length]
-            ),
-            borderRadius: 6,
+            backgroundColor: this.serieUnica,
+            borderRadius: 4,
           },
         ],
       },
@@ -548,11 +668,16 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         animation: this.baseAnimation(),
+        interaction: this.interaccionBarraHorizontal,
         plugins: {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (ctx: any) => this.formatCurrency(ctx.parsed.x),
+              label: (ctx: any) =>
+                this.formatCurrency(ctx.parsed.x) +
+                ' · ' +
+                (rows[ctx.dataIndex]?.count ?? 0) +
+                ' comprobantes',
             },
           },
         },
@@ -568,61 +693,37 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private renderStatusChart() {
-    const ref = this.statusChartRef?.nativeElement;
+  /**
+   * Antiguedad de lo entregado sin rendir. Es la lectura que la lista de al lado
+   * no da: cuanto de la deuda es reciente y cuanto lleva meses sin sustentar.
+   *
+   * Los tramos estan ordenados, asi que el color es una rampa de un solo tono:
+   * cuanto mas oscuro, mas viejo. No es una escala de categorias.
+   */
+  private renderAgingChart() {
+    const ref = this.agingChartRef?.nativeElement;
     if (!ref) return;
-    this.destroyChart('status');
-    const rows = this.data()!.expenseByStatus;
-    this.charts['status'] = new Chart(ref, {
-      type: 'doughnut',
-      data: {
-        labels: rows.map((r) => this.expenseStatusLabel(r.status)),
-        datasets: [
-          {
-            data: rows.map((r) => r.amount),
-            backgroundColor: rows.map(
-              (r) => this.statusColorMap[r.status] || '#9CA3AF'
-            ),
-            borderWidth: 2,
-            borderColor: '#fff',
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        cutout: '62%',
-        animation: { ...this.baseAnimation(), animateRotate: true },
-        plugins: {
-          legend: { position: 'right', labels: { boxWidth: 12 } },
-          tooltip: {
-            callbacks: {
-              label: (ctx: any) =>
-                `${ctx.label}: ${this.formatCurrency(ctx.parsed)}`,
-            },
-          },
-        },
-      },
-    });
-  }
+    this.destroyChart('aging');
+    const rows = this.data()?.porRendirBuckets ?? [];
+    if (!rows.length || rows.every((r) => r.amount === 0)) return;
 
-  private renderAdvanceChart() {
-    const ref = this.advanceChartRef?.nativeElement;
-    if (!ref) return;
-    this.destroyChart('advance');
-    const rows = this.data()!.advanceByStatus;
-    this.charts['advance'] = new Chart(ref, {
+    const escala = [
+      this.rampa.claro,
+      '#6BA6CB',
+      this.rampa.medio,
+      this.rampa.oscuro,
+    ];
+
+    this.charts['aging'] = new Chart(ref, {
       type: 'bar',
       data: {
-        labels: rows.map((r) => this.advanceStatusLabel(r.status)),
+        labels: rows.map((r) => r.label),
         datasets: [
           {
-            label: 'Monto',
+            label: 'Sin rendir',
             data: rows.map((r) => r.amount),
-            backgroundColor: rows.map(
-              (r) => this.statusColorMap[r.status] || '#9CA3AF'
-            ),
-            borderRadius: 6,
+            backgroundColor: rows.map((_, i) => escala[i] ?? this.rampa.oscuro),
+            borderRadius: 4,
           },
         ],
       },
@@ -635,9 +736,10 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
           tooltip: {
             callbacks: {
               label: (ctx: any) =>
-                `${this.formatCurrency(ctx.parsed.y)} · ${
-                  rows[ctx.dataIndex]?.count ?? 0
-                } anticipos`,
+                this.formatCurrency(ctx.parsed.y) +
+                ' · ' +
+                (rows[ctx.dataIndex]?.count ?? 0) +
+                ' anticipos',
             },
           },
         },
@@ -653,23 +755,24 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private renderCollaboratorChart() {
-    const ref = this.collaboratorChartRef?.nativeElement;
+  /** Los destinos no llevan el corte por estado: solo monto gastado. */
+  private renderLocationChart() {
+    const ref = this.locationChartRef?.nativeElement;
     if (!ref) return;
-    this.destroyChart('collaborator');
-    const rows = this.data()!.topCollaborators;
-    this.charts['collaborator'] = new Chart(ref, {
+    this.destroyChart('location');
+    const rows = (this.data()?.topLocations ?? []).slice(0, 8);
+    if (!rows.length) return;
+
+    this.charts['location'] = new Chart(ref, {
       type: 'bar',
       data: {
-        labels: rows.map((r) =>
-          r.name.length > 22 ? r.name.slice(0, 22) + '…' : r.name
-        ),
+        labels: rows.map((r) => r.place),
         datasets: [
           {
-            label: 'Consumo',
+            label: 'Gastado',
             data: rows.map((r) => r.amount),
-            backgroundColor: '#3B82F6',
-            borderRadius: 6,
+            backgroundColor: this.serieUnica,
+            borderRadius: 4,
           },
         ],
       },
@@ -678,11 +781,24 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
         responsive: true,
         maintainAspectRatio: false,
         animation: this.baseAnimation(),
+        interaction: this.interaccionBarraHorizontal,
+        onHover: (event: any, elements: any[]) => {
+          event.native.target.style.cursor = elements?.length
+            ? 'pointer'
+            : 'default';
+        },
+        onClick: (_event: any, elements: any[]) => {
+          const idx = elements?.[0]?.index;
+          if (idx != null && rows[idx]) this.focusLocation(rows[idx].place);
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: (ctx: any) => this.formatCurrency(ctx.parsed.x),
+              label: (ctx: any) =>
+                this.formatCurrency(ctx.parsed.x) +
+                ' · solicitado ' +
+                this.formatCurrency(rows[ctx.dataIndex]?.solicitado ?? 0),
             },
           },
         },
@@ -698,63 +814,6 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private renderLocationChart() {
-    const ref = this.locationChartRef?.nativeElement;
-    if (!ref) return;
-    this.destroyChart('location');
-    const rows = (this.data()?.topLocations ?? []).slice(0, 8);
-    if (!rows.length) return;
-    this.charts['location'] = new Chart(ref, {
-      type: 'bar',
-      data: {
-        labels: rows.map((r) =>
-          r.place.length > 20 ? r.place.slice(0, 20) + '…' : r.place
-        ),
-        datasets: [
-          {
-            label: 'Monto (S/)',
-            data: rows.map((r) => r.amount),
-            backgroundColor: rows.map(
-              (_, i) => this.palette[i % this.palette.length]
-            ),
-            borderRadius: 6,
-          },
-        ],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: this.baseAnimation(),
-        onHover: (event: any, elements: any[]) => {
-          event.native.target.style.cursor = elements?.length ? 'pointer' : 'default';
-        },
-        onClick: (_event: any, elements: any[]) => {
-          const idx = elements?.[0]?.index;
-          if (idx != null && rows[idx]) {
-            this.focusLocation(rows[idx].place);
-          }
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx: any) =>
-                `${this.formatCurrency(ctx.parsed.x)} · ${rows[ctx.dataIndex]?.count ?? 0} viáticos`,
-            },
-          },
-        },
-        scales: {
-          x: {
-            beginAtZero: true,
-            ticks: { callback: (v: any) => this.formatCompact(v) },
-            grid: { color: 'rgba(0,0,0,0.05)' },
-          },
-          y: { grid: { display: false } },
-        },
-      },
-    });
-  }
 
   // ─── Leaflet map ─────────────────────────────────────────────────────────
 
@@ -789,8 +848,15 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     document.body.appendChild(script);
   }
 
+  /**
+   * El backend agrupa los destinos por departamento y ya manda sus coordenadas,
+   * así que el mapa no geocodifica nada: antes se le pedía a Google la posición
+   * de cada dirección suelta y fallaba con los destinos escritos a mano.
+   */
   private tryRenderMap() {
-    const locations = (this.data()?.topLocations ?? []).slice(0, 5);
+    const locations = (this.data()?.topLocations ?? []).filter(
+      (l) => l.lat != null && l.lng != null
+    );
     if (!this.leafletLoaded || typeof L === 'undefined' || !locations.length) {
       return;
     }
@@ -802,257 +868,66 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       this.mapInstance = null;
     }
 
-    const token = ++this.mapRenderToken;
-
     this.mapInstance = L.map('viaticos-map', {
       zoomControl: true,
       scrollWheelZoom: false,
     });
 
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19,
-      }
-    ).addTo(this.mapInstance);
+    // Tiles de OpenStreetMap: los de CARTO empezaron a exigir API key y el mapa
+    // se veía con el sello "API KEY REQUIRED" encima.
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap',
+      subdomains: 'abc',
+      maxZoom: 19,
+    }).addTo(this.mapInstance);
 
     this.markersByPlace = {};
     const maxAmount = Math.max(...locations.map((l) => l.amount), 1);
-
-    // 1) Marcadores que se resuelven localmente (lat/lng del backend o ciudad conocida).
-    const resolved = this.resolveCoordinates(locations);
-    resolved.forEach((p) => this.addLocationMarker(p, maxAmount, token));
+    locations.forEach((p) => this.addLocationMarker(p, maxAmount));
     this.fitToMarkers();
     setTimeout(() => this.mapInstance?.invalidateSize(), 0);
-
-    // 2) Los que no (direcciones completas) se geocodifican con Google y se agregan al llegar.
-    const resolvedPlaces = new Set(resolved.map((p) => p.place));
-    const missing = locations.filter((l) => !resolvedPlaces.has(l.place));
-    if (missing.length) {
-      this.geocodeAndAddMarkers(missing, maxAmount, token);
-    }
   }
 
-  /** Crea y agrega al mapa un marcador para un destino con coordenadas. */
-  private addLocationMarker(
-    p: ILocationPoint & { lat: number; lng: number },
-    maxAmount: number,
-    token: number
-  ) {
-    if (!this.mapInstance || token !== this.mapRenderToken) return;
+  private addLocationMarker(p: ILocationPoint, maxAmount: number) {
+    if (!this.mapInstance || p.lat == null || p.lng == null) return;
     const marker = L.marker([p.lat, p.lng], {
-      icon: this.createLeafletIcon(p.amount, maxAmount, p.count),
+      icon: this.createLeafletIcon(p.amount, maxAmount),
     });
     const popup = `
-        <div style="font-family:sans-serif;min-width:160px">
-          <div style="font-weight:700;font-size:14px;color:#1e293b;margin-bottom:6px">${p.place}</div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b;margin-bottom:2px">
-            <span>Viáticos</span><strong style="color:#1e293b">${p.count}</strong>
+        <div style="font-family:sans-serif;min-width:170px">
+          <div style="font-weight:700;font-size:14px;color:#21262B;margin-bottom:6px">${p.place}</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087;margin-bottom:2px">
+            <span>Gastado</span><strong style="color:#8F2D25">${this.formatCurrency(p.amount)}</strong>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:#64748b">
-            <span>Total</span><strong style="color:#D31212">${this.formatCurrency(p.amount)}</strong>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#7A8087">
+            <span>Solicitado</span><strong style="color:#21262B">${this.formatCurrency(p.solicitado)}</strong>
           </div>
         </div>
       `;
-    marker.bindPopup(popup, { maxWidth: 200 });
+    marker.bindPopup(popup, { maxWidth: 220 });
     marker.addTo(this.mapInstance);
     this.markersByPlace[p.place] = marker;
   }
 
-  /** Reajusta el encuadre del mapa a los marcadores presentes. */
   private fitToMarkers() {
     if (!this.mapInstance) return;
     const latLngs = Object.values(this.markersByPlace).map((m) => m.getLatLng());
     if (latLngs.length) {
-      this.mapInstance.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40] });
+      // maxZoom: con un solo departamento el encuadre automático se iba al
+      // nivel de calle y se perdía la referencia del país.
+      this.mapInstance.fitBounds(L.latLngBounds(latLngs), {
+        padding: [30, 30],
+        maxZoom: 7,
+      });
     } else {
-      // Sin coordenadas todavía: centramos en Perú.
-      this.mapInstance.setView([-9.19, -75.0152], 5);
+      this.mapInstance.setView([-9.19, -75.0152], 4);
     }
   }
 
-  /**
-   * Geocodifica con Google los destinos sin coordenadas y agrega sus marcadores.
-   * Devuelve una promesa que resuelve cuando termina (útil para el enfoque on-demand).
-   */
-  private async geocodeAndAddMarkers(
-    missing: ILocationPoint[],
-    maxAmount: number,
-    token: number
-  ): Promise<void> {
-    try {
-      await this.mapsLoader.load();
-    } catch {
-      return;
-    }
-    if (typeof google === 'undefined') return;
-    if (!this.geocoder) this.geocoder = new google.maps.Geocoder();
-
-    for (const loc of missing) {
-      let coords = this.geocodeCache[loc.place];
-      if (coords === undefined) {
-        // Google → si falla, reutiliza coords de un destino "hermano" (misma calle).
-        coords = (await this.geocodeAddress(loc.place)) ?? this.siblingCoords(loc.place);
-        this.geocodeCache[loc.place] = coords;
-      }
-      if (!coords) continue;
-      if (!this.mapInstance || token !== this.mapRenderToken) return;
-      this.addLocationMarker(
-        { ...loc, lat: coords[0], lng: coords[1] },
-        maxAmount,
-        token
-      );
-      this.fitToMarkers();
-    }
-  }
-
-  /**
-   * Último recurso: si un destino no geocodifica, reutiliza las coordenadas de
-   * otro destino del top cuya calle (primer segmento, sin números) sea la misma.
-   */
-  private siblingCoords(place: string): [number, number] | null {
-    const norm = (s: string) =>
-      s
-        .toLowerCase()
-        .split(',')[0]
-        .replace(/\d+/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    const target = norm(place);
-    if (target.length < 5) return null;
-
-    // 1) Entre marcadores ya colocados en el mapa.
-    for (const [p, marker] of Object.entries(this.markersByPlace)) {
-      if (p !== place && norm(p) === target) {
-        const ll = marker.getLatLng();
-        return [ll.lat, ll.lng];
-      }
-    }
-    // 2) Entre destinos con coordenadas del backend.
-    for (const l of this.data()?.topLocations ?? []) {
-      if (l.place !== place && l.lat != null && l.lng != null && norm(l.place) === target) {
-        return [l.lat, l.lng];
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Resuelve una dirección a [lat, lng] con el Geocoder de Google,
-   * probando varias variantes de la consulta hasta dar con una válida.
-   */
-  private async geocodeAddress(place: string): Promise<[number, number] | null> {
-    for (const query of this.geocodeQueries(place)) {
-      const coords = await this.geocodeOnce(query);
-      if (coords) return coords;
-    }
-    return null;
-  }
-
-  /** Genera variantes de consulta para mejorar la tasa de aciertos del geocoder. */
-  private geocodeQueries(place: string): string[] {
-    const queries: string[] = [];
-    const add = (q: string) => {
-      const v = q.replace(/\s+/g, ' ').trim();
-      if (v && v.length > 2 && !queries.includes(v)) queries.push(v);
-    };
-    // Quita números de calle y ruido tipo "Urb / Etapa N / Mz / Lt / Asoc".
-    const clean = (s: string) =>
-      s
-        .replace(/\b\d{2,}\b/g, '')
-        .replace(/\b(urb|urbanizaci[oó]n|etapa|mz|lt|lote|asoc|asociaci[oó]n)\b\.?/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    const withPeru = (s: string) => (/per[uú]/i.test(s) ? s : `${s}, Perú`);
-    const parts = place.split(',').map((p) => p.trim()).filter(Boolean);
-
-    add(withPeru(place));
-    add(withPeru(clean(place)));
-    if (parts.length > 1) {
-      // Primer y último segmento por si el otro es ruido (p. ej. "Destino lima, ...").
-      add(withPeru(clean(parts[0])));
-      add(withPeru(clean(parts[parts.length - 1])));
-    }
-    return queries;
-  }
-
-  /** Una sola llamada al geocoder, con reintentos si Google limita el ritmo. */
-  private geocodeOnce(
-    query: string,
-    attempt = 0
-  ): Promise<[number, number] | null> {
-    return new Promise((resolve) => {
-      this.geocoder.geocode(
-        { address: query, componentRestrictions: { country: 'PE' } },
-        (results: any[], status: string) => {
-          if (status === 'OK' && results?.[0]?.geometry?.location) {
-            const l = results[0].geometry.location;
-            resolve([l.lat(), l.lng()]);
-          } else if (status === 'OVER_QUERY_LIMIT' && attempt < 3) {
-            setTimeout(
-              () => this.geocodeOnce(query, attempt + 1).then(resolve),
-              300 * (attempt + 1)
-            );
-          } else {
-            resolve(null);
-          }
-        }
-      );
-    });
-  }
-
-  /**
-   * Centra el mapa en el destino indicado y abre su popup.
-   * Se invoca al hacer click en la lista de ranking o en una barra del chart.
-   * Si el marcador aún no existe, intenta geocodificarlo bajo demanda.
-   */
+  /** Centra el mapa en el departamento indicado y abre su globo. */
   focusLocation(place: string) {
-    if (!place || !this.mapInstance) return;
     const marker = this.markersByPlace[place];
-    if (marker) {
-      this.panToMarker(marker);
-      return;
-    }
-    // El destino aún no tiene marcador (no resuelto o geocoding en curso): lo intentamos ahora.
-    const loc = (this.data()?.topLocations ?? []).find((l) => l.place === place);
-    if (!loc) return;
-    const maxAmount = Math.max(
-      ...(this.data()?.topLocations ?? []).map((l) => l.amount),
-      1
-    );
-
-    // 1) Resolución local (lat/lng del backend o ciudad conocida en el diccionario).
-    const local = this.resolveCoordinates([loc])[0];
-    if (local) {
-      this.addLocationMarker(local, maxAmount, this.mapRenderToken);
-      const m = this.markersByPlace[place];
-      if (m) {
-        this.panToMarker(m);
-        return;
-      }
-    }
-
-    // 2) Geocodificación con Google (+ fallback por hermano) como respaldo.
-    //    Descartamos cualquier resultado nulo cacheado para reintentar con la cadena completa.
-    if (!this.geocodeCache[place]) delete this.geocodeCache[place];
-    this.geocodeAndAddMarkers([loc], maxAmount, this.mapRenderToken).then(() => {
-      const m = this.markersByPlace[place];
-      if (m) {
-        this.panToMarker(m);
-      } else {
-        this.notificationService.show(
-          `No se pudo ubicar "${place}" en el mapa`,
-          'warning'
-        );
-      }
-    });
-  }
-
-  /** Hace scroll al mapa, lo recentra sobre el marcador y abre su popup. */
-  private panToMarker(marker: any) {
-    if (!this.mapInstance) return;
+    if (!marker || !this.mapInstance) return;
     const el = document.getElementById('viaticos-map');
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     this.mapInstance.invalidateSize();
@@ -1064,34 +939,21 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     marker.openPopup();
   }
 
-  private createLeafletIcon(amount: number, maxAmount: number, count: number): any {
+  /** Pin cuyo tamaño y color escalan con el monto gastado en el departamento. */
+  private createLeafletIcon(amount: number, maxAmount: number): any {
     const ratio = amount / maxAmount;
-    const size = Math.round(28 + ratio * 24);
+    const size = Math.round(24 + ratio * 18);
     const color =
-      ratio > 0.66 ? '#D31212' : ratio > 0.33 ? '#F59E0B' : '#3B82F6';
-    const glow =
-      ratio > 0.66 ? 'rgba(211,18,18,0.25)' : ratio > 0.33 ? 'rgba(245,158,11,0.25)' : 'rgba(59,130,246,0.25)';
-    const labelSize = count >= 100 ? 7 : count >= 10 ? 8 : 9;
+      ratio > 0.66
+        ? this.mapaColors[2]
+        : ratio > 0.33
+          ? this.mapaColors[1]
+          : this.mapaColors[0];
 
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${Math.round(size * 1.3)}" viewBox="0 0 40 52">
-      <defs>
-        <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="3" result="blur"/>
-          <feFlood flood-color="${glow}" result="color"/>
-          <feComposite in="color" in2="blur" operator="in" result="shadow"/>
-          <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
-        <radialGradient id="pinGrad" cx="40%" cy="35%">
-          <stop offset="0%" stop-color="${color}" stop-opacity="0.9"/>
-          <stop offset="100%" stop-color="${color}" stop-opacity="1"/>
-        </radialGradient>
-      </defs>
       <path d="M20 1C11.16 1 4 8.16 4 17C4 28.5 20 51 20 51S36 28.5 36 17C36 8.16 28.84 1 20 1Z"
-            fill="url(#pinGrad)" filter="url(#glow)" stroke="white" stroke-width="1.5"/>
-      <circle cx="20" cy="17" r="9" fill="white" opacity="0.95"/>
-      <text x="20" y="${count >= 100 ? 21 : 22}" text-anchor="middle"
-            font-family="system-ui,sans-serif" font-size="${labelSize}" font-weight="700"
-            fill="${color}">${count}</text>
+            fill="${color}" stroke="white" stroke-width="2"/>
+      <circle cx="20" cy="17" r="6" fill="white" opacity="0.95"/>
     </svg>`;
 
     return L.divIcon({
@@ -1103,52 +965,55 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private resolveCoordinates(
-    locations: ILocationPoint[]
-  ): (ILocationPoint & { lat: number; lng: number })[] {
-    return locations
-      .map((loc) => {
-        if (loc.lat != null && loc.lng != null) {
-          return { ...loc, lat: loc.lat, lng: loc.lng };
-        }
-        const key = loc.place.toLowerCase().trim();
-        const coords = this.peruCityCoords[key];
-        if (coords) {
-          return { ...loc, lat: coords[0], lng: coords[1] };
-        }
-        // Partial match
-        for (const [city, ll] of Object.entries(this.peruCityCoords)) {
-          if (key.includes(city) || city.includes(key)) {
-            return { ...loc, lat: ll[0], lng: ll[1] };
-          }
-        }
-        return null;
-      })
-      .filter((x): x is ILocationPoint & { lat: number; lng: number } => x !== null);
+  // ─── Helpers de plantilla ─────────────────────────────────────────────────
+
+  /** Categorías con su porcentaje, para la lista que acompaña al gráfico. */
+  categoryRows(): INamedAmount[] {
+    return this.data()?.topCategories ?? [];
   }
 
-  // ─── Location KPI helpers ─────────────────────────────────────────────────
+  /**
+   * Suma de las categorías listadas. Al partir la fila en dos columnas el total
+   * de cada categoría dejo de estar a la vista, asi que al menos el del periodo
+   * queda al pie. Es el total del top mostrado, no el de todas las categorias.
+   */
+  totalCategorias(): { cerrado: number; enProceso: number } {
+    return this.categoryRows().reduce(
+      (acc, c) => ({
+        cerrado: acc.cerrado + c.cerrado,
+        enProceso: acc.enProceso + c.enProceso,
+      }),
+      { cerrado: 0, enProceso: 0 }
+    );
+  }
+
+  /**
+   * Destinos que resolvieron a un departamento real. El agrupado "Sin
+   * departamento" sigue en el gráfico (esa plata se gastó), pero queda fuera de
+   * los tres indicadores: contarlo daba "11 departamentos" habiendo 10, y con
+   * destinos mal escritos llegaba a salir como "destino principal".
+   */
+  private destinosIdentificados() {
+    return (this.data()?.topLocations ?? []).filter((l) => l.identificado);
+  }
 
   get topLocationName(): string {
-    return this.data()?.topLocations?.[0]?.place ?? '—';
+    return this.destinosIdentificados()[0]?.place ?? '—';
   }
 
   get topLocationAmount(): number {
-    return this.data()?.topLocations?.[0]?.amount ?? 0;
+    return this.destinosIdentificados()[0]?.amount ?? 0;
   }
 
   get uniqueDestinos(): number {
-    return this.data()?.topLocations?.length ?? 0;
+    return this.destinosIdentificados().length;
   }
 
-  get avgAnticipoPorDestino(): number {
-    const locs = this.data()?.topLocations ?? [];
+  get avgGastoPorDestino(): number {
+    const locs = this.destinosIdentificados();
     if (!locs.length) return 0;
-    const total = locs.reduce((s, l) => s + l.amount, 0);
-    return total / locs.length;
+    return locs.reduce((s, l) => s + l.amount, 0) / locs.length;
   }
-
-  // ─── Template helpers ──────────────────────────────────────────────────────
 
   hasData(): boolean {
     const k = this.kpis();
@@ -1156,28 +1021,18 @@ export class DashboardComponent implements OnInit, AfterViewInit, OnDestroy {
       !!this.data() &&
       (k.gastoCount > 0 ||
         k.anticipoSolicitadoCount > 0 ||
-        k.rendicionesTotal > 0)
+        k.porRendirCount > 0 ||
+        k.devolucionesPendientesCount > 0)
     );
-  }
-
-  expenseStatusLabel(status: string): string {
-    return this.expenseStatusLabels[status] || status;
-  }
-
-  advanceStatusLabel(status: string): string {
-    return this.advanceStatusLabels[status] || status;
-  }
-
-  reportStatusLabel(status: string): string {
-    return this.reportStatusLabels[status] || status;
   }
 
   expenseTypeLabel(type: string): string {
     return this.expenseTypeLabels[type] || type;
   }
 
-  statusColor(status: string): string {
-    return this.statusColorMap[status] || '#9CA3AF';
+  /** true si el anticipo ya pasó el plazo pactado para rendir. */
+  isVencido(dias: number): boolean {
+    return dias > (this.data()?.diasParaRendir ?? 20);
   }
 
   formatCurrency(value: number): string {

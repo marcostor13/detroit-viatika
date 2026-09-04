@@ -1,29 +1,34 @@
-<div class="px-4 sm:px-6 py-6">
+<div class="px-4 sm:px-6 py-4 sm:py-6">
 
-  <!-- Header -->
-  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+  <!-- Header. En movil se comprime a una linea: el subtitulo es decoracion y
+       cada pixel de aqui arriba empuja la lista fuera del primer pantallazo. -->
+  <div class="flex items-start justify-between mb-3 md:mb-6 gap-3 flex-wrap">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900">Mis Rendiciones</h1>
-      <p class="text-sm text-gray-500 mt-1">Gestiona tus solicitudes de fondos y documentos de gastos.</p>
+      <h1 class="text-lg md:text-2xl font-bold text-gray-900">Mis Rendiciones</h1>
+      <p class="hidden md:block text-sm text-gray-500 mt-1">Gestiona tus solicitudes de fondos y documentos de gastos.</p>
     </div>
-    <app-button variant="secondary" label="Guía" (clicked)="toggleGuidelines()">
+    <app-button variant="secondary" size="sm" label="Guía" (clicked)="toggleGuidelines()">
       <app-icon name="file-text" size="sm" />
     </app-button>
   </div>
 
-  <!-- Tabs -->
-  <div class="flex gap-1 border-b border-gray-200 mb-6">
+  <!-- Tabs. En movil las etiquetas se acortan para que las tres quepan de una:
+       con el nombre largo la tira se desbordaba y el navegador pintaba una barra
+       de scroll bajo las pestañas. `no-scrollbar` cubre el caso extremo (pantalla
+       muy angosta): sigue desplazandose con el dedo, pero sin la barra. -->
+  <div class="flex gap-1 overflow-x-auto no-scrollbar border-b border-gray-200 mb-3 md:mb-6">
     @if (canViewViaticos) {
     <button
       type="button"
       (click)="setTab('viaticos')"
-      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      class="px-2 md:px-5 py-2 md:py-2.5 text-[13px] md:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap"
       [class.border-primary]="activeTab() === 'viaticos'"
       [class.text-primary]="activeTab() === 'viaticos'"
       [class.border-transparent]="activeTab() !== 'viaticos'"
       [class.text-gray-500]="activeTab() !== 'viaticos'"
     >
-      Solicitudes de fondos
+      <span class="md:hidden">Solicitudes</span>
+      <span class="hidden md:inline">Solicitudes de fondos</span>
       @if (viaticoTabBadgeCount > 0) {
         <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ viaticoTabBadgeCount }}</span>
       }
@@ -33,13 +38,14 @@
     <button
       type="button"
       (click)="setTab('directas')"
-      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      class="px-2 md:px-5 py-2 md:py-2.5 text-[13px] md:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap"
       [class.border-primary]="activeTab() === 'directas'"
       [class.text-primary]="activeTab() === 'directas'"
       [class.border-transparent]="activeTab() !== 'directas'"
       [class.text-gray-500]="activeTab() !== 'directas'"
     >
-      Rendiciones Directas
+      <span class="md:hidden">Directas</span>
+      <span class="hidden md:inline">Rendiciones Directas</span>
       @if (directaReports.length > 0) {
         <span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">{{ directaReports.length }}</span>
       }
@@ -49,7 +55,7 @@
     <button
       type="button"
       (click)="setTab('caja-chica')"
-      class="px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors"
+      class="px-2 md:px-5 py-2 md:py-2.5 text-[13px] md:text-sm font-semibold border-b-2 transition-colors whitespace-nowrap"
       [class.border-primary]="activeTab() === 'caja-chica'"
       [class.text-primary]="activeTab() === 'caja-chica'"
       [class.border-transparent]="activeTab() !== 'caja-chica'"
@@ -69,7 +75,7 @@
   @if (activeTab() === 'viaticos') {
 
   <!-- Action bar -->
-  <div class="flex justify-end mb-4">
+  <div class="flex justify-end mb-3 md:mb-4">
     <!-- VD-139: se deja visible y deshabilitado, con el motivo en el tooltip.
          Esconderlo dejaba al colaborador buscando un botón que "desapareció". -->
     <app-button label="Solicitar fondos" (clicked)="openViaticosModal()"
@@ -81,16 +87,18 @@
     </app-button>
   </div>
 
-  <!-- Filter bar -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
-    <div class="flex flex-wrap gap-3 items-end">
+  <!-- Filter bar. En movil se pliega tras el boton "Filtros": cinco campos
+       apilados ocupaban la pantalla entera y empujaban la lista —lo que el
+       usuario viene a ver— fuera del primer pantallazo. -->
+  <app-filter-panel class="block mb-4 md:mb-5" [activeCount]="viaticosFilterCount" (cleared)="clearViaticosFilters()">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</label>
         <select
           [ngModel]="viaticosStatusFilter()"
           (ngModelChange)="viaticosStatusFilter.set($event)"
-          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
           @for (label of viaticoStatusOptions; track label) {
@@ -100,12 +108,12 @@
       </div>
 
       <!-- VD-135: centro de costo y orden de trabajo. -->
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Centro de costo</label>
         <select
           [ngModel]="viaticosProjectFilter()"
           (ngModelChange)="viaticosProjectFilter.set($event)"
-          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
           @for (o of viaticosProjectOptions; track o._id) {
@@ -114,12 +122,12 @@
         </select>
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Orden de trabajo</label>
         <select
           [ngModel]="viaticosOtFilter()"
           (ngModelChange)="viaticosOtFilter.set($event)"
-          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todas</option>
           @for (o of viaticosOtOptions; track o._id) {
@@ -128,32 +136,35 @@
         </select>
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
         <input
           type="date"
           [value]="viaticosDateFrom()"
           (change)="viaticosDateFrom.set($any($event.target).value)"
-          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
         <input
           type="date"
           [value]="viaticosDateTo()"
           (change)="viaticosDateTo.set($any($event.target).value)"
-          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
-      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearViaticosFilters()">
-        <app-icon name="close" size="sm" />
-      </app-button>
+      <!-- El panel ya ofrece "Limpiar" junto al boton de plegar en movil. -->
+      <div class="hidden md:block">
+        <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearViaticosFilters()">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      </div>
 
     </div>
-  </div>
+  </app-filter-panel>
 
   @if (viaticoReportsLoading() || isLoading) {
     <div class="flex justify-center py-16">
@@ -294,23 +305,23 @@
   @if (activeTab() === 'directas') {
 
   <!-- Action bar -->
-  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-    <p class="text-sm text-gray-500">Crea primero la rendición y luego agrega los gastos desde su detalle.</p>
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3 md:mb-4">
+    <p class="text-xs md:text-sm text-gray-500">Crea primero la rendición y luego agrega los gastos desde su detalle.</p>
     <app-button label="Nueva Rendición Directa" (clicked)="openNuevaRendicionDirecta()">
       <app-icon name="plus" size="sm" />
     </app-button>
   </div>
 
-  <!-- Filter bar -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
-    <div class="flex flex-wrap gap-3 items-end">
+  <!-- Filter bar (ver pestaña de viáticos: en movil va plegado). -->
+  <app-filter-panel class="block mb-4 md:mb-5" [activeCount]="directasFilterCount" (cleared)="clearDirectasFilters()">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Estado</label>
         <select
           [ngModel]="directasStatusFilter()"
           (ngModelChange)="directasStatusFilter.set($event)"
-          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 uppercase focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
           @for (label of directaStatusOptions; track label) {
@@ -320,12 +331,12 @@
       </div>
 
       <!-- VD-135: centro de costo y orden de trabajo. -->
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Centro de costo</label>
         <select
           [ngModel]="directasProjectFilter()"
           (ngModelChange)="directasProjectFilter.set($event)"
-          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todos</option>
           @for (o of directasProjectOptions; track o._id) {
@@ -334,12 +345,12 @@
         </select>
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Orden de trabajo</label>
         <select
           [ngModel]="directasOtFilter()"
           (ngModelChange)="directasOtFilter.set($event)"
-          class="h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 pl-3 pr-8 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         >
           <option value="">Todas</option>
           @for (o of directasOtOptions; track o._id) {
@@ -348,32 +359,35 @@
         </select>
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
         <input
           type="date"
           [value]="directasDateFrom()"
           (change)="directasDateFrom.set($any($event.target).value)"
-          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
         <input
           type="date"
           [value]="directasDateTo()"
           (change)="directasDateTo.set($any($event.target).value)"
-          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
-      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearDirectasFilters()">
-        <app-icon name="close" size="sm" />
-      </app-button>
+      <!-- El panel ya ofrece "Limpiar" junto al boton de plegar en movil. -->
+      <div class="hidden md:block">
+        <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearDirectasFilters()">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      </div>
 
     </div>
-  </div>
+  </app-filter-panel>
 
   @if (isLoading) {
     <div class="flex justify-center py-16">
@@ -518,7 +532,7 @@
 
   } @else {
 
-    <div class="rounded-2xl border border-divider bg-quaternary p-5 mb-4">
+    <div class="rounded-2xl border border-divider bg-quaternary p-4 md:p-5 mb-3 md:mb-4">
       @if (fondo()!.status === 'pending_funding') {
         <div class="mb-4">
           <span class="text-xs text-warning-ink bg-warning/10 border border-amber-200 rounded-lg px-3 py-1.5">
@@ -527,20 +541,20 @@
         </div>
       }
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div class="rounded-xl border border-divider bg-background p-4">
-          <p class="text-xs text-ink-500">Presupuesto</p>
-          <p class="text-lg font-semibold text-ink-900 mt-1">S/ {{ fondo()!.fundAmount | number:'1.2-2' }}</p>
+      <div class="grid grid-cols-3 gap-2 md:gap-3">
+        <div class="rounded-xl border border-divider bg-background p-3 md:p-4">
+          <p class="text-[11px] md:text-xs text-ink-500">Presupuesto</p>
+          <p class="text-sm md:text-lg font-semibold text-ink-900 mt-0.5 md:mt-1">S/ {{ fondo()!.fundAmount | number:'1.2-2' }}</p>
         </div>
-        <div class="rounded-xl border border-divider bg-background p-4">
-          <p class="text-xs text-ink-500">Total gastado</p>
-          <p class="text-lg font-semibold text-ink-900 mt-1">S/ {{ fondo()!.spentAmount | number:'1.2-2' }}</p>
+        <div class="rounded-xl border border-divider bg-background p-3 md:p-4">
+          <p class="text-[11px] md:text-xs text-ink-500">Total gastado</p>
+          <p class="text-sm md:text-lg font-semibold text-ink-900 mt-0.5 md:mt-1">S/ {{ fondo()!.spentAmount | number:'1.2-2' }}</p>
         </div>
-        <div class="rounded-xl border border-divider bg-background p-4">
-          <p class="text-xs text-ink-500">Saldo disponible</p>
+        <div class="rounded-xl border border-divider bg-background p-3 md:p-4">
+          <p class="text-[11px] md:text-xs text-ink-500">Saldo disponible</p>
           <!-- `success-ink` y no `success`: el token base no pasa contraste AA
                como texto (ver design-system/README). -->
-          <p class="text-lg font-semibold text-success-ink mt-1">S/ {{ saldoDisponible | number:'1.2-2' }}</p>
+          <p class="text-sm md:text-lg font-semibold text-success-ink mt-0.5 md:mt-1">S/ {{ saldoDisponible | number:'1.2-2' }}</p>
         </div>
       </div>
 
@@ -561,8 +575,8 @@
     </div>
 
   <!-- Action bar -->
-  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-    <p class="text-sm text-gray-500">Sube tus comprobantes de caja chica. Al rendir, Tesorería repone lo aprobado y el presupuesto vuelve a su tope.</p>
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-3 md:mb-4">
+    <p class="text-xs md:text-sm text-gray-500">Sube tus comprobantes de caja chica. Al rendir, Tesorería repone lo aprobado y el presupuesto vuelve a su tope.</p>
     <div class="flex flex-wrap gap-2">
       <app-button
         label="Solicitud de caja chica"
@@ -579,36 +593,39 @@
     </div>
   </div>
 
-  <!-- Filter bar -->
-  <div class="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3.5 mb-5">
-    <div class="flex flex-wrap gap-3 items-end">
+  <!-- Filter bar (ver pestaña de viáticos: en movil va plegado). -->
+  <app-filter-panel class="block mb-4 md:mb-5" [activeCount]="cajaFilterCount" (cleared)="clearCajaFilters()">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Desde</label>
         <input
           type="date"
           [value]="cajaDateFrom()"
           (change)="cajaDateFrom.set($any($event.target).value)"
-          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 min-w-0">
         <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Hasta</label>
         <input
           type="date"
           [value]="cajaDateTo()"
           (change)="cajaDateTo.set($any($event.target).value)"
-          class="h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          class="w-full h-9 px-3 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </div>
 
-      <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearCajaFilters()">
-        <app-icon name="close" size="sm" />
-      </app-button>
+      <!-- El panel ya ofrece "Limpiar" junto al boton de plegar en movil. -->
+      <div class="hidden md:block">
+        <app-button variant="ghost" size="sm" label="Limpiar" (clicked)="clearCajaFilters()">
+          <app-icon name="close" size="sm" />
+        </app-button>
+      </div>
 
     </div>
-  </div>
+  </app-filter-panel>
 
   @if (cajaChicaLoading()) {
     <div class="flex justify-center p-12">
@@ -692,6 +709,7 @@
     <div class="mt-8">
       <p class="text-sm font-semibold text-ink-900 mb-3">Solicitudes de presupuesto</p>
       <div class="rounded-2xl border border-divider overflow-hidden">
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-quaternary">
             <tr class="text-left text-xs uppercase tracking-wide text-ink-500">
@@ -741,6 +759,7 @@
             }
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   }
@@ -794,6 +813,13 @@
         } @else {
           Seleccionar archivo
         }
+      </label>
+      <!-- Capacitor solo abre la camara si el input pide image/* junto con
+           capture, y el selector de arriba necesita aceptar PDF: por eso van
+           dos inputs separados. -->
+      <label class="flex items-center justify-center gap-2 cursor-pointer px-3 py-2 mt-2 border border-divider rounded-lg text-sm text-secondary hover:bg-background transition-colors">
+        <input type="file" accept="image/*" capture="environment" class="hidden" (change)="onDevolucionFile($event)" />
+        Tomar foto
       </label>
       @if (isScanningDevolucion()) {
         <p class="text-xs text-tertiary flex items-center gap-1.5 mt-1">

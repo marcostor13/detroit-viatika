@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Detroit</string>
+    <string name="title_activity_main">Detroit</string>
+    <string name="package_name">com.viatika.detroit</string>
+    <string name="custom_url_scheme">com.viatika.detroit</string>
+</resources>

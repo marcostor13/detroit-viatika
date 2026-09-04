@@ -32,6 +32,10 @@ import { DataTableComponent } from '../../design-system/data-table/data-table.co
 import { ColumnDirective } from '../../design-system/data-table/column.directive';
 import { PaginatorComponent } from '../../design-system/paginator/paginator.component';
 import { ModalComponent } from '../../design-system/modal/modal.component';
+import {
+  SearchSelectComponent,
+  SearchSelectOption,
+} from '../../design-system/search-select/search-select.component';
 
 @Component({
   selector: 'app-ordenes-trabajo',
@@ -47,6 +51,7 @@ import { ModalComponent } from '../../design-system/modal/modal.component';
     ColumnDirective,
     PaginatorComponent,
     ModalComponent,
+    SearchSelectComponent,
   ],
   templateUrl: './ordenes-trabajo.component.html',
 })
@@ -72,6 +77,20 @@ export class OrdenesTrabajoComponent implements OnInit {
   limit = signal(20);
   search = signal('');
   filterCostCenter = signal('');
+
+  /**
+   * Opciones del filtro por centro de costo. Antes era un `<select>` nativo:
+   * sin buscador para 33 centros, y ademas se ensanchaba hasta su opcion mas
+   * larga y se salia de la tarjeta en movil.
+   */
+  centroCostoOptions = computed<SearchSelectOption[]>(() =>
+    this.centrosCosto().map((cc) => ({
+      value: cc._id!,
+      label: cc.name,
+      subLabel: cc.code || undefined,
+      searchText: cc.code || '',
+    }))
+  );
   importResult = signal<IBulkImportResult | null>(null);
   importing = signal(false);
   /**

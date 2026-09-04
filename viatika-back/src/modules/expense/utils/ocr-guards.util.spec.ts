@@ -167,6 +167,38 @@ describe('runOcrGuards', () => {
     expect(result.issues.map(i => i.code)).toContain('ruc_emisor_es_receptor')
   })
 
+  it('detecta un comprobante emitido a otra empresa', () => {
+    const result = runOcrGuards(
+      {
+        ...facturaOk,
+        rucReceptor: '20608417061',
+        razonSocialReceptor: 'TECNOLOGIA DIGITAL DATA S.A.C.',
+      },
+      { hoy, rucEmpresa: '20606142499' }
+    )
+    const aviso = result.issues.find(i => i.code === 'receptor_no_es_la_empresa')
+    expect(aviso).toBeDefined()
+    expect(aviso?.message).toContain('TECNOLOGIA DIGITAL DATA')
+    expect(aviso?.severity).toBe('warn')
+  })
+
+  it('acepta el comprobante emitido a la propia empresa', () => {
+    const result = runOcrGuards(
+      { ...facturaOk, rucReceptor: '20606142499' },
+      { hoy, rucEmpresa: '20606142499' }
+    )
+    expect(result.issues.map(i => i.code)).not.toContain(
+      'receptor_no_es_la_empresa'
+    )
+  })
+
+  it('no observa nada si el comprobante no identifica al cliente', () => {
+    const result = runOcrGuards(facturaOk, { hoy, rucEmpresa: '20606142499' })
+    expect(result.issues.map(i => i.code)).not.toContain(
+      'receptor_no_es_la_empresa'
+    )
+  })
+
   it('detecta un total que no coincide con el importe en letras', () => {
     const result = runOcrGuards({ ...facturaOk, montoTotal: 8 }, { hoy })
     expect(result.issues.map(i => i.code)).toContain(

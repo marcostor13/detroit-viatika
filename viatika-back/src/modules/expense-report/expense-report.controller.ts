@@ -329,6 +329,34 @@ export class ExpenseReportController {
     return this.expenseReportService.findPendingReimbursementsByClient(clientId)
   }
 
+  /** Tesorería: rendiciones aprobadas con saldo a devolver y sin comprobante. */
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(ROLES.ADMIN, ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA)
+  @Get('pending-returns/client/:clientId')
+  findPendingReturns(
+    @Param('clientId') clientId: string,
+    @Request() req: any
+  ) {
+    const role = req.user?.roles?.[0] || req.user?.role
+    const canPay =
+      [ROLES.SUPER_ADMIN, ROLES.CONTABILIDAD, ROLES.TESORERIA].includes(role) ||
+      req.user?.permissions?.canApproveL2 === true
+    if (!canPay) {
+      throw new ForbiddenException(
+        'No tienes permiso para consultar devoluciones pendientes.'
+      )
+    }
+    if (role !== ROLES.SUPER_ADMIN) {
+      const mine = this.resolveClientId(req)
+      if (!mine || mine !== clientId) {
+        throw new ForbiddenException(
+          'No puedes consultar devoluciones de otro cliente.'
+        )
+      }
+    }
+    return this.expenseReportService.findPendingReturnsByClient(clientId)
+  }
+
   /** Fase 6 — Colaborador: comprobantes de viático pagado y de reembolso */
   @UseGuards(AuthGuard('jwt'))
   @Get('documents/my')
@@ -698,13 +726,19 @@ export class ExpenseReportController {
     return result
   }
 
-  /** El propietario adjunta comprobante de devolución (rendición cerrada, settlement=devolucion). */
+  /**
+   * Comprobante de devolución de saldo (rendición aprobada o cerrada,
+   * settlement=devolucion). Lo carga el propietario desde su rendición o, si el
+   * depósito entró por fuera de la app, lo asienta Tesorería a mano desde Pagos
+   * → Devoluciones. El servicio distingue los dos casos.
+   */
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(
     ROLES.COLABORADOR,
     ROLES.ADMIN,
     ROLES.SUPER_ADMIN,
-    ROLES.CONTABILIDAD
+    ROLES.CONTABILIDAD,
+    ROLES.TESORERIA
   )
   @Post(':id/return-voucher')
   async registerReturnVoucher(
@@ -725,7 +759,25 @@ export class ExpenseReportController {
     @Request() req: any
   ) {
     const userId = String(req.user._id || req.user.sub)
-    return this.expenseReportService.registerReturnVoucher(id, body, userId)
+    const result = await this.expenseReportService.registerReturnVoucher(
+      id,
+      body,
+      userId,
+      {
+        role: req.user?.roles?.[0] || req.user?.role,
+        permissions: req.user?.permissions,
+        name: req.user?.name || req.user?.email,
+      }
+    )
+    await this.auditLogService.log({
+      userId,
+      userName: req.user.name || req.user.email || 'Usuario',
+      action: 'register_return_voucher',
+      module: 'rendiciones',
+      entityId: id,
+      clientId: req.user.clientId,
+    })
+    return result
   }
 
   @UseGuards(AuthGuard('jwt'), RolesGuard)

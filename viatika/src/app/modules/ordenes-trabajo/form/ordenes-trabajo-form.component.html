@@ -1,5 +1,5 @@
 <div class="p-6 max-w-2xl mx-auto">
-  <div class="flex items-center gap-3 mb-8">
+  <div class="flex items-start gap-3 mb-8">
     <app-button variant="ghost" size="sm" label="" ariaLabel="Volver" (clicked)="goBack()">
       <app-icon name="arrow-left" size="sm" />
     </app-button>
@@ -65,7 +65,7 @@
                     [checked]="estaSeleccionado(cc._id!)"
                     (change)="toggleCentroCosto(cc._id!, $any($event.target).checked)"
                   />
-                  <span class="text-sm text-secondary flex-1">{{ cc.name }}</span>
+                  <span class="text-sm text-secondary flex-1 min-w-0">{{ cc.name }}</span>
                   @if (cc.code) { <span class="text-xs text-tertiary/60">{{ cc.code }}</span> }
                 </label>
               } @empty {

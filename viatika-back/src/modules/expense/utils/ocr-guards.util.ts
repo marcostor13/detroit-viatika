@@ -308,6 +308,25 @@ export function runOcrGuards(
     }
   }
 
+  // 2b. RUC del receptor, como segunda linea de defensa.
+  //
+  // Quien manda en esto es SUNAT, que avisa "emitido a otro contribuyente" en
+  // el arreglo `observaciones` de la consulta de validez. Este cotejo cubre los
+  // casos en los que esa consulta no llega a hacerse (comprobante sin los datos
+  // minimos, tipo no validable, o SUNAT caido), asi que va como aviso: una mala
+  // lectura del RUC del cliente no debe bloquear un comprobante legitimo.
+  const rucReceptor = textoDe(extraccion.rucReceptor).replace(/\D/g, '')
+  const rucEmpresaCotejo = String(options.rucEmpresa ?? '').replace(/\D/g, '')
+  if (rucReceptor && rucEmpresaCotejo && rucReceptor !== rucEmpresaCotejo) {
+    const nombre = textoDe(extraccion.razonSocialReceptor).trim()
+    push(
+      'warn',
+      'receptor_no_es_la_empresa',
+      `El comprobante está emitido a ${nombre || 'otro contribuyente'} (RUC ${rucReceptor}), no a la empresa (RUC ${rucEmpresaCotejo}).`,
+      'rucReceptor'
+    )
+  }
+
   // 3. Serie y correlativo.
   const serie = textoDe(extraccion.serie).trim().toUpperCase()
   if (serie && !SERIE_VALIDA.test(serie)) {

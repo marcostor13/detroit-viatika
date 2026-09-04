@@ -2009,4 +2009,42 @@ describe('ExpenseService — validateWithSunatData no pisa el estado del flujo',
 
     expect(doc.status).toBe('pending')
   })
+
+describe('interpretSunatResponse', () => {
+  const interpretar = (data: unknown) =>
+    (service as unknown as {
+      interpretSunatResponse: (d: unknown) => { status: string; message: string }
+    }).interpretSunatResponse(data)
+
+  it('marca como no perteneciente cuando SUNAT observa que es de otro contribuyente', () => {
+    const r = interpretar({
+      success: true,
+      data: {
+        estadoCp: '1',
+        observaciones: [
+          '- El comprobante de pago consultado ha sido emitido a otro contribuyente.',
+        ],
+      },
+    })
+    expect(r.status).toBe('VALIDO_NO_PERTENECE')
+  })
+
+  it('acepta el comprobante aceptado y sin observaciones', () => {
+    const r = interpretar({ success: true, data: { estadoCp: '1' } })
+    expect(r.status).toBe('VALIDO_ACEPTADO')
+  })
+
+  it('ignora observaciones de otro tipo', () => {
+    const r = interpretar({
+      success: true,
+      data: { estadoCp: '1', observaciones: ['- El emisor tiene la condicion de no habido.'] },
+    })
+    expect(r.status).toBe('VALIDO_ACEPTADO')
+  })
+
+  it('estadoCp 0 es comprobante no encontrado, no "de otra empresa"', () => {
+    const r = interpretar({ success: true, data: { estadoCp: '0' } })
+    expect(r.status).toBe('NO_ENCONTRADO')
+  })
+})
 })

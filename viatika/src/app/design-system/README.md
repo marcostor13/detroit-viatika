@@ -19,7 +19,9 @@ Fuente única de verdad: `tailwind.config.js`. No declarar colores en otro lado 
 <app-button label="Guardar" variant="primary" size="md" (clicked)="onSave()" />
 <app-button label="Cancelar" variant="secondary" (clicked)="onCancel()" />
 ```
-`variant`: `primary | secondary | ghost | danger`. `size`: `sm | md | lg`. `disabled`, `fullWidth`, `loading` + `loadingLabel`, `type`.
+`variant`: `primary | secondary | ghost | danger | success | neutral`. `size`: `sm | md | lg`. `disabled`, `fullWidth`, `loading` + `loadingLabel`, `type`.
+
+`neutral` es para pantallas que no pueden mostrar rojo: el `primary` de Detroit es rojo y en un tablero se lee como alarma, y `secondary`/`ghost` tiñen de `primary` al pasar el mouse.
 
 ### `app-input`
 ```html
@@ -87,6 +89,17 @@ tabs = [
 <app-tabs [tabs]="tabs" [(active)]="activeTab" />
 ```
 Navegación con flechas/Home/End integrada (`role="tablist"`/`role="tab"` con roving tabindex).
+
+### `app-filter-panel`
+Panel de filtros de una pantalla de listado. En escritorio (>= `md`) es la tarjeta de siempre con la rejilla siempre visible; en móvil se pliega detrás de un botón "Filtros" con el número de filtros puestos, para que la lista quede en el primer pantallazo.
+```html
+<app-filter-panel class="mb-4 md:mb-6" [activeCount]="activeFilterCount" (cleared)="clearFilters()">
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+    <!-- los campos del filtro, tal cual -->
+  </div>
+</app-filter-panel>
+```
+`activeCount`: cuántos filtros tiene puestos el usuario (0 = sin filtrar). `label`: texto del botón (default `Filtros`). `cleared`: se emite al tocar "Limpiar". Arranca desplegado si la pantalla llega con filtros ya aplicados; después manda lo que toque el usuario.
 
 ### `app-icon`
 ```html

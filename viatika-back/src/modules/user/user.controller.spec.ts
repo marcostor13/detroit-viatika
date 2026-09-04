@@ -35,10 +35,14 @@ const mockUserService = {
   resetPassword: jest.fn().mockResolvedValue({ message: 'ok' }),
   bulkImportUsers: jest.fn().mockResolvedValue({
     created: 2,
-    skipped: [],
+    updated: 0,
+    unchanged: 0,
     errors: [],
+    rows: [],
     credentials: [],
+    dryRun: false,
   }),
+  buildBulkTemplateData: jest.fn().mockResolvedValue({ rows: [], costCenters: [] }),
   changeOwnPassword: jest.fn().mockResolvedValue(undefined),
 }
 
@@ -299,7 +303,7 @@ describe('UserController', () => {
       const req = makeReq()
       const result = await controller.downloadTemplate(req as never)
       expect(result).toHaveProperty('file')
-      expect(result).toHaveProperty('filename', 'plantilla_usuarios.xlsx')
+      expect(result).toHaveProperty('filename', 'colaboradores.xlsx')
     })
   })
 

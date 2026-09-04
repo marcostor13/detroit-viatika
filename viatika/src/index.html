@@ -2,7 +2,13 @@
 <html lang="es-PE">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Sin viewport-fit=cover a proposito. Con ese valor y un WebView 140 o
+       superior, Capacitor deja pasar los insets del sistema y espera que el CSS
+       los maneje (ver shouldPassthroughInsets en SystemBars), asi que la app
+       dibuja por debajo de la barra de estado y de la de navegacion y los
+       botones del borde inferior quedan tapados. Sin el, Capacitor compensa las
+       barras de forma nativa y el contenido queda dentro del area segura. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>Rendiciones</title>
   <meta name="description" content="Plataforma de gestión de rendiciones de viáticos y gastos empresariales.">

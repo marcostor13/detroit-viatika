@@ -1,0 +1,37 @@
+<!-- Barra plegable: solo en movil. En >=md la rejilla manda y esto sobra. -->
+<div class="md:hidden flex items-center gap-2">
+  <button
+    type="button"
+    (click)="toggle()"
+    [attr.aria-expanded]="open()"
+    aria-controls="filter-panel-body"
+    class="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-tertiary/30 bg-quaternary text-sm font-medium text-secondary transition-colors hover:bg-background"
+  >
+    <app-icon name="filter" size="sm" />
+    {{ label() }}
+    @if (activeCount() > 0) {
+      <span class="inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-primary text-white text-[11px] font-bold">
+        {{ activeCount() }}
+      </span>
+    }
+    <app-icon [name]="open() ? 'chevron-up' : 'chevron-down'" size="sm" />
+  </button>
+
+  @if (activeCount() > 0) {
+    <button
+      type="button"
+      (click)="clear()"
+      class="px-3 py-2 rounded-xl text-sm font-medium text-tertiary transition-colors hover:text-secondary"
+    >
+      Limpiar
+    </button>
+  }
+</div>
+
+<div
+  id="filter-panel-body"
+  class="md:block bg-quaternary rounded-2xl border border-tertiary/20 shadow-soft p-4 md:p-5 mt-3 md:mt-0"
+  [class.hidden]="!open()"
+>
+  <ng-content></ng-content>
+</div>

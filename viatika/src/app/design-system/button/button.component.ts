@@ -1,7 +1,13 @@
 import { Component, input, output, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'success'
+  | 'neutral';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 @Component({
@@ -31,7 +37,7 @@ export class ButtonComponent {
 
   // Computed classes
   buttonClasses = computed(() => {
-    const base = 'font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2';
+    const base = 'font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 whitespace-nowrap shrink-0';
     
     const variants = {
       primary: 'bg-primary text-quaternary hover:bg-accent shadow-soft hover:shadow-lg',
@@ -39,6 +45,10 @@ export class ButtonComponent {
       ghost: 'bg-transparent text-tertiary hover:text-primary hover:bg-background',
       danger: 'bg-error text-quaternary hover:bg-error/90 shadow-soft hover:shadow-lg',
       success: 'bg-success text-quaternary hover:bg-success/90 shadow-soft hover:shadow-lg',
+      // Accion principal de una pantalla que no puede tener rojo. El primary de
+      // Detroit es rojo y en un tablero se lee como alarma; secondary y ghost
+      // tampoco sirven porque tinen de primary al pasar el mouse.
+      neutral: 'bg-ink-100 text-ink-900 hover:bg-ink-300 hover:text-ink-900',
     };
 
     const sizes = {

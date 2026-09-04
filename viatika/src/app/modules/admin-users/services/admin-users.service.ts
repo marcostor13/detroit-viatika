@@ -12,6 +12,30 @@ import { UserStateService } from '../../../services/user-state.service';
 import { environment } from '../../../../environments/environment';
 import { IPaginatedResult } from '../../../interfaces/paginated-result.interface';
 
+/** Lo que le pasa a una fila del Excel en la carga masiva de colaboradores. */
+export interface IUserBulkImportRow {
+  /** Fila del Excel (1 = encabezado). */
+  row: number;
+  email: string;
+  accion: 'crear' | 'actualizar' | 'sin-cambios' | 'error';
+  detalle?: string;
+  reason?: string;
+}
+
+export interface IUserBulkImportResult {
+  created: number;
+  /** Ya existían y el archivo les cambia los permisos. */
+  updated: number;
+  /** Ya existían y el archivo no les cambia nada. */
+  unchanged: number;
+  errors: { row: number; reason: string }[];
+  /** Fila por fila: con `dryRun` es lo que PASARÍA; sin él, lo que pasó. */
+  rows: IUserBulkImportRow[];
+  credentials: { name: string; email: string; temporaryPassword: string }[];
+  /** true = solo previsualización, no se escribió nada. */
+  dryRun: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AdminUsersService {
   private apiUrl = `${environment.api}/user`;
@@ -120,10 +144,14 @@ export class AdminUsersService {
       .pipe(catchError((error: any) => this.handleError(error)));
   }
 
-  bulkImportUsers(formData: FormData): Observable<{ created: number; skipped: string[]; errors: string[]; credentials: { name: string; email: string; temporaryPassword: string }[] }> {
+  /**
+   * Sube el Excel de colaboradores. Con `dryRun` en el FormData el backend
+   * no escribe nada y devuelve solo el plan, para revisarlo antes de aceptar.
+   */
+  bulkImportUsers(formData: FormData): Observable<IUserBulkImportResult> {
     const token = this.userStateService.getToken();
     return this.http
-      .post<{ created: number; skipped: string[]; errors: string[]; credentials: { name: string; email: string; temporaryPassword: string }[] }>(
+      .post<IUserBulkImportResult>(
         `${this.apiUrl}/bulk-import`,
         formData,
         { headers: new HttpHeaders({ Authorization: `Bearer ${token ?? ''}` }) }

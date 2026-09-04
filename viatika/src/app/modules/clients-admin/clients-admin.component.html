@@ -1,6 +1,6 @@
 <div class="min-h-screen bg-background flex flex-col">
 
-  <header class="bg-quaternary border-b border-tertiary/20 shadow-soft px-6 py-4 flex items-center gap-4">
+  <header class="bg-quaternary border-b border-tertiary/20 shadow-soft px-4 sm:px-6 py-4 flex flex-wrap items-center gap-3">
     <button
       (click)="goBack()"
       class="flex items-center gap-2 text-sm font-medium text-tertiary hover:text-secondary transition-colors"
@@ -11,7 +11,7 @@
       Volver al hub
     </button>
     <div class="h-5 w-px bg-tertiary/30"></div>
-    <div class="flex-1 min-w-0">
+    <div class="flex-1 min-w-[8rem]">
       <h1 class="text-lg font-bold text-secondary leading-none">Administrar Empresas</h1>
       <p class="text-xs text-tertiary mt-0.5">Gestiona los datos y configuración SUNAT de cada empresa.</p>
     </div>
@@ -298,7 +298,7 @@
 
             <!-- Company data section -->
             <div>
-              <div class="flex items-center justify-between mb-3">
+              <div class="flex flex-wrap gap-2 items-center justify-between mb-3">
                 <h2 class="text-sm font-semibold text-secondary uppercase tracking-wide">Datos de la empresa</h2>
                 @if (!row.editing && !row.showDeleteConfirm) {
                   <div class="flex items-center gap-4">
@@ -439,7 +439,7 @@
                     class="w-full px-3 py-2 text-sm border border-error/30 rounded-lg bg-background text-secondary focus:outline-none focus:border-error disabled:opacity-60"
                   />
                 </div>
-                <div class="flex gap-3">
+                <div class="flex flex-wrap gap-3">
                   <button
                     (click)="confirmDeleteClient(row)"
                     [disabled]="row.deleteConfirmText !== 'eliminar empresa definitivamente' || row.deleting"
@@ -458,7 +458,7 @@
 
             <!-- SUNAT config section -->
             <div class="border-t border-tertiary/10 pt-5">
-              <div class="flex items-center justify-between mb-3">
+              <div class="flex flex-wrap gap-2 items-center justify-between mb-3">
                 <h2 class="text-sm font-semibold text-secondary uppercase tracking-wide">Configuración SUNAT</h2>
                 @if (!row.showSunatForm) {
                   <div class="flex gap-2">
