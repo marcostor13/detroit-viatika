@@ -1,0 +1,67 @@
+DETROIT POWER SYSTEM PERU LIMITADA SRL 2026/09/09 09:01:49
+x
+Consulta de Pagos Masivos
+Consulta de la Orden - Antes del proceso
+Enviada
+Nro. Orden Planilla Descripción Cuenta de Cargo
+Fecha Hora
+0908001 PAGO DE PROVEEDORES PROVEEDORES SOL 08 S 08/09/2026 19:03:52 0011-0380-0100056833
+Abonos Enviados Moneda de Cargo Importe Inicialmente informado Horario de Ejecución Situación de Proceso
+26 SOLES 14,859.93 INMEDIATA TERMINADA OK
+Consulta de la Orden - Después del proceso
+No. Movimiento de Cargo 000025919
+Fecha y Hora de Ejecución 08/09/2026 - 19:03:52
+Abonos procesados 26
+Importe cargado por abonos 14,859.93 - SOLES
+Abonos NO procesados 0
+Importe NO abonado 0.00 - SOLES
+Comisión por Otra Plaza 0.00 - SOLES
+Comisión Interbancaria 177.50 - SOLES
+TOTAL CARGADO 15,037.43 - SOLES
+Ver contenido de la planilla
+Relación de las cuentas de abono
+Sel No. Cuenta Banco Titular(Archivo) Titular(Banco) Doc.Identidad Importe Situación
+CHOQUEHUANCA CHOQUEHUANCA
+0011-0579-02-36981303 ABONO
+26 ARACCA ARACCA L - 70991465 220.00
+CORRECTO
+AMILTON AMILTON
+Anterior
+Estimado Cliente:
+Los tipos de documentos para las Transferencias Interbancarias a utilizar son:
+R: RUC
+
+Horario:
+Hora en que tu operación llegará al Banco destino
+A A A Hora de envío de tu
+Entidad Financiera :
+operación Días útiles Sábado, Domingo, feriado
+nacional y/u feriado público
+-Banco de Crédito A partir de las 2:00
+-Scotiabank mea Hasta las 11:30 a.m p.m. del mismo día
+-Banco de Comercio am útil
+A . -GNB
+-Crediscotia .
+Banco Falabella -Mi Banco
+- - i A partir de las 4:30
+-Banco Financiero Bano Ripley Entre las 11:30 a.m. y Pres A partir de las 2:00 p.m. del
+.. -Banco Santander . p.m. del mismo día E. —
+-CMAC Trujillo . la 1:45 p.m. On siguiente día útil
+- -CMAC Piura útil
+-CMAC Arequipa
+. . -CMAC Sullana
+-Caja Metropolitana CCMAC C
+-Agrobanco N usco A partir de las 8:45
+-CMAC Huancayo Después de la 1:45 NA ,
+-Banco ICBC a.m. del siguiente día
+-CMAC Tacna p.m. .
+-Banco Azteca útil
+A partir de las 4:30
+Hasta las 1:45 p.m p.m. del mismo día
+útil
+-Citibank A partir de las 4:30 p.m. del
+-Banco de la Nación siguiente día útil
+, A partir de las 8:45
+Después de la 1:45 NE. ,
+m. a.m. del siguiente día
+pm útil
