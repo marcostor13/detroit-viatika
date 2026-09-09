@@ -666,6 +666,117 @@ export function readBbvaPdfText(text: string): BbvaPdfSummary {
   }
 }
 
+/** Línea con SOLO el documento, tal como la deja el modo disperso: "L-40546914". */
+const RE_DOC_SOLO = /^([RLPEM])\s*[-–—]\s*(\d[\d ]{5,})$/
+/** Línea con SOLO el importe: "450.00", "1,500.00". */
+const RE_IMPORTE_SOLO = /^(\d{1,3}(?:,\d{3})*\.\d{2})$/
+
+/**
+ * Lee el OCR de un reporte reconocido en modo DISPERSO (tesseract PSM 11),
+ * donde cada celda de la tabla cae en su propia línea en vez de una línea por
+ * fila:
+ *
+ *     L-40546914
+ *     450.00
+ *
+ * Existe porque los dos modos de reconocimiento se equivocan en filas
+ * DISTINTAS del mismo reporte. En el lote 000025919 el modo normal leyó
+ * `L - 40546914   450.00` como `1 -dosd0old 250.00` (fila perdida), y el
+ * disperso perdió a cambio el abono de S/225.00 que el otro sí leyó. Ninguno
+ * es fiable por sí solo; juntos cubren el reporte completo (`unirFilasLeidas`).
+ * No es cuestión de resolución ni de idioma: se probó a 216, 300 y 400 dpi, en
+ * gris y en blanco y negro, con `spa` y con `eng`, y esa fila sale mal en todas
+ * las combinaciones menos en modo disperso.
+ *
+ * A propósito NO lee ni la situación ni el titular: en este modo la columna
+ * "Situación" y el nombre quedan desligados de su fila, y adivinar a qué abono
+ * pertenecen sería peor que no leerlos. Las filas salen como `ilegible`, que es
+ * exactamente lo que `verificarContraCabecera` sabe resolver contra los totales.
+ *
+ * Tampoco devuelve los totales de la cabecera: en modo disperso se leen mal (en
+ * el lote 000025919, "Abonos procesados 26" salió como 14). Los totales tienen
+ * que venir siempre de la lectura normal.
+ */
+export function readBbvaPdfSparseText(text: string): BbvaPdfSummary {
+  const lineas = (text ?? '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+  const rows: BbvaPdfRow[] = []
+
+  for (let i = 0; i < lineas.length; i++) {
+    const doc = lineas[i].match(RE_DOC_SOLO)
+    if (!doc) continue
+    // El importe cae cerca del documento, pero no siempre pegado: el OCR cuela
+    // entre medias restos de las columnas vecinas (el banco, un trozo del
+    // nombre). Se busca hasta 3 líneas más allá y SIEMPRE se para en el
+    // documento del abono siguiente: así, cuando el importe propio es ilegible
+    // (en este lote uno salió como "225.0", con un solo decimal), la fila se
+    // queda sin leer en vez de quedarse con el importe del de al lado.
+    for (let j = i + 1; j <= Math.min(i + 3, lineas.length - 1); j++) {
+      if (RE_DOC_SOLO.test(lineas[j])) break
+      const imp = lineas[j].match(RE_IMPORTE_SOLO)
+      if (!imp) continue
+      const amount = Number(imp[1].replace(/,/g, ''))
+      const documentNumber = doc[2].replace(/\D/g, '')
+      if (documentNumber && Number.isFinite(amount) && amount > 0) {
+        rows.push({
+          titular: '',
+          documentNumber,
+          amount,
+          situacion: '',
+          success: false,
+          estado: 'ilegible',
+        })
+      }
+      i = j
+      break
+    }
+  }
+
+  return { rows }
+}
+
+/**
+ * Une lo leído por dos pasadas de OCR del MISMO archivo quedándose, para cada
+ * combinación documento+importe, con el mayor número de repeticiones que haya
+ * visto cualquiera de las dos. No es una concatenación: las filas que ambas
+ * leyeron (la inmensa mayoría) tienen que contarse UNA vez.
+ *
+ * El máximo, y no la suma, es lo que conserva los abonos repetidos legítimos:
+ * un mismo trabajador puede cobrar dos veces el mismo importe en la misma
+ * planilla (lote 000025800: dos filas de S/266.00 al DNI 72233722). Si una
+ * pasada ve las dos y la otra solo una, quedan dos, no tres.
+ *
+ * Unir no da nada por bueno: lo unido se sigue contrastando contra la cabecera,
+ * que es la que decide si el resultado se puede pagar (`verificarContraCabecera`).
+ */
+export function unirFilasLeidas(
+  base: BbvaPdfRow[],
+  rescate: BbvaPdfRow[]
+): BbvaPdfRow[] {
+  const clave = (r: BbvaPdfRow) =>
+    `${r.documentNumber}|${Math.round(r.amount * 100)}`
+  const contar = (filas: BbvaPdfRow[]) => {
+    const m = new Map<string, number>()
+    for (const f of filas) m.set(clave(f), (m.get(clave(f)) ?? 0) + 1)
+    return m
+  }
+  const enBase = contar(base)
+  const porColocar = contar(rescate)
+  const unidas = [...base]
+
+  for (const fila of rescate) {
+    const k = clave(fila)
+    const sobran = (porColocar.get(k) ?? 0) - (enBase.get(k) ?? 0)
+    if (sobran <= 0) continue
+    unidas.push(fila)
+    porColocar.set(k, (porColocar.get(k) ?? 0) - 1)
+  }
+  return unidas
+}
+
 /**
  * Contrasta lo leído fila por fila contra los totales que declara el propio
  * reporte, y ajusta el `success` de las filas en consecuencia.

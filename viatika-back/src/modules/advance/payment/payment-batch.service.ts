@@ -36,6 +36,8 @@ import {
   normalizeName,
   namesMatch,
   readBbvaPdfText,
+  readBbvaPdfSparseText,
+  unirFilasLeidas,
   mergeBbvaReadings,
   resolveBbvaAccount,
   describeBbvaAccountProblem,
@@ -775,10 +777,22 @@ export class PaymentBatchService {
       )
     }
 
-    const { summary: parsed, conflicto } = mergeBbvaReadings(
-      lecturas.map(l => l.lectura)
-    )
-    if (conflicto) throw new BadRequestException(conflicto)
+    const primera = mergeBbvaReadings(lecturas.map(l => l.lectura))
+    if (primera.conflicto) throw new BadRequestException(primera.conflicto)
+
+    // Si faltan filas respecto a lo que declara el banco, segunda pasada de OCR
+    // en modo disperso: no es una página que falte, sino filas sueltas que el
+    // reconocimiento normal leyó mal (ver `readBbvaPdfSparseText`).
+    let parsed = primera.summary
+    let filasRescatadas = 0
+    if (this.faltanFilas(parsed) && lecturas.some(l => l.viaOcr)) {
+      const conRescate = await this.rescatarConOcrDisperso(entradas, lecturas)
+      const segunda = mergeBbvaReadings(conRescate.map(l => l.lectura))
+      if (!segunda.conflicto) {
+        filasRescatadas = segunda.summary.rows.length - parsed.rows.length
+        parsed = segunda.summary
+      }
+    }
 
     const result = await this.reconcileParsedRows(
       clientId,
@@ -804,6 +818,13 @@ export class PaymentBatchService {
         'El PDF no tenía texto seleccionable y se leyó por OCR. Contrasta los importes con el reporte del banco antes de darlos por buenos.'
       )
     }
+    if (filasRescatadas > 0) {
+      result.advertencias.push(
+        `El OCR normal no pudo leer ${filasRescatadas} fila(s) y se recuperaron con una segunda ` +
+          'lectura del mismo PDF. Los importes de esas filas se dieron por buenos solo porque el ' +
+          'total leído cuadra al céntimo con el que declara el banco.'
+      )
+    }
     if (parsed.situacionResueltaPorCabecera) {
       result.advertencias.push(
         `La columna "Situación" no era legible. Se dieron por abonados los ${parsed.rows.length} pagos porque la cabecera declara ` +
@@ -821,9 +842,59 @@ export class PaymentBatchService {
       )
     }
     if (parsed.inconsistenteConCabecera) {
-      result.advertencias.push(this.explicarInconsistencia(parsed))
+      result.advertencias.push(
+        this.explicarInconsistencia(parsed, lecturas.length)
+      )
     }
     return result
+  }
+
+  /** ¿Se leyeron menos abonos de los que el propio reporte declara? */
+  private faltanFilas(parsed: BbvaPdfSummary): boolean {
+    const d = parsed.declared
+    if (d?.procesados === undefined || d?.noProcesados === undefined) return false
+    return parsed.rows.length < d.procesados + d.noProcesados
+  }
+
+  /**
+   * Segunda pasada de OCR, en modo disperso, sobre los archivos que hubo que
+   * reconocer por imagen. Recupera las filas que el reconocimiento normal leyó
+   * mal: en el lote 000025919 la fila `L - 40546914  450.00` salió como
+   * `1 -dosd0old 250.00` y se perdió entera, y con ella se cayó la conciliación
+   * del lote completo aunque el banco había pagado los 26 abonos.
+   *
+   * Solo se ejecuta cuando faltan filas, porque cuesta otra pasada de OCR
+   * (~2 s por página). Lo recuperado no se da por bueno aquí: se une a lo ya
+   * leído y el conjunto vuelve a contrastarse contra los totales de la cabecera,
+   * que siguen siendo los que deciden si se paga o no.
+   */
+  private async rescatarConOcrDisperso(
+    entradas: PdfConciliacion[],
+    lecturas: LecturaPdf[]
+  ): Promise<LecturaPdf[]> {
+    const rescatadas: LecturaPdf[] = []
+    for (let i = 0; i < lecturas.length; i++) {
+      const actual = lecturas[i]
+      if (!actual.viaOcr) {
+        rescatadas.push(actual)
+        continue
+      }
+      const { texto } = await this.extractPdfTextByOcr(
+        entradas[i].buffer,
+        'disperso'
+      )
+      const filas = texto
+        ? unirFilasLeidas(actual.lectura.rows, readBbvaPdfSparseText(texto).rows)
+        : actual.lectura.rows
+      const ganadas = filas.length - actual.lectura.rows.length
+      if (ganadas > 0) {
+        this.logger.log(
+          `Rescate por OCR disperso (${actual.nombre}): ${ganadas} fila(s) recuperada(s).`
+        )
+      }
+      rescatadas.push({ ...actual, lectura: { ...actual.lectura, rows: filas } })
+    }
+    return rescatadas
   }
 
   /**
@@ -833,7 +904,10 @@ export class PaymentBatchService {
    * la diferencia entre que Tesorería adjunte la página que falta o crea que el
    * banco rechazó todos los abonos.
    */
-  private explicarInconsistencia(parsed: BbvaPdfSummary): string {
+  private explicarInconsistencia(
+    parsed: BbvaPdfSummary,
+    archivos = 1
+  ): string {
     const leidas = parsed.rows.length
     const procesados = parsed.declared?.procesados ?? 0
     const noProcesados = parsed.declared?.noProcesados ?? 0
@@ -841,6 +915,19 @@ export class PaymentBatchService {
     const cola =
       ' No se marcó ningún pago: revisa el archivo o regístralos con la confirmación manual.'
 
+    // Con varios archivos ya subidos, la causa no es una página que falte: es
+    // que el OCR no pudo con esas filas ni en la segunda pasada. Repetir aquí
+    // "súbelas todas juntas" mandaba a Tesorería a rehacer lo que ya hizo bien.
+    if (leidas < total && archivos > 1) {
+      return (
+        `Se leyeron ${leidas} de los ${total} abonos que declara el reporte, y ya subiste ${archivos} ` +
+        `archivos: no falta ninguna página, es que el OCR no pudo leer ${total - leidas} fila(s). ` +
+        'El PDF viene impreso como imagen y no trae texto seleccionable. Vuelve a exportar la consulta ' +
+        'del banco desde el navegador con Ctrl+P y destino "Guardar como PDF" (no "Microsoft Print to PDF"): ' +
+        'ese archivo se lee exacto y sin OCR.' +
+        cola
+      )
+    }
     if (leidas < total) {
       return (
         `Faltan abonos por leer: se leyeron ${leidas} de los ${total} que declara el reporte ` +
@@ -882,7 +969,8 @@ export class PaymentBatchService {
    * falla, devuelve '' y el llamador da el mensaje de confirmación manual.
    */
   private async extractPdfTextByOcr(
-    buffer: Buffer
+    buffer: Buffer,
+    modo: 'normal' | 'disperso' = 'normal'
   ): Promise<{ texto: string; paginasTotales: number; paginasLeidas: number }> {
     try {
       return await withTempPdf(buffer, async (pdfPath, tmpDir) => {
@@ -893,9 +981,17 @@ export class PaymentBatchService {
         const paginas = Math.min(paginasTotales, this.OCR_MAX_PAGINAS)
 
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { createWorker } = require('tesseract.js')
+        const { createWorker, PSM } = require('tesseract.js')
         const worker = await createWorker('spa')
         try {
+          // Modo disperso: tesseract deja de suponer que la página son líneas de
+          // texto corrido y reconoce cada celda por su cuenta. Lee peor el
+          // conjunto, pero acierta en filas que el modo normal destroza.
+          if (modo === 'disperso') {
+            await worker.setParameters({
+              tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+            })
+          }
           const partes: string[] = []
           for (let page = 1; page <= paginas; page++) {
             const prefijo = path.join(tmpDir, `ocr-p${page}`)

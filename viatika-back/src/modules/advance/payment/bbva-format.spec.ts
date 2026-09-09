@@ -12,6 +12,8 @@ import {
   namesMatch,
   parseBbvaPdfText,
   readBbvaPdfText,
+  readBbvaPdfSparseText,
+  unirFilasLeidas,
   mergeBbvaReadings,
   clasificarSituacion,
   splitDocAndAmount,
@@ -984,5 +986,132 @@ describe('bbva-format · lote repartido en varias páginas (000025800)', () => {
       parseBbvaPdfText(texto).rows.map(r => r.success)
     )
     expect(summary.rows.every(r => r.success)).toBe(true)
+  })
+})
+
+describe('bbva-format · fila que el OCR normal lee mal (lote 000025919)', () => {
+  // OCR real de los dos PDF del lote 000025919 (26 abonos por S/ 14,859.93, los
+  // 26 procesados). El reporte se descargó con "Microsoft: Print To PDF", así
+  // que no trae capa de texto y hay que reconocerlo por imagen.
+  //
+  // El modo normal destroza la fila 18: `L - 40546914   450.00` sale como
+  // `1 -dosd0old 250.00` y se pierde entera. El modo disperso la lee bien, pero
+  // pierde a cambio el abono de S/225.00 del DNI 70162897. Se equivocan en
+  // filas DISTINTAS, y por eso hay dos pasadas.
+  const fixture = (archivo: string) =>
+    readFileSync(join(__dirname, '__fixtures__', archivo), 'utf8')
+  const normal1 = () => readBbvaPdfText(fixture('lote-25919-ocr-pag1.txt'))
+  const normal2 = () => readBbvaPdfText(fixture('lote-25919-ocr-pag2.txt'))
+  const disperso1 = () =>
+    readBbvaPdfSparseText(fixture('lote-25919-ocr-disperso-pag1.txt'))
+  const disperso2 = () =>
+    readBbvaPdfSparseText(fixture('lote-25919-ocr-disperso-pag2.txt'))
+
+  it('cada modo de OCR pierde una fila distinta', () => {
+    const n = normal1().rows
+    const d = disperso1().rows
+    expect(n.length).toBe(24)
+    expect(d.length).toBe(24)
+    expect(n.some(r => r.documentNumber === '40546914')).toBe(false)
+    expect(d.some(r => r.documentNumber === '40546914')).toBe(true)
+    expect(n.some(r => r.documentNumber === '70162897')).toBe(true)
+    expect(d.some(r => r.documentNumber === '70162897')).toBe(false)
+  })
+
+  it('sin la segunda pasada NO se marca ningún pago', () => {
+    // Es el caso que Tesorería vio en pantalla: "25 no abonados" con los dos
+    // PDF subidos a la vez y el banco declarando 26 abonos correctos.
+    const { summary } = mergeBbvaReadings([normal1(), normal2()])
+    expect(summary.rows.length).toBe(25)
+    expect(summary.rows.some(r => r.success)).toBe(false)
+    expect(summary.inconsistenteConCabecera).toBe(true)
+  })
+
+  it('uniendo las dos pasadas cuadra el lote completo', () => {
+    const unidas1 = unirFilasLeidas(normal1().rows, disperso1().rows)
+    const unidas2 = unirFilasLeidas(normal2().rows, disperso2().rows)
+    expect(unidas1.length).toBe(25)
+
+    const { summary } = mergeBbvaReadings([
+      { ...normal1(), rows: unidas1 },
+      { ...normal2(), rows: unidas2 },
+    ])
+
+    expect(summary.operationNumber).toBe('000025919')
+    expect(summary.declared).toEqual({
+      procesados: 26,
+      noProcesados: 0,
+      importeAbonado: 14859.93,
+    })
+    expect(summary.rows.length).toBe(26)
+    expect(summary.inconsistenteConCabecera).toBe(false)
+    expect(summary.rows.every(r => r.success)).toBe(true)
+    expect(
+      Math.round(summary.rows.reduce((s, r) => s + r.amount, 0) * 100)
+    ).toBe(1485993)
+
+    const rescatada = summary.rows.find(r => r.documentNumber === '40546914')
+    expect(rescatada?.amount).toBe(450)
+  })
+
+  it('un importe ilegible no se rellena con el del abono de al lado', () => {
+    // En este lote el importe del DNI 70162897 salió como "225.0", con un solo
+    // decimal, y no se puede dar por bueno. Esa fila tiene que quedarse sin
+    // leer; lo que no puede pasar es que se quede con los S/284.00 del
+    // siguiente. Por eso la búsqueda del importe se para en el documento del
+    // abono siguiente.
+    const texto = ['L- 70162897', '225.0', 'SANDRO', 'L - 72233722', '284.00'].join('\n')
+    const rows = readBbvaPdfSparseText(texto).rows
+    expect(rows.map(r => [r.documentNumber, r.amount])).toEqual([['72233722', 284]])
+  })
+
+  it('la lectura dispersa no aporta totales de cabecera', () => {
+    // En modo disperso la cabecera se lee mal ("Abonos procesados 26" salió
+    // como 14): los totales tienen que venir siempre de la lectura normal.
+    expect(disperso1().declared).toBeUndefined()
+    expect(disperso1().operationNumber).toBeUndefined()
+  })
+})
+
+describe('bbva-format · unirFilasLeidas', () => {
+  const fila = (documentNumber: string, amount: number) => ({
+    titular: '',
+    documentNumber,
+    amount,
+    situacion: '',
+    success: false,
+    estado: 'ilegible' as const,
+  })
+
+  it('no duplica las filas que ambas pasadas leyeron', () => {
+    const base = [fila('111', 10), fila('222', 20)]
+    const unidas = unirFilasLeidas(base, [fila('111', 10), fila('222', 20)])
+    expect(unidas.length).toBe(2)
+  })
+
+  it('añade solo lo que la primera pasada no vio', () => {
+    const unidas = unirFilasLeidas(
+      [fila('111', 10)],
+      [fila('111', 10), fila('333', 30)]
+    )
+    expect(unidas.map(r => r.documentNumber)).toEqual(['111', '333'])
+  })
+
+  it('conserva los abonos repetidos legítimos sin inventar uno de más', () => {
+    // Dos pagos iguales al mismo trabajador (caso real del lote 000025800).
+    // Si una pasada ve los dos y la otra uno, deben quedar dos, no tres.
+    const unidas = unirFilasLeidas(
+      [fila('72233722', 266), fila('72233722', 266)],
+      [fila('72233722', 266)]
+    )
+    expect(unidas.length).toBe(2)
+  })
+
+  it('rescata el segundo abono igual cuando la primera pasada solo vio uno', () => {
+    const unidas = unirFilasLeidas(
+      [fila('72233722', 266)],
+      [fila('72233722', 266), fila('72233722', 266)]
+    )
+    expect(unidas.length).toBe(2)
   })
 })
